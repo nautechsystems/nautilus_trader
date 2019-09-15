@@ -231,7 +231,7 @@ cdef class TradingStrategy:
 
     cpdef dict on_save(self):
         """
-        Called when the strategy is saved.
+        Called when the strategy is saved. 'StateLog', 'OrderIdCount' and 'PositionIdCount' are reserved keys.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_save() must be implemented in the strategy (or just return empty dictionary).")
@@ -979,7 +979,7 @@ cdef class TradingStrategy:
         """
         Return the strategy state dictionary to be saved.
         """
-        self._append_to_state_log(self.time_now(), 'SAVING')
+        self._append_to_state_log(self.time_now(), 'SAVING...')
 
         cpdef dict state = {
             'StateLog': self._state_log,
@@ -994,6 +994,14 @@ cdef class TradingStrategy:
 
         return {**state, **user_state}
 
+    cpdef void saved(self, datetime timestamp):
+        """
+        System Method: Add a SAVED state to the state log.
+        
+        :param timestamp: The timestamp when the strategy was saved.
+        """
+        self._append_to_state_log(timestamp, 'SAVED')
+
     cpdef void load(self, dict state):
         """
         Load the strategy state from the give state dictionary.
@@ -1002,9 +1010,10 @@ cdef class TradingStrategy:
         """
         cdef list state_log = state.get('StateLog')
 
-        if state_log is None:
-            state_log = self._state_log
-        self._append_to_state_log(self.time_now(), 'LOADING')
+        if state_log:
+            self._state_log = state_log.extend(self._state_log)
+
+        self._append_to_state_log(self.time_now(), 'LOADING...')
 
         order_id_count = state.get('OrderIdCount')
         if order_id_count is None:
@@ -1020,6 +1029,8 @@ cdef class TradingStrategy:
             self.on_load(state)
         except Exception as ex:
             self.log.error(str(ex))
+
+        self._append_to_state_log(self.time_now(), 'LOADED')
 
     cpdef void dispose(self):
         """

@@ -76,11 +76,13 @@ cdef class EmptyStrategy(TradingStrategy):
     A strategy which is empty and does nothing.
     """
 
-    def __init__(self, str id_tag_strategy):
+    def __init__(self, str order_id_tag):
         """
         Initializes a new instance of the EmptyStrategy class.
+
+        :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
         """
-        super().__init__(order_id_tag=id_tag_strategy)
+        super().__init__(order_id_tag=order_id_tag)
 
     cpdef void on_start(self):
         pass

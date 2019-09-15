@@ -135,32 +135,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Re-caching accounts from the database...")
         self._cached_accounts.clear()
 
-        cdef bytes key_bytes
-        cdef str key
-        cdef bytes event_bytes
-        cdef list events
-        cdef Account account
-        cdef AccountStateEvent event
-
         cdef list account_keys = self._redis.keys(f'{self.key_accounts}*')
-
-        if len(account_keys) == 0:
+        if account_keys:
             self._log.info('No accounts found in database.')
             return
 
+        cdef bytes key_bytes
+        cdef AccountId account_id
+        cdef Account account
         for key_bytes in account_keys:
-            events = self._redis.lrange(name=key_bytes, start=0, end=-1)
             account_id = AccountId.from_string(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
+            account = self.load_account(account_id)
 
-            # Check there is at least one event to pop
-            if len(events) == 0:
-                self._log.error(f"Cannot load {account_id} from database (no events persisted).")
-                continue
-
-            last_event = self._event_serializer.deserialize(events.pop())
-            account = Account(event=last_event)
-
-            self._cached_accounts[account.id] = account
+            if account:
+                self._cached_accounts[account.id] = account
 
         self._log.info(f"Cached {len(self._cached_accounts)} account(s).")
 
@@ -171,35 +159,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Re-caching orders from the database...")
         self._cached_orders.clear()
 
-        cdef bytes key_bytes
-        cdef str key
-        cdef bytes event_bytes
-        cdef list events
-        cdef Order order
-        cdef OrderInitialized initial
-
         cdef list order_keys = self._redis.keys(f'{self.key_orders}*')
-
-        if len(order_keys) == 0:
+        if order_keys:
             self._log.info('No orders found in database.')
             return
 
+        cdef bytes key_bytes
+        cdef OrderId order_id
+        cdef Order order
         for key_bytes in order_keys:
-            events = self._redis.lrange(name=key_bytes, start=0, end=-1)
             order_id = OrderId(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
+            order = self.load_order(order_id)
 
-            # Check there is at least one event to pop
-            if len(events) == 0:
-                self._log.error(f"Cannot load {order_id} from database (no events persisted).")
-                continue
-
-            initial = self._event_serializer.deserialize(events.pop(0))
-            order = Order.create(event=initial)
-
-            for event_bytes in events:
-                order.apply(self._event_serializer.deserialize(event_bytes))
-
-            self._cached_orders[order.id] = order
+            if order:
+                self._cached_orders[order.id] = order
 
         self._log.info(f"Cached {len(self._cached_orders)} order(s).")
 
@@ -210,35 +183,21 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Re-caching positions from the database...")
         self._cached_positions.clear()
 
-        cdef bytes key_bytes
-        cdef str key
-        cdef bytes event_bytes
-        cdef list events
-        cdef Position position
-        cdef OrderFillEvent initial
-
         cdef list position_keys = self._redis.keys(f'{self.key_positions}*')
-
-        if len(position_keys) == 0:
+        if position_keys:
             self._log.info('No positions found in database.')
             return
 
+        cdef bytes key_bytes
+        cdef PositionId position_id
+        cdef Position position
+
         for key_bytes in position_keys:
-            events = self._redis.lrange(name=key_bytes, start=0, end=-1)
             position_id = PositionId(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
+            position = self.load_position(position_id)
 
-            # Check there is at least one event to pop
-            if len(events) == 0:
-                self._log.error(f"Cannot load {position_id} from database (no events persisted).")
-                continue
-
-            initial = self._event_serializer.deserialize(events.pop(0))
-            position = Position(position_id=position_id, event=initial)
-
-            for event in events:
-                position.apply(self._event_serializer.deserialize(event))
-
-            self._cached_positions[position.id] = position
+            if position:
+                self._cached_positions[position.id] = position
 
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
 
@@ -416,15 +375,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Updated Position(id={position.id.value}).")
 
-    cpdef Account load_account(self, AccountId account_id):
-        """
-        Load the account associated with the given account_id (if found).
-        
-        :param account_id: The account identifier to load.
-        :return: Account or None.
-        """
-        self._redis.exists(self.key_accounts + account_id.value)
-
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
         Load the state for the given strategy from the execution database.
@@ -446,6 +396,65 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         strategy.load(state)
 
         self._log.info(f"Loaded Strategy(id={strategy.id.value}) state.")
+
+    cpdef Account load_account(self, AccountId account_id):
+        """
+        Load the account associated with the given account_id (if found).
+        
+        :param account_id: The account identifier to load.
+        :return: Account or None.
+        """
+        cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
+        if len(events) == 0:
+            self._log.error(f"Cannot load {account_id} from database (not found).")
+            return None
+
+        cdef AccountStateEvent last_event = self._event_serializer.deserialize(events.pop())
+        return Account(event=last_event)
+
+    cpdef Order load_order(self, OrderId order_id):
+        """
+        Load the order associated with the given order_id (if found).
+        
+        :param order_id: The order_id to load.
+        :return: Order or None.
+        """
+        cdef list events = self._redis.lrange(name=self.key_orders + order_id.value, start=0, end=-1)
+
+        # Check there is at least one event to pop
+        if len(events) == 0:
+            self._log.error(f"Cannot load {order_id} from database (not found).")
+            return None
+
+        cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
+        cdef Order order = Order.create(event=initial)
+
+        cdef bytes event_bytes
+        for event_bytes in events:
+            order.apply(self._event_serializer.deserialize(event_bytes))
+        return order
+
+    cpdef Position load_position(self, PositionId position_id):
+        """
+        Load the position associated with the given position_id (if found).
+        
+        :param position_id: The position_id to load.
+        :return: Position or None.
+        """
+        cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
+
+        # Check there is at least one event to pop
+        if len(events) == 0:
+            self._log.error(f"Cannot load {position_id} from database (not found).")
+            return None
+
+        cdef OrderFillEvent initial = self._event_serializer.deserialize(events.pop(0))
+        cdef Position position = Position(position_id=position_id, event=initial)
+
+        cdef bytes event_bytes
+        for event_bytes in events:
+            position.apply(self._event_serializer.deserialize(event_bytes))
+        return position
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """

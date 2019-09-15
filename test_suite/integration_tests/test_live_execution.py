@@ -7,18 +7,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import redis
-import uuid
 import unittest
 
-from decimal import Decimal
-
-from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId, TraderId, OrderId, PositionId
-from nautilus_trader.model.objects import Quantity, Price, Money
+from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.events import AccountStateEvent
-from nautilus_trader.model.enums import Currency
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
@@ -27,6 +21,7 @@ from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, 
 from nautilus_trader.live.execution import RedisExecutionDatabase
 
 from test_kit.stubs import TestStubs
+from test_kit.strategies import EmptyStrategy
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -46,7 +41,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.trader_id = TraderId('TESTER', '000')
 
-        self.strategy = TradingStrategy(order_id_tag='001')
+        self.strategy = EmptyStrategy(order_id_tag='001')
         self.strategy.change_clock(clock)
         self.strategy.change_logger(logger)
 
@@ -85,17 +80,19 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertEqual('Trader-TESTER-000:Index:Positions:Open', self.database.key_index_positions_open)
         self.assertEqual('Trader-TESTER-000:Index:Positions:Closed', self.database.key_index_positions_closed)
 
-    def test_can_add_strategy(self):
+    def test_can_add_account(self):
         # Arrange
+        event = TestStubs.account_event()
+        account = Account(event)
+
         # Act
-        self.database.add_strategy(self.strategy)
+        self.database.add_account(account)
 
         # Assert
-        self.assertTrue(self.strategy.id in self.database.get_strategy_ids())
+        self.assertEqual(account, self.database.get_account(account.id))
 
     def test_can_add_order(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -111,7 +108,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_position(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -135,9 +131,20 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.database.get_positions_closed(self.strategy.id))
         self.assertTrue(position.id not in self.database.get_positions_closed())
 
+    def test_can_update_account(self):
+        # Arrange
+        event = TestStubs.account_event()
+        account = Account(event)
+        self.database.add_account(account)
+
+        # Act
+        self.database.update_account(account)
+
+        # Assert
+        self.assertEqual(account, self.database.get_account(account.id))
+
     def test_can_update_order_for_working_order(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -162,7 +169,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_order_for_completed_order(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -187,7 +193,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_position_for_closed_position(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -220,33 +225,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.database.get_positions_open())
         self.assertEqual(position, self.database.get_position_for_order(order1.id))
 
-    def test_can_add_account(self):
-        # Arrange
-        event = TestStubs.account_event()
-        account = Account(event)
-
-        # Act
-        self.database.add_account(account)
-
-        # Assert
-        self.assertEqual(account, self.database.get_account(account.id))
-
-    def test_can_update_account(self):
-        # Arrange
-        event = TestStubs.account_event()
-        account = Account(event)
-        self.database.add_account(account)
-
-        # Act
-        self.database.update_account(account)
-
-        # Assert
-        self.assertEqual(account, self.database.get_account(account.id))
-
     def test_can_delete_strategy(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
-
         # Act
         self.database.delete_strategy(self.strategy)
 
@@ -255,7 +235,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_check_residuals(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -286,7 +265,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_reset(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -319,7 +297,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_flush(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -360,8 +337,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_get_strategy_ids_with_id_returns_correct_set(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
-
+        self.database.update_strategy(self.strategy)
         # Act
         result = self.database.get_strategy_ids()
 

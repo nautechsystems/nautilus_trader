@@ -95,6 +95,18 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef Account load_account(self, AccountId account_id):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef Order load_order(self, OrderId order_id):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef Position load_position(self, PositionId position_id):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -276,6 +288,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._strategies = set()              # type: Set[StrategyId]
         self._index_order_position = {}       # type: Dict[OrderId, PositionId]
         self._index_order_strategy = {}       # type: Dict[OrderId, StrategyId]
         self._index_position_strategy = {}    # type: Dict[PositionId, StrategyId]
@@ -391,7 +404,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy: The strategy to update.
         """
         self._log.info(f'Saving {strategy.id} (in-memory database does nothing).')
-        # Do nothing in memory
+        self._strategies.add(strategy.id)
 
     cpdef void update_order(self, Order order) except *:
         """
@@ -425,6 +438,33 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._log.info(f'Loading {strategy.id} (in-memory database does nothing).')
         # Do nothing in memory
 
+    cpdef Account load_account(self, AccountId account_id):
+        """
+        Load the account associated with the given account_id (if found).
+        
+        :param account_id: The account identifier to load.
+        :return: Account or None.
+        """
+        return self._cached_accounts.get(account_id)
+
+    cpdef Order load_order(self, OrderId order_id):
+        """
+        Load the order associated with the given order_id (if found).
+        
+        :param order_id: The order_id to load.
+        :return: Order or None.
+        """
+        return self._cached_orders.get(order_id)
+
+    cpdef Position load_position(self, PositionId position_id):
+        """
+        Load the position associated with the given position_id (if found).
+        
+        :param position_id: The position_id to load.
+        :return: Position or None.
+        """
+        return self._cached_positions.get(position_id)
+
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
         Delete the given strategy from the execution database.
@@ -433,6 +473,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :raises ConditionFailed: If the strategy is not contained in the strategies.
         """
         Condition.is_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
+
+        self._strategies.discard(strategy.id)
 
         if strategy.id in self._index_strategy_orders:
             del self._index_strategy_orders[strategy.id]

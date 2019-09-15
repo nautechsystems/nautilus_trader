@@ -43,6 +43,9 @@ cdef class ExecutionDatabase:
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
     cpdef void load_strategy(self, TradingStrategy strategy) except *
+    cpdef Account load_account(self, AccountId account_id)
+    cpdef Order load_order(self, OrderId order_id)
+    cpdef Position load_position(self, PositionId position_id)
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
