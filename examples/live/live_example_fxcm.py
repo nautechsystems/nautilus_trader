@@ -32,6 +32,7 @@ symbols_to_trade = [
     # Symbol('USDJPY', Venue('FXCM')),
 ]
 
+
 if __name__ == "__main__":
 
     strategies = []
