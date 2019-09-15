@@ -187,6 +187,7 @@ cdef class TradingNode:
         self._data_client.update_instruments()
 
         account_inquiry = AccountInquiry(
+            trader_id=self.trader_id,
             account_id=self.account_id,
             command_id=self._guid_factory.generate(),
             command_timestamp=self._clock.time_now())

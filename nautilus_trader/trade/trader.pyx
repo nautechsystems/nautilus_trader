@@ -128,15 +128,6 @@ cdef class Trader:
         self._log.info("Starting...")
         self.started_datetimes.append(self._clock.time_now())
 
-        # TODO: Implement below
-        # cdef AccountInquiry account_inquiry = AccountInquiry(
-        #     trader_id=self.id,
-        #     account_id=self.account_id,
-        #     command_id=self._guid_factory.generate(),
-        #     command_timestamp=self._clock.time_now())
-        #
-        # self._exec_engine.execute_command(account_inquiry)
-
         for strategy in self.strategies:
             strategy.start()
 
