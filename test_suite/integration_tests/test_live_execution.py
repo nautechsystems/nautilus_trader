@@ -224,6 +224,160 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.database.get_positions_open())
         self.assertEqual(position, self.database.get_position_for_order(order1.id))
 
+    def test_load_account_when_no_account_in_database_returns_none(self):
+        # Arrange
+        event = TestStubs.account_event()
+        account = Account(event)
+
+        # Act
+        result = self.database.load_account(account.id)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_load_account_when_account_in_database_returns_account(self):
+        # Arrange
+        event = TestStubs.account_event()
+        account = Account(event)
+        self.database.add_account(account)
+
+        # Act
+        result = self.database.load_account(account.id)
+
+        # Assert
+        self.assertEqual(account, result)
+
+    def test_load_order_when_no_order_in_database_returns_none(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        # Act
+        result = self.database.load_order(order.id)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_load_order_when_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+        position_id = self.strategy.position_id_generator.generate()
+        self.database.add_order(order, self.strategy.id, position_id)
+
+        # Act
+        result = self.database.load_order(order.id)
+
+        # Assert
+        self.assertEqual(order, result)
+
+    def test_load_position_when_no_position_in_database_returns_none(self):
+        # Arrange
+        position_id = self.strategy.position_id_generator.generate()
+
+        # Act
+        result = self.database.load_position(position_id)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_load_order_when_position_in_database_returns_position(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+        position_id = self.strategy.position_id_generator.generate()
+        self.database.add_order(order, self.strategy.id, position_id)
+
+        order_filled = TestStubs.event_order_filled(order, fill_price=Price('1.00000'))
+        position = Position(position_id, order_filled)
+
+        self.database.add_position(position, self.strategy.id)
+
+        # Act
+        result = self.database.load_position(position_id)
+        # Assert
+        self.assertEqual(position, result)
+
+    def test_can_load_accounts_cache_when_no_accounts(self):
+        # Arrange
+        # Act
+        self.database.load_accounts_cache()
+        event = TestStubs.account_event()
+        account = Account(event)
+
+        # Assert
+        self.assertIsNone(self.database.get_account(account.id))
+
+    def test_can_load_accounts_cache_when_one_account_in_database(self):
+        # Arrange
+        event = TestStubs.account_event()
+        account = Account(event)
+        self.database.add_account(account)
+        self.database.reset()
+
+        # Act
+        self.database.load_accounts_cache()
+
+        # Assert
+        self.assertEqual(account, self.database.get_account(account.id))
+
+    def test_can_load_orders_cache_when_no_orders(self):
+        # Arrange
+        # Act
+        self.database.load_orders_cache()
+
+        # Assert
+        self.assertEqual({}, self.database.get_orders())
+
+    def test_can_load_orders_cache_when_one_order_in_database(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+        position_id = self.strategy.position_id_generator.generate()
+        self.database.add_order(order, self.strategy.id, position_id)
+
+        # Act
+        self.database.load_orders_cache()
+
+        # Assert
+        self.assertEqual({order.id: order}, self.database.get_orders())
+
+    def test_can_load_positions_cache_when_no_positions(self):
+        # Arrange
+        # Act
+        self.database.load_positions_cache()
+
+        # Assert
+        self.assertEqual({}, self.database.get_positions())
+
+    def test_can_load_positions_cache_when_one_position_in_database(self):
+        # Arrange
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+        position_id = self.strategy.position_id_generator.generate()
+        self.database.add_order(order1, self.strategy.id, position_id)
+
+        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price('1.00001'))
+        order1.apply(order1_filled)
+        position = Position(position_id, order1.last_event)
+        self.database.add_position(position, self.strategy.id)
+
+        # Act
+        self.database.load_positions_cache()
+
+        # Assert
+        self.assertEqual({position_id: position}, self.database.get_positions())
+
     def test_can_delete_strategy(self):
         # Arrange
         # Act

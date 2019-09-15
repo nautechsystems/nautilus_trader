@@ -135,7 +135,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._cached_accounts.clear()
 
         cdef list account_keys = self._redis.keys(f'{self.key_accounts}*')
-        if account_keys:
+        if len(account_keys) == 0:
             self._log.info('No accounts found in database.')
             return
 
@@ -159,7 +159,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._cached_orders.clear()
 
         cdef list order_keys = self._redis.keys(f'{self.key_orders}*')
-        if order_keys:
+        if len(order_keys) == 0:
             self._log.info('No orders found in database.')
             return
 
@@ -183,7 +183,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._cached_positions.clear()
 
         cdef list position_keys = self._redis.keys(f'{self.key_positions}*')
-        if position_keys:
+        if len(position_keys) == 0:
             self._log.info('No positions found in database.')
             return
 
