@@ -93,6 +93,8 @@ cdef class OrderFactory:
     cdef Clock _clock
     cdef OrderIdGenerator _id_generator
 
+    cpdef void set_count(self, int count)
+    cpdef int count(self)
     cpdef void reset(self)
 
     cpdef Order market(

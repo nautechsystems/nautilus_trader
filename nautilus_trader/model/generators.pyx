@@ -21,7 +21,8 @@ cdef class IdentifierGenerator:
                  str prefix,
                  IdTag id_tag_trader,
                  IdTag id_tag_strategy,
-                 Clock clock):
+                 Clock clock,
+                 int initial_count=0):
         """
         Initializes a new instance of the IdentifierGenerator class.
 
@@ -29,24 +30,35 @@ cdef class IdentifierGenerator:
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
+        :param clock: The initial count for the generator.
         :raises ConditionFailed: If the prefix is not a valid string.
         :raises ConditionFailed: If the id_tag_trader is not a valid string.
         :raises ConditionFailed: If the id_tag_strategy is not a valid string.
+        :raises ConditionFailed: If the initial count is negative (< 0).
         """
         Condition.valid_string(prefix, 'prefix')
+        Condition.not_negative(initial_count, 'initial_count')
 
         self._clock = clock
         self.prefix = prefix
         self.id_tag_trader = id_tag_trader
         self.id_tag_strategy = id_tag_strategy
-        self.counter = 0
+        self.count = initial_count
+
+    cpdef void set_count(self, int count):
+        """
+        Set the internal counter to the given count.
+        
+        :param count: The count to set.
+        """
+        self.count = count
 
     cpdef void reset(self):
         """
-        Reset the identifier generator by returning all stateful internal values
-        to their initial value.
+        Reset the identifier generator by setting all stateful values to their 
+        default value.
         """
-        self.counter = 0
+        self.count = 0
 
     cdef str _generate(self):
         """
@@ -54,13 +66,13 @@ cdef class IdentifierGenerator:
 
         :return str.
         """
-        self.counter += 1
+        self.count += 1
 
         return (f'{self.prefix}-'
                 f'{self._get_datetime_tag()}-'
                 f'{self.id_tag_trader.value}-'
                 f'{self.id_tag_strategy.value}-'
-                f'{self.counter}')
+                f'{self.count}')
 
     cdef str _get_datetime_tag(self):
         """

@@ -12,6 +12,7 @@ import redis
 import zmq
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.core.message cimport MessageType, Message, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
@@ -344,6 +345,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param account: The account to update (from last event).
         """
         self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
+        self._log.debug(f"Updated Account(id={account.id}).")
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
@@ -354,12 +356,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef dict state = strategy.save()
 
         pipe = self._redis.pipeline()
+
+        for entry in state['StateLog']:
+            pipe.rpush(self.key_strategies + strategy.id.value + ':StateLog', entry)
+
         for key, value in state.items():
-            pipe.hset(name=self.key_strategies + strategy.id.value, key=key, value=value)
+            if key == 'StateLog':
+                continue # Already persisted (cannot directly persist list)
+            pipe.hset(name=self.key_strategies + strategy.id.value + ':State', key=key, value=value)
             self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
         cdef list reply = pipe.execute()
 
-        self._log.info(f"Saved {strategy.id} state.")
+        self._log.info(f"Saved Strategy(id={strategy.id.value}) state.")
 
     cpdef void update_order(self, Order order) except *:
         """
@@ -381,6 +389,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Check data integrity of reply
         if reply[0] == 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The updated Order(id={order.id.value}) did not already exist.")
+
+        self._log.debug(f"Updated Order(id={order.id.value}).")
 
     cpdef void update_position(self, Position position) except *:
         """
@@ -404,7 +414,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if reply[0] == 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
 
-        self._log.info(f"Updated {position.id}.")
+        self._log.debug(f"Updated Position(id={position.id.value}).")
+
+    cpdef Account load_account(self, AccountId account_id):
+        """
+        Load the account associated with the given account_id (if found).
+        
+        :param account_id: The account identifier to load.
+        :return: Account or None.
+        """
+        self._redis.exists(self.key_accounts + account_id.value)
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
@@ -412,17 +431,21 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         
         :param strategy: The strategy to load.
         """
-        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value)
+        cdef list state_log = self._redis.lrange(name=self.key_strategies + strategy.id.value + ':StateLog', start=0, end=-1)
+        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ':State')
+
+        if state_log is not None:
+            state['StateLog'] = state_log
 
         if len(state) == 0:
-            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
+            self._log.warning(f"No previous state found for Strategy(id={strategy.id.value}).")
             return
 
         for key, value in state.items():
             self._log.debug(f"Loading Strategy(id={strategy.id.value}) state (key='{key}', value={value})...")
         strategy.load(state)
 
-        self._log.debug(f"Loaded Strategy(id={strategy.id.value}) state.")
+        self._log.info(f"Loaded Strategy(id={strategy.id.value}) state.")
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """

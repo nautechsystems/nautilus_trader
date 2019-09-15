@@ -35,6 +35,8 @@ cdef class Trader:
     cpdef initialize_strategies(self, list strategies)
     cpdef start(self)
     cpdef stop(self)
+    cpdef save(self)
+    cpdef load(self)
     cpdef reset(self)
     cpdef dispose(self)
 

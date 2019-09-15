@@ -161,6 +161,20 @@ cdef class Trader:
         self._log.info("Stopped.")
         self._exec_engine.check_residuals()
 
+    cpdef save(self):
+        """
+        Save all strategy states to the execution database.
+        """
+        for strategy in self.strategies:
+            self._exec_engine.database.update_strategy(strategy)
+
+    cpdef load(self):
+        """
+        Save all strategy states to the execution database.
+        """
+        for strategy in self.strategies:
+            self._exec_engine.database.load_strategy(strategy)
+
     cpdef reset(self):
         """
         Reset the trader by returning all stateful internal values of the portfolio, 

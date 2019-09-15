@@ -47,6 +47,7 @@ cdef class TradingStrategy:
     cdef list _indicators
     cdef dict _indicator_updaters_ticks
     cdef dict _indicator_updaters_bars
+    cdef list _state_log
     cdef ExchangeRateCalculator _exchange_calculator
 
     cdef readonly Portfolio portfolio
@@ -147,6 +148,7 @@ cdef class TradingStrategy:
     cpdef void cancel_all_orders(self, str cancel_reason=*)
     cpdef void flatten_position(self, PositionId position_id)
     cpdef void flatten_all_positions(self)
+    cdef void _append_to_state_log(self, datetime timestamp, str action)
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
     cpdef void change_clock(self, Clock clock)
