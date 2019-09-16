@@ -84,7 +84,7 @@ cdef class AccountStateEvent(Event):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
-                f"equity={self.cash_balance}, "
+                f"cash={self.cash_balance}, "
                 f"margin_used_maintenance={self.margin_used_maintenance}, "
                 f"margin_used_liquidation={self.margin_used_liquidation})")
 
@@ -267,7 +267,7 @@ cdef class OrderSubmitted(OrderEvent):
 
 cdef class OrderRejected(OrderEvent):
     """
-    Represents an event where an order has been rejected by the system or broker.
+    Represents an event where an order has been rejected by the broker.
     """
 
     def __init__(self,
@@ -415,7 +415,7 @@ cdef class OrderWorking(OrderEvent):
 
 cdef class OrderCancelReject(OrderEvent):
     """
-    Represents an event where an order cancel command has been rejected by the broker.
+    Represents an event where an order cancel or modify command has been rejected by the broker.
     """
 
     def __init__(self,
@@ -849,8 +849,7 @@ cdef class PositionClosed(PositionEvent):
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"av_exit_price={self.position.average_exit_price}, "
-                f"points_realized={self.position.points_realized}) "
-                f"{self.position.status_string()}")
+                f"points_realized={self.position.points_realized})")
 
 
 cdef class TimeEvent(Event):
