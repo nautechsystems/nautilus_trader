@@ -112,16 +112,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._redis = redis.Redis(host=host, port=port, db=0)
 
         # Options
-        self.OPTION_LOAD_CACHE = option_load_cache
+        self.OPTION_LOAD_CACHES = option_load_cache
 
-        if self.OPTION_LOAD_CACHE:
-            self._log.info(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE}")
+        if self.OPTION_LOAD_CACHES:
+            self._log.info(f"The OPTION_LOAD_CACHES is {self.OPTION_LOAD_CACHES}")
             # Load cache
             self.load_accounts_cache()
             self.load_orders_cache()
             self.load_positions_cache()
         else:
-            self._log.warning(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE} "
+            self._log.warning(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHES} "
                               f"(this should only be done in a testing environment).")
 
 
@@ -472,10 +472,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
         for order_id, order in self.get_orders_working().items():
-            self._log.warning(f"Residual {order}")
+            self._log.warning(f"Residual working {order}")
 
         for position_id, position in self.get_positions_open().items():
-            self._log.warning(f"Residual {position}")
+            self._log.warning(f"Residual open {position}")
 
     cpdef void reset(self) except *:
         """
