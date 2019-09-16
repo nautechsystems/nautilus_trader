@@ -98,7 +98,6 @@ cdef class Order:
         if time_in_force == TimeInForce.GTD:
             Condition.not_none(expire_time, 'expire_time')
 
-        self._order_ids_broker = set()      # type: Set[OrderId]
         self._execution_ids = set()         # type: Set[ExecutionId]
         self._execution_tickets = set()     # type: Set[ExecutionTicket]
         self._events = []                   # type: List[OrderEvent]
@@ -238,14 +237,6 @@ cdef class Order:
         """
         return order_state_to_string(self.state)
 
-    cpdef list get_order_ids_broker(self):
-        """
-        Return a list of broker order_ids.
-        
-        :return List[OrderId]. 
-        """
-        return sorted(self._order_ids_broker)
-
     cpdef list get_execution_ids(self):
         """
         Return a list of execution identifiers.
@@ -297,7 +288,6 @@ cdef class Order:
         elif isinstance(event, OrderAccepted):
             self.state = OrderState.ACCEPTED
         elif isinstance(event, OrderWorking):
-            self._order_ids_broker.add(event.order_id_broker)
             self.id_broker = event.order_id_broker
             self._set_state_to_working()
         elif isinstance(event, OrderCancelReject):
@@ -309,7 +299,6 @@ cdef class Order:
             self.state = OrderState.EXPIRED
             self._set_state_to_completed()
         elif isinstance(event, OrderModified):
-            self._order_ids_broker.add(event.order_id_broker)
             self.id_broker = event.order_id_broker
             self.price = event.modified_price
         elif isinstance(event, OrderFillEvent):
@@ -425,7 +414,7 @@ cdef class AtomicOrder:
         :return str.
         """
         cdef str take_profit_price = 'NONE' if self.take_profit is None or self.take_profit.price is None else str(self.take_profit.price)
-        return f"AtomicOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price}"
+        return f"AtomicOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
 
     def __repr__(self) -> str:
         """
