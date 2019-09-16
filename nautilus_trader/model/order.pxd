@@ -29,7 +29,6 @@ from nautilus_trader.model.generators cimport OrderIdGenerator
 
 
 cdef class Order:
-    cdef set _order_ids_broker
     cdef set _execution_ids
     cdef set _execution_tickets
     cdef list _events
@@ -67,7 +66,6 @@ cdef class Order:
     cdef Order create(OrderInitialized event)
     cdef bint equals(self, Order other)
     cpdef str state_as_string(self)
-    cpdef list get_order_ids_broker(self)
     cpdef list get_execution_ids(self)
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
