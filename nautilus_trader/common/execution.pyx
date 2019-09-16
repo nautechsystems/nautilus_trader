@@ -1068,7 +1068,7 @@ cdef class ExecutionEngine:
 #--------------------------------------------------------------------------------------------------"
 
     cdef void _execute_command(self, Command command):
-        self._log.debug(f'{CMD}{RECV} {command}.')
+        self._log.debug(f'{RECV}{CMD} {command}.')
         self.command_count += 1
 
         if isinstance(command, AccountInquiry):
@@ -1088,7 +1088,7 @@ cdef class ExecutionEngine:
             self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event):
-        self._log.debug(f'{EVT}{RECV} {event}.')
+        self._log.debug(f'{RECV}{EVT} {event}.')
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
@@ -1146,8 +1146,6 @@ cdef class ExecutionEngine:
                 self._position_modified(position, strategy_id, event)
 
     cdef void _handle_position_event(self, PositionEvent event):
-        self._log.debug(f'{EVT}{RECV}')
-
         if isinstance(event, PositionClosed):
             self.portfolio.analyzer.add_return(event.timestamp, event.position.return_realized)
 
