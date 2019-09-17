@@ -1092,11 +1092,22 @@ cdef class ExecutionEngine:
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
-            self._handle_order_event(event)
+            if isinstance(event, OrderCancelReject):
+                self._handle_order_cancel_reject(event)
+            else:
+                self._handle_order_event(event)
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
         elif isinstance(event, AccountStateEvent):
             self._handle_account_event(event)
+
+    cdef void _handle_order_cancel_reject(self, OrderCancelReject event):
+        cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.order_id)
+        if strategy_id is None:
+            self._log.error(f"Cannot process event {event} ({strategy_id} not found).")
+            return  # Cannot process event further
+
+        self._send_to_strategy(event, strategy_id)
 
     cdef void _handle_order_event(self, OrderEvent event):
         cdef Order order = self.database.get_order(event.order_id)
@@ -1118,7 +1129,7 @@ cdef class ExecutionEngine:
             self._send_to_strategy(event, strategy_id)
         elif isinstance(event, OrderCancelled):
             self._send_to_strategy(event, strategy_id)
-        elif isinstance(event, (OrderRejected, OrderCancelReject)):
+        elif isinstance(event, OrderRejected):
             self._send_to_strategy(event, strategy_id)
         else:
             self._send_to_strategy(event, strategy_id)
@@ -1201,6 +1212,7 @@ cdef class ExecutionEngine:
         self.handle_event(position_closed)
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id):
+
         if strategy_id in self._registered_strategies:
             self._registered_strategies[strategy_id].handle_event(event)
         else:

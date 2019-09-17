@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
@@ -36,6 +36,7 @@ cdef class TradingStrategy:
     cdef readonly StrategyId id
 
     cdef readonly bint flatten_on_stop
+    cdef readonly bint flatten_on_sl_reject
     cdef readonly bint cancel_all_orders_on_stop
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
@@ -150,6 +151,8 @@ cdef class TradingStrategy:
     cpdef void cancel_all_orders(self, str cancel_reason=*)
     cpdef void flatten_position(self, PositionId position_id)
     cpdef void flatten_all_positions(self)
+
+    cdef void _flatten_on_sl_reject(self, OrderRejected event)
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
     cpdef void change_clock(self, Clock clock)
