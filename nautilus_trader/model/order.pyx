@@ -290,8 +290,6 @@ cdef class Order:
         elif isinstance(event, OrderWorking):
             self.id_broker = event.order_id_broker
             self._set_state_to_working()
-        elif isinstance(event, OrderCancelReject):
-            pass
         elif isinstance(event, OrderCancelled):
             self.state = OrderState.CANCELLED
             self._set_state_to_completed()

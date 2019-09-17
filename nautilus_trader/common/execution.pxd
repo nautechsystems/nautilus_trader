@@ -10,7 +10,14 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.events cimport Event, OrderEvent, OrderFillEvent, AccountStateEvent, PositionEvent
+from nautilus_trader.model.events cimport (
+    Event,
+    OrderEvent,
+    OrderCancelReject,
+    OrderFillEvent,
+    AccountStateEvent,
+    PositionEvent
+)
 from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
@@ -137,6 +144,7 @@ cdef class ExecutionEngine:
 #--------------------------------------------------------------------------------------------------"
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
+    cdef void _handle_order_cancel_reject(self, OrderCancelReject event)
     cdef void _handle_order_event(self, OrderEvent event)
     cdef void _handle_order_fill(self, OrderFillEvent event, StrategyId strategy_id)
     cdef void _handle_position_event(self, PositionEvent event)

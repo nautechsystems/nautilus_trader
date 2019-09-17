@@ -42,6 +42,7 @@ cdef class TradingStrategy:
     def __init__(self,
                  str order_id_tag='000',
                  bint flatten_on_stop=True,
+                 bint flatten_on_sl_reject=True,
                  bint cancel_all_orders_on_stop=True,
                  int tick_capacity=1000,
                  int bar_capacity=1000,
@@ -53,6 +54,7 @@ cdef class TradingStrategy:
 
         :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
         :param flatten_on_stop: The flag indicating whether the strategy should be flattened on stop.
+        :param flatten_on_sl_reject: The flag indicating whether an open position should be flattened on SL reject.
         :param cancel_all_orders_on_stop: The flag indicating whether all residual orders should be cancelled on stop.
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The clock for the strategy.
@@ -81,6 +83,7 @@ cdef class TradingStrategy:
 
         # Order management flags
         self.flatten_on_stop = flatten_on_stop
+        self.flatten_on_sl_reject = flatten_on_sl_reject
         self.cancel_all_orders_on_stop = cancel_all_orders_on_stop
 
         # Order / Position components
@@ -422,7 +425,12 @@ cdef class TradingStrategy:
 
         :param event: The event received.
         """
-        if isinstance(event, (OrderRejected, OrderCancelReject)):
+        cdef Order order
+        if isinstance(event, OrderRejected):
+            self.log.warning(f"{RECV}{EVT} {event}.")
+            if self.flatten_on_sl_reject:
+                self._flatten_on_sl_reject(event)
+        elif isinstance(event, OrderCancelReject):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
@@ -1070,7 +1078,7 @@ cdef class TradingStrategy:
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"{CMD}{SENT} {command}...")
+        self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id):
@@ -1209,6 +1217,9 @@ cdef class TradingStrategy:
             return
 
         cdef Position position = self._exec_engine.database.get_position(position_id)
+        if position is None:
+            self.log.error(f"Cannot flatten position (cannot find {position_id} in cached positions.")
+            return
 
         if position.is_flat:
             self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT).")
@@ -1257,6 +1268,24 @@ cdef class TradingStrategy:
 
             self.log.info(f"Flattening {position}.")
             self.submit_order(order, position_id)
+
+    cdef void _flatten_on_sl_reject(self, OrderRejected event):
+        cdef Order order = self._exec_engine.database.get_order(event.order_id)
+        cdef PositionId position_id = self._exec_engine.database.get_position_id(event.order_id)
+
+        if order is None:
+            self.log.error(f"Cannot find {event.order_id} in cached orders.")
+            return
+
+        if position_id is None:
+            self.log.error(f"Cannot find PositionId for {event.order_id}.")
+            return
+
+        if order.purpose == OrderPurpose.STOP_LOSS:
+            if self._exec_engine.database.is_position_open(position_id):
+                self.log.error(f"Rejected {event.order_id} was a stop-loss (flattening {position_id}).")
+                self.flatten_position(position_id)
+
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
 
