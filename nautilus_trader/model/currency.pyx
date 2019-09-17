@@ -25,7 +25,7 @@ cdef class ExchangeRateCalculator:
             Currency base_currency,
             QuoteType quote_type,
             dict bid_rates,
-            dict ask_rates):
+            dict ask_rates) except *:
         """
         Return the calculated exchange rate for the given quote currency to the 
         given base currency for the given quote type using the given dictionary of 
@@ -59,8 +59,6 @@ cdef class ExchangeRateCalculator:
         cdef set symbols = set()
         cdef str symbol_lhs
         cdef str symbol_rhs
-        cdef float common_ccy1
-        cdef float common_ccy2
 
         # Add given currency rates
         for ccy_pair, rate in calculation_rates.items():
@@ -93,6 +91,9 @@ cdef class ExchangeRateCalculator:
                 if ccy_pair[0] in exchange_rates[ccy_pair[1]]:
                     exchange_rates[ccy_pair[0]][ccy_pair[1]] = 1.0 / exchange_rates[ccy_pair[1]][ccy_pair[0]]
 
+        cdef float common_ccy1
+        cdef float common_ccy2
+
         # Calculate remaining currency rates
         for ccy_pair in possible_pairs:
             if ccy_pair[0] not in exchange_rates[ccy_pair[1]]:
@@ -115,8 +116,10 @@ cdef class ExchangeRateCalculator:
 
         cdef str lhs_str = currency_to_string(quote_currency)
         cdef str rhs_str = currency_to_string(base_currency)
-
-        if rhs_str not in exchange_rates[lhs_str]:
-            raise ValueError(f"Cannot calculate exchange rate for {lhs_str}{rhs_str} or {rhs_str}{lhs_str}.")
-
-        return exchange_rates[lhs_str][rhs_str]
+        cdef float exchange_rate
+        try:
+            exchange_rate = exchange_rates[lhs_str][rhs_str]
+        except KeyError:
+            raise ValueError(f"Cannot calculate exchange rate for {lhs_str}{rhs_str} or {rhs_str}{lhs_str} "
+                             f"(not enough data).")
+        return exchange_rate

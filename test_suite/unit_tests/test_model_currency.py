@@ -14,6 +14,22 @@ from nautilus_trader.model.currency import ExchangeRateCalculator
 
 class ExchangeRateCalculatorTests(unittest.TestCase):
 
+    def test_get_rate_when_no_currency_rate_raises(self):
+        # Arrange
+        converter = ExchangeRateCalculator()
+        bid_rates = {'AUDUSD': 0.80000}
+        ask_rates = {'AUDUSD': 0.80010}
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError,
+                          converter.get_rate,
+                          Currency.USD,
+                          Currency.JPY,
+                          QuoteType.BID,
+                          bid_rates,
+                          ask_rates)
+
     def test_can_calculate_exchange_rate(self):
         # Arrange
         converter = ExchangeRateCalculator()
