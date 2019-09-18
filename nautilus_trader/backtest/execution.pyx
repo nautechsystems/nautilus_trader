@@ -113,9 +113,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money.zero()
 
-        cdef AccountStateEvent reset_account = self.reset_account_event()
-        self._account = Account(reset_account)
-        self._exec_engine.handle_event(reset_account)
+        cdef AccountStateEvent account_state = self.reset_account_event()
+        self._account = Account(account_state)
+        self._exec_engine.handle_event(account_state)
 
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator

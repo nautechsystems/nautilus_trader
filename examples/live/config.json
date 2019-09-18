@@ -14,6 +14,11 @@
     "redis_port": 6379
   },
 
+  "strategy": {
+    "load_state": true,
+    "save_state": true
+  },
+
   "data_client": {
     "service_name": "NautilusData",
     "service_address": "localhost",
