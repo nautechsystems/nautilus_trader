@@ -299,6 +299,7 @@ cdef class BacktestEngine:
         cdef Tick tick
         cdef TradingStrategy strategy
         cdef dict time_events
+        cdef TimeEvent event
 
         cdef datetime time = start
 
@@ -333,6 +334,7 @@ cdef class BacktestEngine:
         cdef TradingStrategy strategy
         cdef BidAskBarPair execution_bars
         cdef dict time_events
+        cdef TimeEvent event
 
         cdef datetime time = start
 
@@ -354,18 +356,6 @@ cdef class BacktestEngine:
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
-    cpdef void create_returns_tear_sheet(self):
-        """
-        Create a returns tear sheet based on analyzer data from the last run.
-        """
-        self.trader.create_returns_tear_sheet()
-
-    cpdef void create_full_tear_sheet(self):
-        """
-        Create a full tear sheet based on analyzer data from the last run.
-        """
-        self.trader.create_full_tear_sheet()
-
     cpdef dict get_performance_stats(self):
         """
         Return the performance statistics from the last backtest run.
@@ -375,6 +365,12 @@ cdef class BacktestEngine:
         :return Dict[str, float].
         """
         return self.portfolio.analyzer.get_performance_stats()
+
+    cpdef object get_equity_curve(self):
+        """
+        Return the portfolios account data.
+        """
+        return self.portfolio.analyzer.get_equity_curve()
 
     cpdef object get_orders_report(self):
         """

@@ -7,16 +7,13 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class StringValue:
+cdef class ValidString:
     cdef readonly str value
-    cpdef bint equals(self, StringValue other)
+    cpdef bint equals(self, ValidString other)
+    cpdef str to_string(self)
 
 
-cdef class ValidString(StringValue):
-    pass
-
-
-cdef class Identifier(StringValue):
+cdef class Identifier(ValidString):
     pass
 
 

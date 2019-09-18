@@ -192,7 +192,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef AccountStateEvent event
         cdef datetime time_now = self._clock.time_now()
 
-        if self.day_number is not time_now.day:
+        if self.day_number != time_now.day:
             # Set account statistics for new day
             self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
@@ -215,6 +215,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._exec_engine.handle_event(event)
 
         # Simulate market dynamics
+        cdef OrderId order_id
+        cdef Order order
         for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
             if order.symbol != symbol:
                 continue  # Order is for a different symbol
@@ -312,7 +314,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money.zero(),
             Money.zero(),
             Decimal(0),
-            ValidString(),
+            ValidString('N'),
             self._guid_factory.generate(),
             self._clock.time_now())
 
@@ -722,7 +724,7 @@ cdef class BacktestExecClient(ExecutionClient):
             margin_used_liquidation=Money.zero(),
             margin_used_maintenance=Money.zero(),
             margin_ratio=Decimal(0),
-            margin_call_status=ValidString(),
+            margin_call_status=ValidString('N'),
             event_id=self._guid_factory.generate(),
             event_timestamp=self._clock.time_now())
 

@@ -632,9 +632,9 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
                 f"order_id={self.order_id.value}, "
-                f"filled_quantity={self.filled_quantity}, "
-                f"leaves_quantity={self.leaves_quantity}, "
-                f"av_fill_price={self.average_price})")
+                f"quantity={self.filled_quantity.to_string_formatted()}, "
+                f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
+                f"avg_price={self.average_price})")
 
 
 cdef class OrderFilled(OrderFillEvent):
@@ -690,8 +690,8 @@ cdef class OrderFilled(OrderFillEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
                 f"order_id={self.order_id.value}, "
-                f"filled_quantity={self.filled_quantity}, "
-                f"avg_fill_price={self.average_price})")
+                f"quantity={self.filled_quantity.to_string_formatted()}, "
+                f"avg_price={self.average_price})")
 
 
 cdef class PositionEvent(Event):

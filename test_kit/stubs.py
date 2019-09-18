@@ -213,7 +213,7 @@ class TestStubs:
             Money.zero(),
             Money.zero(),
             Decimal(0),
-            ValidString(),
+            ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 

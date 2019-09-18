@@ -211,18 +211,6 @@ cdef class Trader:
 
         return status
 
-    cpdef void create_returns_tear_sheet(self):
-        """
-        Create a returns tear sheet based on analyzer data from the last run.
-        """
-        self.portfolio.analyzer.create_returns_tear_sheet()
-
-    cpdef void create_full_tear_sheet(self):
-        """
-        Create a full tear sheet based on analyzer data from the last run.
-        """
-        self.portfolio.analyzer.create_full_tear_sheet()
-
     cpdef object get_orders_report(self):
         """
         Return an orders report dataframe.

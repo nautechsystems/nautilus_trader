@@ -57,6 +57,14 @@ cdef class Quantity:
         """
         return self.value == other.value
 
+    cdef str to_string_formatted(self):
+        """
+        Return the formatted string representation of this object.
+        
+        :return: str.
+        """
+        return format(self.value, ',')
+
     def __eq__(self, Quantity other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.

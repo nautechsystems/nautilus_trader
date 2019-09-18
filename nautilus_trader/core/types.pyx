@@ -11,9 +11,9 @@ from uuid import UUID
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef class StringValue:
+cdef class ValidString:
     """
-    The abstract base class for all string values.
+    Represents a valid string value. A valid value cannot be None, empty or all white space.
     """
 
     def __init__(self, str value):
@@ -26,7 +26,7 @@ cdef class StringValue:
 
         self.value = value
 
-    cpdef bint equals(self, StringValue other):
+    cpdef bint equals(self, ValidString other):
         """
         Return a value indicating whether the given object is equal to this object.
         
@@ -38,7 +38,15 @@ cdef class StringValue:
         else:
             return False
 
-    def __eq__(self, StringValue other) -> bool:
+    cpdef str to_string(self):
+        """
+        Return a string representation of this object.
+        
+        :return: str.
+        """
+        return self.value
+
+    def __eq__(self, ValidString other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -47,7 +55,7 @@ cdef class StringValue:
         """
         return self.equals(other)
 
-    def __ne__(self, StringValue other) -> bool:
+    def __ne__(self, ValidString other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
@@ -56,7 +64,7 @@ cdef class StringValue:
         """
         return not self.equals(other)
 
-    def __lt__(self, StringValue other) -> bool:
+    def __lt__(self, ValidString other) -> bool:
         """
         Return a value indicating whether this object is less than (<) the given object.
 
@@ -65,7 +73,7 @@ cdef class StringValue:
         """
         return self.value.__lt__(other.value)
 
-    def __le__(self, StringValue other) -> bool:
+    def __le__(self, ValidString other) -> bool:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
@@ -74,7 +82,7 @@ cdef class StringValue:
         """
         return self.value.__le__(other.value)
 
-    def __gt__(self, StringValue other) -> bool:
+    def __gt__(self, ValidString other) -> bool:
         """
         Return a value indicating whether this object is greater than (>) the given object.
 
@@ -83,7 +91,7 @@ cdef class StringValue:
         """
         return self.value.__gt__(other.value)
 
-    def __ge__(self, StringValue other) -> bool:
+    def __ge__(self, ValidString other) -> bool:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
@@ -118,24 +126,7 @@ cdef class StringValue:
         return f"<{str(self.__class__.__name__)}({str(self.value)}) object at {id(self)}>"
 
 
-cdef class ValidString(StringValue):
-    """
-    Represents a previously validated string (validated with Condition.valid_string()).
-    """
-
-    def __init__(self, str value=None):
-        """
-        Initializes a new instance of the ValidString class.
-
-        :param value: The string value to validate.
-        """
-        if value is None or value == '':
-            value = 'NONE'
-
-        super().__init__(value)
-
-
-cdef class Identifier(StringValue):
+cdef class Identifier(ValidString):
     """
     The abstract base class for all identifiers.
     """

@@ -9,10 +9,64 @@
 import unittest
 import uuid
 
-from nautilus_trader.core.types import GUID
+from nautilus_trader.core.types import ValidString, GUID
 
 
-class IdentifierTests(unittest.TestCase):
+class ValidStringTests(unittest.TestCase):
+
+    def test_equality(self):
+        # Arrange
+        string1 = ValidString('abc123')
+        string2 = ValidString('abc123')
+        string3 = ValidString('def456')
+
+        # Act
+        # Assert
+        self.assertTrue('abc123', string1.value)
+        self.assertTrue(string1 == string1)
+        self.assertTrue(string1 == string2)
+        self.assertTrue(string1 != string3)
+
+    def test_comparison(self):
+        # Arrange
+        string1 = ValidString('123')
+        string2 = ValidString('456')
+        string3 = ValidString('abc')
+        string4 = ValidString('def')
+
+        # Act
+        # Assert
+        self.assertTrue(string1 <= string1)
+
+    def test_hash_returns_int_type(self):
+        # Arrange
+        value = ValidString("abc")
+
+        # Act
+        # Assert
+        self.assertEqual(int, type(hash(value)))
+
+    def test_str_returns_expected_string(self):
+        # Arrange
+        value = ValidString("abc")
+
+        # Act
+        # Assert
+        self.assertEqual("abc", str(value))
+
+    def test_repr_returns_expected_string(self):
+        # Arrange
+        value = ValidString("abc")
+
+        # Act
+        result = repr(value)
+
+        # Assert
+        self.assertTrue(result.startswith("<ValidString(abc) object at "))
+        self.assertTrue(result.endswith(">"))
+
+
+class GUIDTests(unittest.TestCase):
 
     def test_GUIDS_passed_different_UUID_are_not_equal(self):
         # Arrange

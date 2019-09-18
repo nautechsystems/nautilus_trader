@@ -25,38 +25,6 @@ UNIX_EPOCH = TestStubs.unix_epoch()
 
 class ObjectTests(unittest.TestCase):
 
-    def test_valid_string_initialized_with_empty_or_none_string(self):
-        # Arrange
-        string1 = ValidString()
-        string2 = ValidString('')
-
-        # Act
-        # Assert
-        self.assertEqual('NONE', string1.value)
-        self.assertEqual('NONE', string2.value)
-
-    def test_valid_string_equality(self):
-        # Arrange
-        string1 = ValidString('abc123')
-        string2 = ValidString('abc123')
-        string3 = ValidString('def456')
-
-        # Act
-        # Assert
-        self.assertTrue('abc123', string1.value)
-        self.assertTrue(string1 == string1)
-        self.assertTrue(string1 == string2)
-        self.assertTrue(string1 != string3)
-
-    def test_valid_string_str_and_repr(self):
-        # Arrange
-        string = ValidString("abc123")
-
-        # Act
-        # Assert
-        self.assertEqual("abc123", str(string))
-        self.assertTrue(repr(string).startswith("<ValidString(abc123) object at"))
-
     def test_quantity_initialized_with_negative_integer_raises_exception(self):
         # Arrange
         # Act
