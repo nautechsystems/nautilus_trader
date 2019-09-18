@@ -923,6 +923,20 @@ cdef class TradingStrategy:
         self.clock.cancel_all_time_alerts()
         self.clock.cancel_all_timers()
 
+        # Flatten open positions
+        if self.flatten_on_stop:
+            if not self.is_flat():
+                self.flatten_all_positions()
+
+        # Cancel working orders
+        if self.cancel_all_orders_on_stop:
+            self.cancel_all_orders("STOPPING STRATEGY")
+
+        try:
+            self.on_stop()
+        except Exception as ex:
+            self.log.exception(ex)
+
         # Check residual working orders
         cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
         for order_id, order in working_orders.items():
@@ -932,20 +946,6 @@ cdef class TradingStrategy:
         cdef dict open_positions = self._exec_engine.database.get_positions_open(self.id)
         for position_id, position in open_positions.items():
             self.log.warning(f"Residual open {position}")
-
-        # Clean up positions
-        if self.flatten_on_stop:
-            if not self.is_flat():
-                self.flatten_all_positions()
-
-        # Clean up orders
-        if self.cancel_all_orders_on_stop:
-            self.cancel_all_orders("STOPPING STRATEGY")
-
-        try:
-            self.on_stop()
-        except Exception as ex:
-            self.log.exception(ex)
 
         self.is_running = False
         self.update_state_log(self.time_now(), 'STOPPED')
@@ -1185,11 +1185,16 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the cancel_reason is not a valid string.
         """
         if not self.is_exec_engine_registered:
-            self.log.error("Cannot cancel all orders (execution client not registered).")
+            self.log.error("Cannot execute CANCEL_ALL_ORDERS, execution client not registered.")
             return
 
         cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
+        cdef int working_orders_count = len(working_orders)
+        if working_orders_count == 0:
+            self.log.info("CANCEL_ALL_ORDERS: No working orders to cancel.")
+            return
 
+        self.log.info(f"CANCEL_ALL_ORDERS: Cancelling {working_orders_count} working order(s)...")
         cdef OrderId order_id
         cdef Order order
         cdef CancelOrder command
@@ -1234,7 +1239,7 @@ cdef class TradingStrategy:
             Label("EXIT"),
             OrderPurpose.EXIT)
 
-        self.log.info(f"Flattening {position}.")
+        self.log.info(f"Flattening {position}...")
         self.submit_order(order, position_id)
 
     cpdef void flatten_all_positions(self):
@@ -1248,10 +1253,12 @@ cdef class TradingStrategy:
             return
 
         cdef dict positions = self._exec_engine.database.get_positions_open(self.id)
-
-        if len(positions) == 0:
-            self.log.warning("Did not flatten any positions (no active positions to flatten).")
+        cdef int open_positions_count = len(positions)
+        if open_positions_count == 0:
+            self.log.info("FLATTEN_ALL_POSITIONS: No open positions to flatten.")
             return
+
+        self.log.info(f"FLATTEN_ALL_POSITIONS: Flattening {open_positions_count} open position(s)...")
 
         cdef PositionId position_id
         cdef Position position
@@ -1268,7 +1275,7 @@ cdef class TradingStrategy:
                 Label("EXIT"),
                 OrderPurpose.EXIT)
 
-            self.log.info(f"Flattening {position}.")
+            self.log.info(f"Flattening {position}...")
             self.submit_order(order, position_id)
 
     cdef void _flatten_on_sl_reject(self, OrderRejected event):
@@ -1285,7 +1292,7 @@ cdef class TradingStrategy:
 
         if order.purpose == OrderPurpose.STOP_LOSS:
             if self._exec_engine.database.is_position_open(position_id):
-                self.log.error(f"Rejected {event.order_id} was a stop-loss (flattening {position_id}).")
+                self.log.error(f"Rejected {event.order_id} was a stop-loss ,flattening {position_id}.")
                 self.flatten_position(position_id)
 
 

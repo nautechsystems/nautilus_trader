@@ -45,8 +45,9 @@ cdef class Portfolio:
         """
         # Account data initialization
         if not self._account_initialized:
-            self.analyzer.set_starting_capital(event.cash_balance, event.currency)
             self._account_capital = event.cash_balance
+            self.analyzer.set_starting_capital(event.cash_balance, event.currency)
+            self.analyzer.add_transaction(event.timestamp, self._account_capital, Money(0))
             self._account_initialized = True
             return
 

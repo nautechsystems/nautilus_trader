@@ -45,10 +45,15 @@ cdef class TradingNode:
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
 
+    cdef int _load_strategy_state
+    cdef int _save_strategy_state
+
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
     cdef readonly Trader trader
+
+
 
     def __init__(
             self,
@@ -72,6 +77,7 @@ cdef class TradingNode:
             config = json.load(config_file)
         config_trader = config['trader']
         config_log = config['logging']
+        config_strategy = config['strategy']
         config_data = config['data_client']
         config_account = config['account']
         config_exec_db = config['exec_database']
@@ -170,6 +176,12 @@ cdef class TradingNode:
 
         Condition.equal(self.trader_id, self.trader.id)
 
+        self._load_strategy_state = config_strategy['load_state']
+        self._save_strategy_state = config_strategy['save_state']
+
+        if self._load_strategy_state:
+            self.trader.load()
+
         self._log.info("Initialized.")
 
     cpdef void load_strategies(self, list strategies):
@@ -204,6 +216,9 @@ cdef class TradingNode:
         Stop the trading nodes trader.
         """
         self.trader.stop()
+
+        if self._save_strategy_state:
+            self.trader.save()
 
     cpdef void disconnect(self):
         """
