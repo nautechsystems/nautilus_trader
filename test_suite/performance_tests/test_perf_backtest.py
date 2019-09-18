@@ -185,4 +185,5 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 13/08/19 15402949 function calls (15045703 primitive calls) in 15.589 seconds (add typed collections to trader)
         # 21/08/19 15403153 function calls (15175335 primitive calls) in 15.264 seconds (remove typed collections)
         # 27/08/19 15403175 function calls (15175357 primitive calls) in 14.590 seconds (new execution engine)
-        # 29/09/19 15415829 function calls (15188011 primitive calls) in 15.050 seconds (refactored domain model)
+        # 29/08/19 15415829 function calls (15188011 primitive calls) in 15.050 seconds (refactored domain model)
+        # 18/09/19 15550972 function calls (15319680 primitive calls) in 14.430 seconds (various changes)

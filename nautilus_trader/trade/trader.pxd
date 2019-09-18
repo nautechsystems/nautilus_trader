@@ -41,8 +41,6 @@ cdef class Trader:
     cpdef dispose(self)
 
     cpdef dict strategy_status(self)
-    cpdef void create_returns_tear_sheet(self)
-    cpdef void create_full_tear_sheet(self)
     cpdef object get_orders_report(self)
     cpdef object get_order_fills_report(self)
     cpdef object get_positions_report(self)

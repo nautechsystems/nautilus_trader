@@ -1176,12 +1176,12 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void cancel_all_orders(self, str cancel_reason=None):
+    cpdef void cancel_all_orders(self, str cancel_reason='NONE'):
         """
         Send a cancel order command for orders which are not completed in the
         order book with the given cancel_reason - to the execution engine.
 
-        :param cancel_reason: The reason for cancellation (will be logged).
+        :param cancel_reason: The reason for cancellation (default='NONE').
         :raises ConditionFailed: If the cancel_reason is not a valid string.
         """
         if not self.is_exec_engine_registered:
@@ -1189,8 +1189,10 @@ cdef class TradingStrategy:
             return
 
         cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
-        cdef CancelOrder command
 
+        cdef OrderId order_id
+        cdef Order order
+        cdef CancelOrder command
         for order_id, order in working_orders.items():
             command = CancelOrder(
                 self.trader_id,

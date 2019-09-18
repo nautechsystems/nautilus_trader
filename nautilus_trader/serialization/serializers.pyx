@@ -485,7 +485,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Money(unpacked[MARGIN_USED_LIQUIDATION]),
                 Money(unpacked[MARGIN_USED_MAINTENANCE]),
                 Decimal(unpacked[MARGIN_RATIO]),
-                ValidString('NONE'),
+                ValidString(unpacked[MARGIN_CALL_STATUS]),
                 event_id,
                 event_timestamp)
         if event_type == OrderInitialized.__name__:

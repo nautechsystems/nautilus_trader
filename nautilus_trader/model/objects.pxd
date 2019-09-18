@@ -19,6 +19,7 @@ cdef class Quantity:
     cdef readonly long value
 
     cdef bint equals(self, Quantity other)
+    cdef str to_string_formatted(self)
 
 
 cdef class Price:

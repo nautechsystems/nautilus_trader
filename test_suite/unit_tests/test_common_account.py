@@ -35,7 +35,7 @@ class AccountTests(unittest.TestCase):
             Money.zero(),
             Money.zero(),
             Decimal('0'),
-            ValidString('NONE'),
+            ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -51,7 +51,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money.zero(), account.margin_used_liquidation)
         self.assertEqual(Money.zero(), account.margin_used_maintenance)
         self.assertEqual(Decimal('0'), account.margin_ratio)
-        self.assertEqual('NONE', account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
     def test_can_calculate_free_equity_when_greater_than_zero(self):
@@ -65,7 +65,7 @@ class AccountTests(unittest.TestCase):
             Money(1000),
             Money(2000),
             Decimal('0'),
-            ValidString('NONE'),
+            ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -83,7 +83,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(1000), account.margin_used_liquidation)
         self.assertEqual(Money(2000), account.margin_used_maintenance)
         self.assertEqual(Decimal('0'), account.margin_ratio)
-        self.assertEqual('NONE', account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
     def test_can_calculate_free_equity_when_zero(self):
@@ -97,7 +97,7 @@ class AccountTests(unittest.TestCase):
             Money.zero(),
             Money(20000),
             Decimal('0'),
-            ValidString('NONE'),
+            ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -115,7 +115,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money.zero(), account.margin_used_liquidation)
         self.assertEqual(Money(20000), account.margin_used_maintenance)
         self.assertEqual(Decimal('0'), account.margin_ratio)
-        self.assertEqual('NONE', account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
     def test_can_calculate_free_equity_when_negative(self):
@@ -129,7 +129,7 @@ class AccountTests(unittest.TestCase):
             Money(10000),
             Money(20000),
             Decimal('0'),
-            ValidString('NONE'),
+            ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -147,5 +147,5 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(10000), account.margin_used_liquidation)
         self.assertEqual(Money(20000), account.margin_used_maintenance)
         self.assertEqual(Decimal('0'), account.margin_ratio)
-        self.assertEqual('NONE', account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
