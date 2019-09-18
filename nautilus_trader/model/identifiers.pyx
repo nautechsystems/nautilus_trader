@@ -31,13 +31,11 @@ cdef class Symbol(Identifier):
         :param venue: The symbols venue.
         :raises ConditionFailed: If the code is not a valid string.
         """
-        super().__init__(f'{code.upper()}.{venue.value}')
-
         Condition.valid_string(code, 'code')
         assert code.isupper()
-
         self.code = code.upper()
         self.venue = venue
+        super().__init__(f'{self.code}.{self.venue.value}')
 
     def __str__(self) -> str:
         """
