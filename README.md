@@ -1,5 +1,5 @@
 # Nautilus Trader
-An algorithmic trading framework written in Cython.
+An algorithmic trading platform written in Cython.
 
 To run the tests, first compile the C extensions for the package;
 
