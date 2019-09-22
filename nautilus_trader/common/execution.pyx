@@ -945,6 +945,7 @@ cdef class ExecutionEngine:
         :param account_id: The account identifier for the engine.
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
+        :param analyzer: The performance analyzer for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid_factory for the engine.
         :param logger: The logger for the engine.
@@ -1171,7 +1172,7 @@ cdef class ExecutionEngine:
         if account is None:
             account = Account(event)
             self.database.add_account(account)
-            self.analyzer.handle_transaction(event)
+            self.analyzer.initialize_account_data(event)
         elif account.id == event.account_id:
             account.apply(event)
             self.database.update_account(account)

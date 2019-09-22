@@ -919,6 +919,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         :param account_id: The account_id for the engine.
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
+        :param analyzer: The performance analyzer for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid factory for the engine.
         :param logger: The logger for the engine.
