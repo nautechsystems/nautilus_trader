@@ -28,7 +28,7 @@ from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.events import AccountStateEvent
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import Currency, AccountType
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
@@ -421,6 +421,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
+            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,

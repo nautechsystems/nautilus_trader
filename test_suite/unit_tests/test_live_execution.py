@@ -10,10 +10,9 @@ import unittest
 import time
 import zmq
 
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
+from nautilus_trader.model.enums import OrderSide, AccountType
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, AccountId
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.guid import LiveGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
@@ -43,6 +42,7 @@ class LiveExecutionTests(unittest.TestCase):
         events_port = 56556
 
         trader_id = TraderId('TESTER', '000')
+        account_id = AccountId('NAUTILUS', '001', AccountType.SIMULATED)
 
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
@@ -56,6 +56,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=logger)
         self.exec_engine = LiveExecutionEngine(
             database=self.exec_db,
+            account_id=account_id,
             portfolio=self.portfolio,
             clock=clock,
             guid_factory=guid_factory,
