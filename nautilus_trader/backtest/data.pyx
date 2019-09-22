@@ -355,12 +355,11 @@ cdef class BacktestDataClient(DataClient):
             datetime to_datetime,
             callback: Callable):
         """
-        Update the instrument corresponding to the given symbol (if found).
-        Will log a warning is symbol is not found.
+        Request the historical bars for the given parameters from the data service.
 
-        :param symbol: The symbol for the request.
-        :param from_datetime: The from date time for the request.
-        :param to_datetime: The to date time for the request.
+        :param symbol: The symbol for the bars to download.
+        :param from_datetime: The datetime from which the historical bars should be downloaded.
+        :param to_datetime: The datetime to which the historical bars should be downloaded.
         :param callback: The callback for the response.
         """
         Condition.type(callback, Callable, 'callback')
@@ -374,12 +373,11 @@ cdef class BacktestDataClient(DataClient):
             datetime to_datetime,
             callback: Callable):
         """
-        Update the instrument corresponding to the given symbol (if found).
-        Will log a warning is symbol is not found.
+        Request the historical bars for the given parameters from the data service.
 
-        :param bar_type: The bar type for the request.
-        :param from_datetime: The from date time for the request.
-        :param to_datetime: The to date time for the request.
+        :param bar_type: The bar type for the bars to download.
+        :param from_datetime: The datetime from which the historical bars should be downloaded.
+        :param to_datetime: The datetime to which the historical bars should be downloaded.
         :param callback: The callback for the response.
         """
         Condition.type(callback, Callable, 'callback')

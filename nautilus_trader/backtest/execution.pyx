@@ -198,22 +198,6 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money.zero()
 
-            # Generate event
-            event = AccountStateEvent(
-            self._account.id,
-            self._account.currency,
-            self._account.cash_balance,
-            self.account_cash_start_day,
-            self.account_cash_activity_day,
-            self._account.margin_used_liquidation,
-            self._account.margin_used_maintenance,
-            self._account.margin_ratio,
-            self._account.margin_call_status,
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
-            self._exec_engine.handle_event(event)
-
         # Simulate market dynamics
         cdef OrderId order_id
         cdef Order order
