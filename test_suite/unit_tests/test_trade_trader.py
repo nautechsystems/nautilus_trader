@@ -14,6 +14,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.model.enums import Resolution, Currency, AccountType
 from nautilus_trader.model.objects import Money
@@ -58,6 +59,8 @@ class TraderTests(unittest.TestCase):
             guid_factory=guid_factory,
             logger=logger)
 
+        self.analyzer = PerformanceAnalyzer()
+
         self.exec_db = InMemoryExecutionDatabase(
             trader_id=trader_id,
             logger=logger)
@@ -66,6 +69,7 @@ class TraderTests(unittest.TestCase):
             account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
+            analyzer=self.analyzer,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)

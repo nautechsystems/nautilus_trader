@@ -28,11 +28,12 @@ from empyrical.stats import (
 
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.events cimport AccountStateEvent
 
 
 cdef class PerformanceAnalyzer:
     """
-    Provides a trading portfolio analyzer for generating performance metrics
+    Provides a performance analyzer for tracking and generating performance metrics
     and statistics.
     """
 
@@ -50,6 +51,7 @@ cdef class PerformanceAnalyzer:
         self._account_starting_capital = Money.zero()
         self._account_capital = Money.zero()
         self._account_currency = Currency.USD
+        self._account_initialized = False
 
     cpdef void set_starting_capital(self, Money starting_capital, Currency account_currency):
         """
@@ -119,6 +121,36 @@ cdef class PerformanceAnalyzer:
 
         self._equity_curve.loc[time]['capital'] = account_capital.value
         self._equity_curve.loc[time]['pnl'] = pnl.value
+
+    cpdef void handle_transaction(self, AccountStateEvent event):
+        """
+        Handle the transaction associated with the given account event.
+
+        :param event: The event to handle.
+        """
+        # Account data initialization
+        if not self._account_initialized:
+            self._account_capital = event.cash_balance
+            self.set_starting_capital(event.cash_balance, event.currency)
+            self.add_transaction(event.timestamp, self._account_capital, Money(0))
+            self._account_initialized = True
+            return
+
+        if self._account_capital == event.cash_balance:
+            return  # No transaction to handle
+
+        # Calculate transaction data
+        cdef Money pnl = event.cash_balance - self._account_capital
+        self._account_capital = event.cash_balance
+
+        self.add_transaction(event.timestamp, self._account_capital, pnl)
+
+    cpdef void reset(self):
+        """
+        Reset the analyzer by returning all stateful values to their initial value.
+        """
+        # TODO: Implement
+        self._account_initialized = False
 
     cpdef object get_returns(self):
         """

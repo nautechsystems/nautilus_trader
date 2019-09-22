@@ -42,6 +42,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, CMD, EVT, SENT, RECV
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
@@ -933,6 +934,7 @@ cdef class ExecutionEngine:
                  AccountId account_id,
                  ExecutionDatabase database,
                  Portfolio portfolio,
+                 PerformanceAnalyzer analyzer,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
@@ -961,6 +963,7 @@ cdef class ExecutionEngine:
         self.account_id = account_id
         self.database = database
         self.portfolio = portfolio
+        self.analyzer = analyzer
 
         self.command_count = 0
         self.event_count = 0
@@ -1158,7 +1161,7 @@ cdef class ExecutionEngine:
 
     cdef void _handle_position_event(self, PositionEvent event):
         if isinstance(event, PositionClosed):
-            self.portfolio.analyzer.add_return(event.timestamp, event.position.return_realized)
+            self.analyzer.add_return(event.timestamp, event.position.return_realized)
 
         self._send_to_strategy(event, event.strategy_id)
 
@@ -1168,11 +1171,11 @@ cdef class ExecutionEngine:
         if account is None:
             account = Account(event)
             self.database.add_account(account)
-            self.portfolio.handle_transaction(event)
+            self.analyzer.handle_transaction(event)
         elif account.id == event.account_id:
             account.apply(event)
             self.database.update_account(account)
-            self.portfolio.handle_transaction(event)
+            self.analyzer.handle_transaction(event)
         else:
             self._log.warning(f"Cannot process event {event} "
                               f"(event account_id {event.account_id} does not match this account {account.id}).")

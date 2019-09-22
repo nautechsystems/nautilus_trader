@@ -10,12 +10,13 @@ import unittest
 import time
 import zmq
 
-from nautilus_trader.model.enums import OrderSide, AccountType
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, AccountId
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.guid import LiveGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
@@ -53,6 +54,8 @@ class LiveExecutionTests(unittest.TestCase):
             guid_factory=guid_factory,
             logger=logger)
 
+        self.analyzer = PerformanceAnalyzer()
+
         self.exec_db = InMemoryExecutionDatabase(
             trader_id=trader_id,
             logger=logger)
@@ -61,6 +64,7 @@ class LiveExecutionTests(unittest.TestCase):
             account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
+            analyzer=self.analyzer,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)

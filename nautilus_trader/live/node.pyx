@@ -22,6 +22,7 @@ from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, Executi
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
@@ -51,9 +52,8 @@ cdef class TradingNode:
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
+    cdef readonly PerformanceAnalyzer analyzer
     cdef readonly Trader trader
-
-
 
     def __init__(
             self,
@@ -130,6 +130,8 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
+        self.analyzer = PerformanceAnalyzer()
+
         if config_exec_db['type'] == 'redis':
             self._exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
@@ -148,6 +150,7 @@ cdef class TradingNode:
             account_id=self.account_id,
             database=self._exec_db,
             portfolio=self.portfolio,
+            analyzer=self.analyzer,
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)

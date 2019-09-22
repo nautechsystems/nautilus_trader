@@ -14,6 +14,7 @@ from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.performance import PerformanceAnalyzer
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.model.enums import OrderSide, Currency, AccountType
@@ -61,6 +62,8 @@ class BacktestExecClientTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=self.logger)
 
+        self.analyzer = PerformanceAnalyzer()
+
         trader_id = TraderId('TESTER', '000')
         account_id = TestStubs.account_id()
 
@@ -72,6 +75,7 @@ class BacktestExecClientTests(unittest.TestCase):
             account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
+            analyzer=self.analyzer,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)

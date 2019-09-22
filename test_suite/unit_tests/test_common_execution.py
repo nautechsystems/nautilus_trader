@@ -34,6 +34,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trade.strategy import TradingStrategy
 from test_kit.stubs import TestStubs
@@ -418,12 +419,15 @@ class ExecutionEngineTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=logger)
 
+        self.analyzer = PerformanceAnalyzer()
+
         self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.exec_engine = ExecutionEngine(
             trader_id=self.trader_id,
             account_id=self.account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
+            analyzer=self.analyzer,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=logger)
