@@ -16,10 +16,10 @@ from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
-from nautilus_trader.model.enums import OrderSide, Currency
+from nautilus_trader.model.enums import OrderSide, Currency, AccountType
 from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
-from nautilus_trader.model.identifiers import TraderId, Venue
+from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
+from nautilus_trader.model.identifiers import TraderId, AccountId, Venue
 from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -65,6 +65,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
+            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
