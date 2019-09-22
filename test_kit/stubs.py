@@ -222,9 +222,9 @@ class TestStubs:
 
         return OrderFilled(
             order.id,
-            AccountId('SIMULATED', '123456', AccountType.SIMULATED),
+            TestStubs.account_id(),
             ExecutionId('E-' + order.id.value),
-            ExecutionTicket('ET-' + order.id.value),
+            ExecutionTicket('T-' + order.id.value),
             order.symbol,
             order.side,
             order.quantity,
@@ -239,7 +239,7 @@ class TestStubs:
         return OrderWorking(
             order.id,
             OrderIdBroker('B-' + order.id.value),
-            AccountId('SIMULATED', '123456', AccountType.SIMULATED),
+            TestStubs.account_id(),
             order.symbol,
             order.label,
             order.side,
@@ -299,9 +299,9 @@ class TestStubs:
 
         order_filled = OrderFilled(
             order.id,
-            AccountId('FXCM', '0999999', AccountType.SIMULATED),
-            ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            TestStubs.account_id(),
+            ExecutionId('E-' + order.id.value),
+            ExecutionTicket('T-' + position.id.value),
             order.symbol,
             order.side,
             order.quantity,

@@ -36,13 +36,13 @@ cdef class PerformanceAnalyzer:
     and statistics.
     """
 
-    def __init__(self, log_returns=False):
+    def __init__(self, use_log_returns=False):
         """
-        Initializes a new instance of the Analyzer class.
+        Initializes a new instance of the PerformanceAnalyzer class.
 
-        :param log_returns: A flag indicating whether log returns will be used.
+        :param use_log_returns: The flag indicating whether log returns will be used.
         """
-        self._log_returns = log_returns
+        self._use_log_returns = use_log_returns
         self._returns = pd.Series()
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['amount'])
@@ -69,7 +69,7 @@ cdef class PerformanceAnalyzer:
         :param time: The timestamp for the returns entry.
         :param value: The return value to add.
         """
-        if self._log_returns:
+        if self._use_log_returns:
             value = log(value)
 
         cdef date index_date = pd.to_datetime(time.date())
@@ -385,7 +385,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the performance statistics from the last backtest run.
         
-        Note: Money objects as converted to floats.
+        Note: Money objects are converted to floats.
 
         Statistics Keys
         ---------------

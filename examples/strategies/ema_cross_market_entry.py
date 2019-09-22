@@ -78,7 +78,6 @@ class EMACrossMarketEntryPy(TradingStrategy):
         This method is called when self.start() is called, and after internal start logic.
         """
         # Put custom code to be run on strategy start here (or pass)
-        self.account_inquiry()
         self.instrument = self.get_instrument(self.symbol)
         self.entry_buffer = self.instrument.tick_size
         self.SL_buffer = self.instrument.tick_size * 10

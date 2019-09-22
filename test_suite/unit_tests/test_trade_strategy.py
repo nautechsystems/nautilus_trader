@@ -59,10 +59,16 @@ class TradeStrategyTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=self.logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=TraderId('TESTER', '000'), logger=self.logger)
+        trader_id = TraderId('TESTER', '000')
+        account_id = TestStubs.account_id()
+
+        self.exec_db = InMemoryExecutionDatabase(
+            trader_id=trader_id,
+            logger=self.logger)
         self.exec_engine = ExecutionEngine(
+            trader_id=trader_id,
+            account_id=account_id,
             database=self.exec_db,
-            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,

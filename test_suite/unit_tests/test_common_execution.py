@@ -420,8 +420,9 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.exec_engine = ExecutionEngine(
+            trader_id=self.trader_id,
+            account_id=self.account_id,
             database=self.exec_db,
-            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
