@@ -73,7 +73,6 @@ class BacktestAcceptanceTests(unittest.TestCase):
     def test_can_run_ema_cross_strategy(self):
         # Arrange
         instrument = TestStubs.instrument_usdjpy()
-
         strategies = [EMACross(instrument=instrument,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
@@ -96,8 +95,6 @@ class BacktestAcceptanceTests(unittest.TestCase):
     def test_can_reset_and_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
         instrument = TestStubs.instrument_usdjpy()
-        bar_type = TestStubs.bartype_usdjpy_1min_bid()
-
         strategies = [EMACross(instrument=instrument,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
@@ -125,7 +122,6 @@ class BacktestAcceptanceTests(unittest.TestCase):
     def test_can_run_multiple_strategies(self):
         # Arrange
         instrument = TestStubs.instrument_usdjpy()
-
         strategies = [EMACross(instrument=instrument,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
