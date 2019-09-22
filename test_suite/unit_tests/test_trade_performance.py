@@ -94,7 +94,7 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(Money(137500.00), self.analyzer.avg_winner())
         self.assertEqual(Money(-83333.33), self.analyzer.avg_loser())
         self.assertEqual(0.4000000059604645, self.analyzer.win_rate())
-        self.assertEqual(5000.0009765625, self.analyzer.expectancy())
+        self.assertEqual(Money(5000), self.analyzer.expectancy())
 
     def test_can_add_positions(self):
         # Arrange

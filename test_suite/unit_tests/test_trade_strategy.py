@@ -22,10 +22,9 @@ from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, AccountId, OrderId, PositionId
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.enums import OrderState, Currency
-from nautilus_trader.model.enums import MarketPosition
+from nautilus_trader.model.enums import OrderState, Currency, MarketPosition, AccountType
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.model.identifiers import StrategyId, Label
@@ -63,6 +62,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=TraderId('TESTER', '000'), logger=self.logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
+            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
