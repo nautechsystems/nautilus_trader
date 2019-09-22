@@ -40,6 +40,14 @@ cdef class ObjectCache:
 
         return parsed
 
+    cpdef list keys(self):
+        """
+        Return a list of the keys held in the cache.
+        
+        :return: List[str].
+        """
+        return list(self._cache.keys())
+
     cpdef void clear(self):
         """
         Clears all cached values.
