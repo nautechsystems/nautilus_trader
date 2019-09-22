@@ -198,11 +198,11 @@ cdef class TradingStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_bar() must be implemented in the strategy (or just add pass).")
 
-    cpdef void on_instrument(self, Instrument bar_type) except *:
+    cpdef void on_instrument(self, Instrument instrument) except *:
         """
         Called when an instrument update is received by the strategy.
 
-        :param bar_type: The instrument received.
+        :param instrument: The instrument received.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_instrument() must be implemented in the strategy (or just add pass).")
@@ -454,7 +454,7 @@ cdef class TradingStrategy:
 
     cpdef list instrument_symbols(self):
         """
-        Return all instruments held by the data client.
+        Return a list of all instrument symbols held by the data client.
         
         :return List[Instrument].
         :raises ConditionFailed: If the strategy has not been registered with a data client.
@@ -465,12 +465,11 @@ cdef class TradingStrategy:
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
-        Return the instrument corresponding to the given symbol.
+        Return the instrument corresponding to the given symbol (if found).
 
         :param symbol: The symbol of the instrument to return.
-        :return Instrument (if found) or None.
+        :return Instrument or None.
         :raises ConditionFailed: If strategy has not been registered with a data client.
-        :raises ConditionFailed: If the instrument is not found.
         """
         if not self.is_data_client_registered:
             self.log.error("Cannot get instrument (data client not registered).")

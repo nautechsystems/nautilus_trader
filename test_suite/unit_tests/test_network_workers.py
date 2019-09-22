@@ -12,8 +12,7 @@ import zmq
 
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
-from test_kit.mocks import MockServer, MockPublisher
-from test_kit.objects import ObjectStorer
+from test_kit.mocks import ObjectStorer, MockServer, MockPublisher
 
 LOCAL_HOST = "127.0.0.1"
 TEST_PORT = 55557

@@ -18,7 +18,7 @@ from nautilus_trader.model.enums import Resolution
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.data import BacktestDataClient
 
-from test_kit.objects import ObjectStorer
+from test_kit.mocks import ObjectStorer
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 

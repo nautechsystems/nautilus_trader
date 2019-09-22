@@ -13,12 +13,12 @@ from nautilus_trader.core.correctness cimport Condition
 
 cdef class ValidString:
     """
-    Represents a valid string value. A valid value cannot be None, empty or all white space.
+    Represents a valid string value. A valid string value cannot be None, empty or all white space.
     """
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the StringValue abstract class.
+        Initializes a new instance of the ValidString class.
 
         :param value: The value of the string.
         """
