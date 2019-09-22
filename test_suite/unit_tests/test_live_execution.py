@@ -42,7 +42,7 @@ class LiveExecutionTests(unittest.TestCase):
         events_port = 56556
 
         trader_id = TraderId('TESTER', '000')
-        account_id = AccountId('NAUTILUS', '001', AccountType.SIMULATED)
+        account_id = AccountId('NAUTILUS', '000', AccountType.SIMULATED)
 
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
@@ -105,7 +105,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
 
         time.sleep(0.3)
-        # Assert
+        # # Assert
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(1, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
