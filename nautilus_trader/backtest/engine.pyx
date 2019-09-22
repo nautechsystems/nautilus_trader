@@ -287,7 +287,7 @@ cdef class BacktestEngine:
         self.log.info("Stopping...")
         self.trader.stop()
         self.log.info("Stopped.")
-        self._backtest_footer(run_started, start, stop, time_step)
+        self._backtest_footer(run_started, self.clock.time_now(), start, stop, time_step)
         if print_log_store:
             self.print_log_store()
 
@@ -472,18 +472,23 @@ cdef class BacktestEngine:
     cdef void _backtest_footer(
             self,
             datetime run_started,
+            datetime run_finished,
             datetime start,
             datetime stop,
             timedelta time_step):
         cdef str account_currency = currency_to_string(self.config.account_currency)
         cdef int account_starting_length = len(str(self.config.starting_capital))
+        cdef timedelta elapsed_running = self.clock.get_delta(run_started)
+        cdef timedelta elapsed_total = self.time_to_initialize + elapsed_running
 
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"Run started datetime: {format_zulu_datetime(run_started)}")
+        self.log.info(f"Run started datetime:  {format_zulu_datetime(run_started)}")
+        self.log.info(f"Run finished datetime: {format_zulu_datetime(run_finished)}")
         self.log.info(f"Elapsed time (engine initialization): {self.time_to_initialize}")
-        self.log.info(f"Elapsed time (running backtest):      {self.clock.get_delta(run_started)}")
+        self.log.info(f"Elapsed time (running backtest):      {elapsed_running}")
+        self.log.info(f"Elapsed time total:                   {elapsed_total}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")

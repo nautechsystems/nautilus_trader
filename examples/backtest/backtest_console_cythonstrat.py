@@ -75,13 +75,14 @@ if __name__ == "__main__":
     input("Press Enter to continue...")
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 3, 1, 1, 0, 0, 0)
+    stop = datetime(2013, 2, 10, 1, 0, 0, 0)
 
     engine.run(start, stop)
 
     with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
-        print(engine.get_equity_curve())
-        print(engine.get_order_fills_report())
+        pass
+        # print(engine.get_equity_curve())
+        # print(engine.get_order_fills_report())
         print(engine.get_positions_report())
 
     engine.dispose()
