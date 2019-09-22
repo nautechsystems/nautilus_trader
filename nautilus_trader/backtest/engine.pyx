@@ -129,6 +129,7 @@ cdef class BacktestEngine:
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
+        self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             venue=venue,
@@ -146,6 +147,7 @@ cdef class BacktestEngine:
 
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
+            account_id=self.account_id,
             portfolio=self.portfolio,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
@@ -172,7 +174,7 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=trader_id,
-            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
+            account_id=self.account_id,
             strategies=strategies,
             data_client=self.data_client,
             exec_engine=self.exec_engine,
@@ -492,7 +494,7 @@ cdef class BacktestEngine:
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
-        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_engine.database.get_first_account().cash_balance), account_starting_length)} {account_currency}")
+        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_engine.get_account().cash_balance), account_starting_length)} {account_currency}")
         self.log.info(f"Commissions (total):        {pad_string(str(self.exec_client.total_commissions), account_starting_length)} {account_currency}")
         self.log.info("")
 

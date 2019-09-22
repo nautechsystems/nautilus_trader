@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime, timedelta
 
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -32,6 +33,7 @@ cdef class BacktestEngine:
     cdef readonly LoggerAdapter log
     cdef readonly Logger logger
     cdef readonly Logger test_logger
+    cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
     cdef readonly Trader trader
     cdef readonly datetime created_time

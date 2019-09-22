@@ -60,7 +60,6 @@ cdef class ExecutionDatabase:
     cdef void _reset(self) except *
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
-    cpdef Account get_first_account(self)
     cpdef Account get_account(self, AccountId account_id)
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
@@ -121,6 +120,7 @@ cdef class ExecutionEngine:
     cdef dict _registered_strategies
 
     cdef readonly TraderId trader_id
+    cdef readonly AccountId account_id
     cdef readonly ExecutionDatabase database
     cdef readonly Portfolio portfolio
     cdef readonly int command_count
@@ -136,7 +136,7 @@ cdef class ExecutionEngine:
     cpdef void reset(self)
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
-    cpdef Account get_first_account(self)
+    cpdef Account get_account(self)
     cpdef list registered_strategies(self)
     cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)
