@@ -112,12 +112,12 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop, strategies=strategies)
 
         # Act
-        result1 = self.engine.portfolio.analyzer.get_returns()
+        result1 = self.engine.analyzer.get_returns()
 
         self.engine.reset()
         self.engine.run(start, stop)
 
-        result2 = self.engine.portfolio.analyzer.get_returns()
+        result2 = self.engine.analyzer.get_returns()
 
         # Assert
         self.assertEqual(all(result1), all(result2))
