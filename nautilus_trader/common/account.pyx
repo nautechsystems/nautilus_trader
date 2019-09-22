@@ -6,7 +6,13 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import uuid
+
+from decimal import Decimal
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.types cimport GUID
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.objects cimport Money
 
@@ -116,3 +122,29 @@ cdef class Account:
 
     cdef Money _calculate_free_equity(self):
         return Money(max((self.cash_balance.value - (self.margin_used_maintenance.value + self.margin_used_liquidation.value)), 0))
+
+
+cdef class NullAccount(Account):
+    """
+    Represents a null un-initialized brokerage account.
+    """
+
+    def __init__(self, datetime time_now):
+        """
+        Initializes a new instance of the NullAccount class.
+
+        :param: time_now: The creation datetime.
+        """
+        cdef AccountStateEvent event = AccountStateEvent(
+            AccountId('NULL', '000', AccountType.SIMULATED),
+            Currency.USD,
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Decimal(0),
+            ValidString('N'),
+            GUID(uuid.uuid4()),
+            time_now)
+        super().__init__(event)

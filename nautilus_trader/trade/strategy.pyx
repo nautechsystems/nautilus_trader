@@ -25,6 +25,7 @@ from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.common.account cimport Account, NullAccount
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.execution cimport ExecutionEngine
@@ -108,10 +109,10 @@ cdef class TradingStrategy:
         self._exchange_calculator = ExchangeRateCalculator()
 
         # Registered modules
-        self._data_client = None    # Initialized when registered with the data client
-        self._exec_engine = None    # Initialized when registered with the execution engine
-        self.portfolio = None       # Initialized when registered with the execution engine
-        self.account = None         # Initialized when registered with the execution engine
+        self._data_client = None                           # Initialized when registered with the data client
+        self._exec_engine = None                           # Initialized when registered with the execution engine
+        self.portfolio = None                              # Initialized when registered with the execution engine
+        self.account = NullAccount(self.clock.time_now())  # Initialized when registered with the execution engine
 
         self.is_data_client_registered = False  # True when registered with the data client
         self.is_exec_engine_registered = False  # True when registered with the execution engine
@@ -281,7 +282,7 @@ cdef class TradingStrategy:
         """
         self._exec_engine = engine
         self.portfolio = engine.portfolio
-        self.account = engine.get_first_account()
+        self.account = engine.get_account()
         self.is_exec_engine_registered = True
         self.log.debug("Registered execution engine.")
         self.update_state_log(self.time_now(), 'INITIALIZED')
@@ -1063,7 +1064,7 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution service.
         """
-        if self.account is None:
+        if isinstance(self.account, NullAccount):
             self.log.error("Cannot send command AccountInquiry (account not registered).")
             return
 

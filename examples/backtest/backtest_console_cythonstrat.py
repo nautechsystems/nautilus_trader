@@ -24,9 +24,6 @@ from test_kit.strategies import EMACross
 
 
 if __name__ == "__main__":
-    pd.get_option("display.max_rows")
-    pd.set_option("display.max_rows", 100)
-    print(pd.get_option("display.max_rows"))
     usdjpy = TestStubs.instrument_usdjpy()
     bid_data_1min = TestDataProvider.usdjpy_1min_bid()
     ask_data_1min = TestDataProvider.usdjpy_1min_ask()
@@ -82,9 +79,9 @@ if __name__ == "__main__":
 
     engine.run(start, stop)
 
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
         print(engine.get_equity_curve())
-        #print(engine.get_order_fills_report())
-        #print(engine.get_positions_report())
+        print(engine.get_order_fills_report())
+        print(engine.get_positions_report())
 
     engine.dispose()

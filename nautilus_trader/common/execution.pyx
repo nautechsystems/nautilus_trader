@@ -136,10 +136,6 @@ cdef class ExecutionDatabase:
 
 # -- QUERIES -------------------------------------------------------------------------------------"
 
-    cpdef Account get_first_account(self):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
     cpdef Account get_account(self, AccountId account_id):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -520,14 +516,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
 
 # -- QUERIES --------------------------------------------------------------------------------------"
-
-    cpdef Account get_first_account(self):
-        """
-        Return the first account from the accounts cache.
-
-        :return Account.
-        """
-        return next(iter(self._cached_accounts.values()))
 
     cpdef Account get_account(self, AccountId account_id):
         """
@@ -942,6 +930,7 @@ cdef class ExecutionEngine:
 
     def __init__(self,
                  ExecutionDatabase database,
+                 AccountId account_id,
                  Portfolio portfolio,
                  Clock clock,
                  GuidFactory guid_factory,
@@ -949,7 +938,12 @@ cdef class ExecutionEngine:
         """
         Initializes a new instance of the ExecutionEngine class.
 
-        :param logger: The logger for the component.
+        :param database: The execution database for the engine.
+        :param account_id: The account identifier for the engine.
+        :param portfolio: The portfolio for the engine.
+        :param clock: The clock for the engine.
+        :param guid_factory: The guid_factory for the engine.
+        :param logger: The logger for the engine.
         """
         self._clock = clock
         self._guid_factory = guid_factory
@@ -959,6 +953,7 @@ cdef class ExecutionEngine:
         self._exec_client = None
 
         self.trader_id = database.trader_id
+        self.account_id = account_id
         self.database = database
         self.portfolio = portfolio
 
@@ -1030,13 +1025,13 @@ cdef class ExecutionEngine:
         self.database.reset()
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
-    cpdef Account get_first_account(self):
+    cpdef Account get_account(self):
         """
-        Return the first account from the cached accounts.
-        Temporary method.
+        Return the account for the execution engine.
+        
         :return: Account.
         """
-        return self.database.get_first_account()
+        return self.database.get_account(self.account_id)
 
     cpdef list registered_strategies(self):
         """

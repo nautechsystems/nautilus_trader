@@ -37,6 +37,12 @@ class ValidStringTests(unittest.TestCase):
         # Act
         # Assert
         self.assertTrue(string1 <= string1)
+        self.assertTrue(string1 <= string2)
+        self.assertTrue(string1 < string2)
+        self.assertTrue(string2 > string1)
+        self.assertTrue(string2 >= string1)
+        self.assertTrue(string2 >= string2)
+        self.assertTrue(string3 <= string4)
 
     def test_hash_returns_int_type(self):
         # Arrange
@@ -45,6 +51,14 @@ class ValidStringTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(int, type(hash(value)))
+
+    def test_to_string_returns_expected_string(self):
+        # Arrange
+        value = ValidString("abc")
+
+        # Act
+        # Assert
+        self.assertEqual("abc", value.to_string())
 
     def test_str_returns_expected_string(self):
         # Arrange

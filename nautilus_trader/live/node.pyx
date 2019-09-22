@@ -145,6 +145,7 @@ cdef class TradingNode:
 
         self._exec_engine = LiveExecutionEngine(
             database=self._exec_db,
+            account_id=self.account_id,
             portfolio=self.portfolio,
             clock=self._clock,
             guid_factory=self._guid_factory,

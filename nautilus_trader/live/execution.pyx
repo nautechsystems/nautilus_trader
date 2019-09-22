@@ -502,14 +502,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
 # -- QUERIES --------------------------------------------------------------------------------------"
 
-    cpdef Account get_first_account(self):
-        """
-        Return the first account from the accounts cache.
-
-        :return Account.
-        """
-        return next(iter(self._cached_accounts.values()))
-
     cpdef Account get_account(self, AccountId account_id):
         """
         Return the order matching the given identifier (if found).
@@ -912,6 +904,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     def __init__(self,
                  ExecutionDatabase database,
+                 AccountId account_id,
                  Portfolio portfolio,
                  Clock clock,
                  GuidFactory guid_factory,
@@ -920,7 +913,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Initializes a new instance of the RedisExecutionEngine class.
 
         :param database: The execution database for the engine.
-        :param account: The account for the engine.
+        :param account_id: The account_id for the engine.
         :param portfolio: The portfolio for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid factory for the engine.
@@ -928,6 +921,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         super().__init__(
             database=database,
+            account_id=account_id,
             portfolio=portfolio,
             clock=clock,
             guid_factory=guid_factory,
