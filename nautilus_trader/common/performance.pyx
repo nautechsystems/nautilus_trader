@@ -53,16 +53,42 @@ cdef class PerformanceAnalyzer:
         self._account_currency = Currency.USD
         self._account_initialized = False
 
-    cpdef void set_starting_capital(self, Money starting_capital, Currency account_currency):
+    cpdef void initialize_account_data(self, AccountStateEvent event):
         """
-        Set the starting capital for the analyzer.
+        Initialize the account for the performance analyzer.
+        
+        :param event: The initial account state event.
+        """
+        self._account_starting_capital = event.cash_balance
+        self._account_capital = event.cash_balance
+        self._account_currency = event.currency
+        self._account_initialized = True
 
-        :param starting_capital: The value for the starting capital.
-        :param account_currency: The account currency.
+    cpdef void handle_transaction(self, AccountStateEvent event):
         """
-        self._account_starting_capital = starting_capital
-        self._account_capital = starting_capital
-        self._account_currency = account_currency
+        Handle the transaction associated with the given account event.
+
+        :param event: The event to handle.
+        """
+
+        # Account data initialization
+        if not self._account_initialized:
+            self.initialize_account_data(event)
+            return
+
+        if self._account_capital == event.cash_balance:
+            return  # No transaction to handle
+
+        # Calculate transaction data
+        cdef Money pnl = event.cash_balance - self._account_capital
+        self._account_capital = event.cash_balance
+
+        # Set index if it does not exist
+        if event.timestamp not in self._equity_curve:
+            self._equity_curve.loc[event.timestamp] = 0
+
+        self._equity_curve.loc[event.timestamp]['capital'] = self._account_capital.value
+        self._equity_curve.loc[event.timestamp]['pnl'] = pnl.value
 
     cpdef void add_return(self, datetime time, float value):
         """
@@ -105,51 +131,17 @@ cdef class PerformanceAnalyzer:
                 self._positions[symbol] = 0
             self._positions.loc[index_date][symbol] += position.relative_quantity
 
-    cpdef void add_transaction(self, datetime time, Money account_capital, Money pnl):
-        """
-        Add a transaction to the analyzer.
-        
-        :param time: The timestamp for the transaction entry.
-        :param account_capital: The account capital after the transaction.
-        :param pnl: The profit/loss for the transaction.
-        """
-        self._account_capital = account_capital
-
-        # Set index if it does not exist
-        if time not in self._equity_curve:
-            self._equity_curve.loc[time] = 0
-
-        self._equity_curve.loc[time]['capital'] = account_capital.value
-        self._equity_curve.loc[time]['pnl'] = pnl.value
-
-    cpdef void handle_transaction(self, AccountStateEvent event):
-        """
-        Handle the transaction associated with the given account event.
-
-        :param event: The event to handle.
-        """
-        # Account data initialization
-        if not self._account_initialized:
-            self._account_capital = event.cash_balance
-            self.set_starting_capital(event.cash_balance, event.currency)
-            self.add_transaction(event.timestamp, self._account_capital, Money(0))
-            self._account_initialized = True
-            return
-
-        if self._account_capital == event.cash_balance:
-            return  # No transaction to handle
-
-        # Calculate transaction data
-        cdef Money pnl = event.cash_balance - self._account_capital
-        self._account_capital = event.cash_balance
-
-        self.add_transaction(event.timestamp, self._account_capital, pnl)
-
     cpdef void reset(self):
         """
         Reset the analyzer by returning all stateful values to their initial value.
         """
-        # TODO: Implement
+        self._returns = pd.Series()
+        self._positions = pd.DataFrame(columns=['cash'])
+        self._transactions = pd.DataFrame(columns=['amount'])
+        self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
+        self._account_starting_capital = Money.zero()
+        self._account_capital = Money.zero()
+        self._account_currency = Currency.USD
         self._account_initialized = False
 
     cpdef object get_returns(self):
