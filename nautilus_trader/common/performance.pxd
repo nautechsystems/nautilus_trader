@@ -10,10 +10,11 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.events cimport AccountStateEvent
 
 
 cdef class PerformanceAnalyzer:
-    cdef bint _log_returns
+    cdef bint _use_log_returns
     cdef object _returns
     cdef object _positions
     cdef object _transactions
@@ -21,11 +22,14 @@ cdef class PerformanceAnalyzer:
     cdef Money _account_starting_capital
     cdef Money _account_capital
     cdef Currency _account_currency
+    cdef bint _account_initialized
 
     cpdef void set_starting_capital(self, Money starting_capital, Currency account_currency)
     cpdef void add_return(self, datetime time, float value)
     cpdef void add_positions(self, datetime time, list positions, Money cash_balance)
     cpdef void add_transaction(self, datetime time, Money account_capital, Money pnl)
+    cpdef void handle_transaction(self, AccountStateEvent event)
+    cpdef void reset(self)
     cpdef object get_returns(self)
     cpdef object get_positions(self)
     cpdef object get_transactions(self)

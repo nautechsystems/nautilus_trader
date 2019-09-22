@@ -953,7 +953,7 @@ cdef class TradingStrategy:
 
     cpdef void reset(self):
         """
-        Reset the strategy by returning all stateful internal values to their
+        Reset the strategy by returning all stateful values to their
         initial value, the on_reset() implementation is then called. 
         
         Note: The strategy cannot be running otherwise an error is logged.

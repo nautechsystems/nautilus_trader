@@ -6,4 +6,3 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.trade.performance cimport PerformanceAnalyzer

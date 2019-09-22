@@ -14,6 +14,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataClient
@@ -36,6 +37,7 @@ cdef class BacktestEngine:
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
+    cdef readonly PerformanceAnalyzer analyzer
     cdef readonly Trader trader
     cdef readonly datetime created_time
     cdef readonly timedelta time_to_initialize

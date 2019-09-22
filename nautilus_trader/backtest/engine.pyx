@@ -18,7 +18,6 @@ from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_dateti
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.objects cimport Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId, AccountId
@@ -27,6 +26,7 @@ from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
@@ -148,11 +148,14 @@ cdef class BacktestEngine:
             guid_factory=self.guid_factory,
             logger=self.test_logger)
 
+        self.analyzer = PerformanceAnalyzer()
+
         self.exec_engine = ExecutionEngine(
             trader_id=self.trader_id,
             account_id=self.account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
+            analyzer=self.analyzer,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
             logger=self.test_logger)
@@ -370,13 +373,13 @@ cdef class BacktestEngine:
         
         :return Dict[str, float].
         """
-        return self.portfolio.analyzer.get_performance_stats()
+        return self.analyzer.get_performance_stats()
 
     cpdef object get_equity_curve(self):
         """
         Return the portfolios account data.
         """
-        return self.portfolio.analyzer.get_equity_curve()
+        return self.analyzer.get_equity_curve()
 
     cpdef object get_orders_report(self):
         """
@@ -511,7 +514,7 @@ cdef class BacktestEngine:
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
         self.log.info("#---------------------------------------------------------------#")
 
-        for statistic in self.portfolio.analyzer.get_performance_stats_formatted():
+        for statistic in self.analyzer.get_performance_stats_formatted():
             self.log.info(statistic)
 
     cdef void _change_clocks_and_loggers(self, list strategies):

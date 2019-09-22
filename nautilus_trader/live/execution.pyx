@@ -30,6 +30,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
@@ -907,6 +908,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                  AccountId account_id,
                  ExecutionDatabase database,
                  Portfolio portfolio,
+                 PerformanceAnalyzer analyzer,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
@@ -926,6 +928,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             account_id=account_id,
             database=database,
             portfolio=portfolio,
+            analyzer=analyzer,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)

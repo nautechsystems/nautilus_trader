@@ -12,6 +12,7 @@ from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
 from nautilus_trader.trade.reports cimport ReportProvider
 
@@ -27,6 +28,7 @@ cdef class Trader:
     cdef readonly TraderId id
     cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
+    cdef readonly PerformanceAnalyzer analyzer
     cdef readonly list strategies
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes

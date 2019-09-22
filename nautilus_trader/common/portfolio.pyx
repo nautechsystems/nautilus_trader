@@ -9,7 +9,6 @@
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.trade.performance cimport PerformanceAnalyzer
 
 
 cdef class Portfolio:
@@ -32,42 +31,10 @@ cdef class Portfolio:
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._account_capital = Money.zero()
-        self._account_initialized = False
-
-        self.analyzer = PerformanceAnalyzer()
-
-    cpdef void handle_transaction(self, AccountStateEvent event):
-        """
-        Handle the transaction associated with the given account event.
-
-        :param event: The event to handle.
-        """
-        # Account data initialization
-        if not self._account_initialized:
-            self._account_capital = event.cash_balance
-            self.analyzer.set_starting_capital(event.cash_balance, event.currency)
-            self.analyzer.add_transaction(event.timestamp, self._account_capital, Money(0))
-            self._account_initialized = True
-            return
-
-        if self._account_capital == event.cash_balance:
-            return  # No transaction to handle
-
-        # Calculate transaction data
-        cdef Money pnl = event.cash_balance - self._account_capital
-        self._account_capital = event.cash_balance
-
-        self.analyzer.add_transaction(event.timestamp, self._account_capital, pnl)
-
     cpdef void reset(self):
         """
-        Reset the portfolio by returning all stateful internal values to their initial value.
+        Reset the portfolio by returning all stateful values to their initial value.
         """
         self._log.info(f"Resetting...")
 
-        self._account_capital = Money.zero()
-        self._account_initialized = False
-
-        self.analyzer = PerformanceAnalyzer()
         self._log.info("Reset.")
