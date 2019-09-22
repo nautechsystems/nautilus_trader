@@ -62,10 +62,12 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=self.logger)
 
         trader_id = TraderId('TESTER', '000')
+        account_id = AccountId('NAUTILUS', '001', AccountType.SIMULATED)
+
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
-            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
+            account_id=account_id,
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
