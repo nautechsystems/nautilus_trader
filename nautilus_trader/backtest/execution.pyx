@@ -290,7 +290,7 @@ cdef class BacktestExecClient(ExecutionClient):
         Resets the account.
         """
         return AccountStateEvent(
-            AccountId('NAUTILUS', '001', AccountType.SIMULATED),
+            self._exec_engine.account_id,
             self.account_currency,
             self.starting_capital,
             self.starting_capital,

@@ -42,7 +42,7 @@ class LiveExecutionTests(unittest.TestCase):
         events_port = 56556
 
         trader_id = TraderId('TESTER', '000')
-        account_id = AccountId('NAUTILUS', '000', AccountType.SIMULATED)
+        account_id = TestStubs.account_id()
 
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
@@ -53,10 +53,13 @@ class LiveExecutionTests(unittest.TestCase):
             guid_factory=guid_factory,
             logger=logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=logger)
+        self.exec_db = InMemoryExecutionDatabase(
+            trader_id=trader_id,
+            logger=logger)
         self.exec_engine = LiveExecutionEngine(
-            database=self.exec_db,
+            trader_id=trader_id,
             account_id=account_id,
+            database=self.exec_db,
             portfolio=self.portfolio,
             clock=clock,
             guid_factory=guid_factory,

@@ -42,7 +42,7 @@ class TraderTests(unittest.TestCase):
         guid_factory = TestGuidFactory()
         logger = TestLogger()
         trader_id = TraderId('TESTER', '000')
-        account_id = AccountId('NAUTILUS', '001', AccountType.SIMULATED)
+        account_id = TestStubs.account_id()
 
         data_client = BacktestDataClient(
             venue=Venue('FXCM'),
@@ -58,10 +58,13 @@ class TraderTests(unittest.TestCase):
             guid_factory=guid_factory,
             logger=logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=logger)
+        self.exec_db = InMemoryExecutionDatabase(
+            trader_id=trader_id,
+            logger=logger)
         self.exec_engine = ExecutionEngine(
-            database=self.exec_db,
+            trader_id=trader_id,
             account_id=account_id,
+            database=self.exec_db,
             portfolio=self.portfolio,
             clock=clock,
             guid_factory=guid_factory,
@@ -79,13 +82,14 @@ class TraderTests(unittest.TestCase):
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)
+        self.exec_engine.register_client(self.exec_client)
 
         strategies = [EmptyStrategy('001'),
                       EmptyStrategy('002')]
 
         self.trader = Trader(
             trader_id=trader_id,
-            account_id=TestStubs.account_id(),
+            account_id=account_id,
             strategies=strategies,
             data_client=data_client,
             exec_engine=self.exec_engine,

@@ -903,8 +903,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """
 
     def __init__(self,
-                 ExecutionDatabase database,
+                 TraderId trader_id,
                  AccountId account_id,
+                 ExecutionDatabase database,
                  Portfolio portfolio,
                  Clock clock,
                  GuidFactory guid_factory,
@@ -912,16 +913,18 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
-        :param database: The execution database for the engine.
+        :param trader_id: The trader_id for the engine.
         :param account_id: The account_id for the engine.
+        :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid factory for the engine.
         :param logger: The logger for the engine.
         """
         super().__init__(
-            database=database,
+            trader_id=trader_id,
             account_id=account_id,
+            database=database,
             portfolio=portfolio,
             clock=clock,
             guid_factory=guid_factory,

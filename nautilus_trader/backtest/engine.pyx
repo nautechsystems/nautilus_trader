@@ -70,6 +70,8 @@ cdef class BacktestEngine:
         """
         if trader_id is None:
             trader_id = TraderId('BACKTESTER', '000')
+        self.trader_id = trader_id
+        self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
 
         # Data checked in BacktestDataClient
         Condition.list_type(instruments, Instrument, 'instruments')
@@ -84,7 +86,7 @@ cdef class BacktestEngine:
         self.guid_factory = TestGuidFactory()
 
         self.logger = TestLogger(
-            name=trader_id.value,
+            name=self.trader_id.value,
             bypass_logging=False,
             level_console=LogLevel.INFO,
             level_file=LogLevel.INFO,
@@ -98,7 +100,7 @@ cdef class BacktestEngine:
         self.log = LoggerAdapter(component_name=self.__class__.__name__, logger=self.logger)
 
         self.test_logger = TestLogger(
-            name=trader_id.value,
+            name=self.trader_id.value,
             bypass_logging=config.bypass_logging,
             level_console=config.level_console,
             level_file=config.level_file,
@@ -114,10 +116,12 @@ cdef class BacktestEngine:
 
         # Execution Database
         if config.exec_db_type == 'in-memory':
-            self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
+            self.exec_db = InMemoryExecutionDatabase(
+                trader_id=self.trader_id,
+                logger=self.test_logger)
         elif config.exec_db_type == 'redis':
             self.exec_db = RedisExecutionDatabase(
-                trader_id=trader_id,
+                trader_id=self.trader_id,
                 host='localhost',
                 port=6379,
                 command_serializer=MsgPackCommandSerializer(),
@@ -129,7 +133,6 @@ cdef class BacktestEngine:
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
-        self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             venue=venue,
@@ -146,8 +149,9 @@ cdef class BacktestEngine:
             logger=self.test_logger)
 
         self.exec_engine = ExecutionEngine(
-            database=self.exec_db,
+            trader_id=self.trader_id,
             account_id=self.account_id,
+            database=self.exec_db,
             portfolio=self.portfolio,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
@@ -173,7 +177,7 @@ cdef class BacktestEngine:
             strategy.change_clock(TestClock())
 
         self.trader = Trader(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             account_id=self.account_id,
             strategies=strategies,
             data_client=self.data_client,

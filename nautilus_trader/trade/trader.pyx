@@ -38,14 +38,16 @@ cdef class Trader:
         :param trader_id: The trader_id for the trader.
         :param trader_id: The account_id for the trader.
         :param strategies: The initial strategies for the trader.
-        :param data_client: The data client for the trader.
-        :param exec_engine: The execution engine for the trader.
+        :param data_client: The data client to register the traders strategies with.
+        :param exec_engine: The execution engine to register the traders strategies with trader.
         :param clock: The clock for the trader.
         :param guid_factory: The guid_factory for the trader.
         :param logger: The logger for the trader.
         :raises ConditionFailed: If the trader_id is not equal to the exec_engine.trader_id.
+        :raises ConditionFailed: If the account_id is not equal to the exec_engine.account_id.
         """
         Condition.equal(trader_id, exec_engine.trader_id)
+        Condition.equal(account_id, exec_engine.account_id)
 
         self._clock = clock
         self._guid_factory = guid_factory
@@ -64,7 +66,7 @@ cdef class Trader:
 
         self.initialize_strategies(strategies)
 
-    cpdef initialize_strategies(self, list strategies: List[TradingStrategy]):
+    cpdef void initialize_strategies(self, list strategies: List[TradingStrategy]) except *:
         """
         Change strategies with the given list of trading strategies.
         
@@ -113,7 +115,7 @@ cdef class Trader:
             self._exec_engine.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
 
-    cpdef start(self):
+    cpdef void start(self) except *:
         """
         Start the trader.
         """
@@ -128,13 +130,15 @@ cdef class Trader:
         self._log.info("Starting...")
         self.started_datetimes.append(self._clock.time_now())
 
+        self.account_inquiry()
+
         for strategy in self.strategies:
             strategy.start()
 
         self.is_running = True
         self._log.info("Running...")
 
-    cpdef stop(self):
+    cpdef void stop(self) except *:
         """
         Stop the trader.
         """
@@ -152,21 +156,21 @@ cdef class Trader:
         self._log.info("Stopped.")
         self._exec_engine.check_residuals()
 
-    cpdef save(self):
+    cpdef void save(self) except *:
         """
         Save all strategy states to the execution database.
         """
         for strategy in self.strategies:
             self._exec_engine.database.update_strategy(strategy)
 
-    cpdef load(self):
+    cpdef void load(self) except *:
         """
         Save all strategy states to the execution database.
         """
         for strategy in self.strategies:
             self._exec_engine.database.load_strategy(strategy)
 
-    cpdef reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the trader by returning all stateful internal values of the portfolio, 
         and every strategy to their initial value.
@@ -184,7 +188,7 @@ cdef class Trader:
         self.portfolio.reset()
         self._log.info("Reset.")
 
-    cpdef dispose(self):
+    cpdef void dispose(self) except *:
         """
         Dispose of the trader.
         """
@@ -193,6 +197,18 @@ cdef class Trader:
             strategy.dispose()
 
         self._log.info("Disposed.")
+
+    cpdef void account_inquiry(self) except *:
+        """
+        Send an AccountInquiry command to the execution service.
+        """
+        cdef AccountInquiry command = AccountInquiry(
+            trader_id=self.id,
+            account_id=self.account_id,
+            command_id=self._guid_factory.generate(),
+            command_timestamp=self._clock.time_now())
+
+        self._exec_engine.execute_command(command)
 
     cpdef dict strategy_status(self):
         """

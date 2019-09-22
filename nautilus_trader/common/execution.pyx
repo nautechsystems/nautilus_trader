@@ -929,8 +929,9 @@ cdef class ExecutionEngine:
     """
 
     def __init__(self,
-                 ExecutionDatabase database,
+                 TraderId trader_id,
                  AccountId account_id,
+                 ExecutionDatabase database,
                  Portfolio portfolio,
                  Clock clock,
                  GuidFactory guid_factory,
@@ -938,13 +939,17 @@ cdef class ExecutionEngine:
         """
         Initializes a new instance of the ExecutionEngine class.
 
-        :param database: The execution database for the engine.
+        :param trader_id: The trader identifier for the engine.
         :param account_id: The account identifier for the engine.
+        :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid_factory for the engine.
         :param logger: The logger for the engine.
+        :raises ConditionFailed: If the trader_id is not equal to the database.trader_id.
         """
+        Condition.equal(trader_id, database.trader_id)
+
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
@@ -952,7 +957,7 @@ cdef class ExecutionEngine:
         self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
         self._exec_client = None
 
-        self.trader_id = database.trader_id
+        self.trader_id = trader_id
         self.account_id = account_id
         self.database = database
         self.portfolio = portfolio
@@ -1227,9 +1232,7 @@ cdef class ExecutionClient:
     The base class for all execution clients.
     """
 
-    def __init__(self,
-                 ExecutionEngine exec_engine,
-                 Logger logger):
+    def __init__(self, ExecutionEngine exec_engine, Logger logger):
         """
         Initializes a new instance of the ExecutionClient class.
 

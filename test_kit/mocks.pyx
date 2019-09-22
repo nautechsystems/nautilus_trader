@@ -70,9 +70,7 @@ cdef class MockExecutionClient(ExecutionClient):
     """
     cdef readonly list received_commands
 
-    def __init__(self,
-                 ExecutionEngine exec_engine,
-                 Logger logger):
+    def __init__(self, ExecutionEngine exec_engine, Logger logger):
         """
         Initializes a new instance of the MockExecutionClient class.
 

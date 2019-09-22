@@ -32,13 +32,15 @@ cdef class Trader:
     cdef readonly list stopped_datetimes
     cdef readonly bint is_running
 
-    cpdef initialize_strategies(self, list strategies)
-    cpdef start(self)
-    cpdef stop(self)
-    cpdef save(self)
-    cpdef load(self)
-    cpdef reset(self)
-    cpdef dispose(self)
+    cpdef void initialize_strategies(self, list strategies) except *
+    cpdef void start(self) except *
+    cpdef void stop(self) except *
+    cpdef void save(self) except *
+    cpdef void load(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
+
+    cpdef void account_inquiry(self) except *
 
     cpdef dict strategy_status(self)
     cpdef object get_orders_report(self)
