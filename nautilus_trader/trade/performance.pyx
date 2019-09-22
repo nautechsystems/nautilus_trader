@@ -103,9 +103,6 @@ cdef class PerformanceAnalyzer:
                 self._positions[symbol] = 0
             self._positions.loc[index_date][symbol] += position.relative_quantity
 
-        # TODO: Cash not being added??
-        self._positions.loc[index_date]['cash'] = cash_balance.value
-
     cpdef void add_transaction(self, datetime time, Money account_capital, Money pnl):
         """
         Add a transaction to the analyzer.
@@ -196,7 +193,7 @@ cdef class PerformanceAnalyzer:
         
         :return Money.
         """
-        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0].min())
+        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].min())
 
     cpdef Money min_loser(self):
         """
@@ -212,7 +209,7 @@ cdef class PerformanceAnalyzer:
         
         :return Money.
         """
-        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0].mean())
+        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].mean())
 
     cpdef Money avg_loser(self):
         """
@@ -233,7 +230,7 @@ cdef class PerformanceAnalyzer:
 
         return len(winners) / max(1.0, (len(winners) + len(losers)))
 
-    cpdef float expectancy(self):
+    cpdef Money expectancy(self):
         """
         Return the expectancy for the portfolio.
         
@@ -242,7 +239,7 @@ cdef class PerformanceAnalyzer:
         cdef float win_rate = self.win_rate()
         cdef float loss_rate = 1.0 - win_rate
 
-        return (float(self.avg_winner().value) * win_rate) - (-float(self.avg_loser().value) * loss_rate)
+        return Money((float(self.avg_winner().value) * win_rate) - (-float(self.avg_loser().value) * loss_rate))
 
     cpdef float annual_return(self):
         """
@@ -350,7 +347,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef float returns_tail_ratio(self):
         """
-        Get the returns nail ratio for the portfolio.
+        Get the returns tail ratio for the portfolio.
         
         :return float.
         """
@@ -469,7 +466,7 @@ cdef class PerformanceAnalyzer:
             f"Avg Loser:         {self.avg_loser()} {account_currency}",
             f"Max Loser:         {self.max_loser()} {account_currency}",
             f"Win Rate:          {self._format_stat(self.win_rate(), decimals=4)}",
-            f"Expectancy:        {self._format_stat(self.expectancy())}",
+            f"Expectancy:        {self.expectancy()} {account_currency}",
             f"Annual return:     {self._format_stat(self.annual_return())}%",
             f"Cum returns:       {self._format_stat(self.cum_return())}%",
             f"Max drawdown:      {self._format_stat(self.max_drawdown_return())}%",

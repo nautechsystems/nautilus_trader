@@ -39,7 +39,7 @@ cdef class PerformanceAnalyzer:
     cpdef Money avg_winner(self)
     cpdef Money avg_loser(self)
     cpdef float win_rate(self)
-    cpdef float expectancy(self)
+    cpdef Money expectancy(self)
     cpdef float annual_return(self)
     cpdef float cum_return(self)
     cpdef float max_drawdown_return(self)

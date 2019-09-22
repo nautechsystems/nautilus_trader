@@ -56,5 +56,5 @@ cdef class BacktestEngine:
     cpdef void dispose(self)
 
     cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
-    cdef void _backtest_footer(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
+    cdef void _backtest_footer(self, datetime run_started, datetime run_finished, datetime start, datetime stop, timedelta time_step)
     cdef void _change_clocks_and_loggers(self, list strategies)
