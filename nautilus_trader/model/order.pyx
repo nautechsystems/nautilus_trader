@@ -99,7 +99,6 @@ cdef class Order:
             Condition.not_none(expire_time, 'expire_time')
 
         self._execution_ids = set()         # type: Set[ExecutionId]
-        self._execution_tickets = set()     # type: Set[ExecutionTicket]
         self._events = []                   # type: List[OrderEvent]
 
         self.id = order_id
@@ -238,19 +237,11 @@ cdef class Order:
 
     cpdef list get_execution_ids(self):
         """
-        Return a list of execution identifiers.
+        Return a sorted list of execution identifiers.
         
         :return List[ExecutionId].
         """
         return sorted(self._execution_ids)
-
-    cpdef list get_execution_tickets(self):
-        """
-        Return a list of execution tickets.
-        
-        :return List[ExecutionTicket]. 
-        """
-        return sorted(self._execution_tickets)
 
     cpdef list get_events(self):
         """
@@ -300,7 +291,6 @@ cdef class Order:
             self.price = event.modified_price
         elif isinstance(event, OrderFillEvent):
             self._execution_ids.add(event.execution_id)
-            self._execution_tickets.add(event.execution_ticket)
             self.execution_id = event.execution_id
             self.execution_ticket = event.execution_ticket
             self.filled_quantity = event.filled_quantity
