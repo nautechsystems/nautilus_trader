@@ -30,7 +30,6 @@ from nautilus_trader.model.generators cimport OrderIdGenerator
 
 cdef class Order:
     cdef set _execution_ids
-    cdef set _execution_tickets
     cdef list _events
 
     cdef readonly OrderId id
@@ -67,7 +66,6 @@ cdef class Order:
     cdef bint equals(self, Order other)
     cpdef str state_as_string(self)
     cpdef list get_execution_ids(self)
-    cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
     cpdef void apply(self, OrderEvent event)
     cdef void _set_state_to_working(self)
