@@ -26,7 +26,7 @@ cdef class CommissionCalculator:
 
 cdef class RolloverInterestCalculator:
     cdef ExchangeRateCalculator _exchange_calculator
-    cdef object _rate_data
+    cdef dict _rate_data
 
     cpdef object get_rate_data(self)
-    cpdef float calc_overnight_fx_rate(self, Symbol symbol, datetime timestamp)
+    cpdef float calc_overnight_rate(self, Symbol symbol, datetime timestamp) except *

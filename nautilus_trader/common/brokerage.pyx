@@ -97,7 +97,13 @@ cdef class RolloverInterestCalculator:
         if rate_data_csv_path == '':
             rate_data_csv_path = os.path.join(PACKAGE_ROOT + '/data/', 'short_term_interest.csv')
         self._exchange_calculator = ExchangeRateCalculator()
-        self._rate_data = pd.read_csv(rate_data_csv_path)
+
+        csv_rate_data = pd.read_csv(rate_data_csv_path)
+        self._rate_data = {
+            Currency.AUD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'AUS'],
+            Currency.USD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'USA'],
+            Currency.JPY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'JPN']
+        }
 
     cpdef object get_rate_data(self):
         """
@@ -107,9 +113,11 @@ cdef class RolloverInterestCalculator:
         """
         return self._rate_data
 
-    cpdef float calc_overnight_fx_rate(self, Symbol symbol, datetime timestamp):
+    cpdef float calc_overnight_rate(self, Symbol symbol, datetime timestamp) except *:
         """
         Return the rollover interest rate between the given base currency and quote currency.
+        
+        Note: 1% = 0.01
         
         :param symbol: The forex currency symbol for the calculation.
         :param timestamp: The timestamp for the calculation.
@@ -121,15 +129,21 @@ cdef class RolloverInterestCalculator:
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
         cdef Currency quote_currency = currency_from_string(symbol.code[3:])
 
-        cdef int year = timestamp.year
-        cdef int month = timestamp.month
-        cdef int quarter = int(((timestamp.month - 1) // 3) + 1)
+        cdef str time_monthly = f'{timestamp.year}-{str(timestamp.month).zfill(2)}'
+        cdef str time_quarter = f'{timestamp.year}-Q{str(int(((timestamp.month - 1) // 3) + 1)).zfill(2)}'
 
-        base_frequency = self._rate_data
+        base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_monthly]
+        if len(base_data) == 0:
+            base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_quarter]
 
-        print(base_frequency)
+        quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_monthly]
+        if len(quote_data) == 0:
+            quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_quarter]
 
-        base_interest = 1
-        quote_interest = 1
+        if len(base_data) == 0 or len(quote_data) == 0:
+            raise RuntimeError(f'Cannot find rollover interest rate for {symbol} on {timestamp.date()}.')
 
-        return (base_interest - quote_interest) / 365
+        cdef float base_interest = base_data['Value']
+        cdef float quote_interest = quote_data['Value']
+
+        return ((base_interest - quote_interest) / 365) / 100
