@@ -327,8 +327,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_submitted_events(self):
         # Arrange
         event = OrderSubmitted(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -343,8 +343,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_accepted_events(self):
         # Arrange
         event = OrderAccepted(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
+            OrderIdBroker('B-123456'),
+            Label('E'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -359,8 +361,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_rejected_events(self):
         # Arrange
         event = OrderRejected(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
             UNIX_EPOCH,
             ValidString('ORDER_ID_INVALID'),
             GUID(uuid.uuid4()),
@@ -376,11 +378,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_working_events(self):
         # Arrange
         event = OrderWorking(
-            OrderId('O-123456'),
-            OrderIdBroker('BO-123456'),
             self.account_id,
+            OrderId('O-123456'),
+            OrderIdBroker('B-123456'),
             AUDUSD_FXCM,
-            Label('S1_PT'),
+            Label('PT'),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
@@ -401,11 +403,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_working_events_with_expire_time(self):
         # Arrange
         event = OrderWorking(
+            self.account_id,
             OrderId('O-123456'),
             OrderIdBroker('BO-123456'),
-            self.account_id,
             AUDUSD_FXCM,
-            Label('S1_PT'),
+            Label('PT'),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
@@ -426,8 +428,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_cancelled_events(self):
         # Arrange
         event = OrderCancelled(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -442,8 +444,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_cancel_reject_events(self):
         # Arrange
         event = OrderCancelReject(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
             UNIX_EPOCH,
             ValidString('RESPONSE'),
             ValidString('ORDER_DOES_NOT_EXIST'),
@@ -460,9 +462,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_modified_events(self):
         # Arrange
         event = OrderModified(
+            self.account_id,
             OrderId('O-123456'),
             OrderIdBroker('BO-123456'),
-            self.account_id,
             Price('0.80010'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -478,8 +480,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_expired_events(self):
         # Arrange
         event = OrderExpired(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -494,8 +496,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_partially_filled_events(self):
         # Arrange
         event = OrderPartiallyFilled(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             AUDUSD_FXCM,
@@ -517,8 +519,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_filled_events(self):
         # Arrange
         event = OrderFilled(
-            OrderId('O-123456'),
             self.account_id,
+            OrderId('O-123456'),
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             AUDUSD_FXCM,
@@ -570,7 +572,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_accepted_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJDgyODlmYzZmLTc3OWEtNDAzNi1iODZjLWFmOWE5NTZmMjRlNKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTapQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6xBY2NlcHRlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'iKRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJDIzMWFiNjc2LWM4NzItNGJkNC04NmNkLTAwYWMzOGM1Zjc2MqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqVMYWJlbKpURVNUX09SREVSrEFjY2VwdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -578,8 +580,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
+        self.assertEqual(Label('TEST_ORDER'), result.label)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.accepted_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)

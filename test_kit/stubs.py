@@ -221,8 +221,8 @@ class TestStubs:
     def event_order_filled(order, fill_price=Price('1.00000')):
 
         return OrderFilled(
-            order.id,
             TestStubs.account_id(),
+            order.id,
             ExecutionId('E-' + order.id.value),
             ExecutionTicket('T-' + order.id.value),
             order.symbol,
@@ -237,9 +237,9 @@ class TestStubs:
     def event_order_working(order, working_price=Price('1.00000')):
 
         return OrderWorking(
+            TestStubs.account_id(),
             order.id,
             OrderIdBroker('B-' + order.id.value),
-            TestStubs.account_id(),
             order.symbol,
             order.label,
             order.side,
@@ -298,8 +298,8 @@ class TestStubs:
             Quantity(100000))
 
         order_filled = OrderFilled(
-            order.id,
             TestStubs.account_id(),
+            order.id,
             ExecutionId('E-' + order.id.value),
             ExecutionTicket('T-' + position.id.value),
             order.symbol,

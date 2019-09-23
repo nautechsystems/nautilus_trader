@@ -333,8 +333,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void submit_order(self, SubmitOrder command):
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
-            command.order.id,
             command.account_id,
+            command.order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -372,8 +372,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
-            order.id,
             command.account_id,
+            order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -417,9 +417,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate event
         cdef OrderModified modified = OrderModified(
+            command.account_id,
             order.id,
             order.id_broker,
-            command.account_id,
             command.modified_price,
             self._clock.time_now(),
             self._guid_factory.generate(),
@@ -433,8 +433,10 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _accept_order(self, Order order):
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
-            order.id,
             self._account.id,
+            order.id,
+            OrderIdBroker('B' + order.id.value),
+            order.label,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -444,8 +446,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _reject_order(self, Order order, str reason):
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
-            order.id,
             self._account.id,
+            order.id,
             self._clock.time_now(),
             ValidString(reason),
             self._guid_factory.generate(),
@@ -462,8 +464,8 @@ cdef class BacktestExecClient(ExecutionClient):
             str reason):
         # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
-            order_id,
             self._account.id,
+            order_id,
             self._clock.time_now(),
             ValidString(response),
             ValidString(reason),
@@ -475,8 +477,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _expire_order(self, Order order):
         # Generate event
         cdef OrderExpired expired = OrderExpired(
-            order.id,
             self._account.id,
+            order.id,
             order.expire_time,
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -563,9 +565,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
+            self._account.id,
             order.id,
             OrderIdBroker('B' + order.id.value),
-            self._account.id,
             order.symbol,
             order.label,
             order.side,
@@ -583,8 +585,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _fill_order(self, Order order, Price fill_price):
         # Generate event
         cdef OrderFilled filled = OrderFilled(
-            order.id,
             self._account.id,
+            order.id,
             ExecutionId('E-' + order.id.value),
             ExecutionTicket('ET-' + order.id.value),
             order.symbol,
@@ -643,8 +645,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate event
         cdef OrderRejected event = OrderRejected(
-            order.id,
             self._account.id,
+            order.id,
             self._clock.time_now(),
             ValidString(f"OCO order rejected from {oco_order_id}"),
             self._guid_factory.generate(),
@@ -658,8 +660,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
-            order.id,
             self._account.id,
+            order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
