@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import time
+
 from cpython.datetime cimport datetime
 from typing import List
 
@@ -139,7 +141,7 @@ cdef class Trader:
         self.is_running = True
         self._log.info("Running...")
 
-    cpdef void stop(self) except *:
+    cpdef void stop(self, float check_residuals_delay_sec=1) except *:
         """
         Stop the trader.
         """
@@ -155,6 +157,9 @@ cdef class Trader:
 
         self.is_running = False
         self._log.info("Stopped.")
+
+        time.sleep(check_residuals_delay_sec)
+
         self._exec_engine.check_residuals()
 
     cpdef void save(self) except *:
