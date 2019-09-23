@@ -45,8 +45,8 @@ class PositionTests(unittest.TestCase):
             Quantity(100000))
 
         order_filled = OrderFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -90,8 +90,8 @@ class PositionTests(unittest.TestCase):
             Quantity(100000))
 
         order_filled = OrderFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -129,8 +129,8 @@ class PositionTests(unittest.TestCase):
             Quantity(100000))
 
         order_partially_filled = OrderPartiallyFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -173,8 +173,8 @@ class PositionTests(unittest.TestCase):
             Quantity(100000))
 
         order_partially_filled = OrderPartiallyFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -217,8 +217,8 @@ class PositionTests(unittest.TestCase):
             Quantity(100000))
 
         order_filled1 = OrderFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -232,8 +232,8 @@ class PositionTests(unittest.TestCase):
         position = Position(PositionId('P-123456'), order_filled1)
 
         order_filled2 = OrderFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -275,8 +275,8 @@ class PositionTests(unittest.TestCase):
             Quantity(100000))
 
         order_filled1 = OrderFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -290,8 +290,8 @@ class PositionTests(unittest.TestCase):
         position = Position(PositionId('P-123456'), order_filled1)
 
         order_filled2 = OrderFilled(
-            order.id,
             self.account_id,
+            order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -339,8 +339,8 @@ class PositionTests(unittest.TestCase):
             Quantity(100000))
 
         order1_filled = OrderFilled(
-            order1.id,
             self.account_id,
+            order1.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order1.symbol,
@@ -354,8 +354,8 @@ class PositionTests(unittest.TestCase):
         position = Position(PositionId('P-123456'), order1_filled)
 
         order2_filled = OrderFilled(
-            order2.id,
             self.account_id,
+            order2.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order2.symbol,

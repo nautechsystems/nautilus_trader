@@ -832,8 +832,8 @@ class ExecutionEngineTests(unittest.TestCase):
         order2_filled = TestStubs.event_order_filled(order2)
 
         order3_filled = OrderFilled(
-            order3.id,
             self.account_id,
+            order3.id,
             ExecutionId('E3'),
             ExecutionTicket('T3'),
             AUDUSD_FXCM,
