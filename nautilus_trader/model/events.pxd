@@ -85,12 +85,14 @@ cdef class OrderRejected(OrderEvent):
 
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
+    cdef readonly OrderIdBroker order_id_broker
     cdef readonly datetime accepted_time
+    cdef readonly Label label
 
 
 cdef class OrderWorking(OrderEvent):
-    cdef readonly OrderIdBroker order_id_broker
     cdef readonly AccountId account_id
+    cdef readonly OrderIdBroker order_id_broker
     cdef readonly Symbol symbol
     cdef readonly Label label
     cdef readonly OrderSide order_side

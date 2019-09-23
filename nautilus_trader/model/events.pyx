@@ -140,8 +140,8 @@ cdef class OrderFillEvent(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  ExecutionId execution_id,
                  ExecutionTicket execution_ticket,
                  Symbol symbol,
@@ -154,8 +154,8 @@ cdef class OrderFillEvent(OrderEvent):
         """
         Initializes a new instance of the OrderFillEvent class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param execution_id: The event order execution_id.
         :param execution_ticket: The event order execution ticket.
         :param symbol: The event order symbol.
@@ -233,16 +233,16 @@ cdef class OrderSubmitted(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  datetime submitted_time,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderSubmitted class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param submitted_time: The event order submitted time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -270,8 +270,8 @@ cdef class OrderRejected(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  datetime rejected_time,
                  ValidString rejected_reason,
                  GUID event_id,
@@ -279,8 +279,8 @@ cdef class OrderRejected(OrderEvent):
         """
         Initializes a new instance of the OrderRejected class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param rejected_time: The event order rejected time.
         :param rejected_reason: The event order rejected reason.
         :param event_id: The event identifier.
@@ -311,16 +311,20 @@ cdef class OrderAccepted(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
+                 OrderIdBroker order_id_broker,
+                 Label label,
                  datetime accepted_time,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderAccepted class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
+        :param order_id_broker: The event broker order_id.
+        :param label: The event order label.
         :param accepted_time: The event order accepted time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -329,6 +333,8 @@ cdef class OrderAccepted(OrderEvent):
                          event_id,
                          event_timestamp)
         self.account_id = account_id
+        self.order_id_broker = order_id_broker
+        self.label = label
         self.accepted_time = accepted_time
 
     def __str__(self) -> str:
@@ -339,7 +345,8 @@ cdef class OrderAccepted(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
-                f"order_id={self.order_id.value})")
+                f"order_id={self.order_id.value}, "
+                f"label={self.label.value})")
 
 
 cdef class OrderWorking(OrderEvent):
@@ -348,9 +355,9 @@ cdef class OrderWorking(OrderEvent):
     """
 
     def __init__(self,
+                 AccountId account_id,
                  OrderId order_id,
                  OrderIdBroker order_id_broker,
-                 AccountId account_id,
                  Symbol symbol,
                  Label label,
                  OrderSide order_side,
@@ -365,9 +372,9 @@ cdef class OrderWorking(OrderEvent):
         """
         Initializes a new instance of the OrderWorking class.
 
+        :param account_id: The event account_id.
         :param order_id: The event order_id.
         :param order_id_broker: The event broker order_id.
-        :param account_id: The event account_id.
         :param symbol: The event order symbol.
         :param label: The event order label.
         :param order_side: The event order side.
@@ -385,8 +392,8 @@ cdef class OrderWorking(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
-        self.order_id_broker = order_id_broker
         self.account_id = account_id
+        self.order_id_broker = order_id_broker
         self.symbol = symbol
         self.label = label
         self.order_side = order_side
@@ -418,8 +425,8 @@ cdef class OrderCancelReject(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  datetime rejected_time,
                  ValidString rejected_response_to,
                  ValidString rejected_reason,
@@ -428,8 +435,8 @@ cdef class OrderCancelReject(OrderEvent):
         """
         Initializes a new instance of the OrderCancelReject class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param rejected_time: The event order cancel reject time.
         :param rejected_response_to: The event order cancel reject response.
         :param rejected_reason: The event order cancel reject reason.
@@ -463,16 +470,16 @@ cdef class OrderCancelled(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  datetime cancelled_time,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderCancelled class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param cancelled_time: The event order cancelled time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -500,9 +507,9 @@ cdef class OrderModified(OrderEvent):
     """
 
     def __init__(self,
+                 AccountId account_id,
                  OrderId order_id,
                  OrderIdBroker order_id_broker,
-                 AccountId account_id,
                  Price modified_price,
                  datetime modified_time,
                  GUID event_id,
@@ -510,9 +517,9 @@ cdef class OrderModified(OrderEvent):
         """
         Initializes a new instance of the OrderModified class.
 
+        :param account_id: The event account_id.
         :param order_id: The event order_id.
         :param order_id_broker: The event order broker identifier.
-        :param account_id: The event account_id.
         :param modified_price: The event modified price.
         :param modified_time: The event modified time.
         :param event_id: The event identifier.
@@ -521,8 +528,8 @@ cdef class OrderModified(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
-        self.order_id_broker = order_id_broker
         self.account_id = account_id
+        self.order_id_broker = order_id_broker
         self.modified_price = modified_price
         self.modified_time = modified_time
 
@@ -544,16 +551,16 @@ cdef class OrderExpired(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  datetime expired_time,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderExpired class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param expired_time: The event order expired time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -581,8 +588,8 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  ExecutionId execution_id,
                  ExecutionTicket execution_ticket,
                  Symbol symbol,
@@ -596,8 +603,8 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param execution_id: The event order execution_id.
         :param execution_ticket: The event order execution ticket.
         :param symbol: The event order symbol.
@@ -609,8 +616,8 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        super().__init__(order_id,
-                         account_id,
+        super().__init__(account_id,
+                         order_id,
                          execution_id,
                          execution_ticket,
                          symbol,
@@ -643,8 +650,8 @@ cdef class OrderFilled(OrderFillEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
                  AccountId account_id,
+                 OrderId order_id,
                  ExecutionId execution_id,
                  ExecutionTicket execution_ticket,
                  Symbol symbol,
@@ -657,8 +664,8 @@ cdef class OrderFilled(OrderFillEvent):
         """
         Initializes a new instance of the OrderFilled class.
 
-        :param order_id: The event order_id.
         :param account_id: The event account_id.
+        :param order_id: The event order_id.
         :param execution_id: The event order execution_id.
         :param execution_ticket: The event order execution ticket.
         :param symbol: The event order symbol.
@@ -669,8 +676,8 @@ cdef class OrderFilled(OrderFillEvent):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        super().__init__(order_id,
-                         account_id,
+        super().__init__(account_id,
+                         order_id,
                          execution_id,
                          execution_ticket,
                          symbol,

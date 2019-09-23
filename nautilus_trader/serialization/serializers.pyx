@@ -23,19 +23,15 @@ from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.identifiers cimport (
     Symbol,
-    TraderId,
-    StrategyId,
     OrderId,
     OrderIdBroker,
     PositionId,
-    AccountId,
     ExecutionId,
-    ExecutionTicket,
-    Label)
+    ExecutionTicket)
 from nautilus_trader.model.objects cimport Quantity, Money, Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.common.logger cimport LogMessage, LogLevel, log_level_from_string
+from nautilus_trader.common.logger cimport LogMessage, log_level_from_string
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport (
     OrderSerializer,
@@ -391,8 +387,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[SUBMITTED_TIME] = convert_datetime_to_string(event.submitted_time)
         elif isinstance(event, OrderAccepted):
-            package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
+            package[ORDER_ID] = event.order_id.value
+            package[ORDER_ID_BROKER] = event.order_id_broker.value
+            package[LABEL] = convert_label_to_string(event.label)
             package[ACCEPTED_TIME] = convert_datetime_to_string(event.accepted_time)
         elif isinstance(event, OrderRejected):
             package[ORDER_ID] = event.order_id.value
@@ -504,31 +502,33 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
         if event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[SUBMITTED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderAccepted.__name__:
             return OrderAccepted(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                OrderIdBroker(unpacked[ORDER_ID_BROKER]),
+                convert_string_to_label(unpacked[LABEL]),
                 convert_string_to_datetime(unpacked[ACCEPTED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderRejected.__name__:
             return OrderRejected(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 ValidString(unpacked[REJECTED_REASON]),
                 event_id,
                 event_timestamp)
         if event_type == OrderWorking.__name__:
             return OrderWorking(
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 Symbol.from_string(unpacked[SYMBOL]),
                 convert_string_to_label(unpacked[LABEL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
@@ -542,15 +542,15 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_datetime(unpacked[EXPIRE_TIME]))
         if event_type == OrderCancelled.__name__:
             return OrderCancelled(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[CANCELLED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderCancelReject.__name__:
             return OrderCancelReject(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 ValidString(unpacked[REJECTED_RESPONSE_TO]),
                 ValidString(unpacked[REJECTED_REASON]),
@@ -558,24 +558,24 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
         if event_type == OrderModified.__name__:
             return OrderModified(
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 Price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderExpired.__name__:
             return OrderExpired(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[EXPIRED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderPartiallyFilled.__name__:
             return OrderPartiallyFilled(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
@@ -588,8 +588,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
         if event_type == OrderFilled.__name__:
             return OrderFilled(
-                OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
