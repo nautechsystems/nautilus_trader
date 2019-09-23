@@ -7,13 +7,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import pandas as pd
 
 from nautilus_trader.model.objects import Quantity, Money, Price
-from nautilus_trader.common.brokerage import CommissionCalculator
+from nautilus_trader.common.brokerage import CommissionCalculator, RolloverInterestCalculator
 from test_kit.stubs import TestStubs
 
-GBPUSD_FXCM = TestStubs.instrument_gbpusd().symbol
-USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
+USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
 class CommissionCalculatorTests(unittest.TestCase):
@@ -69,3 +71,27 @@ class CommissionCalculatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money(20.00), result)
+
+
+class RolloverInterestCalculatorTests(unittest.TestCase):
+
+    def test_rate_dataframe_returns_correct_dataframe(self):
+        # Arrange
+        calculator = RolloverInterestCalculator()
+
+        # Act
+        rate_dataframe = calculator.get_rate_data()
+
+        # Assert
+        self.assertEqual(pd.DataFrame, type(rate_dataframe))
+        print(rate_dataframe)
+
+    def test_calc_overnight_fx_rate_with_audusd_returns_correct_rate(self):
+        # Arrange
+        calculator = RolloverInterestCalculator()
+
+        # Act
+        rate = calculator.calc_overnight_fx_rate(AUDUSD_FXCM, TestStubs.unix_epoch())
+
+        # Assert
+        self.assertEqual(0, rate)
