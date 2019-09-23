@@ -482,12 +482,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
     cpdef void check_residuals(self) except *:
-        # Check for any residual active orders and log warnings if any are found
         for order_id, order in self.get_orders_working().items():
-            self._log.warning(f"Residual {order}.")
+            self._log.warning(f"Residual working {order}.")
 
         for position_id, position in self.get_positions_open().items():
-            self._log.warning(f"Residual {position}.")
+            self._log.warning(f"Residual open {position}.")
 
     cpdef void reset(self) except *:
         # Reset the execution database by clearing all stateful values

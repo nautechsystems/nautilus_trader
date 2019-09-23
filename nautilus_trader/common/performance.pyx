@@ -510,11 +510,4 @@ cdef class PerformanceAnalyzer:
         ]
 
     cdef str _format_stat(self, float value, int decimals=2):
-        """
-        Print the given value rounded to the given decimals with signed formatting.
-        
-        :param value: The value to print.
-        :param decimals: The decimal precision for the value rounding.
-        :return str.
-        """
         return f'{value:.{decimals}f}'

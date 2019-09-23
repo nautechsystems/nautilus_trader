@@ -937,16 +937,6 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        # Check residual working orders
-        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
-        for order_id, order in working_orders.items():
-            self.log.warning(f"Residual working {order}")
-
-        # Check residual open positions
-        cdef dict open_positions = self._exec_engine.database.get_positions_open(self.id)
-        for position_id, position in open_positions.items():
-            self.log.warning(f"Residual open {position}")
-
         self.is_running = False
         self.update_state_log(self.time_now(), 'STOPPED')
         self.log.info(f"Stopped.")
