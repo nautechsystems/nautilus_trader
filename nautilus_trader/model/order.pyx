@@ -256,8 +256,8 @@ cdef class Order:
         Apply the given order event to the order.
 
         :param event: The order event to apply.
-        :raises ConditionFailed: If the order_events order_id is not equal to the order_id.
-        :raises ConditionFailed: If the order account_id is not None and the order_events account_id is not equal to the order account_id.
+        :raises ConditionFailed: If the order_events order_id is not equal to the event.order_id.
+        :raises ConditionFailed: If the order account_id is not None and is not equal to the event.account_id.
         """
         Condition.equal(self.id, event.order_id)
         if self.account_id is not None:
@@ -274,18 +274,19 @@ cdef class Order:
             self.account_id = event.account_id
         elif isinstance(event, OrderRejected):
             self.state = OrderState.REJECTED
-            self._set_state_to_completed()
+            self._set_is_completed_true()
         elif isinstance(event, OrderAccepted):
             self.state = OrderState.ACCEPTED
         elif isinstance(event, OrderWorking):
+            self.state = OrderState.WORKING
             self.id_broker = event.order_id_broker
-            self._set_state_to_working()
+            self._set_is_working_true()
         elif isinstance(event, OrderCancelled):
             self.state = OrderState.CANCELLED
-            self._set_state_to_completed()
+            self._set_is_completed_true()
         elif isinstance(event, OrderExpired):
             self.state = OrderState.EXPIRED
-            self._set_state_to_completed()
+            self._set_is_completed_true()
         elif isinstance(event, OrderModified):
             self.id_broker = event.order_id_broker
             self.price = event.modified_price
@@ -299,14 +300,13 @@ cdef class Order:
             self._set_slippage()
             self._set_filled_state()
             if self.state == OrderState.FILLED:
-                self._set_state_to_completed()
+                self._set_is_completed_true()
 
-    cdef void _set_state_to_working(self):
-        self.state = OrderState.WORKING
+    cdef void _set_is_working_true(self):
         self.is_working = True
         self.is_completed = False
 
-    cdef void _set_state_to_completed(self):
+    cdef void _set_is_completed_true(self):
         self.is_working = False
         self.is_completed = True
 
