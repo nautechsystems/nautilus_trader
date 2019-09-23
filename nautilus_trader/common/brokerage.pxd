@@ -6,8 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.model.objects cimport Money, Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.currency cimport ExchangeRateCalculator
 
 
 cdef class CommissionCalculator:
@@ -19,3 +22,11 @@ cdef class CommissionCalculator:
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value)
 
     cdef float _get_commission_rate(self, Symbol symbol)
+
+
+cdef class RolloverInterestCalculator:
+    cdef ExchangeRateCalculator _exchange_calculator
+    cdef object _rate_data
+
+    cpdef object get_rate_data(self)
+    cpdef float calc_overnight_fx_rate(self, Symbol symbol, datetime timestamp)
