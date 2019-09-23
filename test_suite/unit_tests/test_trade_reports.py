@@ -54,8 +54,8 @@ class ReportProviderTests(unittest.TestCase):
             Price('0.80000'))
 
         event = OrderFilled(
-            order1.id,
             self.account_id,
+            order1.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order1.symbol,
@@ -100,8 +100,8 @@ class ReportProviderTests(unittest.TestCase):
             Price('0.80000'))
 
         event = OrderFilled(
-            order1.id,
             self.account_id,
+            order1.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order1.symbol,
