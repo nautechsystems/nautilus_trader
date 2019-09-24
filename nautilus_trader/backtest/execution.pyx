@@ -230,8 +230,12 @@ cdef class BacktestExecClient(ExecutionClient):
 
         if not self.rollover_applied:
             if time_now >= self.rollover_time:
-                self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
-                self.rollover_applied = True
+                try:
+                    self.rollover_applied = True
+                    self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
+                except RuntimeError as ex:
+                    # Cannot calculate rollover interest
+                    self._log.error(str(ex))
 
         # Simulate market dynamics
         cdef OrderId order_id
