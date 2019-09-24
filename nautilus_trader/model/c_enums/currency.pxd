@@ -22,6 +22,7 @@ cpdef enum Currency:
     MXN = 484,
     NOK = 578,
     NZD = 554,
+    RUB = 643,
     SEK = 752,
     TRY = 949,
     SGD = 702,
@@ -59,6 +60,8 @@ cdef inline str currency_to_string(int value):
         return 'NOK'
     elif value == 554:
         return 'NZD'
+    elif value == 643:
+        return 'RUB'
     elif value == 752:
         return 'SEK'
     elif value == 949:
@@ -106,6 +109,8 @@ cdef inline Currency currency_from_string(str value):
         return Currency.NOK
     elif value == 'NZD':
         return Currency.NZD
+    elif value == 'RUB':
+        return Currency.RUB
     elif value == 'SEK':
         return Currency.SEK
     elif value == 'TRY':
