@@ -729,7 +729,7 @@ cdef class BacktestExecClient(ExecutionClient):
             filled_price=event.average_price,
             exchange_rate=exchange_rate)
 
-        self.total_commissions += commission
+        self.total_commissions -= commission
         pnl -= commission
 
         if not self.frozen_account:
@@ -777,14 +777,12 @@ cdef class BacktestExecClient(ExecutionClient):
                         ask_rates=self._build_current_ask_rates())
                 rollover_to_apply += Money(position.quantity.value * interest_rate * exchange_rate)
 
-        self.total_rollover += rollover_to_apply
-
         if iso_week_day == 3: # Book triple for Wednesdays
-            self.total_rollover += rollover_to_apply
-            self.total_rollover += rollover_to_apply
+            rollover_to_apply = rollover_to_apply * 3
         elif iso_week_day == 5: # Book triple for Fridays (holding over weekend)
-            self.total_rollover += rollover_to_apply
-            self.total_rollover += rollover_to_apply
+            rollover_to_apply = rollover_to_apply * 3
+
+        self.total_rollover += rollover_to_apply
 
         if not self.frozen_account:
             self.account_capital += rollover_to_apply
