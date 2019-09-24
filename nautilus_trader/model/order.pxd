@@ -64,6 +64,7 @@ cdef class Order:
     @staticmethod
     cdef Order create(OrderInitialized event)
     cdef bint equals(self, Order other)
+    cpdef str status_string(self)
     cpdef str state_as_string(self)
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)

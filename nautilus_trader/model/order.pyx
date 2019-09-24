@@ -209,14 +209,12 @@ cdef class Order:
 
         :return str.
         """
-        cdef str label = '' if self.label is None else f', label={self.label.value}'
-        cdef str purpose = '' if self.purpose == OrderPurpose.NONE else f', purpose={order_purpose_to_string(self.purpose)}'
-        cdef str price = '' if self.price is None else f'@ {self.price} '
-        cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
-        return (f"Order(id={self.id.value}, state={order_state_to_string(self.state)}"
-                f"{label}{purpose}) "
-                f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} {order_type_to_string(self.type)} {price}"
-                f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
+        cdef str label = '' if self.label is None else f', label={self.label.value}, '
+        return (f"Order("
+                f"id={self.id.value}, "
+                f"{label}"
+                f"state={order_state_to_string(self.state)}, "
+                f"{self.status_string()})")
 
     def __repr__(self) -> str:
         """
@@ -226,6 +224,18 @@ cdef class Order:
         :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    cpdef str status_string(self):
+        """
+        Return the positions status as a string.
+
+        :return str.
+        """
+        cdef str price = '' if self.price is None else f'@ {self.price} '
+        cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
+        return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
+                f"{order_type_to_string(self.type)} {price}"
+                f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
     cpdef str state_as_string(self):
         """

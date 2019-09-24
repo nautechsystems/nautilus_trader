@@ -230,8 +230,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),)
 
         # Assert
-        self.assertEqual('Order(id=O-19700101-000000-001-001-1, state=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY', str(order))
-        self.assertTrue(repr(order).startswith('<Order(id=O-19700101-000000-001-001-1, state=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY object at'))
+        self.assertEqual('Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100,000 AUDUSD.FXCM MARKET DAY)', str(order))
+        self.assertTrue(repr(order).startswith('<Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100,000 AUDUSD.FXCM MARKET DAY) object at'))
 
     def test_can_initialize_limit_order(self):
         # Arrange
@@ -414,8 +414,9 @@ class OrderTests(unittest.TestCase):
             Label('U1'))
 
         # Assert
-        self.assertEqual('AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, purpose=ENTRY) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=0.99990, TP=1.00010)', str(atomic_order))
-        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, purpose=ENTRY) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=0.99990, TP=1.00010) object at'))
+        self.assertEqual('AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, , label=U1_E, state=INITIALIZED, BUY 100,000 AUDUSD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)', str(atomic_order))
+        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, , label=U1_E, state=INITIALIZED, BUY 100,000 AUDUSD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at'))
+        self.assertTrue(repr(atomic_order).endswith('>'))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange
