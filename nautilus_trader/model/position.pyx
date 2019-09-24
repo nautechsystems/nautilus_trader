@@ -102,14 +102,14 @@ cdef class Position:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cdef str status_string(self):
+    cpdef str status_string(self):
         """
         Return the positions status as a string.
 
         :return str.
         """
         cdef str quantity = '' if self.relative_quantity == 0 else self.quantity.to_string_formatted()
-        return f"{self.symbol} {market_position_to_string(self.market_position)}{quantity}"
+        return f"{market_position_to_string(self.market_position)} {quantity} {self.symbol}"
 
     cpdef list get_order_ids(self):
         """
