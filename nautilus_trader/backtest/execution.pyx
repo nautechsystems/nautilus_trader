@@ -6,19 +6,23 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import datetime as dt
+import pytz
+
 from decimal import Decimal
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 from typing import List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
+from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
-from nautilus_trader.model.identifiers cimport Symbol, AccountId, OrderIdBroker
+from nautilus_trader.model.identifiers cimport Symbol, OrderIdBroker
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
@@ -45,11 +49,11 @@ from nautilus_trader.model.commands cimport (
     CancelOrder
 )
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.brokerage cimport CommissionCalculator
+from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
-from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
+from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.backtest.models cimport FillModel
 
@@ -106,6 +110,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self.instruments = instruments_dict  # type: Dict[Symbol, Instrument]
 
         self.day_number = 0
+        self.rollover_time = None
+        self.rollover_applied = False
         self.frozen_account = frozen_account
         self.starting_capital = starting_capital
         self.account_currency = account_currency
@@ -117,9 +123,12 @@ cdef class BacktestExecClient(ExecutionClient):
         self._account = Account(account_state)
         self._exec_engine.handle_event(account_state)
 
+        self.exec_db = None
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
+        self.rollover_calculator = RolloverInterestCalculator()
         self.total_commissions = Money.zero()
+        self.total_rollover = Money.zero()
         self.fill_model = fill_model
 
         self.current_bids = {}         # type: Dict[Symbol, Price]
@@ -131,7 +140,18 @@ cdef class BacktestExecClient(ExecutionClient):
         self._set_slippage_index()
 
     cpdef datetime time_now(self):
+        """
+        Return the current time for the execution client.
+
+        :return: datetime.
+        """
         return self._clock.time_now()
+
+    cpdef void register_exec_db(self, ExecutionDatabase exec_db):
+        """
+        Register the given execution database with the client.
+        """
+        self.exec_db = exec_db
 
     cpdef void connect(self):
         """
@@ -197,6 +217,21 @@ cdef class BacktestExecClient(ExecutionClient):
             self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money.zero()
+            self.rollover_applied = False
+            self.rollover_time = dt.datetime(
+                time_now.year,
+                time_now.month,
+                time_now.day,
+                17,
+                0,
+                0,
+                0,
+                tzinfo=pytz.timezone('US/Eastern')).astimezone(tz=pytz.utc) - timedelta(minutes=56) # TODO: Why is this 56 min out?
+
+        if not self.rollover_applied:
+            if time_now >= self.rollover_time:
+                self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
+                self.rollover_applied = True
 
         # Simulate market dynamics
         cdef OrderId order_id
@@ -715,6 +750,58 @@ cdef class BacktestExecClient(ExecutionClient):
             event_timestamp=self._clock.time_now())
 
         self._exec_engine.handle_event(account_event)
+
+    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day):
+        # Apply rollover interest for all open positions
+        if self.exec_db is None:
+            self._log.error("Cannot apply rollover interest (no execution database registered).")
+            return
+
+        cdef dict open_positions = self.exec_db.get_positions_open()
+
+        cdef Instrument instrument
+        cdef Currency quote_currency
+        cdef float interest_rate
+        cdef float exchange_rate
+        cdef Money rollover_to_apply = Money.zero()
+        for position in open_positions.values():
+            instrument = self.instruments[position.symbol]
+            if instrument.security_type == SecurityType.FOREX:
+                quote_currency = currency_from_string(position.symbol.code[:3])
+                interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)
+                exchange_rate = self.exchange_calculator.get_rate(
+                        quote_currency=quote_currency,
+                        base_currency=self._account.currency,
+                        quote_type=QuoteType.MID,
+                        bid_rates=self._build_current_bid_rates(),
+                        ask_rates=self._build_current_ask_rates())
+                rollover_to_apply += Money(position.quantity.value * interest_rate * exchange_rate)
+
+        self.total_rollover += rollover_to_apply
+
+        if iso_week_day == 3: # Book triple for Wednesdays
+            self.total_rollover += rollover_to_apply
+            self.total_rollover += rollover_to_apply
+        elif iso_week_day == 5: # Book triple for Fridays (holding over weekend)
+            self.total_rollover += rollover_to_apply
+            self.total_rollover += rollover_to_apply
+
+        if not self.frozen_account:
+            self.account_capital += rollover_to_apply
+            self.account_cash_activity_day += rollover_to_apply
+
+        cdef AccountStateEvent account_event = AccountStateEvent(
+            self._account.id,
+            self._account.currency,
+            self.account_capital,
+            self.account_cash_start_day,
+            self.account_cash_activity_day,
+            margin_used_liquidation=Money.zero(),
+            margin_used_maintenance=Money.zero(),
+            margin_ratio=Decimal(0),
+            margin_call_status=ValidString('N'),
+            event_id=self._guid_factory.generate(),
+            event_timestamp=self._clock.time_now())
 
     cdef dict _build_current_bid_rates(self):
         # Return the current currency bid rates in the markets as Dict[str, float]

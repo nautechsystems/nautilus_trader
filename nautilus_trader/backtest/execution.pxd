@@ -11,8 +11,8 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.brokerage cimport CommissionCalculator
-from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
+from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionClient
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
@@ -30,15 +30,20 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict instruments
     cdef readonly dict data_ticks
     cdef readonly int day_number
+    cdef readonly datetime rollover_time
+    cdef readonly bint rollover_applied
     cdef readonly bint frozen_account
     cdef readonly Currency account_currency
     cdef readonly Money starting_capital
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
+    cdef readonly ExecutionDatabase exec_db
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
+    cdef readonly RolloverInterestCalculator rollover_calculator
     cdef readonly Money total_commissions
+    cdef readonly Money total_rollover
     cdef readonly FillModel fill_model
     cdef readonly dict current_bids
     cdef readonly dict current_asks
@@ -48,6 +53,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict oco_orders
 
     cpdef datetime time_now(self)
+    cpdef void register_exec_db(self, ExecutionDatabase exec_db)
     cpdef void change_fill_model(self, FillModel fill_model)
     cpdef void process_tick(self, Tick tick)
     cpdef void process_bars(self, Symbol symbol, Bar bid_bar, Bar ask_bar)
@@ -70,6 +76,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id)
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id)
     cdef void _adjust_account(self, OrderFillEvent event)
+    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
     cdef Money _calculate_pnl(self, MarketPosition direction, Price entry_price, Price exit_price, Quantity quantity, float exchange_rate)
