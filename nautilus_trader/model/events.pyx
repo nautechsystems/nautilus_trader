@@ -778,7 +778,7 @@ cdef class PositionOpened(PositionEvent):
                 f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
-                f"status={self.position.status_string()})")
+                f"{self.position.status_string()})")
 
 
 cdef class PositionModified(PositionEvent):
@@ -819,7 +819,7 @@ cdef class PositionModified(PositionEvent):
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"points_realized={self.position.points_realized}, "
-                f"status={self.position.status_string()})")
+                f"{self.position.status_string()})")
 
 
 cdef class PositionClosed(PositionEvent):
@@ -860,7 +860,8 @@ cdef class PositionClosed(PositionEvent):
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"av_exit_price={self.position.average_exit_price}, "
-                f"points_realized={self.position.points_realized})")
+                f"points_realized={self.position.points_realized}, "
+                f"{self.position.status_string()})")
 
 
 cdef class TimeEvent(Event):
