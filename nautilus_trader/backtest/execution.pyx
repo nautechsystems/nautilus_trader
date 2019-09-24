@@ -127,6 +127,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
         self.rollover_calculator = RolloverInterestCalculator()
+        self.rollover_spread = Decimal(0) # Bank + Broker spread markup
         self.total_commissions = Money.zero()
         self.total_rollover = Money.zero()
         self.fill_model = fill_model
@@ -226,16 +227,15 @@ cdef class BacktestExecClient(ExecutionClient):
                 0,
                 0,
                 0,
-                tzinfo=pytz.timezone('US/Eastern')).astimezone(tz=pytz.utc) - timedelta(minutes=56) # TODO: Why is this 56 min out?
+                tzinfo=pytz.timezone('US/Eastern')).astimezone(tz=pytz.utc) - timedelta(minutes=56) # TODO: Why is this consistently 56 min out?
 
-        if not self.rollover_applied:
-            if time_now >= self.rollover_time:
-                try:
-                    self.rollover_applied = True
-                    self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
-                except RuntimeError as ex:
-                    # Cannot calculate rollover interest
-                    self._log.error(str(ex))
+        if not self.rollover_applied and time_now >= self.rollover_time:
+            try:
+                self.rollover_applied = True
+                self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
+            except RuntimeError as ex:
+                # Cannot calculate rollover interest
+                self._log.error(str(ex))
 
         # Simulate market dynamics
         cdef OrderId order_id
@@ -736,24 +736,25 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_commissions -= commission
         pnl -= commission
 
+        cdef AccountStateEvent account_event
         if not self.frozen_account:
             self.account_capital += pnl
             self.account_cash_activity_day += pnl
 
-        cdef AccountStateEvent account_event = AccountStateEvent(
-            self._account.id,
-            self._account.currency,
-            self.account_capital,
-            self.account_cash_start_day,
-            self.account_cash_activity_day,
-            margin_used_liquidation=Money.zero(),
-            margin_used_maintenance=Money.zero(),
-            margin_ratio=Decimal(0),
-            margin_call_status=ValidString('N'),
-            event_id=self._guid_factory.generate(),
-            event_timestamp=self._clock.time_now())
+            account_event = AccountStateEvent(
+                self._account.id,
+                self._account.currency,
+                self.account_capital,
+                self.account_cash_start_day,
+                self.account_cash_activity_day,
+                margin_used_liquidation=Money.zero(),
+                margin_used_maintenance=Money.zero(),
+                margin_ratio=Decimal(0),
+                margin_call_status=ValidString('N'),
+                event_id=self._guid_factory.generate(),
+                event_timestamp=self._clock.time_now())
 
-        self._exec_engine.handle_event(account_event)
+            self._exec_engine.handle_event(account_event)
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day):
         # Apply rollover interest for all open positions
@@ -786,24 +787,30 @@ cdef class BacktestExecClient(ExecutionClient):
         elif iso_week_day == 5: # Book triple for Fridays (holding over weekend)
             rollover_to_apply = rollover_to_apply * 3
 
+        # Apply any bank and broker spread markup (basis points)
+        rollover_to_apply -= rollover_to_apply * self.rollover_spread
+
         self.total_rollover += rollover_to_apply
 
+        cdef AccountStateEvent account_event
         if not self.frozen_account:
             self.account_capital += rollover_to_apply
             self.account_cash_activity_day += rollover_to_apply
 
-        cdef AccountStateEvent account_event = AccountStateEvent(
-            self._account.id,
-            self._account.currency,
-            self.account_capital,
-            self.account_cash_start_day,
-            self.account_cash_activity_day,
-            margin_used_liquidation=Money.zero(),
-            margin_used_maintenance=Money.zero(),
-            margin_ratio=Decimal(0),
-            margin_call_status=ValidString('N'),
-            event_id=self._guid_factory.generate(),
-            event_timestamp=self._clock.time_now())
+            account_event = AccountStateEvent(
+                self._account.id,
+                self._account.currency,
+                self.account_capital,
+                self.account_cash_start_day,
+                self.account_cash_activity_day,
+                margin_used_liquidation=Money.zero(),
+                margin_used_maintenance=Money.zero(),
+                margin_ratio=Decimal(0),
+                margin_call_status=ValidString('N'),
+                event_id=self._guid_factory.generate(),
+                event_timestamp=self._clock.time_now())
+
+            self._exec_engine.handle_event(account_event)
 
     cdef dict _build_current_bid_rates(self):
         # Return the current currency bid rates in the markets as Dict[str, float]
