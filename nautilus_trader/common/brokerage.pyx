@@ -101,8 +101,19 @@ cdef class RolloverInterestCalculator:
         csv_rate_data = pd.read_csv(rate_data_csv_path)
         self._rate_data = {
             Currency.AUD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'AUS'],
+            Currency.CAD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CAN'],
+            Currency.CHF: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHE'],
+            Currency.EUR: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'EA19'],
             Currency.USD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'USA'],
-            Currency.JPY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'JPN']
+            Currency.JPY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'JPN'],
+            Currency.NZD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NZL'],
+            Currency.GBP: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'GBR'],
+            Currency.RUB: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'RUS'],
+            Currency.NOK: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NOR'],
+            Currency.CNY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
+            Currency.CNH: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
+            Currency.MXN: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'MEX'],
+            Currency.ZAR: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'ZAF'],
         }
 
     cpdef object get_rate_data(self):
