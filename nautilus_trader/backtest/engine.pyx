@@ -174,6 +174,7 @@ cdef class BacktestEngine:
             logger=self.test_logger)
 
         self.exec_engine.register_client(self.exec_client)
+        self.exec_client.register_exec_db(self.exec_db)
 
         for strategy in strategies:
             # Replace strategies clocks with separate test clocks for independent iteration
@@ -485,19 +486,20 @@ cdef class BacktestEngine:
             timedelta time_step):
         cdef str account_currency = currency_to_string(self.config.account_currency)
         cdef int account_starting_length = len(str(self.config.starting_capital))
-        cdef timedelta elapsed_running = self.clock.get_delta(run_started)
+        cdef timedelta elapsed_running = run_finished - run_started
         cdef timedelta elapsed_total = self.time_to_initialize + elapsed_running
 
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"Run started datetime:  {format_zulu_datetime(run_started)}")
-        self.log.info(f"Run finished datetime: {format_zulu_datetime(run_finished)}")
-        self.log.info(f"Elapsed time (engine initialization): {self.time_to_initialize}")
-        self.log.info(f"Elapsed time (running backtest):      {elapsed_running}")
-        self.log.info(f"Elapsed time total:                   {elapsed_total}")
+        self.log.info(f"Run started datetime:    {format_zulu_datetime(run_started)}")
+        self.log.info(f"Run finished datetime:   {format_zulu_datetime(run_finished)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
+        self.log.info(f"Elapsed time (initialization): {self.time_to_initialize}")
+        self.log.info(f"Elapsed time (running):        {elapsed_running}")
+        self.log.info(f"Elapsed time total:            {elapsed_total}")
+
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
         self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
         self.log.info(f"Total events: {self.exec_engine.event_count}")
@@ -508,6 +510,7 @@ cdef class BacktestEngine:
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
         self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_engine.get_account().cash_balance), account_starting_length)} {account_currency}")
         self.log.info(f"Commissions (total):        {pad_string(str(self.exec_client.total_commissions), account_starting_length)} {account_currency}")
+        self.log.info(f"Rollover interest (total):  {pad_string(str(self.exec_client.total_rollover), account_starting_length)} {account_currency}")
         self.log.info("")
 
         self.log.info("#---------------------------------------------------------------#")
