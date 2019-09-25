@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_data_analyzers.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_trade_analyzers.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -10,9 +10,9 @@ import unittest
 
 from decimal import Decimal
 
-from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Price, Tick
+from nautilus_trader.trade.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

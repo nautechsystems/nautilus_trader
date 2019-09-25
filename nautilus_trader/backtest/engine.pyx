@@ -496,9 +496,9 @@ cdef class BacktestEngine:
         self.log.info(f"Run finished datetime:   {format_zulu_datetime(run_finished)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Elapsed time (initialization): {self.time_to_initialize}")
-        self.log.info(f"Elapsed time (running):        {elapsed_running}")
-        self.log.info(f"Elapsed time total:            {elapsed_total}")
+        self.log.info(f"Elapsed time (init):     {self.time_to_initialize}")
+        self.log.info(f"Elapsed time (run):      {elapsed_running}")
+        self.log.info(f"Elapsed time total:      {elapsed_total}")
 
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
         self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")

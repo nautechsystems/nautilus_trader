@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_data_tools.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_common_tools.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -12,7 +12,7 @@ from pandas import Timestamp
 from datetime import datetime, timezone
 
 from nautilus_trader.model.objects import Price, Bar
-from nautilus_trader.data.tools import TickBuilder, BarBuilder, IndicatorUpdater
+from nautilus_trader.common.tools import TickBuilder, BarBuilder, IndicatorUpdater
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
