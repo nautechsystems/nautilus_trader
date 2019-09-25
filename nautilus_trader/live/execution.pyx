@@ -15,7 +15,13 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, Message, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport (
+    AccountId,
+    TraderId,
+    StrategyId,
+    OrderId,
+    PositionId,
+    PositionIdBroker)
 from nautilus_trader.model.commands cimport (
     Command,
     AccountInquiry,
@@ -46,6 +52,7 @@ cdef str CONFIG = 'Config'
 cdef str ACCOUNTS = 'Accounts'
 cdef str ORDER = 'Order'
 cdef str ORDERS = 'Orders'
+cdef str BROKER = 'BrokerId'
 cdef str POSITION = 'Position'
 cdef str POSITIONS = 'Positions'
 cdef str STRATEGY = 'Strategy'
@@ -94,6 +101,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_strategies               = f'{self.key_trader}:{STRATEGIES}:'
         self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER}{POSITION}'      # HASH
         self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER}{STRATEGY}'      # HASH
+        self.key_index_broker_position    = f'{self.key_trader}:{INDEX}:{BROKER}{POSITION}'     # HASH
         self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION}{STRATEGY}'   # HASH
         self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION}{ORDERS}:'    # SET
         self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY}{ORDERS}:'    # SET
@@ -282,6 +290,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event))
+        pipe.hset(name=self.key_index_broker_position, key=position.id_broker.value, value=position.id.value)
         pipe.sadd(self.key_index_positions, position.id.value)
         pipe.sadd(self.key_index_positions_open, position.id.value)
         cdef list reply = pipe.execute()
@@ -595,6 +604,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return StrategyId.from_string(self._redis.hget(name=self.key_index_order_strategy, key=order_id.value).decode(UTF8))
 
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+        """
+        Return the strategy_id associated with the given position_id (if found).
+        
+        :param position_id: The position_id associated with the strategy.
+        :return StrategyId or None: 
+        """
+        return StrategyId.from_string(self._redis.hget(name=self.key_index_position_strategy, key=position_id.value).decode(UTF8))
+
     cpdef Order get_order(self, OrderId order_id):
         """
         Return the order matching the given identifier (if found).
@@ -687,6 +705,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
         if position_id_bytes is None:
             self._log.warning(f"Cannot get position_id for {order_id} (no matching position_id found in database).")
+            return position_id_bytes
+
+        return PositionId(position_id_bytes.decode(UTF8))
+
+    cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker):
+        """
+        Return the position associated with the given order_id (if found, else None).
+        
+        :param position_id_broker: The broker position_id.
+        :return PositionId or None.
+        """
+        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id_broker.value)
+        if position_id_bytes is None:
+            self._log.warning(f"Cannot get position_id for {position_id_broker} (no matching position_id found in database).")
             return position_id_bytes
 
         return PositionId(position_id_bytes.decode(UTF8))

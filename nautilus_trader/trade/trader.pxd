@@ -36,7 +36,8 @@ cdef class Trader:
 
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *
-    cpdef void stop(self, float check_residuals_delay_sec=*) except *
+    cpdef void stop(self) except *
+    cpdef void check_residuals(self) except *
     cpdef void save(self) except *
     cpdef void load(self) except *
     cpdef void reset(self) except *
