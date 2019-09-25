@@ -14,7 +14,7 @@ from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarTyp
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.data.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
+from nautilus_trader.trade.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce

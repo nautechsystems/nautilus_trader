@@ -62,7 +62,6 @@ cdef class SpreadAnalyzer:
     cpdef list get_average_spreads(self):
         """
         Return a list of average spread snapshots.
-
         :return List[Decimal].
         """
         return list(self._average_spreads)
@@ -94,7 +93,6 @@ cdef class LiquidityAnalyzer:
     def __init__(self, float liquidity_threshold=2.0):
         """
         Initializes a new instance of the LiquidityAnalyzer class.
-
         :param liquidity_threshold: The multiple of spread to average volatility
         which constitutes a liquid market (> 0) (default=2.0).
         :raises ConditionFailed: If the liquidity threshold is not positive (> 0).
