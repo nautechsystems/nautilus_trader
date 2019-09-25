@@ -466,6 +466,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             OrderId('O-123456'),
             OrderIdBroker('BO-123456'),
+            Quantity(100000),
             Price('0.80010'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -696,7 +697,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_modified_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iKRUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJGRjZGVhYmM3LTliNjAtNGZiYS1hNThhLTA1ZDQyNmNhYmEyNKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTapQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT61Nb2RpZmllZFByaWNloTKsTW9kaWZpZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'iaRUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJGE1MGUwMjMxLTk1ODgtNDgxOS04YTFlLTJkMzQxNmEwOTE3N6lUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NrBNb2RpZmllZFF1YW50aXR50gABhqCtTW9kaWZpZWRQcmljZaEyrE1vZGlmaWVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -732,7 +733,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_partially_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jaRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SRmZjI3MDVjMy1jMjIzLTRkNjgtYmVjMy00NjJkOTkwOWEwZDGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+rRXhlY3V0aW9uSWSnRTEyMzQ1Nq9FeGVjdXRpb25UaWNrZXSnUDEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02pT3JkZXJTaWRlo0JVWa5GaWxsZWRRdWFudGl0edIAAMNQrkxlYXZlc1F1YW50aXR50gAAw1CsQXZlcmFnZVByaWNlozIuMK1FeGVjdXRpb25UaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'jaRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SRjY2Q2YTdkNy1jY2UyLTRkYmUtODE2MC1hN2I1YmFjMWZiZDapVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCtRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -756,7 +757,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jKRUeXBlq09yZGVyRmlsbGVkoklk2SRjZGJlYjcxNS0yNGFkLTQ1OTMtYTgwZS01OTVjYTMyNjE3ZjipVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+rRXhlY3V0aW9uSWSnRTEyMzQ1Nq9FeGVjdXRpb25UaWNrZXSnUDEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02pT3JkZXJTaWRlo0JVWa5GaWxsZWRRdWFudGl0edIAAYagrEF2ZXJhZ2VQcmljZaMyLjCtRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'jKRUeXBlq09yZGVyRmlsbGVkoklk2SQ2ZWFjZDFmNy1jMWQyLTQ2Y2EtODA1NC1kZjZkMDc0YjcwNTGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wrUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act

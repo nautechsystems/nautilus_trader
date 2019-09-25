@@ -13,7 +13,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected
-from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId, Label
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -149,8 +149,8 @@ cdef class TradingStrategy:
     cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price)
     cpdef void cancel_order(self, Order order, str cancel_reason=*)
     cpdef void cancel_all_orders(self, str cancel_reason=*)
-    cpdef void flatten_position(self, PositionId position_id)
-    cpdef void flatten_all_positions(self)
+    cpdef void flatten_position(self, PositionId position_id, Label label=*)
+    cpdef void flatten_all_positions(self, Label label=*)
 
     cdef void _flatten_on_sl_reject(self, OrderRejected event)
 
