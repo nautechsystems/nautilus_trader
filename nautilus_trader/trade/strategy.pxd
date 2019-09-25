@@ -15,7 +15,7 @@ from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
@@ -146,7 +146,7 @@ cdef class TradingStrategy:
     cpdef void account_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id)
-    cpdef void modify_order(self, Order order, Price new_price)
+    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price)
     cpdef void cancel_order(self, Order order, str cancel_reason=*)
     cpdef void cancel_all_orders(self, str cancel_reason=*)
     cpdef void flatten_position(self, PositionId position_id)

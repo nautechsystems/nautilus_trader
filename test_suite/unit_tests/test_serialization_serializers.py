@@ -261,6 +261,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             OrderId('O-123456'),
+            Quantity(100000),
             Price('1.00001'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -499,7 +500,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             OrderId('O-123456'),
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(50000),
@@ -522,7 +523,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             OrderId('O-123456'),
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
@@ -742,7 +743,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
-        self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
+        self.assertEqual(PositionIdBroker('P123456'), result.position_id_broker)
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(50000), result.filled_quantity)
@@ -766,7 +767,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
-        self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
+        self.assertEqual(PositionIdBroker('P123456'), result.position_id_broker)
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)

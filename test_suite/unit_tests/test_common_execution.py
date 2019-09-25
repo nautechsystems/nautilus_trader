@@ -22,7 +22,7 @@ from nautilus_trader.model.identifiers import (
     OrderId,
     PositionId,
     ExecutionId,
-    ExecutionTicket)
+    PositionIdBroker)
 from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
@@ -835,7 +835,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.account_id,
             order3.id,
             ExecutionId('E3'),
-            ExecutionTicket('T3'),
+            PositionIdBroker('T3'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

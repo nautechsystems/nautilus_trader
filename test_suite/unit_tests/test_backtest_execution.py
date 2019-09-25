@@ -222,7 +222,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Act
-        strategy.modify_order(order, Price('96.714'))
+        strategy.modify_order(order, order.quantity, Price('96.714'))
 
         # Assert
         self.assertEqual(Price('96.714'), strategy.order(order.id).price)
@@ -247,7 +247,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Act
-        strategy.modify_order(atomic_order.stop_loss, Price('85.100'))
+        strategy.modify_order(atomic_order.stop_loss, atomic_order.entry.quantity, Price('85.100'))
 
         # Assert
         self.assertEqual(Price('85.100'), strategy.order(atomic_order.stop_loss.id).price)

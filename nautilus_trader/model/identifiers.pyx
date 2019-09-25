@@ -417,16 +417,16 @@ cdef class ExecutionId(Identifier):
         super().__init__(value)
 
 
-cdef class ExecutionTicket(Identifier):
+cdef class PositionIdBroker(Identifier):
     """
-    Represents a valid execution ticket.
+    Represents a valid broker position identifier.
     """
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the ExecutionTicket class.
+        Initializes a new instance of the PositionIdBroker class.
 
-        :param value: The execution ticket identifier value.
+        :param value: The broker position identifier value.
         """
         super().__init__(value)
 

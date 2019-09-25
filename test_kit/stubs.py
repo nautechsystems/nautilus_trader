@@ -36,7 +36,7 @@ from nautilus_trader.model.identifiers import (
     AccountId,
     OrderIdBroker,
     ExecutionId,
-    ExecutionTicket)
+    PositionIdBroker)
 from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.position import Position
@@ -224,7 +224,7 @@ class TestStubs:
             TestStubs.account_id(),
             order.id,
             ExecutionId('E-' + order.id.value),
-            ExecutionTicket('T-' + order.id.value),
+            PositionIdBroker('T-' + order.id.value),
             order.symbol,
             order.side,
             order.quantity,
@@ -301,7 +301,7 @@ class TestStubs:
             TestStubs.account_id(),
             order.id,
             ExecutionId('E-' + order.id.value),
-            ExecutionTicket('T-' + position.id.value),
+            PositionIdBroker('T-' + position.id.value),
             order.symbol,
             order.side,
             order.quantity,

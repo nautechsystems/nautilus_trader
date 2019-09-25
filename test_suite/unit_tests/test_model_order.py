@@ -26,7 +26,7 @@ from nautilus_trader.model.identifiers import (
     AtomicOrderId,
     AccountId,
     ExecutionId,
-    ExecutionTicket)
+    PositionIdBroker)
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
@@ -611,6 +611,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             OrderIdBroker('SOME_BROKER_ID_2'),
+            Quantity(120000),
             Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -624,6 +625,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.WORKING, order.state)
         self.assertEqual(OrderIdBroker('SOME_BROKER_ID_2'), order.id_broker)
+        self.assertEqual(Quantity(120000), order.quantity)
         self.assertEqual(Price('1.00001'), order.price)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
@@ -640,7 +642,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
-            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            PositionIdBroker('SOME_EXEC_TICKET_1'),
             order.symbol,
             order.side,
             order.quantity,
@@ -671,7 +673,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
-            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            PositionIdBroker('SOME_EXEC_TICKET_1'),
             order.symbol,
             order.side,
             order.quantity,
@@ -704,7 +706,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
-            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            PositionIdBroker('SOME_EXEC_TICKET_1'),
             order.symbol,
             order.side,
             Quantity(50000),
@@ -738,7 +740,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
-            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            PositionIdBroker('SOME_EXEC_TICKET_1'),
             order.symbol,
             order.side,
             Quantity(150000),

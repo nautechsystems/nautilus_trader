@@ -146,6 +146,7 @@ cdef class ModifyOrder(Command):
                  TraderId trader_id,
                  AccountId account_id,
                  OrderId order_id,
+                 Quantity modified_quantity,
                  Price modified_price,
                  GUID command_id,
                  datetime command_timestamp):
@@ -155,6 +156,7 @@ cdef class ModifyOrder(Command):
         :param trader_id: The trader_id for the command.
         :param account_id: The account_id for the command.
         :param order_id: The order_id.
+        :param modified_price: The modified quantity for the order.
         :param modified_price: The modified price for the order.
         :param command_id: The command identifier.
         :param command_timestamp: The command timestamp.
@@ -163,6 +165,7 @@ cdef class ModifyOrder(Command):
         self.trader_id = trader_id
         self.account_id = account_id
         self.order_id = order_id
+        self.modified_quantity = modified_quantity
         self.modified_price = modified_price
 
     def __str__(self) -> str:
@@ -175,6 +178,7 @@ cdef class ModifyOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"order_id={self.order_id.value}, "
+                f"modified_quantity={self.modified_quantity}, "
                 f"modified_price={self.modified_price})")
 
 

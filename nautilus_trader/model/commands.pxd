@@ -9,7 +9,7 @@
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport OrderId, TraderId, StrategyId, PositionId, AccountId
-from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Price, Quantity
 from nautilus_trader.model.order cimport Order, AtomicOrder
 
 
@@ -38,6 +38,7 @@ cdef class ModifyOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly OrderId order_id
+    cdef readonly Quantity modified_quantity
     cdef readonly Price modified_price
 
 
