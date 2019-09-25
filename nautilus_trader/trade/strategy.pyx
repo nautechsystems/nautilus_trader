@@ -22,7 +22,7 @@ from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
 from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport NullAccount
@@ -1119,12 +1119,13 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void modify_order(self, Order order, Price new_price):
+    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price):
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
 
         :param order: The order to modify.
+        :param new_quantity: The new quantity for the given order.
         :param new_price: The new price for the given order.
         """
         if not self.is_exec_engine_registered:
@@ -1135,6 +1136,7 @@ cdef class TradingStrategy:
             self.trader_id,
             self.account.id,
             order.id,
+            new_quantity,
             new_price,
             self.guid_factory.generate(),
             self.clock.time_now())

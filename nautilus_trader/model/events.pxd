@@ -23,7 +23,7 @@ from nautilus_trader.model.identifiers cimport (
     AccountNumber,
     AccountId,
     ExecutionId,
-    ExecutionTicket,
+    PositionIdBroker,
     StrategyId,
     OrderId,
     OrderIdBroker
@@ -52,7 +52,7 @@ cdef class OrderEvent(Event):
 cdef class OrderFillEvent(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
-    cdef readonly ExecutionTicket execution_ticket
+    cdef readonly PositionIdBroker position_id_broker
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity
@@ -124,6 +124,7 @@ cdef class OrderExpired(OrderEvent):
 cdef class OrderModified(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly OrderIdBroker order_id_broker
+    cdef readonly Quantity modified_quantity
     cdef readonly Price modified_price
     cdef readonly datetime modified_time
 

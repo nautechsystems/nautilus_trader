@@ -15,7 +15,7 @@ from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, MarketPosition
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, OrderId, PositionId, AccountId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, OrderId, PositionId, AccountId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -48,7 +48,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             order.side,
             order.quantity,
@@ -71,9 +71,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.id], position.get_order_ids())
         self.assertEqual([ExecutionId('E123456')], position.get_execution_ids())
-        self.assertEqual([ExecutionTicket('T123456')], position.get_execution_tickets())
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
-        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertFalse(position.is_flat)
         self.assertTrue(position.is_long)
         self.assertFalse(position.is_short)
@@ -93,7 +92,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             order.side,
             order.quantity,
@@ -112,7 +111,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(1, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
-        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertFalse(position.is_flat)
         self.assertFalse(position.is_long)
         self.assertTrue(position.is_short)
@@ -132,7 +131,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             order.side,
             Quantity(50000),
@@ -155,7 +154,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
-        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertFalse(position.is_flat)
         self.assertTrue(position.is_long)
         self.assertFalse(position.is_short)
@@ -176,7 +175,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             order.side,
             Quantity(50000),
@@ -199,7 +198,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
-        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertFalse(position.is_flat)
         self.assertFalse(position.is_long)
         self.assertTrue(position.is_short)
@@ -220,7 +219,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             OrderSide.BUY,
             order.quantity,
@@ -235,7 +234,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             OrderSide.SELL,
             order.quantity,
@@ -255,7 +254,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
-        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertEqual(UNIX_EPOCH, position.exit_time)
         self.assertEqual(Price('1.00001'), position.average_exit_price)
         self.assertTrue(position.is_flat)
@@ -278,7 +277,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             OrderSide.SELL,
             order.quantity,
@@ -293,7 +292,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order.symbol,
             OrderSide.BUY,
             order.quantity,
@@ -314,7 +313,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(2, position.event_count)
         self.assertEqual([order.id], position.get_order_ids())
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
-        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertEqual(UNIX_EPOCH, position.exit_time)
         self.assertEqual(Price('1.00001'), position.average_exit_price)
         self.assertTrue(position.is_flat)
@@ -342,7 +341,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order1.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order1.symbol,
             order1.side,
             order1.quantity,
@@ -357,7 +356,7 @@ class PositionTests(unittest.TestCase):
             self.account_id,
             order2.id,
             ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
+            PositionIdBroker('T123456'),
             order2.symbol,
             order2.side,
             order2.quantity,
@@ -378,7 +377,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(2, position.event_count)
         self.assertEqual([order1.id, order2.id], position.get_order_ids())
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
-        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertEqual(UNIX_EPOCH, position.exit_time)
         self.assertEqual(Price('1.00000'), position.average_exit_price)
         self.assertTrue(position.is_flat)

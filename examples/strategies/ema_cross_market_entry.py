@@ -190,13 +190,13 @@ class EMACrossMarketEntryPy(TradingStrategy):
                 if working_order.is_sell:
                     temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                     if temp_price > working_order.price:
-                        self.modify_order(working_order, temp_price)
+                        self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
                     temp_price = Price(
                         bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                     if temp_price < working_order.price:
-                        self.modify_order(working_order, temp_price)
+                        self.modify_order(working_order, working_order.quantity, temp_price)
 
     def on_instrument(self, instrument: Instrument):
         """

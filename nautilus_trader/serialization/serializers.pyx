@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers cimport (
     OrderIdBroker,
     PositionId,
     ExecutionId,
-    ExecutionTicket)
+    PositionIdBroker)
 from nautilus_trader.model.objects cimport Quantity, Money, Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
@@ -118,7 +118,7 @@ cdef class MsgPackSerializer:
 
         # Manually decode
         for k, v in unpacked_raw.items():
-            if k in ignore:
+            if k in ignore or isinstance(v, int):
                 unpacked[k.decode(UTF8)] = v
             else:
                 unpacked[k.decode(UTF8)] = v.decode(UTF8)
@@ -260,6 +260,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[ORDER_ID] = command.order_id.value
+            package[MODIFIED_QUANTITY] = command.modified_quantity.value
             package[MODIFIED_PRICE] = str(command.modified_price)
         elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
@@ -321,6 +322,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
+                Quantity(unpacked[MODIFIED_QUANTITY]),
                 Price(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
@@ -425,6 +427,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[MODIFIED_TIME] = convert_datetime_to_string(event.modified_time)
+            package[MODIFIED_QUANTITY] = event.modified_quantity.value
             package[MODIFIED_PRICE] = str(event.modified_price)
         elif isinstance(event, OrderExpired):
             package[ORDER_ID] = event.order_id.value
@@ -434,7 +437,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[EXECUTION_ID] = event.execution_id.value
-            package[EXECUTION_TICKET] = event.execution_ticket.value
+            package[POSITION_ID_BROKER] = event.position_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[FILLED_QUANTITY] = event.filled_quantity.value
@@ -445,7 +448,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[EXECUTION_ID] = event.execution_id.value
-            package[EXECUTION_TICKET] = event.execution_ticket.value
+            package[POSITION_ID_BROKER] = event.position_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[FILLED_QUANTITY] = event.filled_quantity.value
@@ -561,6 +564,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
+                Quantity(unpacked[MODIFIED_QUANTITY]),
                 Price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
@@ -577,7 +581,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
-                ExecutionTicket(unpacked[EXECUTION_TICKET]),
+                PositionIdBroker(unpacked[POSITION_ID_BROKER]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 Quantity(unpacked[FILLED_QUANTITY]),
@@ -591,7 +595,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
-                ExecutionTicket(unpacked[EXECUTION_TICKET]),
+                PositionIdBroker(unpacked[POSITION_ID_BROKER]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 Quantity(unpacked[FILLED_QUANTITY]),

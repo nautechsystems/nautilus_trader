@@ -32,13 +32,14 @@ cdef str REJECTED_RESPONSE_TO
 cdef str REJECTED_REASON
 cdef str WORKING_TIME
 cdef str CANCELLED_TIME
-cdef str MODIFIED_TIME
+cdef str MODIFIED_QUANTITY
 cdef str MODIFIED_PRICE
+cdef str MODIFIED_TIME
 cdef str EXPIRE_TIME
 cdef str EXPIRED_TIME
 cdef str EXECUTION_TIME
 cdef str EXECUTION_ID
-cdef str EXECUTION_TICKET
+cdef str POSITION_ID_BROKER
 cdef str ORDER_SIDE
 cdef str ORDER_TYPE
 cdef str ENTRY

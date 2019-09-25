@@ -40,7 +40,7 @@ from nautilus_trader.model.events cimport (
     OrderCancelReject,
     OrderFilled
 )
-from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.commands cimport (
     AccountInquiry,
     SubmitOrder,
@@ -433,6 +433,10 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Price current_ask
         cdef Price current_bid
 
+        if command.modified_quantity.value == 0:
+            self._cancel_reject_order(order, 'modify order', f'modified quantity {command.modified_quantity} invalid')
+            return  # Cannot modify order
+
         if order.side == OrderSide.BUY:
             current_ask = self.current_asks[order.symbol]
             if order.type in STOP_ORDER_TYPES:
@@ -459,6 +463,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command.account_id,
             order.id,
             order.id_broker,
+            command.modified_quantity,
             command.modified_price,
             self._clock.time_now(),
             self._guid_factory.generate(),
@@ -627,7 +632,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             order.id,
             ExecutionId('E-' + order.id.value),
-            ExecutionTicket('ET-' + order.id.value),
+            PositionIdBroker('ET-' + order.id.value),
             order.symbol,
             order.side,
             order.quantity,

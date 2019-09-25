@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers cimport (
     StrategyId,
     OrderId,
     ExecutionId,
-    ExecutionTicket)
+    PositionIdBroker)
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.position cimport Position
 
@@ -143,7 +143,7 @@ cdef class OrderFillEvent(OrderEvent):
                  AccountId account_id,
                  OrderId order_id,
                  ExecutionId execution_id,
-                 ExecutionTicket execution_ticket,
+                 PositionIdBroker position_id_broker,
                  Symbol symbol,
                  OrderSide order_side,
                  Quantity filled_quantity,
@@ -157,7 +157,7 @@ cdef class OrderFillEvent(OrderEvent):
         :param account_id: The event account_id.
         :param order_id: The event order_id.
         :param execution_id: The event order execution_id.
-        :param execution_ticket: The event order execution ticket.
+        :param position_id_broker: The event broker position identifier.
         :param symbol: The event order symbol.
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
@@ -171,7 +171,7 @@ cdef class OrderFillEvent(OrderEvent):
                          event_timestamp)
         self.account_id = account_id
         self.execution_id = execution_id
-        self.execution_ticket = execution_ticket
+        self.position_id_broker = position_id_broker
         self.symbol = symbol
         self.order_side = order_side
         self.filled_quantity = filled_quantity
@@ -511,6 +511,7 @@ cdef class OrderModified(OrderEvent):
                  AccountId account_id,
                  OrderId order_id,
                  OrderIdBroker order_id_broker,
+                 Quantity modified_quantity,
                  Price modified_price,
                  datetime modified_time,
                  GUID event_id,
@@ -521,6 +522,7 @@ cdef class OrderModified(OrderEvent):
         :param account_id: The event account_id.
         :param order_id: The event order_id.
         :param order_id_broker: The event order broker identifier.
+        :param modified_quantity: The event modified quantity.
         :param modified_price: The event modified price.
         :param modified_time: The event modified time.
         :param event_id: The event identifier.
@@ -531,6 +533,7 @@ cdef class OrderModified(OrderEvent):
                          event_timestamp)
         self.account_id = account_id
         self.order_id_broker = order_id_broker
+        self.modified_quantity = modified_quantity
         self.modified_price = modified_price
         self.modified_time = modified_time
 
@@ -592,7 +595,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                  AccountId account_id,
                  OrderId order_id,
                  ExecutionId execution_id,
-                 ExecutionTicket execution_ticket,
+                 PositionIdBroker position_id_broker,
                  Symbol symbol,
                  OrderSide order_side,
                  Quantity filled_quantity,
@@ -607,7 +610,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         :param account_id: The event account_id.
         :param order_id: The event order_id.
         :param execution_id: The event order execution_id.
-        :param execution_ticket: The event order execution ticket.
+        :param position_id_broker: The event broker position identifier.
         :param symbol: The event order symbol.
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
@@ -620,7 +623,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         super().__init__(account_id,
                          order_id,
                          execution_id,
-                         execution_ticket,
+                         position_id_broker,
                          symbol,
                          order_side,
                          filled_quantity,
@@ -656,7 +659,7 @@ cdef class OrderFilled(OrderFillEvent):
                  AccountId account_id,
                  OrderId order_id,
                  ExecutionId execution_id,
-                 ExecutionTicket execution_ticket,
+                 PositionIdBroker position_id_broker,
                  Symbol symbol,
                  OrderSide order_side,
                  Quantity filled_quantity,
@@ -670,7 +673,7 @@ cdef class OrderFilled(OrderFillEvent):
         :param account_id: The event account_id.
         :param order_id: The event order_id.
         :param execution_id: The event order execution_id.
-        :param execution_ticket: The event order execution ticket.
+        :param position_id_broker: The event broker position identifier.
         :param symbol: The event order symbol.
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
@@ -682,7 +685,7 @@ cdef class OrderFilled(OrderFillEvent):
         super().__init__(account_id,
                          order_id,
                          execution_id,
-                         execution_ticket,
+                         position_id_broker,
                          symbol,
                          order_side,
                          filled_quantity,

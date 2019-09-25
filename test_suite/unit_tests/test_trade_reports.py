@@ -17,7 +17,7 @@ from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId, PositionIdBroker
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.trade.reports import ReportProvider
@@ -57,7 +57,7 @@ class ReportProviderTests(unittest.TestCase):
             self.account_id,
             order1.id,
             ExecutionId('SOME_EXEC_ID_1'),
-            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            PositionIdBroker('SOME_EXEC_TICKET_1'),
             order1.symbol,
             order1.side,
             order1.quantity,
@@ -103,7 +103,7 @@ class ReportProviderTests(unittest.TestCase):
             self.account_id,
             order1.id,
             ExecutionId('SOME_EXEC_ID_1'),
-            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            PositionIdBroker('SOME_EXEC_TICKET_1'),
             order1.symbol,
             order1.side,
             order1.quantity,

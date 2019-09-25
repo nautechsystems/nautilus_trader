@@ -756,11 +756,12 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Act
-        strategy.modify_order(order, Price(90.005, 3))
+        strategy.modify_order(order, Quantity(110000), Price(90.005, 3))
 
         # Assert
         self.assertEqual(order, strategy.orders()[order.id])
         self.assertEqual(OrderState.WORKING, strategy.orders()[order.id].state)
+        self.assertEqual(Quantity(110000), strategy.orders()[order.id].quantity)
         self.assertEqual(Price(90.005, 3), strategy.orders()[order.id].price)
         self.assertTrue(strategy.is_flat())
         self.assertTrue(strategy.order_exists(order.id))

@@ -13,7 +13,7 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition, marke
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers cimport PositionId, ExecutionId, PositionIdBroker
 
 
 cdef class Position:
@@ -30,18 +30,17 @@ cdef class Position:
         """
         self._order_ids = {event.order_id}                  # type: Set[OrderId]
         self._execution_ids = {event.execution_id}          # type: Set[ExecutionId]
-        self._execution_tickets = {event.execution_ticket}  # type: Set[ExecutionTicket]
         self._events = [event]                              # type: List[OrderFillEvent]
         self.last_event = event
         self.event_count = 1
 
         self.symbol = event.symbol
         self.id = position_id
+        self.id_broker = event.position_id_broker
         self.account_id = event.account_id
         self.from_order_id = event.order_id
         self.last_order_id = event.order_id
         self.last_execution_id = event.execution_id
-        self.last_execution_ticket = event.execution_ticket
         self.timestamp = event.execution_time
         self.entry_direction = event.order_side
         self.entry_time = event.execution_time
@@ -157,10 +156,8 @@ cdef class Position:
         # Update identifiers
         self._order_ids.add(event.order_id)
         self._execution_ids.add(event.execution_id)
-        self._execution_tickets.add(event.execution_ticket)
         self.last_order_id = event.order_id
         self.last_execution_id = event.execution_id
-        self.last_execution_ticket = event.execution_ticket
 
         # Apply event
         self._increment_returns(event)

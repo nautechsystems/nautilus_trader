@@ -184,7 +184,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
-        self.strategy.modify_order(order, Price('1.00001'))
+        self.strategy.modify_order(order, Quantity(110000), Price('1.00001'))
 
         # Assert
         time.sleep(0.3)

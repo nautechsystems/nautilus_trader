@@ -79,11 +79,11 @@ cdef class PositionId(Identifier):
     pass
 
 
-cdef class ExecutionId(Identifier):
+cdef class PositionIdBroker(Identifier):
     pass
 
 
-cdef class ExecutionTicket(Identifier):
+cdef class ExecutionId(Identifier):
     pass
 
 

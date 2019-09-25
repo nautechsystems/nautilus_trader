@@ -16,7 +16,7 @@ from nautilus_trader.model.identifiers cimport (
     OrderId,
     AccountId,
     ExecutionId,
-    ExecutionTicket)
+    PositionIdBroker)
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 
@@ -24,14 +24,14 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 cdef class Position:
     cdef set _order_ids
     cdef set _execution_ids
-    cdef set _execution_tickets
     cdef list _events
 
     cdef readonly Symbol symbol
     cdef readonly PositionId id
+    cdef readonly PositionIdBroker id_broker
     cdef readonly AccountId account_id
     cdef readonly ExecutionId last_execution_id
-    cdef readonly ExecutionTicket last_execution_ticket
+
     cdef readonly OrderId from_order_id
     cdef readonly OrderId last_order_id
     cdef readonly datetime timestamp

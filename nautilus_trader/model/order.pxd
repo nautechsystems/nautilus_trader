@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers cimport (
     AtomicOrderId,
     AccountId,
     ExecutionId,
-    ExecutionTicket)
+    PositionIdBroker)
 from nautilus_trader.model.generators cimport OrderIdGenerator
 
 
@@ -33,11 +33,10 @@ cdef class Order:
     cdef list _events
 
     cdef readonly OrderId id
-    cdef readonly OrderId id_current
     cdef readonly OrderIdBroker id_broker
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
-    cdef readonly ExecutionTicket execution_ticket
+    cdef readonly PositionIdBroker position_id_broker
     cdef readonly Symbol symbol
     cdef readonly OrderSide side
     cdef readonly OrderType type

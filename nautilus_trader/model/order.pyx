@@ -33,7 +33,7 @@ from nautilus_trader.model.events cimport (
     OrderModified,
     OrderCancelled,
     OrderCancelReject)
-from nautilus_trader.model.identifiers cimport Label, IdTag, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers cimport Label, IdTag, OrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
 
@@ -104,8 +104,8 @@ cdef class Order:
         self.id = order_id
         self.id_broker = None               # Can be None
         self.account_id = None              # Can be None
+        self.position_id_broker = None      # Can be None
         self.execution_id = None            # Can be None
-        self.execution_ticket = None        # Can be None
         self.symbol = symbol
         self.side = order_side
         self.type = order_type
@@ -299,11 +299,12 @@ cdef class Order:
             self._set_is_completed_true()
         elif isinstance(event, OrderModified):
             self.id_broker = event.order_id_broker
+            self.quantity = event.modified_quantity
             self.price = event.modified_price
         elif isinstance(event, OrderFillEvent):
+            self.position_id_broker = event.position_id_broker
             self._execution_ids.add(event.execution_id)
             self.execution_id = event.execution_id
-            self.execution_ticket = event.execution_ticket
             self.filled_quantity = event.filled_quantity
             self.filled_timestamp = event.timestamp
             self.average_price = event.average_price
