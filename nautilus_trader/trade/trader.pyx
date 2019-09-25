@@ -131,17 +131,16 @@ cdef class Trader:
             return
 
         self._log.info("Starting...")
-        self.started_datetimes.append(self._clock.time_now())
-
         self.account_inquiry()
 
         for strategy in self.strategies:
             strategy.start()
 
+        self.started_datetimes.append(self._clock.time_now())
         self.is_running = True
         self._log.info("Running...")
 
-    cpdef void stop(self, float check_residuals_delay_sec=1) except *:
+    cpdef void stop(self) except *:
         """
         Stop the trader.
         """
@@ -149,17 +148,18 @@ cdef class Trader:
             self._log.error(f"Cannot stop trader (already stopped).")
             return
 
-        self.stopped_datetimes.append(self._clock.time_now())
-
         self._log.debug("Stopping...")
         for strategy in self.strategies:
             strategy.stop()
 
+        self.stopped_datetimes.append(self._clock.time_now())
         self.is_running = False
         self._log.info("Stopped.")
 
-        time.sleep(check_residuals_delay_sec)
-
+    cpdef void check_residuals(self) except *:
+        """
+        Check for residual business objects such as working orders or open positions.
+        """
         self._exec_engine.check_residuals()
 
     cpdef void save(self) except *:

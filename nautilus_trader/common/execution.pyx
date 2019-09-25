@@ -36,7 +36,8 @@ from nautilus_trader.model.identifiers cimport (
     TraderId,
     StrategyId,
     OrderId,
-    PositionId)
+    PositionId,
+    PositionIdBroker)
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, CMD, EVT, SENT, RECV
@@ -173,6 +174,10 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef Order get_order(self, OrderId order_id):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -198,6 +203,10 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef PositionId get_position_id(self, OrderId order_id):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -288,6 +297,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._strategies = set()              # type: Set[StrategyId]
         self._index_order_position = {}       # type: Dict[OrderId, PositionId]
         self._index_order_strategy = {}       # type: Dict[OrderId, StrategyId]
+        self._index_broker_position = {}      # type: Dict[PositionIdBroker, PositionId]
         self._index_position_strategy = {}    # type: Dict[PositionId, StrategyId]
         self._index_position_orders = {}      # type: Dict[PositionId, Set[OrderId]]
         self._index_strategy_orders = {}      # type: Dict[StrategyId, Set[OrderId]]
@@ -371,16 +381,19 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :param position: The position to add.
         :param strategy_id: The strategy_id to associate with the position.
-        :raises ConditionFailed: If the position_id is already contained in the cached_positions.
-        :raises ConditionFailed: If the position_id is already contained in the index_positions.
-        :raises ConditionFailed: If the position_id is already contained in the index_positions_open.
+        :raises ConditionFailed: If the position.id is already contained in the cached_positions.
+        :raises ConditionFailed: If the position.id_broker is already contained in the index_broker_position.
+        :raises ConditionFailed: If the position.id is already contained in the index_positions.
+        :raises ConditionFailed: If the position.id is already contained in the index_positions_open.
         """
         Condition.not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
+        Condition.not_in(position.id_broker, self._index_broker_position, 'position.id_broker', 'index_broker_position')
         Condition.not_in(position.id, self._index_positions, 'position.id', 'index_positions')
         Condition.not_in(position.id, self._index_positions_open, 'position.id', 'index_positions_open')
 
         self._cached_positions[position.id] = position
 
+        self._index_broker_position[position.id_broker] = position.id
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
         self._log.debug(f"Added Position(id={position.id.value}).")
@@ -640,6 +653,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         return self._index_order_strategy.get(order_id)
 
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+        """
+        Return the strategy_id associated with the given position_id (if found).
+        
+        :param position_id: The position_id associated with the strategy.
+        :return StrategyId or None: 
+        """
+        return self._index_position_strategy.get(position_id)
+
     cpdef Order get_order(self, OrderId order_id):
         """
         Return the order matching the given identifier (if found).
@@ -724,7 +746,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef PositionId get_position_id(self, OrderId order_id):
         """
-        Return the position associated with the given order_id (if found, else None).
+        Return the position_id associated with the given order_id (if found, else None).
         
         :param order_id: The order_id associated with the position.
         :return PositionId or None.
@@ -732,6 +754,19 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         cdef PositionId position_id = self._index_order_position.get(order_id)
         if position_id is None:
             self._log.warning(f"Cannot get position id for {order_id} (no matching position id found).")
+
+        return position_id
+
+    cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker):
+        """
+        Return the position_id associated with the given broker position_id (if found, else None).
+        
+        :param position_id_broker: The broker position_id.
+        :return PositionId or None.
+        """
+        cdef PositionId position_id = self._index_broker_position.get(position_id_broker)
+        if position_id is None:
+            self._log.warning(f"Cannot get position id for {position_id_broker} (no matching position id found).")
 
         return position_id
 
@@ -1115,35 +1150,33 @@ cdef class ExecutionEngine:
     cdef void _handle_order_event(self, OrderEvent event):
         cdef Order order = self.database.get_order(event.order_id)
         if order is None:
-            self._log.error(f"Cannot process event {event} ({event.order_id} not found).")
+            self._log.warning(f"Cannot apply event {event} to any order ({event.order_id} not found in cache).")
             return  # Cannot process event further
-
-        order.apply(event)
-        self.database.update_order(order)
-
-        cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.order_id)
-        if strategy_id is None:
-            self._log.error(f"Cannot process event {event} ({strategy_id} not found).")
-            return  # Cannot process event further
+        else:
+            order.apply(event)
+            self.database.update_order(order)
 
         if isinstance(event, OrderFillEvent):
-            self._handle_order_fill(event, strategy_id)
-        elif isinstance(event, OrderModified):
-            self._send_to_strategy(event, strategy_id)
-        elif isinstance(event, OrderCancelled):
-            self._send_to_strategy(event, strategy_id)
-        elif isinstance(event, OrderRejected):
-            self._send_to_strategy(event, strategy_id)
-        else:
-            self._send_to_strategy(event, strategy_id)
+            self._handle_order_fill(event)
+            return
 
-    cdef void _handle_order_fill(self, OrderFillEvent event, StrategyId strategy_id):
+        self._send_to_strategy(event, self.database.get_strategy_for_order(event.order_id))
+
+    cdef void _handle_order_fill(self, OrderFillEvent event):
         cdef PositionId position_id = self.database.get_position_id(event.order_id)
+        if position_id is None:
+            position_id = self.database.get_position_id_for_broker_id(event.position_id_broker)
+
         if position_id is None:
             self._log.error(f"Cannot process event {event} (position_id for {event.order_id} not found).")
             return  # Cannot process event further
 
-        cdef Position position = self.database.get_position_for_order(event.order_id)
+        cdef Position position = self.database.get_position_for_order(event.order_id)  # Could still be None here
+
+        cdef StrategyId strategy_id = self.database.get_strategy_for_position(position_id)
+        if strategy_id is None:
+            self._log.error(f"Cannot process event {event} (strategy_id for {position_id} not found).")
+            return  # Cannot process event further
 
         if position is None:
             # Position does not exist - create new position
@@ -1215,11 +1248,16 @@ cdef class ExecutionEngine:
         self.handle_event(position_closed)
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id):
+        if strategy_id is None:
+            self._log.error(f"Cannot send event {event} to strategy ({strategy_id} not found).")
+            return  # Cannot send to strategy
 
-        if strategy_id in self._registered_strategies:
-            self._registered_strategies[strategy_id].handle_event(event)
-        else:
-            self._log.error(f"Cannot send event to strategy ({strategy_id} not found).")
+        cdef TradingStrategy strategy = self._registered_strategies.get(strategy_id)
+        if strategy_id is None:
+            self._log.error(f"Cannot send event {event} to strategy ({strategy_id} not registered).")
+            return
+
+        strategy.handle_event(event)
 
     cdef void _reset(self):
         """

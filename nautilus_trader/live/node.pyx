@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import time
 import json
 import pymongo
 import redis
@@ -46,8 +47,9 @@ cdef class TradingNode:
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
 
-    cdef int _load_strategy_state
-    cdef int _save_strategy_state
+    cdef float _check_residuals_delay
+    cdef bint _load_strategy_state
+    cdef bint _save_strategy_state
 
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
@@ -181,6 +183,7 @@ cdef class TradingNode:
 
         Condition.equal(self.trader_id, self.trader.id)
 
+        self._check_residuals_delay = config_trader['check_residuals_delay']
         self._load_strategy_state = config_strategy['load_state']
         self._save_strategy_state = config_strategy['save_state']
 
@@ -218,9 +221,14 @@ cdef class TradingNode:
 
     cpdef void stop(self):
         """
-        Stop the trading nodes trader.
+        Stop the trading nodes trader. After the specified check residuals delay
+        the traders residuals will be checked. If save strategy is specified
+        then strategy states will then be saved.
         """
         self.trader.stop()
+
+        time.sleep(self._check_residuals_delay)
+        self.trader.check_residuals()
 
         if self._save_strategy_state:
             self.trader.save()

@@ -18,7 +18,13 @@ from nautilus_trader.model.events cimport (
     AccountStateEvent,
     PositionEvent
 )
-from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport (
+    AccountId,
+    TraderId,
+    StrategyId,
+    OrderId,
+    PositionId,
+    PositionIdBroker)
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.commands cimport (
@@ -70,6 +76,7 @@ cdef class ExecutionDatabase:
     cpdef set get_position_open_ids(self, StrategyId strategy_id=*)
     cpdef set get_position_closed_ids(self, StrategyId strategy_id=*)
     cpdef StrategyId get_strategy_for_order(self, OrderId order_id)
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id)
     cpdef Order get_order(self, OrderId order_id)
     cpdef dict get_orders(self, StrategyId strategy_id=*)
     cpdef dict get_orders_working(self, StrategyId strategy_id=*)
@@ -77,6 +84,7 @@ cdef class ExecutionDatabase:
     cpdef Position get_position(self, PositionId position_id)
     cpdef Position get_position_for_order(self, OrderId order_id)
     cpdef PositionId get_position_id(self, OrderId order_id)
+    cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker)
     cpdef dict get_positions(self, StrategyId strategy_id=*)
     cpdef dict get_positions_open(self, StrategyId strategy_id=*)
     cpdef dict get_positions_closed(self, StrategyId strategy_id=*)
@@ -101,6 +109,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     cdef set _strategies
     cdef dict _index_order_position
     cdef dict _index_order_strategy
+    cdef dict _index_broker_position
     cdef dict _index_position_strategy
     cdef dict _index_position_orders
     cdef dict _index_strategy_orders
@@ -148,7 +157,7 @@ cdef class ExecutionEngine:
     cdef void _handle_event(self, Event event)
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event)
     cdef void _handle_order_event(self, OrderEvent event)
-    cdef void _handle_order_fill(self, OrderFillEvent event, StrategyId strategy_id)
+    cdef void _handle_order_fill(self, OrderFillEvent event)
     cdef void _handle_position_event(self, PositionEvent event)
     cdef void _handle_account_event(self, AccountStateEvent event)
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event)
