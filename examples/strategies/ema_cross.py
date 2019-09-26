@@ -150,7 +150,6 @@ class EMACrossPy(TradingStrategy):
                         price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
                         price_take_profit=price_take_profit,
-                        label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
                 else:
@@ -182,7 +181,6 @@ class EMACrossPy(TradingStrategy):
                         price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
                         price_take_profit=price_take_profit,
-                        label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
                 else:
