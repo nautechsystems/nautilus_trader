@@ -1172,8 +1172,8 @@ cdef class ExecutionEngine:
             return  # Cannot process event further
 
         cdef Position position = self.database.get_position_for_order(event.order_id)  # Could still be None here
-
         cdef StrategyId strategy_id = self.database.get_strategy_for_position(position_id)
+
         if strategy_id is None:
             self._log.error(f"Cannot process event {event} (strategy_id for {position_id} not found).")
             return  # Cannot process event further
