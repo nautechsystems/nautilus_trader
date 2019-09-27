@@ -82,7 +82,7 @@ if __name__ == "__main__":
     with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
         pass
         # print(engine.get_equity_curve())
-        # print(engine.get_order_fills_report())
+        print(engine.get_order_fills_report())
         print(engine.get_positions_report())
 
     engine.dispose()

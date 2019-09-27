@@ -780,7 +780,7 @@ cdef class PositionOpened(PositionEvent):
                 f"account_id={self.position.account_id.value}, "
                 f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"av_entry_price={self.position.average_entry_price}, "
+                f"av_entry_price={self.position.average_open_price}, "
                 f"{self.position.status_string()})")
 
 
@@ -820,8 +820,8 @@ cdef class PositionModified(PositionEvent):
                 f"account_id={self.position.account_id.value}, "
                 f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"av_entry_price={self.position.average_entry_price}, "
-                f"points_realized={self.position.points_realized}, "
+                f"av_entry_price={self.position.average_open_price}, "
+                f"points_realized={self.position.realized_points}, "
                 f"{self.position.status_string()})")
 
 
@@ -861,9 +861,9 @@ cdef class PositionClosed(PositionEvent):
                 f"account_id={self.position.account_id.value}, "
                 f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"av_entry_price={self.position.average_entry_price}, "
-                f"av_exit_price={self.position.average_exit_price}, "
-                f"points_realized={self.position.points_realized}, "
+                f"av_entry_price={self.position.average_open_price}, "
+                f"av_exit_price={self.position.average_close_price}, "
+                f"points_realized={self.position.realized_points}, "
                 f"{self.position.status_string()})")
 
 
