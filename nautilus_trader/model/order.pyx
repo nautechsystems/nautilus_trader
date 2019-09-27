@@ -210,11 +210,11 @@ cdef class Order:
 
         :return str.
         """
-        cdef str label = '' if self.label is None else f', label={self.label.value}, '
+        cdef str label = '' if self.label is None else f'label={self.label.value}, '
         return (f"Order("
                 f"id={self.id.value}, "
-                f"{label}"
                 f"state={order_state_to_string(self.state)}, "
+                f"{label}"
                 f"{self.status_string()})")
 
     def __repr__(self) -> str:
