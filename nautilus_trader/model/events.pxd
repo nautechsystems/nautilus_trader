@@ -72,6 +72,14 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly datetime expire_time
 
 
+cdef class OrderInvalid(OrderEvent):
+    cdef readonly invalid_reason
+
+
+cdef class OrderDenied(OrderEvent):
+    cdef readonly denied_reason
+
+
 cdef class OrderSubmitted(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly datetime submitted_time

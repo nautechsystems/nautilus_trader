@@ -59,6 +59,8 @@ from nautilus_trader.model.commands cimport (
 from nautilus_trader.model.events cimport (
     AccountStateEvent,
     OrderInitialized,
+    OrderInvalid,
+    OrderDenied,
     OrderSubmitted,
     OrderAccepted,
     OrderRejected,
@@ -388,6 +390,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[SUBMITTED_TIME] = convert_datetime_to_string(event.submitted_time)
+        elif isinstance(event, OrderInvalid):
+            package[ORDER_ID] = event.order_id.value
+            package[INVALID_REASON] = event.invalid_reason
+        elif isinstance(event, OrderDenied):
+            package[ORDER_ID] = event.order_id.value
+            package[DENIED_REASON] = event.denied_reason
         elif isinstance(event, OrderAccepted):
             package[ACCOUNT_ID] = event.account_id.value
             package[ORDER_ID] = event.order_id.value
@@ -508,6 +516,18 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[SUBMITTED_TIME]),
+                event_id,
+                event_timestamp)
+        if event_type == OrderInvalid.__name__:
+            return OrderInvalid(
+                OrderId(unpacked[ORDER_ID]),
+                unpacked[INVALID_REASON],
+                event_id,
+                event_timestamp)
+        if event_type == OrderDenied.__name__:
+            return OrderDenied(
+                OrderId(unpacked[ORDER_ID]),
+                unpacked[DENIED_REASON],
                 event_id,
                 event_timestamp)
         if event_type == OrderAccepted.__name__:

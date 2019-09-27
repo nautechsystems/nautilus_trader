@@ -12,8 +12,9 @@ from base64 import b64encode, b64decode
 
 from nautilus_trader.common.clock import *
 from nautilus_trader.common.logger import *
-from nautilus_trader.model.commands import *
 from nautilus_trader.model.enums import *
+from nautilus_trader.model.commands import *
+from nautilus_trader.model.events import *
 from nautilus_trader.model.identifiers import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.model.order import *
@@ -341,6 +342,36 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
+    def test_can_serialize_and_deserialize_order_invalid_events(self):
+        # Arrange
+        event = OrderInvalid(
+            OrderId('O-123456'),
+            "OrderId already exists",
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
+    def test_can_serialize_and_deserialize_order_denied_events(self):
+        # Arrange
+        event = OrderDenied(
+            OrderId('O-123456'),
+            "Exceeds risk for FX",
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
     def test_can_serialize_and_deserialize_order_accepted_events(self):
         # Arrange
         event = OrderAccepted(
@@ -551,6 +582,38 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, AccountStateEvent))
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_invalid_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'haRUeXBlrE9yZGVySW52YWxpZKJJZNkkNzE0N2UyOTktYjkxNC00ZTE0LTgyYzItN2I0ZmU5MDMwZThiqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1JbnZhbGlkUmVhc29ut09yZGVySWQgYWxyZWFkeSBleGlzdHMu'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderInvalid))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual('OrderId already exists.', result.invalid_reason)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_denied_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'haRUeXBlq09yZGVyRGVuaWVkoklk2SQ1ZTgyNzllNC02NGY1LTRhNTAtYjBiYy1iYzI0NzAyMjlkMTGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rERlbmllZFJlYXNvbrRFeGNlZWRzIHJpc2sgZm9yIEZYLg=='
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderDenied))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual('Exceeds risk for FX.', result.denied_reason)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 

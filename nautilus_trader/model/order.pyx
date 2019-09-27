@@ -25,6 +25,8 @@ from nautilus_trader.model.events cimport (
     OrderEvent,
     OrderFillEvent,
     OrderInitialized,
+    OrderInvalid,
+    OrderDenied,
     OrderSubmitted,
     OrderAccepted,
     OrderRejected,
@@ -86,7 +88,6 @@ cdef class Order:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
         Condition.positive(quantity.value, 'quantity')
-        Condition.true(order_side != OrderSide.UNKNOWN, 'order_side != UNKNOWN')
 
         # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:
@@ -279,7 +280,13 @@ cdef class Order:
         self.event_count += 1
 
         # Handle event
-        if isinstance(event, OrderSubmitted):
+        if isinstance(event, OrderInvalid):
+            self.state = OrderState.INVALID
+            self._set_is_completed_true()
+        elif isinstance(event, OrderDenied):
+            self.state = OrderState.DENIED
+            self._set_is_completed_true()
+        elif isinstance(event, OrderSubmitted):
             self.state = OrderState.SUBMITTED
             self.account_id = event.account_id
         elif isinstance(event, OrderRejected):

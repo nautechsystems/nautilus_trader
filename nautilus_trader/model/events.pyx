@@ -264,6 +264,74 @@ cdef class OrderSubmitted(OrderEvent):
                 f"order_id={self.order_id.value})")
 
 
+cdef class OrderInvalid(OrderEvent):
+    """
+    Represents an event where an order has been invalidated by the system.
+    """
+
+    def __init__(self,
+                 OrderId order_id,
+                 str invalid_reason,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the OrderInvalid class.
+
+        :param order_id: The event order_id.
+        :param invalid_reason: The event invalid reason.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
+        """
+        super().__init__(order_id,
+                         event_id,
+                         event_timestamp)
+        self.invalid_reason = invalid_reason
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"order_id={self.order_id.value}, "
+                f"invalid_reason={self.invalid_reason})")
+
+
+cdef class OrderDenied(OrderEvent):
+    """
+    Represents an event where an order has been denied by the system.
+    """
+
+    def __init__(self,
+                 OrderId order_id,
+                 str denied_reason,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the OrderDenied class.
+
+        :param order_id: The event order_id.
+        :param denied_reason: The event denied reason.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
+        """
+        super().__init__(order_id,
+                         event_id,
+                         event_timestamp)
+        self.denied_reason = denied_reason
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"order_id={self.order_id.value}, "
+                f"denied_reason={self.denied_reason})")
+
+
 cdef class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker.

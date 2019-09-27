@@ -61,19 +61,6 @@ class OrderTests(unittest.TestCase):
             Quantity.zero(),
             UNIX_EPOCH)
 
-    def test_market_order_with_order_side_none_raises_exception(self):
-        # Arrange
-        # Act
-        self.assertRaises(
-            ConditionFailed,
-            Order,
-            OrderId('O-123456'),
-            AUDUSD_FXCM,
-            OrderSide.UNKNOWN,
-            OrderType.MARKET,
-            Quantity(100000),
-            UNIX_EPOCH)
-
     def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(self):
         # Arrange
         # Act
