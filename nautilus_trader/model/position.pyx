@@ -7,14 +7,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from math import log
 from typing import Set, List
 
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.identifiers cimport PositionId, ExecutionId, PositionIdBroker
+from nautilus_trader.model.identifiers cimport PositionId, ExecutionId
 
 
 cdef class Position:
@@ -204,7 +203,6 @@ cdef class Position:
             elif self.relative_quantity < 0:
                  # SHORT POSITION
                 self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_buys)
-                # Increment realized points and return of a short position
                 self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
                 self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
             else:
@@ -219,7 +217,6 @@ cdef class Position:
             elif self.relative_quantity > 0:
                 # LONG POSITION
                 self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_sells)
-                # Increment realized points and return of a long position
                 self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
                 self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
             else:
