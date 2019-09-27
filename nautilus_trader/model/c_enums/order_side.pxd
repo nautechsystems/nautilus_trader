@@ -8,7 +8,6 @@
 
 
 cpdef enum OrderSide:
-    UNKNOWN = -1,
     BUY = 0,
     SELL = 1
 
@@ -18,8 +17,6 @@ cdef inline str order_side_to_string(int value):
         return 'BUY'
     elif value == 1:
         return 'SELL'
-    else:
-        return 'UNKNOWN'
 
 
 cdef inline OrderSide order_side_from_string(str value):
@@ -27,5 +24,3 @@ cdef inline OrderSide order_side_from_string(str value):
         return OrderSide.BUY
     elif value == 'SELL':
         return OrderSide.SELL
-    else:
-        return OrderSide.UNKNOWN

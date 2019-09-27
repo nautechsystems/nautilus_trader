@@ -8,47 +8,54 @@
 
 
 cpdef enum OrderState:
-    UNKNOWN = -1,
     INITIALIZED = 0,
-    SUBMITTED = 1,
-    ACCEPTED = 2,
-    REJECTED = 3,
-    WORKING = 4,
-    CANCELLED = 5,
-    EXPIRED = 6,
-    OVER_FILLED = 7,
-    PARTIALLY_FILLED = 8,
-    FILLED = 9,
+    INVALID = 1,
+    DENIED = 2,
+    SUBMITTED = 3,
+    ACCEPTED = 4,
+    REJECTED = 5,
+    WORKING = 6,
+    CANCELLED = 7,
+    EXPIRED = 8,
+    OVER_FILLED = 9,
+    PARTIALLY_FILLED = 10,
+    FILLED = 11,
 
 
 cdef inline str order_state_to_string(int value):
     if value == 0:
         return 'INITIALIZED'
     elif value == 1:
-        return 'SUBMITTED'
+        return 'INVALID'
     elif value == 2:
-        return 'ACCEPTED'
+        return 'DENIED'
     elif value == 3:
-        return 'REJECTED'
+        return 'SUBMITTED'
     elif value == 4:
-        return 'WORKING'
+        return 'ACCEPTED'
     elif value == 5:
-        return 'CANCELLED'
+        return 'REJECTED'
     elif value == 6:
-        return 'EXPIRED'
+        return 'WORKING'
     elif value == 7:
-        return 'OVER_FILLED'
+        return 'CANCELLED'
     elif value == 8:
-        return 'PARTIALLY_FILLED'
+        return 'EXPIRED'
     elif value == 9:
+        return 'OVER_FILLED'
+    elif value == 10:
+        return 'PARTIALLY_FILLED'
+    elif value == 11:
         return 'FILLED'
-    else:
-        return 'UNKNOWN'
 
 
 cdef inline OrderState order_state_from_string(str value):
     if value == 'INITIALIZED':
         return OrderState.INITIALIZED
+    elif value == 'INVALID':
+        return OrderState.INVALID
+    elif value == 'DENIED':
+        return OrderState.DENIED
     elif value == 'SUBMITTED':
         return OrderState.SUBMITTED
     elif value == 'ACCEPTED':
@@ -67,5 +74,3 @@ cdef inline OrderState order_state_from_string(str value):
         return OrderState.PARTIALLY_FILLED
     elif value == 'FILLED':
         return OrderState.FILLED
-    else:
-        return OrderState.UNKNOWN

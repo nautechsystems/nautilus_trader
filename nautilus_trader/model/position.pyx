@@ -223,8 +223,6 @@ cdef class Position:
                 self.average_open_price = event.average_price.value
             # Update relative quantity
             self.relative_quantity -= event.filled_quantity.value
-        else:
-            raise ValueError(f"Cannot handle {event} as order_side is {event.order_side}.")
 
         # Set quantities
         self.quantity = Quantity(abs(self.relative_quantity))
