@@ -641,9 +641,10 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        # Adjust account if position exists
-        if self._exec_engine.database.position_exists_for_order(order.id):
-            self._adjust_account(filled)
+        # Adjust account if position exists and opposite order side
+        cdef Position position = self._exec_engine.database.get_position_for_order(order.id)
+        if position is not None and position.entry_direction != order.side:
+            self._adjust_account(filled, position)
 
         self._exec_engine.handle_event(filled)
         self._check_oco_order(order.id)
@@ -713,7 +714,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._log.debug(f"OCO order cancelled from {oco_order_id}.")
         self._exec_engine.handle_event(event)
 
-    cdef void _adjust_account(self, OrderFillEvent event):
+    cdef void _adjust_account(self, OrderFillEvent event, Position position):
         # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
@@ -723,12 +724,10 @@ cdef class BacktestExecClient(ExecutionClient):
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
 
-        cdef Position position = self._exec_engine.database.get_position_for_order(event.order_id)
-
         cdef Money pnl = self._calculate_pnl(
             direction=position.market_position,
-            entry_price=position.average_entry_price,
-            exit_price=event.average_price,
+            open_price=position.average_open_price,
+            close_price=event.average_price.value,
             quantity=event.filled_quantity,
             exchange_rate=exchange_rate)
 
@@ -828,15 +827,15 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef Money _calculate_pnl(
             self,
             MarketPosition direction,
-            Price entry_price,
-            Price exit_price,
+            open_price,
+            close_price,
             Quantity quantity,
             float exchange_rate):
         cdef object difference
         if direction == MarketPosition.LONG:
-            difference = exit_price - entry_price
+            difference = close_price - open_price
         elif direction == MarketPosition.SHORT:
-            difference = entry_price - exit_price
+            difference = open_price - close_price
         else:
             raise ValueError(f'Cannot calculate the pnl of a {market_position_to_string(direction)} direction.')
 

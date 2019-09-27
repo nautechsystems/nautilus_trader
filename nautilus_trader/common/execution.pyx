@@ -1194,7 +1194,7 @@ cdef class ExecutionEngine:
 
     cdef void _handle_position_event(self, PositionEvent event):
         if isinstance(event, PositionClosed):
-            self.analyzer.add_return(event.timestamp, event.position.return_realized)
+            self.analyzer.add_return(event.timestamp, event.position.realized_return)
 
         self._send_to_strategy(event, event.strategy_id)
 

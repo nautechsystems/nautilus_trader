@@ -140,20 +140,20 @@ class ReportProviderTests(unittest.TestCase):
         positions = {position1.id: position1,
                      position2.id: position2}
 
-        print(position1.peak_quantity)
         # Act
         report = report_provider.get_positions_report(positions)
 
         # Assert
+        print(report.iloc[0])
         self.assertEqual(2, len(report))
         self.assertEqual('position_id', report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
         self.assertEqual('AUDUSD', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['direction'])
         self.assertEqual(100000, report.iloc[0]['peak_quantity'])
-        self.assertEqual(Decimal('1.00000'), report.iloc[0]['avg_entry_price'])
-        self.assertEqual(Decimal('1.00010'), report.iloc[0]['avg_exit_price'])
-        self.assertEqual(UNIX_EPOCH, report.iloc[0]['entry_time'])
-        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]['exit_time'])
-        self.assertEqual(Decimal('0.00010'), report.iloc[0]['points'])
-        self.assertEqual(0.00010001659393310547, report.iloc[0]['return'])
+        self.assertEqual(Decimal('1.00000'), report.iloc[0]['avg_open_price'])
+        self.assertEqual(Decimal('1.00010'), report.iloc[0]['avg_close_price'])
+        self.assertEqual(UNIX_EPOCH, report.iloc[0]['opened_time'])
+        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]['closed_time'])
+        self.assertEqual(Decimal('0.00010'), report.iloc[0]['realized_points'])
+        self.assertEqual(9.999999747378752e-05, report.iloc[0]['realized_return'])

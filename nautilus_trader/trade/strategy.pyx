@@ -1169,7 +1169,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void cancel_all_orders(self, str cancel_reason='NONE'):
+    cpdef void cancel_all_orders(self, str cancel_reason='CANCEL_ON_STOP'):
         """
         Send a cancel order command for orders which are not completed in the
         order book with the given cancel_reason - to the execution engine.
@@ -1203,7 +1203,7 @@ cdef class TradingStrategy:
             self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute_command(command)
 
-    cpdef void flatten_position(self, PositionId position_id, Label label=Label('EXIT')):
+    cpdef void flatten_position(self, PositionId position_id, Label label=Label('FLATTEN')):
         """
         Flatten the position corresponding to the given identifier by generating
         the required market order, and sending it to the execution service.
@@ -1222,8 +1222,8 @@ cdef class TradingStrategy:
             self.log.error(f"Cannot flatten position (cannot find {position_id} in cached positions.")
             return
 
-        if position.is_flat:
-            self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT).")
+        if position.is_closed:
+            self.log.warning(f"Cannot flatten position (the position {position_id} was already closed).")
             return
 
         cdef Order order = self.order_factory.market(
@@ -1236,7 +1236,7 @@ cdef class TradingStrategy:
         self.log.info(f"Flattening {position}...")
         self.submit_order(order, position_id)
 
-    cpdef void flatten_all_positions(self, Label label=Label('EXIT')):
+    cpdef void flatten_all_positions(self, Label label=Label('FLATTEN')):
         """
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
@@ -1260,7 +1260,7 @@ cdef class TradingStrategy:
         cdef Position position
         cdef Order order
         for position_id, position in positions.items():
-            if position.is_flat:
+            if position.is_closed:
                 self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT.")
                 continue
 

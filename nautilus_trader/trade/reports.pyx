@@ -85,9 +85,9 @@ cdef class ReportProvider:
                 'symbol': position.symbol.code,
                 'direction': order_side_to_string(position.entry_direction),
                 'peak_quantity': position.peak_quantity.value,
-                'entry_time': position.entry_time,
-                'exit_time': position.exit_time,
-                'avg_entry_price': position.average_entry_price.value,
-                'avg_exit_price': position.average_exit_price.value,
-                'points': position.points_realized,
-                'return': position.return_realized}
+                'opened_time': position.opened_time,
+                'closed_time': position.closed_time,
+                'avg_open_price': position.average_open_price,
+                'avg_close_price': position.average_close_price,
+                'realized_points': position.realized_points,
+                'realized_return': position.realized_return}

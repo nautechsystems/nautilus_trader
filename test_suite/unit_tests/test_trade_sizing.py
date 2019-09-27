@@ -114,3 +114,21 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Quantity(275000), result)
+
+    def test_can_calculate_for_usdjpy(self):
+        # Arrange
+        sizer = FixedRiskSizer(TestStubs.instrument_usdjpy())
+        equity = Money(1000000)
+
+        # Act
+        result = self.sizer.calculate(
+            equity,
+            10,   # 0.1%
+            Price('107.703'),
+            Price('107.403'),
+            exchange_rate=0.0093,
+            units=1,
+            unit_batch_size=1000)
+
+        # Assert
+        self.assertEqual(Quantity(358000), result)

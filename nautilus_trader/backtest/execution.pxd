@@ -19,6 +19,7 @@ from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Quantity
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.identifiers cimport Symbol, OrderId
 from nautilus_trader.backtest.models cimport FillModel
 
@@ -76,8 +77,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _check_oco_order(self, OrderId order_id)
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id)
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id)
-    cdef void _adjust_account(self, OrderFillEvent event)
+    cdef void _adjust_account(self, OrderFillEvent event, Position position)
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
-    cdef Money _calculate_pnl(self, MarketPosition direction, Price entry_price, Price exit_price, Quantity quantity, float exchange_rate)
+    cdef Money _calculate_pnl(self, MarketPosition direction, open_price, close_price, Quantity quantity, float exchange_rate)
