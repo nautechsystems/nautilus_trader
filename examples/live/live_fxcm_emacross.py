@@ -29,7 +29,7 @@ symbols_to_trade = [
     Symbol('AUDUSD', Venue('FXCM')),
     Symbol('EURUSD', Venue('FXCM')),
     Symbol('GBPUSD', Venue('FXCM')),
-    Symbol('USDJPY', Venue('FXCM')),
+    # Symbol('USDJPY', Venue('FXCM')),
 ]
 
 
