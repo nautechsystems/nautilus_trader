@@ -109,5 +109,5 @@ setup(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives),
     cmdclass={'build_ext': build_ext},
-    options={'build_ext': {'inplace': False, 'force': False}},
+    options={'build_ext': {'inplace': True, 'force': False}},
     zip_safe=False)  # Allows cimport of pxd files
