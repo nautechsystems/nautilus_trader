@@ -9,6 +9,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
@@ -117,7 +118,7 @@ cdef class TradingStrategy:
 #-- MANAGEMENT METHODS ----------------------------------------------------------------------------#
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
-    cpdef float get_exchange_rate(self, Currency quote_currency)
+    cpdef float get_exchange_rate(self, Currency quote_currency, QuoteType quote_type=*)
 
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
@@ -131,8 +132,16 @@ cdef class TradingStrategy:
     cpdef bint position_exists(self, PositionId position_id)
     cpdef bint order_exists(self, OrderId order_id)
     cpdef bint is_order_working(self, OrderId order_id)
-    cpdef bint is_order_complete(self, OrderId order_id)
+    cpdef bint is_order_completed(self, OrderId order_id)
+    cpdef bint is_position_open(self, PositionId position_id)
+    cpdef bint is_position_closed(self, PositionId position_id)
     cpdef bint is_flat(self)
+    cpdef int count_orders_working(self)
+    cpdef int count_orders_completed(self)
+    cpdef int count_orders_total(self)
+    cpdef int count_positions_open(self)
+    cpdef int count_positions_closed(self)
+    cpdef int count_positions_total(self)
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
     cpdef void start(self)

@@ -740,13 +740,15 @@ cdef class TradingStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    cpdef float get_exchange_rate(self, Currency quote_currency):
+    cpdef float get_exchange_rate(self, Currency quote_currency, QuoteType quote_type=QuoteType.MID):
         """
         Return the calculated exchange rate for the give quote currency to the 
         account base currency.
         
         :param quote_currency: The quote currency for the exchange rate.
+        :param quote_type: The quote type for the exchange rate (default=MID).
         :return float.
+        :raises ValueError: If the quote type is LAST.
         """
         if self.account is None:
             self.log.error("Cannot get exchange rate (account is not initialized).")
@@ -761,7 +763,7 @@ cdef class TradingStrategy:
         return self._exchange_calculator.get_rate(
             quote_currency=quote_currency,
             base_currency=self.account.currency,
-            quote_type=QuoteType.MID,
+            quote_type=quote_type,
             bid_rates=bid_rates,
             ask_rates=ask_rates)
 
@@ -867,7 +869,7 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.is_order_working(order_id)
 
-    cpdef bint is_order_complete(self, OrderId order_id):
+    cpdef bint is_order_completed(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is complete.
          
@@ -875,6 +877,24 @@ cdef class TradingStrategy:
         :return bool.
         """
         return self._exec_engine.database.is_order_completed(order_id)
+
+    cpdef bint is_position_open(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier is open.
+         
+        :param position_id: The position_id.
+        :return bool.
+        """
+        return self._exec_engine.database.is_position_open(position_id)
+
+    cpdef bint is_position_closed(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier is closed.
+         
+        :param position_id: The position_id.
+        :return bool.
+        """
+        return self._exec_engine.database.is_position_closed(position_id)
 
     cpdef bint is_flat(self):
         """
@@ -885,6 +905,53 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.is_strategy_flat(self.id)
 
+    cpdef int count_orders_working(self):
+        """
+        Return the count of working orders held by the execution database.
+        
+        :return int.
+        """
+        return self._exec_engine.database.count_orders_working(self.id)
+
+    cpdef int count_orders_completed(self):
+        """
+        Return the count of completed orders held by the execution database.
+        
+        :return int.
+        """
+        return self._exec_engine.database.count_orders_completed(self.id)
+
+    cpdef int count_orders_total(self):
+        """
+        Return the total count of orders held by the execution database.
+        
+        :return int.
+        """
+        return self._exec_engine.database.count_orders_total(self.id)
+
+    cpdef int count_positions_open(self):
+        """
+        Return the count of open positions held by the execution database.
+        
+        :return int.
+        """
+        return self._exec_engine.database.count_positions_open(self.id)
+
+    cpdef int count_positions_closed(self):
+        """
+        Return the count of closed positions held by the execution database.
+        
+        :return int.
+        """
+        return self._exec_engine.database.count_positions_closed(self.id)
+
+    cpdef int count_positions_total(self):
+        """
+        Return the total count of positions held by the execution database.
+        
+        :return int.
+        """
+        return self._exec_engine.database.count_positions_total(self.id)
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
 

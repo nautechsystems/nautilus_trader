@@ -715,7 +715,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(strategy.order_exists(order.id))
         self.assertFalse(strategy.is_order_working(order.id))
-        self.assertTrue(strategy.is_order_complete(order.id))
+        self.assertTrue(strategy.is_order_completed(order.id))
 
     def test_can_cancel_order(self):
         # Arrange
@@ -740,7 +740,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(order.id not in strategy.orders_working())
         self.assertTrue(strategy.order_exists(order.id))
         self.assertFalse(strategy.is_order_working(order.id))
-        self.assertTrue(strategy.is_order_complete(order.id))
+        self.assertTrue(strategy.is_order_completed(order.id))
 
     def test_can_modify_order(self):
         # Arrange
@@ -766,7 +766,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(strategy.is_flat())
         self.assertTrue(strategy.order_exists(order.id))
         self.assertTrue(strategy.is_order_working(order.id))
-        self.assertFalse(strategy.is_order_complete(order.id))
+        self.assertFalse(strategy.is_order_completed(order.id))
 
     def test_can_cancel_all_orders(self):
         # Arrange
