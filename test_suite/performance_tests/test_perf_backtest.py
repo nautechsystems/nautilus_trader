@@ -187,3 +187,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 27/08/19 15403175 function calls (15175357 primitive calls) in 14.590 seconds (new execution engine)
         # 29/08/19 15415829 function calls (15188011 primitive calls) in 15.050 seconds (refactored domain model)
         # 18/09/19 15550972 function calls (15319680 primitive calls) in 14.430 seconds (various changes)
+        # 28/09/19 15588273 function calls (15357338 primitive calls) in 14.742 seconds (performance check)

@@ -13,7 +13,7 @@ PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 MAJOR = 0
 MINOR = 99
-MICRO = 401
+MICRO = 403
 
 __version__ = f'{MAJOR}.{MINOR}.{MICRO}'
 # $Source$
