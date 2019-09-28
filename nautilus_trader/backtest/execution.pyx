@@ -637,6 +637,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.side,
             order.quantity,
             fill_price,
+            self.instruments[order.symbol].quote_currency,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())

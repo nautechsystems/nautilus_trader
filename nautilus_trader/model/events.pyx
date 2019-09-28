@@ -12,7 +12,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
@@ -148,6 +148,7 @@ cdef class OrderFillEvent(OrderEvent):
                  OrderSide order_side,
                  Quantity filled_quantity,
                  Price average_price,
+                 Currency quote_currency,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -162,6 +163,7 @@ cdef class OrderFillEvent(OrderEvent):
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
         :param average_price: The event execution average price.
+        :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -176,6 +178,7 @@ cdef class OrderFillEvent(OrderEvent):
         self.order_side = order_side
         self.filled_quantity = filled_quantity
         self.average_price = average_price
+        self.quote_currency = quote_currency
         self.execution_time = execution_time
 
 
@@ -669,6 +672,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                  Quantity filled_quantity,
                  Quantity leaves_quantity,
                  Price average_price,
+                 Currency quote_currency,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -684,6 +688,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         :param filled_quantity: The event execution filled quantity.
         :param leaves_quantity: The event leaves quantity.
         :param average_price: The event execution average price.
+        :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -696,6 +701,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         quote_currency,
                          execution_time,
                          event_id,
                          event_timestamp)
@@ -715,7 +721,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                 f"side={order_side_to_string(self.order_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
                 f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price})")
+                f"avg_price={self.average_price} {currency_to_string(self.quote_currency)})")
 
 
 cdef class OrderFilled(OrderFillEvent):
@@ -732,6 +738,7 @@ cdef class OrderFilled(OrderFillEvent):
                  OrderSide order_side,
                  Quantity filled_quantity,
                  Price average_price,
+                 Currency quote_currency,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -746,6 +753,7 @@ cdef class OrderFilled(OrderFillEvent):
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
         :param average_price: The event execution average price.
+        :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -758,6 +766,7 @@ cdef class OrderFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         quote_currency,
                          execution_time,
                          event_id,
                          event_timestamp)
@@ -774,7 +783,7 @@ cdef class OrderFilled(OrderFillEvent):
                 f"symbol={self.symbol.value}, "
                 f"side={order_side_to_string(self.order_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price})")
+                f"avg_price={self.average_price} {currency_to_string(self.quote_currency)})")
 
 
 cdef class PositionEvent(Event):
@@ -848,7 +857,7 @@ cdef class PositionOpened(PositionEvent):
                 f"account_id={self.position.account_id.value}, "
                 f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"av_entry_price={self.position.average_open_price}, "
+                f"avg_open_price={self.position.average_open_price} {self.order_fill.quote_currency}, "
                 f"{self.position.status_string()})")
 
 
@@ -888,8 +897,10 @@ cdef class PositionModified(PositionEvent):
                 f"account_id={self.position.account_id.value}, "
                 f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"av_entry_price={self.position.average_open_price}, "
-                f"points_realized={self.position.realized_points}, "
+                f"avg_open_price={self.position.average_open_price} {self.order_fill.quote_currency}, "
+                f"realized_points={self.position.realized_points}, "
+                f"realized_return={self.position.realized_return}, "
+                f"realized_pnl={self.position.realized_pnl} {self.order_fill.quote_currency}, "
                 f"{self.position.status_string()})")
 
 
@@ -929,9 +940,11 @@ cdef class PositionClosed(PositionEvent):
                 f"account_id={self.position.account_id.value}, "
                 f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"av_entry_price={self.position.average_open_price}, "
-                f"av_exit_price={self.position.average_close_price}, "
-                f"points_realized={self.position.realized_points}, "
+                f"avg_open_price={self.position.average_open_price} {self.order_fill.quote_currency}, "
+                f"avg_close_price={self.position.average_close_price} {self.order_fill.quote_currency}, "
+                f"realized_points={self.position.realized_points}, "
+                f"realized_return={self.position.realized_return}, "
+                f"realized_pnl={self.position.realized_pnl} {self.order_fill.quote_currency}, "
                 f"{self.position.status_string()})")
 
 
