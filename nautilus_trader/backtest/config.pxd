@@ -15,6 +15,7 @@ cdef class BacktestConfig:
     cdef readonly bint frozen_account
     cdef readonly Money starting_capital
     cdef readonly Currency account_currency
+    cdef readonly str short_term_interest_csv_path
     cdef readonly float commission_rate_bp
     cdef readonly bint bypass_logging
     cdef readonly int level_console

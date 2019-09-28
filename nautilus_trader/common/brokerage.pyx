@@ -88,17 +88,17 @@ cdef class RolloverInterestCalculator:
     will default to the included short-term interest rate data csv (data since 1956).
     """
 
-    def __init__(self, str rate_data_csv_path=''):
+    def __init__(self, str short_term_interest_csv_path='default'):
         """
         Initializes a new instance of the RolloverInterestCalculator class.
 
-        :param rate_data_csv_path: The path to the short term interest rate data csv.
+        :param short_term_interest_csv_path: The path to the short term interest rate data csv.
         """
-        if rate_data_csv_path == '':
-            rate_data_csv_path = os.path.join(PACKAGE_ROOT + '/data/', 'short_term_interest.csv')
+        if short_term_interest_csv_path == 'default':
+            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + '/data/', 'short_term_interest.csv')
         self._exchange_calculator = ExchangeRateCalculator()
 
-        csv_rate_data = pd.read_csv(rate_data_csv_path)
+        csv_rate_data = pd.read_csv(short_term_interest_csv_path)
         self._rate_data = {
             Currency.AUD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'AUS'],
             Currency.CAD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CAN'],
