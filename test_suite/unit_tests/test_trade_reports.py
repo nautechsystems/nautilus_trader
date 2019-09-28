@@ -13,9 +13,8 @@ from decimal import Decimal
 from datetime import timedelta
 
 from nautilus_trader.core.types import GUID
-from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId, PositionIdBroker
 from nautilus_trader.model.order import OrderFactory
@@ -62,6 +61,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price('0.80011'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -108,6 +108,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price('0.80011'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)

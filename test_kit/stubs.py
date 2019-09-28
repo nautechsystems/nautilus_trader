@@ -229,6 +229,7 @@ class TestStubs:
             order.side,
             order.quantity,
             order.price if fill_price is None else fill_price,
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -306,6 +307,7 @@ class TestStubs:
             order.side,
             order.quantity,
             close_price,
+            Currency.USD,
             UNIX_EPOCH + timedelta(minutes=5),
             GUID(uuid.uuid4()),
             UNIX_EPOCH + timedelta(minutes=5))

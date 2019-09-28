@@ -840,6 +840,7 @@ class ExecutionEngineTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)

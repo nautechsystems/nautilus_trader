@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import OrderSide, MarketPosition
+from nautilus_trader.model.enums import OrderSide, MarketPosition, Currency
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, OrderId, PositionId, AccountId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.order import OrderFactory
@@ -53,6 +53,7 @@ class PositionTests(unittest.TestCase):
             order.side,
             order.quantity,
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -97,6 +98,7 @@ class PositionTests(unittest.TestCase):
             order.side,
             order.quantity,
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -137,6 +139,7 @@ class PositionTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -178,6 +181,7 @@ class PositionTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -192,6 +196,7 @@ class PositionTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price('1.00002'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -233,6 +238,7 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             order.quantity,
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -248,6 +254,7 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             order.quantity,
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -294,6 +301,7 @@ class PositionTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price('1.00000'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -310,6 +318,7 @@ class PositionTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -324,6 +333,7 @@ class PositionTests(unittest.TestCase):
             Quantity(50000),
             Quantity(0),
             Price('1.00003'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -372,6 +382,7 @@ class PositionTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price('1.00000'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -387,6 +398,7 @@ class PositionTests(unittest.TestCase):
             order2.side,
             order2.quantity,
             Price('1.00000'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -441,6 +453,7 @@ class PositionTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price('1.00000'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -454,6 +467,7 @@ class PositionTests(unittest.TestCase):
             order2.side,
             order2.quantity,
             Price('1.00001'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -467,6 +481,7 @@ class PositionTests(unittest.TestCase):
             order3.side,
             order3.quantity,
             Price('1.00010'),
+            Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
