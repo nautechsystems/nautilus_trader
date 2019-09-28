@@ -9,9 +9,10 @@
 from decimal import Decimal
 from typing import Set, List
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.objects cimport Quantity, Tick
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport PositionId, ExecutionId
 
@@ -41,23 +42,25 @@ cdef class Position:
         self.last_order_id = event.order_id
         self.last_execution_id = event.execution_id
         self.symbol = event.symbol
+        self.quote_currency = event.quote_currency
         self.entry_direction = event.order_side
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
         self.closed_time = None  # Can be none
-        self.average_open_price = Decimal(0)        # Initialized in _on_event
-        self.average_close_price = Decimal(0)
+        self.average_open_price = event.average_price.value
+        self.average_close_price = None  # Can be none
         self.realized_points = Decimal(0)
         self.realized_return = 0
+        self.realized_pnl = Money(0)
 
-        self._filled_quantity_buys = 0              # Initialized in _on_event
-        self._filled_quantity_sells = 0             # Initialized in _on_event
-        self.relative_quantity = 0                  # Initialized in _on_event
-        self.quantity = Quantity(0)                 # Initialized in _on_event
-        self.peak_quantity = Quantity(0)            # Initialized in _on_event
-        self.market_position = MarketPosition.FLAT  # Initialized in _on_event
+        self._filled_quantity_buys = 0              # Initialized in _update()
+        self._filled_quantity_sells = 0             # Initialized in _update()
+        self.relative_quantity = 0                  # Initialized in _update()
+        self.quantity = Quantity(0)                 # Initialized in _update()
+        self.peak_quantity = Quantity(0)            # Initialized in _update()
+        self.market_position = MarketPosition.FLAT  # Initialized in _update()
 
-        self._on_event(event)
+        self._update(event)
 
     cdef bint equals(self, Position other):
         """
@@ -136,7 +139,7 @@ cdef class Position:
         """
         return self._events.copy()
 
-    cpdef void apply(self, OrderFillEvent event):
+    cpdef void apply(self, OrderFillEvent event) except *:
         """
         Applies the given order fill event to the position.
 
@@ -154,75 +157,96 @@ cdef class Position:
         self.last_execution_id = event.execution_id
 
         # Apply event
-        self._on_event(event)
+        self._update(event)
 
-    cpdef object unrealized_points(self, Price current_price):
+    cpdef object unrealized_points(self, Tick last):
         """
         Return the calculated unrealized points for the position from the given current price.
          
-        :param current_price: The current price of the position instrument.
+        :param last: The position symbols last tick.
         :return Decimal.
         """
-        return self._calculate_points(self.average_open_price, current_price.value)
+        Condition.equal(self.symbol, last.symbol)
 
-    cpdef float unrealized_return(self, Price current_price):
+        if self.market_position == MarketPosition.LONG:
+            return self._calculate_points(self.average_open_price, last.bid.value)
+        elif self.market_position == MarketPosition.SHORT:
+            return self._calculate_points(self.average_open_price, last.ask.value)
+        else:
+            return Decimal(0)
+
+    cpdef float unrealized_return(self, Tick last) except *:
         """
         Return the calculated unrealized return for the position from the given current price.
          
-        :param current_price: The current price of the position instrument.
+        :param last: The position symbols last tick.
         :return float.
         """
-        return self._calculate_return(self.average_open_price, current_price.value)
+        Condition.equal(self.symbol, last.symbol)
 
-    cdef object _calculate_average_price(self, OrderFillEvent event, current_average_price, long total_fills):
-        return (((self.quantity.value * current_average_price) + (event.filled_quantity.value * event.average_price.value))
-                / total_fills)
-
-    cdef object _calculate_points(self, opened_price, closed_price):
         if self.market_position == MarketPosition.LONG:
-            return closed_price - opened_price
+            return self._calculate_return(self.average_open_price, last.bid.value)
         elif self.market_position == MarketPosition.SHORT:
-            return opened_price - closed_price
-        elif self.market_position == MarketPosition.FLAT:
-            return Decimal(0)
+            return self._calculate_return(self.average_open_price, last.ask.value)
+        else:
+            return 0
 
-    cdef float _calculate_return(self, opened_price, closed_price):
+    cpdef Money unrealized_pnl(self, Tick last):
+        """
+        Return the calculated unrealized return for the position from the given current price.
+         
+        :param last: The position symbols last tick.
+        :return Money.
+        """
+        Condition.equal(self.symbol, last.symbol)
+
         if self.market_position == MarketPosition.LONG:
-            return (closed_price - opened_price) / opened_price
+            return self._calculate_pnl(self.average_open_price, last.bid.value, self.quantity.value)
         elif self.market_position == MarketPosition.SHORT:
-            return (opened_price - closed_price) / opened_price
-        elif self.market_position == MarketPosition.FLAT:
-            return Decimal(0)
+            return self._calculate_pnl(self.average_open_price, last.ask.value, self.quantity.value)
+        else:
+            return Money(0)
 
-    cdef void _on_event(self, OrderFillEvent event) except *:
+    cpdef object total_points(self, Tick last):
+        """
+        Return the calculated unrealized points for the position from the given current price.
+         
+        :param last: The position symbols last tick.
+        :return Decimal.
+        """
+        Condition.equal(self.symbol, last.symbol)
+
+        return self.realized_points + self.unrealized_points(last)
+
+    cpdef float total_return(self, Tick last) except *:
+        """
+        Return the calculated unrealized return for the position from the given current price.
+         
+        :param last: The position symbols last tick.
+        :return float.
+        """
+        Condition.equal(self.symbol, last.symbol)
+
+        return self.realized_return + self.unrealized_return(last)
+
+    cpdef Money total_pnl(self, Tick last):
+        """
+        Return the calculated unrealized return for the position from the given current price.
+         
+        :param last: The position symbols last tick.
+        :return Money.
+        """
+        Condition.equal(self.symbol, last.symbol)
+
+        return self.realized_pnl + self.unrealized_pnl(last)
+
+    cdef void _update(self, OrderFillEvent event) except *:
         if event.order_side == OrderSide.BUY:
-            self._filled_quantity_buys += event.filled_quantity.value
-            if self.relative_quantity > 0:
-                # LONG POSITION
-                self.average_open_price = self._calculate_average_price(event, self.average_open_price, self._filled_quantity_buys)
-            elif self.relative_quantity < 0:
-                 # SHORT POSITION
-                self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_buys)
-                self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
-                self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
-            else:
-                self.average_open_price = event.average_price.value
-            # Update relative quantity
-            self.relative_quantity += event.filled_quantity.value
+            self._handle_buy_order_fill(event)
         elif event.order_side == OrderSide.SELL:
-            self._filled_quantity_sells += event.filled_quantity.value
-            if self.relative_quantity < 0:
-                # SHORT POSITION
-                self.average_open_price = self._calculate_average_price(event, self.average_open_price, self._filled_quantity_sells)
-            elif self.relative_quantity > 0:
-                # LONG POSITION
-                self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_sells)
-                self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
-                self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
-            else:
-                self.average_open_price = event.average_price.value
-            # Update relative quantity
-            self.relative_quantity -= event.filled_quantity.value
+            self._handle_sell_order_fill(event)
+        else:
+            raise RuntimeError(f"Cannot update position (event order side invalid {event.order_side})")
 
         # Set quantities
         self.quantity = Quantity(abs(self.relative_quantity))
@@ -249,3 +273,66 @@ cdef class Position:
             self.is_open = False
             self.is_long = False
             self.is_short = False
+
+    cdef void _handle_buy_order_fill(self, OrderFillEvent event):
+        self._filled_quantity_buys += event.filled_quantity.value
+
+        # LONG POSITION
+        if self.relative_quantity > 0:
+            self.average_open_price = self._calculate_average_price(event, self.average_open_price, self._filled_quantity_buys)
+
+        # SHORT POSITION
+        elif self.relative_quantity < 0:
+            if self.average_close_price is None:
+                self.average_close_price = event.average_price.value
+            else:
+                self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_buys)
+
+            self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
+            self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
+            self.realized_pnl += self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
+
+        self.relative_quantity += event.filled_quantity.value
+
+    cdef void _handle_sell_order_fill(self, OrderFillEvent event):
+        self._filled_quantity_sells += event.filled_quantity.value
+
+        # SHORT POSITION
+        if self.relative_quantity < 0:
+            self.average_open_price = self._calculate_average_price(event, self.average_open_price, self._filled_quantity_sells)
+
+        # LONG POSITION
+        elif self.relative_quantity > 0:
+            if self.average_close_price is None:
+                self.average_close_price = event.average_price.value
+            else:
+                self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_sells)
+
+            self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
+            self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
+            self.realized_pnl += self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
+
+        self.relative_quantity -= event.filled_quantity.value
+
+    cdef object _calculate_average_price(self, OrderFillEvent event, current_average_price, long total_fills):
+        return (((self.quantity.value * current_average_price) + (event.filled_quantity.value * event.average_price.value))
+                / total_fills)
+
+    cdef object _calculate_points(self, opened_price, closed_price):
+        if self.market_position == MarketPosition.LONG:
+            return closed_price - opened_price
+        elif self.market_position == MarketPosition.SHORT:
+            return opened_price - closed_price
+        elif self.market_position == MarketPosition.FLAT:
+            return Decimal(0)
+
+    cdef float _calculate_return(self, opened_price, closed_price):
+        if self.market_position == MarketPosition.LONG:
+            return (float(closed_price) - float(opened_price)) / float(opened_price)
+        elif self.market_position == MarketPosition.SHORT:
+            return (float(opened_price) - float(closed_price)) / float(opened_price)
+        else:
+            return 0
+
+    cdef Money _calculate_pnl(self, opened_price, closed_price, long filled_quantity):
+        return Money(self._calculate_points(opened_price, closed_price) * filled_quantity)

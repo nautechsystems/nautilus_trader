@@ -14,8 +14,15 @@ from decimal import Decimal
 from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, MarketPosition, Currency
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, OrderId, PositionId, AccountId, ExecutionId, PositionIdBroker
+from nautilus_trader.model.objects import Quantity, Price, Tick, Money
+from nautilus_trader.model.identifiers import (
+    Symbol,
+    Venue,
+    IdTag,
+    OrderId,
+    PositionId,
+    ExecutionId,
+    PositionIdBroker)
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -58,6 +65,11 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         # Act
         position = Position(PositionId('P-123456'), order_filled)
 
@@ -79,8 +91,13 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_closed)
         self.assertEqual(Decimal(0), position.realized_points)
         self.assertEqual(0, position.realized_return)
-        self.assertEqual(Decimal('0.00049'), position.unrealized_points(Price('1.00050')))
-        self.assertEqual(0.0004899951163679361, position.unrealized_return(Price('1.00050')))
+        self.assertEqual(Money.zero(), position.realized_pnl)
+        self.assertEqual(Decimal('0.00049'), position.unrealized_points(last))
+        self.assertEqual(0.0004899951163679361, position.unrealized_return(last))
+        self.assertEqual(Money(49.00), position.unrealized_pnl(last))
+        self.assertEqual(Decimal('0.00049'), position.total_points(last))
+        self.assertEqual(0.0004899951163679361, position.total_return(last))
+        self.assertEqual(Money(49.00), position.total_pnl(last))
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -103,6 +120,11 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         # Act
         position = Position(PositionId('P-123456'), order_filled)
 
@@ -120,7 +142,13 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_closed)
         self.assertEqual(Decimal(0), position.realized_points)
         self.assertEqual(0.0, position.realized_return)
-        self.assertEqual(-0.0004899951163679361, position.unrealized_return(Price('1.00050')))
+        self.assertEqual(Money.zero(), position.realized_pnl)
+        self.assertEqual(Decimal('-0.00047'), position.unrealized_points(last))
+        self.assertEqual(-0.0004699953133240342, position.unrealized_return(last))
+        self.assertEqual(Money('-47.00'), position.unrealized_pnl(last))
+        self.assertEqual(Decimal('-0.00047'), position.total_points(last))
+        self.assertEqual(-0.0004699953133240342, position.total_return(last))
+        self.assertEqual(Money('-47.00'), position.total_pnl(last))
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -144,6 +172,11 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         position = Position(PositionId('P-123456'), order_partially_filled)
 
         # Act
@@ -161,8 +194,13 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_closed)
         self.assertEqual(Decimal(0), position.realized_points)
         self.assertEqual(0.0, position.realized_return)
-        self.assertEqual(Decimal('0.00049'), position.unrealized_points(Price('1.00050')))
-        self.assertEqual(0.0004899951163679361, position.unrealized_return(Price('1.00050')))
+        self.assertEqual(Money.zero(), position.realized_pnl)
+        self.assertEqual(Decimal('0.00049'), position.unrealized_points(last))
+        self.assertEqual(0.0004899951163679361, position.unrealized_return(last))
+        self.assertEqual(Money('24.50'), position.unrealized_pnl(last))
+        self.assertEqual(Decimal('0.00049'), position.total_points(last))
+        self.assertEqual(0.0004899951163679361, position.total_return(last))
+        self.assertEqual(Money('24.50'), position.total_pnl(last))
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -203,6 +241,11 @@ class PositionTests(unittest.TestCase):
 
         position = Position(PositionId('P-123456'), order_partially_filled1)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         # Act
         position.apply(order_partially_filled2)
 
@@ -219,8 +262,13 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_closed)
         self.assertEqual(Decimal(0), position.realized_points)
         self.assertEqual(0.0, position.realized_return)
-        self.assertEqual(Decimal('-0.000485'), position.unrealized_points(Price('1.00050')))
-        self.assertEqual(-0.0004849927208852023, position.unrealized_return(Price('1.00050')))
+        self.assertEqual(Money.zero(), position.realized_pnl)
+        self.assertEqual(Decimal('-0.000465'), position.unrealized_points(last))
+        self.assertEqual(-0.0004649930342566222, position.unrealized_return(last))
+        self.assertEqual(Money(-46.50), position.unrealized_pnl(last))
+        self.assertEqual(Decimal('-0.000465'), position.total_points(last))
+        self.assertEqual(-0.0004649930342566222, position.total_return(last))
+        self.assertEqual(Money(-46.50), position.total_pnl(last))
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -259,6 +307,11 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         # Act
         position.apply(order_filled2)
 
@@ -275,10 +328,15 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
-        self.assertEqual(Decimal(0), position.realized_points)  # No change in price
-        self.assertEqual(Decimal(0), position.unrealized_points(Price('1.00050')))
-        self.assertEqual(0.0, position.realized_return)  # No change in price
-        self.assertEqual(0.0, position.unrealized_return(Price('1.00050')))
+        self.assertEqual(Decimal(0), position.realized_points)
+        self.assertEqual(0.0, position.realized_return)
+        self.assertEqual(Money.zero(), position.realized_pnl)
+        self.assertEqual(Decimal(0), position.unrealized_points(last))
+        self.assertEqual(0.0, position.unrealized_return(last))
+        self.assertEqual(Money.zero(), position.unrealized_pnl(last))
+        self.assertEqual(Decimal(0), position.total_points(last))
+        self.assertEqual(0.0, position.total_return(last))
+        self.assertEqual(Money.zero(), position.total_pnl(last))
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -338,6 +396,11 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         # Act
         position.apply(order_filled2)
         position.apply(order_filled3)
@@ -357,11 +420,16 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
         self.assertEqual(Decimal('-0.00004'), position.realized_points)
-        self.assertEqual(Decimal(0), position.unrealized_points(Price('1.00050')))  # No more quantity in market
         self.assertEqual(-3.9999998989515007e-05, position.realized_return)
-        self.assertEqual(0.0, position.unrealized_return(Price('1.00050')))  # No more quantity in market
+        self.assertEqual(Money(-2.00), position.realized_pnl)
+        self.assertEqual(Decimal(0), position.unrealized_points(last))
+        self.assertEqual(0.0, position.unrealized_return(last))
+        self.assertEqual(Money.zero(), position.unrealized_pnl(last))
+        self.assertEqual(Decimal('-0.00004'), position.total_points(last))
+        self.assertEqual(-3.9999998989515007e-05, position.total_return(last))
+        self.assertEqual(Money(-2.00), position.total_pnl(last))
 
-    def test_position_filled_with_no_pnl_returns_expected_attributes(self):
+    def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
             AUDUSD_FXCM,
@@ -403,6 +471,11 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         # Act
         position.apply(order2_filled)
 
@@ -423,9 +496,14 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
         self.assertEqual(Decimal(0), position.realized_points)
-        self.assertEqual(Decimal(0), position.unrealized_points(Price('1.00050')))  # No more quantity in market
         self.assertEqual(0, position.realized_return)
-        self.assertEqual(0.0, position.unrealized_return(Price('1.00050')))  # No more quantity in market
+        self.assertEqual(Money.zero(), position.realized_pnl)
+        self.assertEqual(Decimal(0), position.unrealized_points(last))
+        self.assertEqual(0.0, position.unrealized_return(last))
+        self.assertEqual(Money.zero(), position.unrealized_pnl(last))
+        self.assertEqual(Decimal(0), position.total_points(last))
+        self.assertEqual(0.0, position.total_return(last))
+        self.assertEqual(Money.zero(), position.total_pnl(last))
 
     def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
         # Arrange
@@ -486,6 +564,11 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        last = Tick(AUDUSD_FXCM,
+                    Price('1.00050'),
+                    Price('1.00048'),
+                    UNIX_EPOCH)
+
         # Act
         position = Position(PositionId('P-123456'), order1_filled)
         position.apply(order2_filled)
@@ -506,6 +589,11 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
         self.assertEqual(Decimal('0.000095'), position.realized_points)
-        self.assertEqual(Decimal(0), position.unrealized_points(Price('1.00050')))  # No more quantity in market
         self.assertEqual(9.499952284386382e-05, position.realized_return)
-        self.assertEqual(0.0, position.unrealized_return(Price('1.00050')))  # No more quantity in market
+        self.assertEqual(Money(19.00), position.realized_pnl)
+        self.assertEqual(Decimal(0), position.unrealized_points(last))
+        self.assertEqual(0.0, position.unrealized_return(last))
+        self.assertEqual(Money.zero(), position.unrealized_pnl(last))
+        self.assertEqual(Decimal('0.000095'), position.total_points(last))
+        self.assertEqual(9.499952284386382e-05, position.total_return(last))
+        self.assertEqual(Money(19.00), position.total_pnl(last))

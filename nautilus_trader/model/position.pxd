@@ -8,7 +8,8 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.objects cimport Quantity, Tick, Money
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport (
     Symbol,
@@ -35,6 +36,7 @@ cdef class Position:
     cdef readonly OrderId last_order_id
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
+    cdef readonly Currency quote_currency
     cdef readonly OrderSide entry_direction
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time
@@ -42,6 +44,7 @@ cdef class Position:
     cdef readonly object average_close_price
     cdef readonly object realized_points
     cdef readonly float realized_return
+    cdef readonly Money realized_pnl
     cdef readonly OrderFillEvent last_event
     cdef readonly int event_count
 
@@ -61,11 +64,18 @@ cdef class Position:
     cpdef list get_order_ids(self)
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
-    cpdef void apply(self, OrderFillEvent event)
-    cpdef object unrealized_points(self, Price current_price)
-    cpdef float unrealized_return(self, Price current_price)
+    cpdef void apply(self, OrderFillEvent event) except *
+    cpdef object unrealized_points(self, Tick last)
+    cpdef float unrealized_return(self, Tick last) except *
+    cpdef Money unrealized_pnl(self, Tick last)
+    cpdef object total_points(self, Tick last)
+    cpdef float total_return(self, Tick last) except *
+    cpdef Money total_pnl(self, Tick last )
 
+    cdef void _update(self, OrderFillEvent event) except *
+    cdef void _handle_buy_order_fill(self, OrderFillEvent event)
+    cdef void _handle_sell_order_fill(self, OrderFillEvent event)
     cdef object _calculate_average_price(self, OrderFillEvent event, current_average_price, long total_fills)
     cdef object _calculate_points(self, opened_price, closed_price)
     cdef float _calculate_return(self, opened_price, closed_price)
-    cdef void _on_event(self, OrderFillEvent event) except *
+    cdef Money _calculate_pnl(self, opened_price, closed_price, long filled_quantity)
