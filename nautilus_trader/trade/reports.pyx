@@ -10,6 +10,7 @@ import pandas as pd
 
 from typing import Dict
 
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
@@ -72,13 +73,13 @@ cdef class ReportProvider:
 
     cdef dict _order_to_dict(self, Order order):
         return {'order_id': order.id.value,
-                'timestamp': order.last_event.timestamp,
                 'symbol': order.symbol.code,
                 'side': order_side_to_string(order.side),
                 'type': order_type_to_string(order.type),
                 'quantity': order.quantity.value,
                 'avg_price': order.average_price.value,
-                'slippage': order.slippage}
+                'slippage': order.slippage,
+                'timestamp': order.last_event.timestamp}
 
     cdef dict _position_to_dict(self, Position position):
         return {'position_id': position.id.value,
@@ -87,7 +88,10 @@ cdef class ReportProvider:
                 'peak_quantity': position.peak_quantity.value,
                 'opened_time': position.opened_time,
                 'closed_time': position.closed_time,
+                'duration': position.open_duration,
                 'avg_open_price': position.average_open_price,
                 'avg_close_price': position.average_close_price,
                 'realized_points': position.realized_points,
-                'realized_return': position.realized_return}
+                'realized_return': position.realized_return,
+                'realized_pnl': str(position.realized_pnl),
+                'currency': currency_to_string(position.quote_currency)}

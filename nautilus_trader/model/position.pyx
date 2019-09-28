@@ -47,6 +47,7 @@ cdef class Position:
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
         self.closed_time = None  # Can be none
+        self.open_duration = None  # Can be none
         self.average_open_price = event.average_price.value
         self.average_close_price = None  # Can be none
         self.realized_points = Decimal(0)
@@ -112,8 +113,8 @@ cdef class Position:
 
         :return str.
         """
-        cdef str quantity = '' if self.relative_quantity == 0 else self.quantity.to_string_formatted()
-        return f"{market_position_to_string(self.market_position)} {quantity} {self.symbol}"
+        cdef str quantity = ' ' if self.relative_quantity == 0 else f' {self.quantity.to_string_formatted()} '
+        return f"{market_position_to_string(self.market_position)}{quantity}{self.symbol}"
 
     cpdef list get_order_ids(self):
         """
@@ -268,7 +269,8 @@ cdef class Position:
             self.is_long = False
         else:
             self.market_position = MarketPosition.FLAT
-            self.closed_time = event.timestamp
+            self.closed_time = event.execution_time
+            self.open_duration = self.closed_time - self.opened_time
             self.is_closed = True
             self.is_open = False
             self.is_long = False

@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Quantity, Tick, Money
@@ -40,6 +40,7 @@ cdef class Position:
     cdef readonly OrderSide entry_direction
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time
+    cdef readonly timedelta open_duration
     cdef readonly object average_open_price
     cdef readonly object average_close_price
     cdef readonly object realized_points
