@@ -6,9 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import datetime
 import unittest
 import uuid
 
+from datetime import timedelta
 from decimal import Decimal
 
 from nautilus_trader.core.types import GUID
@@ -80,6 +82,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(OrderSide.BUY, position.entry_direction)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertIsNone(position.open_duration)
         self.assertEqual(Decimal('1.00001'), position.average_open_price)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.id], position.get_order_ids())
@@ -303,7 +306,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Price('1.00001'),
             Currency.USD,
-            UNIX_EPOCH,
+            UNIX_EPOCH + timedelta(minutes=1),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -319,11 +322,12 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertEqual(timedelta(minutes=1), position.open_duration)
         self.assertEqual(Decimal('1.00001'), position.average_open_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
         self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
-        self.assertEqual(UNIX_EPOCH, position.closed_time)
+        self.assertEqual(datetime.datetime(1970, 1, 1, 0, 1, tzinfo=datetime.timezone.utc), position.closed_time)
         self.assertEqual(Decimal('1.00001'), position.average_close_price)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
