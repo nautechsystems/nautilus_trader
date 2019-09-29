@@ -997,6 +997,7 @@ cdef class ExecutionEngine:
         self.trader_id = trader_id
         self.account_id = account_id
         self.database = database
+        self.account = self.database.get_account(self.account_id)
         self.portfolio = portfolio
         self.analyzer = analyzer
 
@@ -1067,14 +1068,8 @@ cdef class ExecutionEngine:
         """
         self.database.reset()
 
+
 #-- QUERIES ---------------------------------------------------------------------------------------"
-    cpdef Account get_account(self):
-        """
-        Return the account for the execution engine.
-        
-        :return: Account.
-        """
-        return self.database.get_account(self.account_id)
 
     cpdef list registered_strategies(self):
         """
@@ -1203,7 +1198,9 @@ cdef class ExecutionEngine:
 
         if account is None:
             account = Account(event)
-            self.database.add_account(account)
+            if self.account_id.equals(account.id):
+                self.account = account
+            self.database.add_account(self.account)
             self.analyzer.initialize_account_data(event)
         elif account.id == event.account_id:
             account.apply(event)
@@ -1288,7 +1285,9 @@ cdef class ExecutionClient:
 
         self._log.info(f"Initialized.")
 
+
 # -- ABSTRACT METHODS ---------------------------------------------------------#
+
     cpdef void connect(self):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")

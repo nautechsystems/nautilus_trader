@@ -50,7 +50,7 @@ if __name__ == "__main__":
         account_currency=Currency.USD,
         commission_rate_bp=0.20,
         bypass_logging=False,
-        level_console=LogLevel.INFO,
+        level_console=LogLevel.DEBUG,
         level_file=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,
@@ -82,8 +82,8 @@ if __name__ == "__main__":
 
     with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
         pass
-        # print(engine.get_equity_curve())
-        print(engine.get_order_fills_report())
-        print(engine.get_positions_report())
+        print(engine.trader.generate_account_report())
+        print(engine.trader.generate_order_fills_report())
+        print(engine.trader.generate_positions_report())
 
     engine.dispose()

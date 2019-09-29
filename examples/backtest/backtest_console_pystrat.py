@@ -70,6 +70,11 @@ if __name__ == "__main__":
     stop = datetime(2013, 3, 1, 0, 0, 0, 0)
 
     engine.run(start, stop)
-    print(engine.get_order_fills_report())
-    print(engine.get_positions_report())
+
+    with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
+        pass
+        print(engine.trader.generate_account_report())
+        print(engine.trader.generate_order_fills_report())
+        print(engine.trader.generate_positions_report())
+
     engine.dispose()

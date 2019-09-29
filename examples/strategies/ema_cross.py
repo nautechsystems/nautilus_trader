@@ -133,7 +133,7 @@ class EMACrossPy(TradingStrategy):
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
-                    equity=self.account.free_equity,
+                    equity=self.account().free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
@@ -162,9 +162,9 @@ class EMACrossPy(TradingStrategy):
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
-                print(f"Exchange rate from {self.instrument.quote_currency} to {self.account.currency} is {exchange_rate}")
+                print(f"Exchange rate from {self.instrument.quote_currency} to {self.account().currency} is {exchange_rate}")
                 position_size = self.position_sizer.calculate(
-                    equity=self.account.free_equity,
+                    equity=self.account().free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,

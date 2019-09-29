@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import time
-
 from cpython.datetime cimport datetime
 from typing import List
 
@@ -233,26 +231,34 @@ cdef class Trader:
 
         return status
 
-    cpdef object get_orders_report(self):
+    cpdef object generate_orders_report(self):
         """
         Return an orders report dataframe.
 
         :return pd.DataFrame.
         """
-        return self._report_provider.get_orders_report(self._exec_engine.database.get_orders())
+        return self._report_provider.generate_orders_report(self._exec_engine.database.get_orders())
 
-    cpdef object get_order_fills_report(self):
+    cpdef object generate_order_fills_report(self):
         """
         Return an order fills report dataframe.
         
         :return pd.DataFrame.
         """
-        return self._report_provider.get_order_fills_report(self._exec_engine.database.get_orders())
+        return self._report_provider.generate_order_fills_report(self._exec_engine.database.get_orders())
 
-    cpdef object get_positions_report(self):
+    cpdef object generate_positions_report(self):
         """
         Return a positions report dataframe.
 
         :return pd.DataFrame.
         """
-        return self._report_provider.get_positions_report(self._exec_engine.database.get_positions())
+        return self._report_provider.generate_positions_report(self._exec_engine.database.get_positions())
+
+    cpdef object generate_account_report(self):
+        """
+        Return an account report dataframe.
+
+        :return pd.DataFrame.
+        """
+        return self._report_provider.generate_account_report(self._exec_engine.account.get_events())

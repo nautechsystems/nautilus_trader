@@ -8,13 +8,16 @@
 
 import pandas as pd
 
+from cpython.datetime cimport datetime
 from typing import Dict
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.identifiers cimport OrderId, PositionId
+from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 
@@ -29,7 +32,7 @@ cdef class ReportProvider:
         Initializes a new instance of the ReportProvider class.
         """
 
-    cpdef object get_orders_report(self, dict orders: Dict[OrderId, Order]):
+    cpdef object generate_orders_report(self, dict orders: Dict[OrderId, Order]):
         """
         Return an orders report dataframe.
         
@@ -43,7 +46,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=orders_all).set_index('order_id')
 
-    cpdef object get_order_fills_report(self, dict orders: Dict[OrderId, Order]):
+    cpdef object generate_order_fills_report(self, dict orders: Dict[OrderId, Order]):
         """
         Return an order fills report dataframe.
         
@@ -57,7 +60,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=filled_orders).set_index('order_id')
 
-    cpdef object get_positions_report(self, dict positions: Dict[PositionId, Position]):
+    cpdef object generate_positions_report(self, dict positions: Dict[PositionId, Position]):
         """
         Return a positions report dataframe.
         
@@ -70,6 +73,30 @@ cdef class ReportProvider:
         cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed]
 
         return pd.DataFrame(data=trades).set_index('position_id')
+
+    cpdef object generate_account_report(self, list events, datetime start=None, datetime end=None):
+        """
+        Generate an account report for the given optional time range.
+
+        :param events: The accounts state events list.
+        :param start: The start of the account reports period.
+        :param end: The end of the account reports period.
+        :return: pd.DataFrame.
+        :raises: ConditionFailed: If the events is empty.
+        """
+        Condition.not_empty(events, 'events')
+
+        if start is None:
+            start = events[0].timestamp
+        if end is None:
+            end = events[-1].timestamp
+
+        cdef list account_events = [self._account_state_to_dict(e) for e in events if start <= e.timestamp]
+
+        if len(account_events) == 0:
+            return pd.DataFrame()
+
+        return pd.DataFrame(data=account_events).set_index('timestamp')
 
     cdef dict _order_to_dict(self, Order order):
         return {'order_id': order.id.value,
@@ -95,3 +122,8 @@ cdef class ReportProvider:
                 'realized_return': position.realized_return,
                 'realized_pnl': str(position.realized_pnl),
                 'currency': currency_to_string(position.quote_currency)}
+
+    cdef dict _account_state_to_dict(self, AccountStateEvent event):
+        return {'timestamp': event.timestamp,
+                'cash_balance': event.cash_balance,
+                'margin_used': event.margin_used_maintenance}

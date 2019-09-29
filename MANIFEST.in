@@ -1,0 +1,2 @@
+include nautilus_trader/data/libor-1-month.csv
+include nautilus_trader/data/short-term-interest.csv

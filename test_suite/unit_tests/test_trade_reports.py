@@ -71,7 +71,7 @@ class ReportProviderTests(unittest.TestCase):
         orders = {order1.id: order1,
                   order2.id: order2}
         # Act
-        report = report_provider.get_orders_report(orders)
+        report = report_provider.generate_orders_report(orders)
 
         # Assert
         self.assertEqual(2, len(report))
@@ -118,7 +118,7 @@ class ReportProviderTests(unittest.TestCase):
         orders = {order1.id: order1,
                   order2.id: order2}
         # Act
-        report = report_provider.get_order_fills_report(orders)
+        report = report_provider.generate_order_fills_report(orders)
 
         # Assert
         self.assertEqual(1, len(report))
@@ -142,7 +142,7 @@ class ReportProviderTests(unittest.TestCase):
                      position2.id: position2}
 
         # Act
-        report = report_provider.get_positions_report(positions)
+        report = report_provider.generate_positions_report(positions)
 
         # Assert
         print(report.iloc[0])

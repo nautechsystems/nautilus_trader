@@ -46,6 +46,7 @@ cdef class Trader:
     cpdef void account_inquiry(self) except *
 
     cpdef dict strategy_status(self)
-    cpdef object get_orders_report(self)
-    cpdef object get_order_fills_report(self)
-    cpdef object get_positions_report(self)
+    cpdef object generate_orders_report(self)
+    cpdef object generate_order_fills_report(self)
+    cpdef object generate_positions_report(self)
+    cpdef object generate_account_report(self)

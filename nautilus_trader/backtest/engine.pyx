@@ -366,40 +366,6 @@ cdef class BacktestEngine:
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
-    cpdef dict get_performance_stats(self):
-        """
-        Return the performance statistics from the last backtest run.
-        
-        Note: Money objects are converted to floats.
-        
-        :return Dict[str, float].
-        """
-        return self.analyzer.get_performance_stats()
-
-    cpdef object get_equity_curve(self):
-        """
-        Return the portfolios account data.
-        """
-        return self.analyzer.get_equity_curve()
-
-    cpdef object get_orders_report(self):
-        """
-        Return an orders report dataframe.
-        """
-        return self.trader.get_orders_report()
-
-    cpdef object get_order_fills_report(self):
-        """
-        Return an order fill report dataframe.
-        """
-        return self.trader.get_order_fills_report()
-
-    cpdef object get_positions_report(self):
-        """
-        Return a positions report dataframe.
-        """
-        return self.trader.get_positions_report()
-
     cpdef list get_log_store(self):
         """
         Return the store of log message strings for the test logger.
@@ -508,7 +474,7 @@ cdef class BacktestEngine:
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
-        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_engine.get_account().cash_balance), account_starting_length)} {account_currency}")
+        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_engine.account.cash_balance), account_starting_length)} {account_currency}")
         self.log.info(f"Commissions (total):        {pad_string(str(self.exec_client.total_commissions), account_starting_length)} {account_currency}")
         self.log.info(f"Rollover interest (total):  {pad_string(str(self.exec_client.total_rollover), account_starting_length)} {account_currency}")
         self.log.info("")

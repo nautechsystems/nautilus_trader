@@ -13,6 +13,7 @@ from typing import List, Dict, Deque, Callable
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.functions cimport format_zulu_datetime
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -20,12 +21,11 @@ from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
-from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, AccountId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.common.account cimport NullAccount
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.execution cimport ExecutionEngine
@@ -71,8 +71,8 @@ cdef class TradingStrategy:
         Condition.positive(bar_capacity, 'bar_capacity')
 
         # Identification
-        self.trader_id = TraderId('TEST', '000')
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
+        self.trader_id = TraderId('TEST', '000')
 
         # Components
         self.clock = clock
@@ -109,10 +109,8 @@ cdef class TradingStrategy:
         self._exchange_calculator = ExchangeRateCalculator()
 
         # Registered modules
-        self._data_client = None                           # Initialized when registered with the data client
-        self._exec_engine = None                           # Initialized when registered with the execution engine
-        self.portfolio = None                              # Initialized when registered with the execution engine
-        self.account = NullAccount(self.clock.time_now())  # Initialized when registered with the execution engine
+        self._data_client = None                # Initialized when registered with the data client
+        self._exec_engine = None                # Initialized when registered with the execution engine
 
         self.is_data_client_registered = False  # True when registered with the data client
         self.is_exec_engine_registered = False  # True when registered with the execution engine
@@ -281,8 +279,6 @@ cdef class TradingStrategy:
         :param engine: The execution engine to register.
         """
         self._exec_engine = engine
-        self.portfolio = engine.portfolio
-        self.account = engine.get_account()
         self.is_exec_engine_registered = True
         self.log.debug("Registered execution engine.")
         self.update_state_log(self.time_now(), 'INITIALIZED')
@@ -716,6 +712,28 @@ cdef class TradingStrategy:
 
 #-- MANAGEMENT METHODS ----------------------------------------------------------------------------#
 
+    cpdef Account account(self):
+        """
+        Return the account for the strategy.
+        
+        :return: Account.
+        :raises: ConditionFailed: If the execution engine is not registered.
+        """
+        Condition.true(self.is_exec_engine_registered, 'is_execution_engine_registered')
+
+        return self._exec_engine.account
+
+    cpdef Portfolio portfolio(self):
+        """
+        Return the portfolio for the strategy.
+        
+        :return: Portfolio.
+        :raises: ConditionFailed: If the execution engine is not registered.
+        """
+        Condition.true(self.is_exec_engine_registered, 'is_execution_engine_registered')
+
+        return self._exec_engine.portfolio
+
     cpdef OrderSide get_opposite_side(self, OrderSide side):
         """
         Return the opposite order side from the given side.
@@ -750,7 +768,8 @@ cdef class TradingStrategy:
         :return float.
         :raises ValueError: If the quote type is LAST.
         """
-        if self.account is None:
+        cdef Account account = self.account()
+        if account is None:
             self.log.error("Cannot get exchange rate (account is not initialized).")
             return 0.0
 
@@ -762,7 +781,7 @@ cdef class TradingStrategy:
 
         return self._exchange_calculator.get_rate(
             quote_currency=quote_currency,
-            base_currency=self.account.currency,
+            base_currency=account.currency,
             quote_type=quote_type,
             bid_rates=bid_rates,
             ask_rates=ask_rates)
@@ -1121,17 +1140,13 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution service.
         """
-        if isinstance(self.account, NullAccount):
-            self.log.error("Cannot send command AccountInquiry (account not registered).")
-            return
-
         if not self.is_exec_engine_registered:
             self.log.error("Cannot send command AccountInquiry (execution engine not registered).")
             return
 
         cdef AccountInquiry command = AccountInquiry(
             self.trader_id,
-            self.account.id,
+            self._exec_engine.account_id,
             self.guid_factory.generate(),
             self.clock.time_now())
 
@@ -1152,7 +1167,7 @@ cdef class TradingStrategy:
 
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
-            self.account.id,
+            self._exec_engine.account_id,
             self.id,
             position_id,
             order,
@@ -1176,7 +1191,7 @@ cdef class TradingStrategy:
 
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
             self.trader_id,
-            self.account.id,
+            self._exec_engine.account_id,
             self.id,
             position_id,
             atomic_order,
@@ -1201,7 +1216,7 @@ cdef class TradingStrategy:
 
         cdef ModifyOrder command = ModifyOrder(
             self.trader_id,
-            self.account.id,
+            self._exec_engine.account_id,
             order.id,
             new_quantity,
             new_price,
@@ -1227,7 +1242,7 @@ cdef class TradingStrategy:
 
         cdef CancelOrder command = CancelOrder(
             self.trader_id,
-            self.account.id,
+            self._exec_engine.account_id,
             order.id,
             ValidString(cancel_reason),
             self.guid_factory.generate(),
@@ -1261,7 +1276,7 @@ cdef class TradingStrategy:
         for order_id, order in working_orders.items():
             command = CancelOrder(
                 self.trader_id,
-                self.account.id,
+                self._exec_engine.account_id,
                 order_id,
                 ValidString(cancel_reason),
                 self.guid_factory.generate(),
