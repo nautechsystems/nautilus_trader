@@ -132,7 +132,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
-                    equity=self.account.free_equity,
+                    equity=self.account().free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
@@ -159,7 +159,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
-                    equity=self.account.free_equity,
+                    equity=self.account().free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,

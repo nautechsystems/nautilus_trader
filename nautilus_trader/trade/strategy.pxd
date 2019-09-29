@@ -14,7 +14,14 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected
-from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId, Label
+from nautilus_trader.model.identifiers cimport (
+    Symbol,
+    TraderId,
+    AccountId,
+    StrategyId,
+    OrderId,
+    PositionId,
+    Label)
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -33,8 +40,8 @@ cdef class TradingStrategy:
     cdef readonly GuidFactory guid_factory
     cdef readonly LoggerAdapter log
 
-    cdef readonly TraderId trader_id
     cdef readonly StrategyId id
+    cdef readonly TraderId trader_id
 
     cdef readonly bint flatten_on_stop
     cdef readonly bint flatten_on_sl_reject
@@ -52,8 +59,6 @@ cdef class TradingStrategy:
     cdef list _state_log
     cdef ExchangeRateCalculator _exchange_calculator
 
-    cdef readonly Portfolio portfolio
-    cdef readonly Account account
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine
 
@@ -116,10 +121,11 @@ cdef class TradingStrategy:
     cpdef readonly bint indicators_initialized(self)
 
 #-- MANAGEMENT METHODS ----------------------------------------------------------------------------#
+    cpdef Account account(self)
+    cpdef Portfolio portfolio(self)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
     cpdef float get_exchange_rate(self, Currency quote_currency, QuoteType quote_type=*)
-
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)

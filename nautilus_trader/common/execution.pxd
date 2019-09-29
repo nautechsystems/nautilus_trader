@@ -132,6 +132,7 @@ cdef class ExecutionEngine:
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly ExecutionDatabase database
+    cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
     cdef readonly int command_count
@@ -147,7 +148,6 @@ cdef class ExecutionEngine:
     cpdef void reset(self)
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
-    cpdef Account get_account(self)
     cpdef list registered_strategies(self)
     cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)

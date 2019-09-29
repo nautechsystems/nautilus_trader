@@ -94,8 +94,7 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=TestLogger())
         self.exec_engine.register_client(self.exec_client)
 
-    def test_can_send_collateral_inquiry(self):
-        pass
+    def test_can_account_collateral_inquiry(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
         self.exec_engine.register_strategy(strategy)
@@ -104,7 +103,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.account_inquiry()
 
         # Assert
-        # self.assertEqual(2, strategy.account.event_count)
+        self.assertEqual(1, len(strategy.account().get_events()))
 
     def test_can_submit_market_order(self):
         # Arrange

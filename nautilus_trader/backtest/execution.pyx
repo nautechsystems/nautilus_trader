@@ -119,10 +119,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money.zero()
 
-        cdef AccountStateEvent account_state = self.reset_account_event()
-        self._account = Account(account_state)
-        self._exec_engine.handle_event(account_state)
-
+        self._account = Account(self.reset_account_event())
         self.exec_db = None
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
@@ -210,7 +207,6 @@ cdef class BacktestExecClient(ExecutionClient):
         # Process the working orders for the given symbol by simulating market
         # dynamics using the lowest bid and highest ask.
 
-        cdef AccountStateEvent event
         cdef datetime time_now = self._clock.time_now()
 
         if self.day_number != time_now.day:
@@ -310,7 +306,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money.zero()
-        self._account.apply(self.reset_account_event())
+        self._account = Account(self.reset_account_event())
         self.total_commissions = Money.zero()
         self.working_orders = {}       # type: Dict[OrderId, Order]
         self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]

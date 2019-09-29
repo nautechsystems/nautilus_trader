@@ -48,11 +48,6 @@ cdef class BacktestEngine:
     cdef void _run_with_tick_execution(self, datetime time, datetime stop, timedelta time_step)
     cdef void _run_with_bar_execution(self, datetime time, datetime stop, timedelta time_step)
 
-    cpdef dict get_performance_stats(self)
-    cpdef object get_equity_curve(self)
-    cpdef object get_orders_report(self)
-    cpdef object get_order_fills_report(self)
-    cpdef object get_positions_report(self)
     cpdef list get_log_store(self)
     cpdef void print_log_store(self)
     cpdef void reset(self)

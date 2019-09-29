@@ -214,6 +214,7 @@ cdef class TestStrategy1(TradingStrategy):
 
     cpdef void on_start(self):
         self.object_storer.store('custom start logic')
+        self.account_inquiry()
 
     cpdef void on_tick(self, Tick tick):
         self.object_storer.store(tick)
@@ -383,7 +384,7 @@ cdef class EMACross(TradingStrategy):
 
                 exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
-                    equity=self.account.free_equity,
+                    equity=self.account().free_equity,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
@@ -413,7 +414,7 @@ cdef class EMACross(TradingStrategy):
 
                 exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
-                    equity=self.account.free_equity,
+                    equity=self.account().free_equity,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
