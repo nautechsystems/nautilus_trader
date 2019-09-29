@@ -103,8 +103,7 @@ cdef class TradingStrategy:
         self._ticks = {}                        # type: Dict[Symbol, Deque[Tick]]
         self._bars = {}                         # type: Dict[BarType, Deque[Bar]]
         self._indicators = []                   # type: List[object]
-        self._indicator_updaters_ticks = {}     # type: Dict[Symbol, List[IndicatorUpdater]]
-        self._indicator_updaters_bars = {}      # type: Dict[BarType, List[IndicatorUpdater]]
+        self._indicator_updaters = {}           # type: Dict[object, List[IndicatorUpdater]]
         self._state_log = []                    # type: List[(datetime, str)]
         self._exchange_calculator = ExchangeRateCalculator()
 
@@ -283,16 +282,16 @@ cdef class TradingStrategy:
         self.log.debug("Registered execution engine.")
         self.update_state_log(self.time_now(), 'INITIALIZED')
 
-    cpdef void register_indicator_ticks(
+    cpdef void register_indicator(
             self,
-            Symbol symbol,
+            data_source,
             indicator,
             update_method: Callable) except *:
         """
-        Register the given indicator with the strategy. 
-        It will receive ticks for the given symbol.
+        Register the given indicator with the strategy to receive data of the
+        given data_source (can be Symbol for ticks or BarType).
 
-        :param symbol: The indicators symbol.
+        :param data_source: The data source for updates.
         :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
         :raises ConditionFailed: If the update_method is not of type Callable.
@@ -302,40 +301,13 @@ cdef class TradingStrategy:
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        if symbol not in self._indicator_updaters_bars:
-            self._indicator_updaters_bars[symbol] = []  # type: List[IndicatorUpdater]
+        if data_source not in self._indicator_updaters:
+            self._indicator_updaters[data_source] = []  # type: List[IndicatorUpdater]
 
-        if indicator not in self._indicator_updaters_ticks[symbol]:
-            self._indicator_updaters_ticks[symbol].append(IndicatorUpdater(indicator, update_method))
+        if indicator not in self._indicator_updaters[data_source]:
+            self._indicator_updaters[data_source].append(IndicatorUpdater(indicator, update_method))
         else:
-            self.log.error(f"Indicator {indicator} already registered for {symbol}.")
-
-    cpdef void register_indicator_bars(
-            self,
-            BarType bar_type,
-            indicator,
-            update_method: Callable) except *:
-        """
-        Register the given indicator with the strategy. 
-        It will receive bars of the given bar type.
-
-        :param bar_type: The indicators bar type.
-        :param indicator: The indicator to register.
-        :param update_method: The update method for the indicator.
-        :raises ConditionFailed: If the update_method is not of type Callable.
-        """
-        Condition.type(update_method, Callable, 'update_method')
-
-        if indicator not in self._indicators:
-            self._indicators.append(indicator)
-
-        if bar_type not in self._indicator_updaters_bars:
-            self._indicator_updaters_bars[bar_type] = []  # type: List[IndicatorUpdater]
-
-        if indicator not in self._indicator_updaters_bars[bar_type]:
-            self._indicator_updaters_bars[bar_type].append(IndicatorUpdater(indicator, update_method))
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {bar_type}.")
+            self.log.error(f"Indicator {indicator} already registered for {data_source}.")
 
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
@@ -352,9 +324,10 @@ cdef class TradingStrategy:
             self._ticks[tick.symbol] = deque(maxlen=self.tick_capacity)
         self._ticks[tick.symbol].appendleft(tick)
 
+        cdef list updaters = self._indicator_updaters.get(tick.symbol)
         cdef IndicatorUpdater updater
-        if tick.symbol in self._indicator_updaters_ticks:
-            for updater in self._indicator_updaters_ticks[tick.symbol]:
+        if updaters is not None:
+            for updater in updaters:
                 updater.update_tick(tick)
 
         if self.is_running:
@@ -384,9 +357,10 @@ cdef class TradingStrategy:
             self._bars[bar_type] = deque(maxlen=self.bar_capacity)
         self._bars[bar_type].appendleft(bar)
 
+        cdef list updaters = self._indicator_updaters.get(bar_type)
         cdef IndicatorUpdater updater
-        if bar_type in self._indicator_updaters_bars:
-            for updater in self._indicator_updaters_bars[bar_type]:
+        if updaters is not None:
+            for updater in updaters:
                 updater.update_bar(bar)
 
         if self.is_running:
@@ -1044,8 +1018,7 @@ cdef class TradingStrategy:
         self._ticks.clear()
         self._bars.clear()
         self._indicators.clear()
-        self._indicator_updaters_ticks.clear()
-        self._indicator_updaters_bars.clear()
+        self._indicator_updaters.clear()
         self._state_log.clear()
 
         for indicator in self._indicators:
