@@ -70,9 +70,9 @@ class EMACrossPy(TradingStrategy):
         self.atr = AverageTrueRange(atr_period)
 
         # Register the indicators for updating
-        self.register_indicator_bars(self.bar_type, self.fast_ema, self.fast_ema.update)
-        self.register_indicator_bars(self.bar_type, self.slow_ema, self.slow_ema.update)
-        self.register_indicator_bars(self.bar_type, self.atr, self.atr.update)
+        self.register_indicator(data_source=self.bar_type, indicator=self.fast_ema, update_method=self.fast_ema.update)
+        self.register_indicator(data_source=self.bar_type, indicator=self.slow_ema, update_method=self.slow_ema.update)
+        self.register_indicator(data_source=self.bar_type, indicator=self.atr, update_method=self.atr.update)
 
     def on_start(self):
         """

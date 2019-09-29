@@ -203,12 +203,8 @@ cdef class TestStrategy1(TradingStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.register_indicator_bars(bar_type=self.bar_type,
-                                     indicator=self.ema1,
-                                     update_method=self.ema1.update)
-        self.register_indicator_bars(bar_type=self.bar_type,
-                                     indicator=self.ema2,
-                                     update_method=self.ema2.update)
+        self.register_indicator(self.bar_type, self.ema1, self.ema1.update)
+        self.register_indicator(self.bar_type, self.ema2, self.ema2.update)
 
         self.position_id = None
 
@@ -329,9 +325,9 @@ cdef class EMACross(TradingStrategy):
         self.atr = AverageTrueRange(atr_period)
 
         # Register the indicators for updating
-        self.register_indicator_bars(self.bar_type, self.fast_ema, self.fast_ema.update)
-        self.register_indicator_bars(self.bar_type, self.slow_ema, self.slow_ema.update)
-        self.register_indicator_bars(self.bar_type, self.atr, self.atr.update)
+        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
+        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
+        self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
     cpdef void on_start(self):
         """

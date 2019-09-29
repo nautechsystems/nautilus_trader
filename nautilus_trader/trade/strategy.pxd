@@ -54,8 +54,7 @@ cdef class TradingStrategy:
     cdef dict _ticks
     cdef dict _bars
     cdef list _indicators
-    cdef dict _indicator_updaters_ticks
-    cdef dict _indicator_updaters_bars
+    cdef dict _indicator_updaters
     cdef list _state_log
     cdef ExchangeRateCalculator _exchange_calculator
 
@@ -84,8 +83,7 @@ cdef class TradingStrategy:
     cpdef void register_trader(self, TraderId trader_id) except *
     cpdef void register_data_client(self, DataClient client) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
-    cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method) except *
-    cpdef void register_indicator_bars(self, BarType bar_type, indicator, update_method) except *
+    cpdef void register_indicator(self, data_source, indicator, update_method) except *
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
     cpdef void handle_tick(self, Tick tick)
