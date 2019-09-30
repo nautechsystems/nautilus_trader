@@ -40,8 +40,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
             data_bars_bid=bid_data,
             data_bars_ask=ask_data,
             strategies=[EmptyStrategy('000')],
-            fill_model=FillModel(),
-            config=BacktestConfig())
+            config=BacktestConfig(),
+            fill_model=FillModel())
 
     def tearDown(self):
         self.engine.dispose()

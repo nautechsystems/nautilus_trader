@@ -63,8 +63,8 @@ if __name__ == "__main__":
         data_bars_bid=bid_data,
         data_bars_ask=ask_data,
         strategies=strategies,
-        fill_model=fill_model,
-        config=config)
+        config=config,
+        fill_model=fill_model)
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0)
     stop = datetime(2013, 3, 1, 0, 0, 0, 0)

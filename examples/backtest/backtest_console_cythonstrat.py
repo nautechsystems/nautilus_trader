@@ -71,8 +71,8 @@ if __name__ == "__main__":
         data_bars_bid=bid_data,
         data_bars_ask=ask_data,
         strategies=strategies,
-        fill_model=fill_model,
-        config=config)
+        config=config,
+        fill_model=fill_model)
 
     input("Press Enter to continue...")
 
