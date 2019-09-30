@@ -10,7 +10,7 @@ import time
 import uuid
 import unittest
 
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import Clock, LiveClock, TestClock, TestTimer
@@ -49,6 +49,14 @@ class LiveClockTests(unittest.TestCase):
         self.clock.cancel_all_time_alerts()
         self.clock.cancel_all_timers()
 
+    def test_date_now(self):
+        # Arrange
+        # Act
+        result = self.clock.date_now()
+
+        # Assert
+        self.assertEqual(date, type(result))
+
     def test_time_now(self):
         # Arrange
         # Act
@@ -56,6 +64,7 @@ class LiveClockTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(timezone.utc, result.tzinfo)
+        self.assertEqual(datetime, type(result))
 
     def test_get_delta(self):
         # Arrange
@@ -79,6 +88,14 @@ class TestClockTests(unittest.TestCase):
     def tearDown(self):
         self.clock.cancel_all_time_alerts()
         self.clock.cancel_all_timers()
+
+    def test_date_now(self):
+        # Arrange
+        # Act
+        result = self.clock.date_now()
+
+        # Assert
+        self.assertEqual(date(1970, 1, 1), result)
 
     def test_time_now(self):
         # Arrange

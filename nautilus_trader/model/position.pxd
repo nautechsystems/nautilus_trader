@@ -46,6 +46,7 @@ cdef class Position:
     cdef readonly object realized_points
     cdef readonly float realized_return
     cdef readonly Money realized_pnl
+    cdef readonly Money realized_pnl_last
     cdef readonly OrderFillEvent last_event
     cdef readonly int event_count
 

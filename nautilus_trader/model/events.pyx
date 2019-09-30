@@ -880,7 +880,9 @@ cdef class PositionModified(PositionEvent):
         :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
+        :raises: ConditionFailed: If the position is not open.
         """
+        Condition.true(position.is_open, 'position.is_open')
         super().__init__(position,
                          strategy_id,
                          order_fill,
@@ -924,7 +926,9 @@ cdef class PositionClosed(PositionEvent):
         :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
+        :raises: ConditionFailed: If the position is not closed.
         """
+        Condition.true(position.is_closed, 'position.is_closed')
         super().__init__(position,
                          strategy_id,
                          order_fill,

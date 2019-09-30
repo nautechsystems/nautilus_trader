@@ -34,6 +34,7 @@ from nautilus_trader.model.identifiers import (
     IdTag,
     TraderId,
     AccountId,
+    StrategyId,
     OrderIdBroker,
     ExecutionId,
     PositionIdBroker)
@@ -52,7 +53,10 @@ from nautilus_trader.model.events import (
     OrderCancelled,
     OrderCancelReject,
     OrderPartiallyFilled,
-    OrderFilled)
+    OrderFilled,
+    PositionOpened,
+    PositionModified,
+    PositionClosed)
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
@@ -79,19 +83,19 @@ class TestStubs:
         return UNIX_EPOCH + timedelta(minutes=offset_mins)
 
     @staticmethod
-    def symbol_audusd_fxcm():
+    def symbol_audusd_fxcm() -> Symbol:
         return Symbol('AUDUSD', Venue('FXCM'))
 
     @staticmethod
-    def symbol_gbpusd_fxcm():
+    def symbol_gbpusd_fxcm() -> Symbol:
         return Symbol('GBPUSD', Venue('FXCM'))
 
     @staticmethod
-    def symbol_usdjpy_fxcm():
+    def symbol_usdjpy_fxcm() -> Symbol:
         return Symbol('USDJPY', Venue('FXCM'))
 
     @staticmethod
-    def instrument_gbpusd():
+    def instrument_gbpusd() -> Instrument:
         return Instrument(
             Symbol('GBPUSD', Venue('FXCM')),
             'GBP/USD',
@@ -111,7 +115,7 @@ class TestStubs:
             timestamp=UNIX_EPOCH)
 
     @staticmethod
-    def instrument_usdjpy():
+    def instrument_usdjpy() -> Instrument:
         return Instrument(
             Symbol('USDJPY', Venue('FXCM')),
             'USD/JPY',
@@ -131,51 +135,51 @@ class TestStubs:
             timestamp=UNIX_EPOCH)
 
     @staticmethod
-    def bar_spec_1min_bid():
+    def bar_spec_1min_bid() -> BarSpecification:
         return BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
 
     @staticmethod
-    def bar_spec_1min_ask():
+    def bar_spec_1min_ask() -> BarSpecification:
         return BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
 
     @staticmethod
-    def bar_spec_1min_mid():
+    def bar_spec_1min_mid() -> BarSpecification:
         return BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
 
     @staticmethod
-    def bar_spec_1sec_mid():
+    def bar_spec_1sec_mid() -> BarSpecification:
         return BarSpecification(1, Resolution.SECOND, QuoteType.MID)
 
     @staticmethod
-    def bartype_audusd_1min_bid():
+    def bartype_audusd_1min_bid() -> BarType:
         return BarType(AUDUSD_FXCM, TestStubs.bar_spec_1min_bid())
 
     @staticmethod
-    def bartype_audusd_1min_ask():
+    def bartype_audusd_1min_ask() -> BarType:
         return BarType(AUDUSD_FXCM, TestStubs.bar_spec_1min_ask())
 
     @staticmethod
-    def bartype_gbpusd_1min_bid():
+    def bartype_gbpusd_1min_bid() -> BarType:
         return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1min_bid())
 
     @staticmethod
-    def bartype_gbpusd_1min_ask():
+    def bartype_gbpusd_1min_ask() -> BarType:
         return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1min_ask())
 
     @staticmethod
-    def bartype_gbpusd_1sec_mid():
+    def bartype_gbpusd_1sec_mid() -> BarType:
         return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1sec_mid())
 
     @staticmethod
-    def bartype_usdjpy_1min_bid():
+    def bartype_usdjpy_1min_bid() -> BarType:
         return BarType(USDJPY_FXCM, TestStubs.bar_spec_1min_bid())
 
     @staticmethod
-    def bartype_usdjpy_1min_ask():
+    def bartype_usdjpy_1min_ask() -> BarType:
         return BarType(USDJPY_FXCM, TestStubs.bar_spec_1min_ask())
 
     @staticmethod
-    def bar_5decimal():
+    def bar_5decimal() -> Bar:
         return Bar(Price('1.00002'),
                    Price('1.00004'),
                    Price('1.00001'),
@@ -184,7 +188,7 @@ class TestStubs:
                    UNIX_EPOCH)
 
     @staticmethod
-    def bar_3decimal():
+    def bar_3decimal() -> Bar:
         return Bar(Price('90.002'),
                    Price('90.004'),
                    Price('90.001'),
@@ -193,15 +197,15 @@ class TestStubs:
                    UNIX_EPOCH)
 
     @staticmethod
-    def trader_id():
+    def trader_id() -> TraderId:
         return TraderId('TESTER', '000')
 
     @staticmethod
-    def account_id():
+    def account_id() -> AccountId:
         return AccountId('NAUTILUS', '000', AccountType.SIMULATED)
 
     @staticmethod
-    def account_event(account_id=None):
+    def account_event(account_id=None) -> AccountStateEvent:
         if account_id is None:
             account_id = TestStubs.account_id()
         return AccountStateEvent(
@@ -218,8 +222,7 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_filled(order, fill_price=Price('1.00000')):
-
+    def event_order_filled(order, fill_price=Price('1.00000')) -> OrderFilled:
         return OrderFilled(
             TestStubs.account_id(),
             order.id,
@@ -235,8 +238,7 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_working(order, working_price=Price('1.00000')):
-
+    def event_order_working(order, working_price=Price('1.00000')) -> OrderWorking:
         return OrderWorking(
             TestStubs.account_id(),
             order.id,
@@ -254,7 +256,34 @@ class TestStubs:
             order.expire_time)
 
     @staticmethod
-    def position(number=1, entry_price=Price('1.00000')):
+    def event_position_opened(position) -> PositionOpened:
+        return PositionOpened(
+            position,
+            StrategyId('SCALPER', '001'),
+            position.last_event,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_position_modified(position) -> PositionModified:
+        return PositionModified(
+            position,
+            StrategyId('SCALPER', '001'),
+            position.last_event,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_position_closed(position) -> PositionClosed:
+        return PositionClosed(
+            position,
+            StrategyId('SCALPER', '001'),
+            position.last_event,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def position(number=1, entry_price=Price('1.00000')) -> Position:
         clock = TestClock()
 
         generator = PositionIdGenerator(
@@ -283,7 +312,7 @@ class TestStubs:
         return position
 
     @staticmethod
-    def position_which_is_closed(number=1, close_price=Price('1.00010')):
+    def position_which_is_closed(number=1, close_price=Price('1.00010')) -> Position:
         clock = TestClock()
 
         position = TestStubs.position(number=number)

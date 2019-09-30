@@ -1188,7 +1188,10 @@ cdef class ExecutionEngine:
                 self._position_modified(position, strategy_id, event)
 
     cdef void _handle_position_event(self, PositionEvent event):
+        if isinstance(event, PositionOpened):
+            self.portfolio.update(event)
         if isinstance(event, PositionClosed):
+            self.portfolio.update(event)
             self.analyzer.add_return(event.timestamp, event.position.realized_return)
 
         self._send_to_strategy(event, event.strategy_id)

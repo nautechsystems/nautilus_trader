@@ -52,7 +52,8 @@ cdef class Position:
         self.average_close_price = None  # Can be none
         self.realized_points = Decimal(0)
         self.realized_return = 0
-        self.realized_pnl = Money(0)
+        self.realized_pnl = Money.zero()
+        self.realized_pnl_last = Money.zero()
 
         self._filled_quantity_buys = 0              # Initialized in _update()
         self._filled_quantity_sells = 0             # Initialized in _update()
@@ -278,6 +279,7 @@ cdef class Position:
 
     cdef void _handle_buy_order_fill(self, OrderFillEvent event):
         self._filled_quantity_buys += event.filled_quantity.value
+        cdef Money pnl
 
         # LONG POSITION
         if self.relative_quantity > 0:
@@ -292,12 +294,15 @@ cdef class Position:
 
             self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
             self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
-            self.realized_pnl += self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
+            pnl = self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
+            self.realized_pnl += pnl
+            self.realized_pnl_last = pnl
 
         self.relative_quantity += event.filled_quantity.value
 
     cdef void _handle_sell_order_fill(self, OrderFillEvent event):
         self._filled_quantity_sells += event.filled_quantity.value
+        cdef Money pnl
 
         # SHORT POSITION
         if self.relative_quantity < 0:
@@ -312,7 +317,9 @@ cdef class Position:
 
             self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
             self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
-            self.realized_pnl += self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
+            pnl = self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
+            self.realized_pnl += pnl
+            self.realized_pnl_last = pnl
 
         self.relative_quantity -= event.filled_quantity.value
 
