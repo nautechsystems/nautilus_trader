@@ -447,8 +447,6 @@ cdef class BacktestEngine:
             timedelta time_step):
         cdef str account_currency = currency_to_string(self.config.account_currency)
         cdef int account_starting_length = len(str(self.config.starting_capital))
-        cdef timedelta elapsed_running = run_finished - run_started
-        cdef timedelta elapsed_total = self.time_to_initialize + elapsed_running
 
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
@@ -457,9 +455,7 @@ cdef class BacktestEngine:
         self.log.info(f"Run finished datetime:   {format_zulu_datetime(run_finished)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Elapsed time (init):     {self.time_to_initialize}")
-        self.log.info(f"Elapsed time (run):      {elapsed_running}")
-        self.log.info(f"Elapsed time total:      {elapsed_total}")
+        self.log.info(f"Elapsed time (running):  {run_finished - run_started}")
 
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
         self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
