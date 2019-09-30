@@ -12,7 +12,7 @@ from typing import Dict
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
-from nautilus_trader.model.identifiers import Symbol, Label
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.trade.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradingStrategy
