@@ -427,10 +427,10 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
         self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({round(100 - psutil.virtual_memory()[2], 2)}%)")
-        self.log.info(f"Run started datetime: {format_zulu_datetime(run_started)}")
+        self.log.info(f"Run started datetime:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Iteration time-step: {time_step}")
+        self.log.info(f"Iteration time-step:  {time_step}")
         self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
