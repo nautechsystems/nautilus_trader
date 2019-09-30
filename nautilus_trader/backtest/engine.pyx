@@ -52,8 +52,8 @@ cdef class BacktestEngine:
                  dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict data_bars_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
                  list strategies: List[TradingStrategy],
-                 FillModel fill_model=FillModel(),
-                 BacktestConfig config=BacktestConfig()):
+                 BacktestConfig config=BacktestConfig(),
+                 FillModel fill_model=FillModel()):
         """
         Initializes a new instance of the BacktestEngine class.
 
@@ -63,8 +63,8 @@ cdef class BacktestEngine:
         :param data_bars_bid: The bid bar data needed for the backtest engine.
         :param data_bars_ask: The ask bar data needed for the backtest engine.
         :param strategies: The initial strategies for the backtest engine.
-        :param fill_model: The initial fill model for the backtest engine.
         :param config: The configuration for the backtest engine.
+        :param fill_model: The initial fill model for the backtest engine.
         :raises ConditionFailed: If the instruments list contains a type other than Instrument.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
@@ -163,12 +163,8 @@ cdef class BacktestEngine:
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
             instruments=instruments,
-            frozen_account=config.frozen_account,
-            starting_capital=config.starting_capital,
-            account_currency=config.account_currency,
+            config=config,
             fill_model=fill_model,
-            commission_calculator=CommissionCalculator(default_rate_bp=config.commission_rate_bp),
-            portfolio=self.portfolio,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
             logger=self.test_logger)

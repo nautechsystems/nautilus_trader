@@ -54,7 +54,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
-from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.models cimport FillModel
 
 # Stop order types
@@ -72,24 +72,18 @@ cdef class BacktestExecClient(ExecutionClient):
     def __init__(self,
                  ExecutionEngine exec_engine,
                  list instruments: List[Instrument],
-                 bint frozen_account,
-                 Money starting_capital,
-                 Currency account_currency,
+                 BacktestConfig config,
                  FillModel fill_model,
-                 CommissionCalculator commission_calculator,
-                 Portfolio portfolio,
                  TestClock clock,
                  TestGuidFactory guid_factory,
                  Logger logger):
         """
         Initializes a new instance of the BacktestExecClient class.
 
-        :param exec_engine: The execution engine for the backtest client.
+        :param exec_engine: The execution engine for the backtest.
         :param instruments: The instruments needed for the backtest.
-        :param frozen_account: The flag indicating whether the account should be frozen (no pnl applied).
-        :param starting_capital: The starting capital for the backtest account (> 0).
-        :param account_currency: The currency for the backtest account.
-        :param commission_calculator: The commission calculator.
+        :param config: The backtest configuration.
+        :param fill_model: The fill model for the backtest.
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
@@ -112,18 +106,18 @@ cdef class BacktestExecClient(ExecutionClient):
         self.day_number = 0
         self.rollover_time = None
         self.rollover_applied = False
-        self.frozen_account = frozen_account
-        self.starting_capital = starting_capital
-        self.account_currency = account_currency
-        self.account_capital = starting_capital
-        self.account_cash_start_day = starting_capital
+        self.frozen_account = config.frozen_account
+        self.starting_capital = config.starting_capital
+        self.account_currency = config.account_currency
+        self.account_capital = config.starting_capital
+        self.account_cash_start_day = config.starting_capital
         self.account_cash_activity_day = Money.zero()
 
         self._account = Account(self.reset_account_event())
         self.exec_db = None
         self.exchange_calculator = ExchangeRateCalculator()
-        self.commission_calculator = commission_calculator
-        self.rollover_calculator = RolloverInterestCalculator()
+        self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
+        self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = Decimal(0) # Bank + Broker spread markup
         self.total_commissions = Money.zero()
         self.total_rollover = Money.zero()

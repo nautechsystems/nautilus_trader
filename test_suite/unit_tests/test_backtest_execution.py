@@ -22,6 +22,7 @@ from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
 from nautilus_trader.model.identifiers import TraderId, AccountId, Venue
 from nautilus_trader.trade.strategy import TradingStrategy
+from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from test_kit.strategies import TestStrategy1
@@ -81,14 +82,10 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=self.logger)
 
         self.exec_client = BacktestExecClient(
-            self.exec_engine,
+            exec_engine=self.exec_engine,
             instruments=self.instruments,
-            frozen_account=False,
-            starting_capital=Money(1000000),
-            account_currency=Currency.USD,
+            config=BacktestConfig(),
             fill_model=FillModel(),
-            commission_calculator=CommissionCalculator(),
-            portfolio=self.portfolio,
             clock=TestClock(),
             guid_factory=TestGuidFactory(),
             logger=TestLogger())
@@ -264,12 +261,8 @@ class BacktestExecClientTests(unittest.TestCase):
         exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
             instruments=self.instruments,
-            frozen_account=False,
-            starting_capital=Money(1000000),
-            account_currency=Currency.USD,
+            config=BacktestConfig(),
             fill_model=fill_model,
-            commission_calculator=CommissionCalculator(),
-            portfolio=self.portfolio,
             clock=TestClock(),
             guid_factory=TestGuidFactory(),
             logger=TestLogger())
