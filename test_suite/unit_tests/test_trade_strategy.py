@@ -15,20 +15,20 @@ from datetime import datetime, timezone, timedelta
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.common.clock import TestClock, LiveClock
 from nautilus_trader.common.data import DataClient
-from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.performance import PerformanceAnalyzer
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, AccountId, OrderId, PositionId
+from nautilus_trader.model.objects import Quantity, Price
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.enums import OrderState, Currency, MarketPosition, AccountType
+from nautilus_trader.model.enums import OrderState, Currency, MarketPosition
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.model.identifiers import StrategyId, Label
+from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 
@@ -81,12 +81,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
             instruments=[TestStubs.instrument_usdjpy()],
-            frozen_account=False,
-            starting_capital=Money(1000000),
-            account_currency=Currency.USD,
+            config=BacktestConfig(),
             fill_model=FillModel(),
-            commission_calculator=CommissionCalculator(),
-            portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)
