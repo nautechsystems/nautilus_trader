@@ -21,7 +21,6 @@ from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_
 from nautilus_trader.model.objects cimport Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId, AccountId
-from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
