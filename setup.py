@@ -102,7 +102,7 @@ setup(
     url=URL,
     packages=setuptools.find_packages(),
     include_package_data=True,
-    package_data=package_data,
+    #package_data=package_data,
     python_requires=PYTHON_REQUIRES,
     requires=REQUIREMENTS,
     ext_modules=cythonize(
