@@ -6,10 +6,14 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport date
+
+from nautilus_trader.model.events cimport PositionEvent, PositionOpened, PositionModified, PositionClosed
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.objects cimport Money
 
 
 cdef class Portfolio:
@@ -17,4 +21,22 @@ cdef class Portfolio:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
 
+    cdef dict _positions_open
+    cdef dict _positions_closed
+
+    cdef readonly date date_now
+    cdef readonly Money daily_pnl_realized
+    cdef readonly Money total_pnl_realized
+
+    cpdef void update(self, PositionEvent event)
     cpdef void reset(self)
+    cpdef set symbols_open(self)
+    cpdef set symbols_closed(self)
+    cpdef set symbols_all(self)
+    cpdef dict positions_open(self, Symbol symbol=*)
+    cpdef dict positions_closed(self, Symbol symbol=*)
+    cpdef dict positions_all(self, Symbol symbol=*)
+
+    cdef void _handle_position_opened(self, PositionOpened event)
+    cdef void _handle_position_modified(self, PositionModified event)
+    cdef void _handle_position_closed(self, PositionClosed event)

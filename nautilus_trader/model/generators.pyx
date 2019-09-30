@@ -32,8 +32,6 @@ cdef class IdentifierGenerator:
         :param clock: The internal clock.
         :param initial_count: The initial count for the generator.
         :raises ConditionFailed: If the prefix is not a valid string.
-        :raises ConditionFailed: If the id_tag_trader is not a valid string.
-        :raises ConditionFailed: If the id_tag_strategy is not a valid string.
         :raises ConditionFailed: If the initial count is negative (< 0).
         """
         Condition.valid_string(prefix, 'prefix')

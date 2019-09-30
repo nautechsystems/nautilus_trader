@@ -8,7 +8,7 @@
 
 import uuid
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport date, datetime, timedelta
 from datetime import timezone
 from threading import Timer
 from typing import List, Dict, Callable
@@ -53,6 +53,14 @@ cdef class Clock:
         """
         self._event_handler = handler
         self.is_handler_registered = True
+
+    cpdef date date_now(self):
+        """
+        Return the current UTC date of the clock.
+        
+        :return date.
+        """
+        return self.time_now().date()
 
     cpdef datetime time_now(self):
         """
