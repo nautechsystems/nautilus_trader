@@ -12,7 +12,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums import Currency  # Do not remove
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 from nautilus_trader.model.objects cimport Instrument, Quantity
@@ -35,7 +35,8 @@ cdef class InstrumentLoader:
         Condition.true(len(symbol.code) == 6, 'len(symbol) == 6')
         Condition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
 
-        cdef Currency quote_currency = Currency[symbol.code[3:]]
+        cdef Currency base_currency = currency_from_string(symbol.code[:3])
+        cdef Currency quote_currency = currency_from_string(symbol.code[3:])
         # Check tick precision of quote currency
         if quote_currency == Currency.USD:
             Condition.true(tick_precision == 5, 'USD tick_precision == 5')
@@ -45,7 +46,7 @@ cdef class InstrumentLoader:
         return Instrument(
             symbol=symbol,
             broker_symbol=symbol.code[:3] + '/' + symbol.code[3:],
-            quote_currency=quote_currency,
+            base_currency=base_currency,
             security_type=SecurityType.FOREX,
             tick_precision=tick_precision,
             tick_size=Decimal('0.' + ('0' * (tick_precision - 1)) + '1'),

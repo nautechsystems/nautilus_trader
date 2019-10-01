@@ -13,6 +13,7 @@ from base64 import b64encode, b64decode
 from nautilus_trader.common.clock import *
 from nautilus_trader.common.logger import *
 from nautilus_trader.model.enums import *
+from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.commands import *
 from nautilus_trader.model.events import *
 from nautilus_trader.model.identifiers import *
@@ -798,7 +799,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_partially_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQ0M2NhY2I2Yi1jMjM2LTQ3Y2EtODVjNy1kYWU5ZDEzNDQ1YzapVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCtUXVvdGVDdXJyZW5jeaNVU0StRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQwMGFkYzBlZC05MzJiLTRmYTgtOWUyOC1iNTQ1ODNkZDRlNWWpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCoQ3VycmVuY3mjVVNErUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
@@ -811,6 +812,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(PositionIdBroker('P123456'), result.position_id_broker)
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(840, result.transaction_currency)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(50000), result.filled_quantity)
         self.assertEqual(Quantity(50000), result.leaves_quantity)
@@ -822,7 +824,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jaRUeXBlq09yZGVyRmlsbGVkoklk2SRjOWZlN2MzMC01ZDU0LTQ4N2UtODNiNS01ZjRiODM5ZTg4NGWpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wrVF1b3RlQ3VycmVuY3mjVVNErUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'jaRUeXBlq09yZGVyRmlsbGVkoklk2SQ1NzY4Y2IxMS0xZmZiLTRlOTYtYmRmYS1kNmUwN2Q1M2I2YTSpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wqEN1cnJlbmN5o1VTRK1FeGVjdXRpb25UaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -835,6 +837,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(PositionIdBroker('P123456'), result.position_id_broker)
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(840, result.transaction_currency)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)
         self.assertEqual(Price('2'), result.average_price)
@@ -851,7 +854,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         instrument = Instrument(
             symbol=Symbol('AUDUSD', Venue('FXCM')),
             broker_symbol='AUD/USD',
-            quote_currency=Currency.USD,
+            base_currency=Currency.USD,
             security_type=SecurityType.FOREX,
             tick_precision=5,
             tick_size=Decimal('0.00001'),
@@ -875,7 +878,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         self.assertEqual(instrument.id, deserialized.id)
         self.assertEqual(instrument.symbol, deserialized.symbol)
         self.assertEqual(instrument.broker_symbol, deserialized.broker_symbol)
-        self.assertEqual(instrument.quote_currency, deserialized.quote_currency)
+        self.assertEqual(instrument.base_currency, deserialized.base_currency)
         self.assertEqual(instrument.security_type, deserialized.security_type)
         self.assertEqual(instrument.tick_precision, deserialized.tick_precision)
         self.assertEqual(instrument.tick_size, deserialized.tick_size)

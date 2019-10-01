@@ -64,8 +64,10 @@ cdef str MARGIN_USED_MAINTENANCE
 cdef str MARGIN_RATIO
 cdef str MARGIN_CALL_STATUS
 
-cdef str BROKER_SYMBOL
+cdef str CURRENCY
+cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
+cdef str BROKER_SYMBOL
 cdef str SECURITY_TYPE
 cdef str TICK_PRECISION
 cdef str TICK_SIZE

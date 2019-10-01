@@ -380,7 +380,7 @@ cdef class EMACross(TradingStrategy):
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
-                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
+                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.base_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
                     risk_bp=self.risk_bp,
@@ -410,7 +410,7 @@ cdef class EMACross(TradingStrategy):
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
-                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
+                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.base_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
                     risk_bp=self.risk_bp,

@@ -754,7 +754,7 @@ cdef class TradingStrategy:
 
         return self._exchange_calculator.get_rate(
             quote_currency=quote_currency,
-            base_currency=account.currency,
+            base_currency=self.account().currency,
             quote_type=quote_type,
             bid_rates=bid_rates,
             ask_rates=ask_rates)

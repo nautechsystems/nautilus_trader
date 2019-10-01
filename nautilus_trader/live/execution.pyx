@@ -338,7 +338,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         strategy.update_state_log(strategy.clock.time_now(), "SAVED")
 
-        self._log.info(f"Saved Strategy(id={strategy.id.value}) state.")
+        self._log.info(f"Saved strategy state for {strategy.id.value}.")
 
     cpdef void update_order(self, Order order) except *:
         """

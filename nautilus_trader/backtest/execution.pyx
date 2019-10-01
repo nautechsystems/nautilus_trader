@@ -627,7 +627,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.side,
             order.quantity,
             fill_price,
-            self.instruments[order.symbol].quote_currency,
+            self.instruments[order.symbol].base_currency,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -709,8 +709,8 @@ cdef class BacktestExecClient(ExecutionClient):
         # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
-            quote_currency=instrument.quote_currency,
-            base_currency=self._account.currency,
+            quote_currency=self._account.currency,
+            base_currency=instrument.base_currency,
             quote_type=QuoteType.BID if event.order_side is OrderSide.SELL else QuoteType.ASK,
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
@@ -760,18 +760,18 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef dict open_positions = self.exec_db.get_positions_open()
 
         cdef Instrument instrument
-        cdef Currency quote_currency
+        cdef Currency base_currency
         cdef float interest_rate
         cdef float exchange_rate
         cdef Money rollover_to_apply = Money.zero()
         for position in open_positions.values():
             instrument = self.instruments[position.symbol]
             if instrument.security_type == SecurityType.FOREX:
-                quote_currency = currency_from_string(position.symbol.code[:3])
+                base_currency = currency_from_string(position.symbol.code[3:])
                 interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)
                 exchange_rate = self.exchange_calculator.get_rate(
-                        quote_currency=quote_currency,
-                        base_currency=self._account.currency,
+                        quote_currency=self._account.currency,
+                        base_currency=base_currency,
                         quote_type=QuoteType.MID,
                         bid_rates=self._build_current_bid_rates(),
                         ask_rates=self._build_current_ask_rates())
