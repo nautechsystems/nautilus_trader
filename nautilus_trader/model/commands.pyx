@@ -178,8 +178,8 @@ cdef class ModifyOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"order_id={self.order_id.value}, "
-                f"modified_quantity={self.modified_quantity}, "
-                f"modified_price={self.modified_price})")
+                f"quantity={self.modified_quantity}, "
+                f"price={self.modified_price})")
 
 
 cdef class CancelOrder(Command):

@@ -25,7 +25,7 @@ from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.common.performance cimport PerformanceAnalyzer
+from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
@@ -154,7 +154,6 @@ cdef class BacktestEngine:
             account_id=self.account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
-            analyzer=self.analyzer,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
             logger=self.test_logger)
@@ -465,7 +464,7 @@ cdef class BacktestEngine:
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
-        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_engine.account.cash_balance), account_starting_length)} {account_currency}")
+        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_client.account_capital), account_starting_length)} {account_currency}")
         self.log.info(f"Commissions (total):        {pad_string(str(self.exec_client.total_commissions), account_starting_length)} {account_currency}")
         self.log.info(f"Rollover interest (total):  {pad_string(str(self.exec_client.total_rollover), account_starting_length)} {account_currency}")
         self.log.info("")

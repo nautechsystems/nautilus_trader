@@ -48,6 +48,7 @@ cdef class IndicatorUpdater:
     cpdef void update_tick(self, Tick tick)
     cpdef void update_bar(self, Bar bar)
     cpdef void update_databar(self, DataBar bar)
-    cpdef dict build_features(self, list bars)
+    cpdef dict build_features_ticks(self, list ticks)
+    cpdef dict build_features_bars(self, list bars)
     cpdef dict build_features_databars(self, list bars)
     cdef list _get_values(self)

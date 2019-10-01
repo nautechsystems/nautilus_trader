@@ -19,7 +19,7 @@ from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId, PositionIdBroker
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.trade.reports import ReportProvider
+from nautilus_trader.analysis.reports import ReportProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

@@ -14,7 +14,6 @@ from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarTyp
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.trade.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -24,6 +23,8 @@ from test_kit.mocks cimport ObjectStorer
 
 from nautilus_indicators.atr import AverageTrueRange
 from nautilus_indicators.average.ema import ExponentialMovingAverage
+from nautilus_indicators.spread_analyzer import SpreadAnalyzer
+from nautilus_indicators.liquidity_analyzer import LiquidityAnalyzer
 
 
 class PyStrategy(TradingStrategy):
@@ -273,8 +274,8 @@ cdef class EMACross(TradingStrategy):
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
     cdef readonly PositionSizer position_sizer
-    cdef readonly SpreadAnalyzer spread_analyzer
-    cdef readonly LiquidityAnalyzer liquidity
+    cdef readonly object spread_analyzer
+    cdef readonly object liquidity
     cdef readonly float risk_bp
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
@@ -328,6 +329,7 @@ cdef class EMACross(TradingStrategy):
         self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
         self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
         self.register_indicator(self.bar_type, self.atr, self.atr.update)
+        #self.register_indicator(self.symbol, self.spread_analyzer, self.spread_analyzer.update)
 
     cpdef void on_start(self):
         """
@@ -349,7 +351,7 @@ cdef class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spread_analyzer.update(tick)
+        self.spread_analyzer.update(tick.bid.value, tick.ask.value)
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
@@ -367,11 +369,11 @@ cdef class EMACross(TradingStrategy):
             return  # Wait for ticks...
 
         self.spread_analyzer.calculate_metrics()
-        self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
+        self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
 
         cdef AtomicOrder atomic_order
 
-        if self.liquidity.is_liquid and len(self.orders_working()) == 0 and self.is_flat():
+        if self.liquidity.is_liquid and self.count_orders_working() == 0 and self.is_flat():
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(bar.high + self.entry_buffer + self.spread_analyzer.average_spread)

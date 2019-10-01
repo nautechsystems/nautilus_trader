@@ -13,12 +13,13 @@ from nautilus_trader.model.enums import OrderSide, OrderPurpose
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.events import OrderRejected
-from nautilus_trader.trade.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.trade.sizing import FixedRiskSizer
 
 from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange
+from nautilus_indicators.spread_analyzer import SpreadAnalyzer
+from nautilus_indicators.liquidity_analyzer import LiquidityAnalyzer
 
 
 class EMACrossMarketEntryPy(TradingStrategy):
@@ -98,7 +99,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spread_analyzer.update(tick)
+        self.spread_analyzer.update(tick.bid.value, tick.ask.value)
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -118,10 +119,9 @@ class EMACrossMarketEntryPy(TradingStrategy):
             return  # Wait for ticks...
 
         self.spread_analyzer.calculate_metrics()
-        self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
+        self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
 
-        # if self.liquidity.is_liquid
-        if len(self.orders_working()) == 0 and self.is_flat():
+        if self.liquidity.is_liquid and self.count_orders_working() == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC

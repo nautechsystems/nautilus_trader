@@ -36,7 +36,6 @@ from nautilus_trader.model.commands cimport (
     CancelOrder
 )
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
@@ -134,7 +133,6 @@ cdef class ExecutionEngine:
     cdef readonly ExecutionDatabase database
     cdef readonly Account account
     cdef readonly Portfolio portfolio
-    cdef readonly PerformanceAnalyzer analyzer
     cdef readonly int command_count
     cdef readonly int event_count
 

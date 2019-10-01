@@ -13,9 +13,10 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.trade.reports cimport ReportProvider
+from nautilus_trader.analysis.reports cimport ReportProvider
 
 
 cdef class Trader:
@@ -59,7 +60,7 @@ cdef class Trader:
         self._report_provider = ReportProvider()
 
         self.portfolio = self._exec_engine.portfolio
-        self.analyzer = self._exec_engine.analyzer
+        self.analyzer = PerformanceAnalyzer()
         self.strategies = None
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]

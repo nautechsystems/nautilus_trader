@@ -12,7 +12,7 @@ from datetime import datetime
 
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.common.performance import PerformanceAnalyzer
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
