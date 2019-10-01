@@ -9,7 +9,6 @@
 import numpy as np
 import pandas as pd
 
-from math import log
 from cpython.datetime cimport date, datetime
 from scipy.stats import kurtosis, skew
 from empyrical.stats import (
@@ -26,9 +25,10 @@ from empyrical.stats import (
     beta,
     tail_ratio)
 
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.common.account cimport Account
 
 
 cdef class PerformanceAnalyzer:
@@ -37,32 +37,30 @@ cdef class PerformanceAnalyzer:
     and statistics.
     """
 
-    def __init__(self, use_log_returns=False):
+    def __init__(self):
         """
         Initializes a new instance of the PerformanceAnalyzer class.
-
-        :param use_log_returns: The flag indicating whether log returns will be used.
         """
-        self._use_log_returns = use_log_returns
+        self._account = None
+        self._account_starting_capital = None
+        self._account_capital = None
         self._returns = pd.Series()
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['amount'])
         self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
-        self._account_starting_capital = Money.zero()
-        self._account_capital = Money.zero()
-        self._account_currency = Currency.USD
-        self._account_initialized = False
 
-    cpdef void initialize_account_data(self, AccountStateEvent event):
+    cpdef void calculate_metrics(self, Account account, dict positions):
         """
-        Initialize the account for the performance analyzer.
-        
-        :param event: The initial account state event.
+        Calculate performance metrics from the given data.
         """
-        self._account_starting_capital = event.cash_balance
-        self._account_capital = event.cash_balance
-        self._account_currency = event.currency
-        self._account_initialized = True
+        self._account = account
+
+        for event in self._account.get_events():
+            self.handle_transaction(event)
+
+        for position_id, position in positions.items():
+            if position.is_closed:
+                self.add_return(position.closed_time, position.realized_return)
 
     cpdef void handle_transaction(self, AccountStateEvent event):
         """
@@ -70,11 +68,11 @@ cdef class PerformanceAnalyzer:
 
         :param event: The event to handle.
         """
-
-        # Account data initialization
-        if not self._account_initialized:
-            self.initialize_account_data(event)
-            return
+        if self._account_capital is None:
+            # Initialize account data
+            self._account_starting_capital = event.cash_balance
+            self._account_capital = event.cash_balance
+            return  # No transaction to handle
 
         if self._account_capital == event.cash_balance:
             return  # No transaction to handle
@@ -97,9 +95,6 @@ cdef class PerformanceAnalyzer:
         :param time: The timestamp for the returns entry.
         :param value: The return value to add.
         """
-        if self._use_log_returns:
-            value = log(value)
-
         cdef date index_date = pd.to_datetime(time.date())
         if index_date not in self._returns:
             self._returns.loc[index_date] = 0.0
@@ -139,10 +134,6 @@ cdef class PerformanceAnalyzer:
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['amount'])
         self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
-        self._account_starting_capital = Money.zero()
-        self._account_capital = Money.zero()
-        self._account_currency = Currency.USD
-        self._account_initialized = False
 
     cpdef object get_returns(self):
         """
@@ -478,7 +469,7 @@ cdef class PerformanceAnalyzer:
         
         :return List[str].
         """
-        cdef str account_currency = currency_to_string(self._account_currency)
+        cdef str account_currency = currency_to_string(self._account.currency) if self._account is not None else '?'
 
         return [
             f"PNL:               {self.total_pnl()} {account_currency}",
