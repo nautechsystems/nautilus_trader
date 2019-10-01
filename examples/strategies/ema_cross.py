@@ -122,7 +122,7 @@ class EMACrossPy(TradingStrategy):
         self.spread_analyzer.calculate_metrics()
         self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
 
-        if self.liquidity.is_liquid and self.count_orders_working() == 0 and self.is_flat():
+        if self.count_orders_working() == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC
@@ -131,7 +131,7 @@ class EMACrossPy(TradingStrategy):
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
-                exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
+                exchange_rate = self.get_exchange_rate(self.instrument.base_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
                     exchange_rate=exchange_rate,
@@ -161,8 +161,8 @@ class EMACrossPy(TradingStrategy):
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
-                exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
-                print(f"Exchange rate from {self.instrument.quote_currency} to {self.account().currency} is {exchange_rate}")
+                exchange_rate = self.get_exchange_rate(self.instrument.base_currency)
+                print(f"Exchange rate from {self.instrument.base_currency} to {self.account().currency} is {exchange_rate}")
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
                     exchange_rate=exchange_rate,

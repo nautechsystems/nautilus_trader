@@ -117,7 +117,7 @@ cdef class ReportProvider:
                 'realized_points': position.realized_points,
                 'realized_return': position.realized_return,
                 'realized_pnl': str(position.realized_pnl),
-                'currency': currency_to_string(position.quote_currency)}
+                'currency': currency_to_string(position.base_currency)}
 
     cdef dict _account_state_to_dict(self, AccountStateEvent event):
         return {'timestamp': event.timestamp,

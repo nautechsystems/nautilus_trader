@@ -451,7 +451,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[FILLED_QUANTITY] = event.filled_quantity.value
             package[LEAVES_QUANTITY] = event.leaves_quantity.value
             package[AVERAGE_PRICE] = str(event.average_price)
-            package[QUOTE_CURRENCY] = currency_to_string(event.quote_currency)
+            package[CURRENCY] = currency_to_string(event.transaction_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         elif isinstance(event, OrderFilled):
             package[ORDER_ID] = event.order_id.value
@@ -462,7 +462,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[FILLED_QUANTITY] = event.filled_quantity.value
             package[AVERAGE_PRICE] = str(event.average_price)
-            package[QUOTE_CURRENCY] = currency_to_string(event.quote_currency)
+            package[CURRENCY] = currency_to_string(event.transaction_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
@@ -609,7 +609,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Quantity(unpacked[LEAVES_QUANTITY]),
                 Price(unpacked[AVERAGE_PRICE]),
-                currency_from_string(unpacked[QUOTE_CURRENCY]),
+                currency_from_string(unpacked[CURRENCY]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)
@@ -623,7 +623,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Price(unpacked[AVERAGE_PRICE]),
-                currency_from_string(unpacked[QUOTE_CURRENCY]),
+                currency_from_string(unpacked[CURRENCY]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)

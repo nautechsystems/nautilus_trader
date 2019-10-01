@@ -1231,7 +1231,7 @@ cdef class Instrument:
     def __init__(self,
                  Symbol symbol,
                  str broker_symbol,
-                 Currency quote_currency,
+                 Currency base_currency,
                  SecurityType security_type,
                  int tick_precision,
                  object tick_size,
@@ -1250,7 +1250,7 @@ cdef class Instrument:
 
         :param symbol: The instruments symbol.
         :param broker_symbol: The instruments broker symbol.
-        :param quote_currency: The instruments quote currency.
+        :param base_currency: The instruments base currency.
         :param security_type: The instruments security type.
         :param tick_precision: The instruments tick decimal digits precision.
         :param tick_size: The instruments tick size.
@@ -1279,7 +1279,7 @@ cdef class Instrument:
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
         self.broker_symbol = broker_symbol
-        self.quote_currency = quote_currency
+        self.base_currency = base_currency
         self.security_type = security_type
         self.tick_precision = tick_precision
         self.tick_size = tick_size
