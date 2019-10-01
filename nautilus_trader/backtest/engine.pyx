@@ -473,6 +473,8 @@ cdef class BacktestEngine:
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
         self.log.info("#---------------------------------------------------------------#")
 
+        self.analyzer.calculate_metrics(self.exec_engine.account, self.exec_engine.database.get_positions())
+
         for statistic in self.analyzer.get_performance_stats_formatted():
             self.log.info(statistic)
 

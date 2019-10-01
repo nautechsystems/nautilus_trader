@@ -11,7 +11,6 @@ import pandas as pd
 from cpython.datetime cimport datetime
 from typing import Dict
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
@@ -24,7 +23,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class ReportProvider:
     """
-    Provides order fill and trade reports.
+    Provides various trading reports.
     """
 
     def __init__(self):
@@ -82,10 +81,7 @@ cdef class ReportProvider:
         :param start: The start of the account reports period.
         :param end: The end of the account reports period.
         :return: pd.DataFrame.
-        :raises: ConditionFailed: If the events is empty.
         """
-        Condition.not_empty(events, 'events')
-
         if start is None:
             start = events[0].timestamp
         if end is None:
