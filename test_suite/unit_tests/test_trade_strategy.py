@@ -16,7 +16,7 @@ from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.common.clock import TestClock, LiveClock
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.performance import PerformanceAnalyzer
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
@@ -73,7 +73,6 @@ class TradeStrategyTests(unittest.TestCase):
             account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
-            analyzer=self.analyzer,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)

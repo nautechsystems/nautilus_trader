@@ -83,7 +83,7 @@ cdef class TradingStrategy:
     cpdef void register_trader(self, TraderId trader_id) except *
     cpdef void register_data_client(self, DataClient client) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
-    cpdef void register_indicator(self, data_source, indicator, update_method) except *
+    cpdef void register_indicator(self, data_source, indicator, update_method=*) except *
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
     cpdef void handle_tick(self, Tick tick)

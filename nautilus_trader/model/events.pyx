@@ -617,7 +617,8 @@ cdef class OrderModified(OrderEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
                 f"order_id={self.order_id.value}, "
-                f"modified_price={self.modified_price})")
+                f"quantity={self.modified_quantity.to_string_formatted()}, "
+                f"price={self.modified_price})")
 
 
 cdef class OrderExpired(OrderEvent):

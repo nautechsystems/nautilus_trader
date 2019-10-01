@@ -13,7 +13,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.performance import PerformanceAnalyzer
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.model.enums import Resolution
 from nautilus_trader.model.identifiers import Venue, IdTag, TraderId, StrategyId
@@ -68,7 +68,6 @@ class TraderTests(unittest.TestCase):
             account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
-            analyzer=self.analyzer,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)

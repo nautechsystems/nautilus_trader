@@ -24,9 +24,6 @@ from nautilus_trader.model.events cimport (
     OrderFillEvent,
     PositionEvent,
     AccountStateEvent,
-    OrderModified,
-    OrderRejected,
-    OrderCancelled,
     OrderCancelReject,
     PositionOpened,
     PositionModified,
@@ -40,10 +37,9 @@ from nautilus_trader.model.identifiers cimport (
     PositionIdBroker)
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter, CMD, EVT, SENT, RECV
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter, CMD, EVT, RECV
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.common.performance cimport PerformanceAnalyzer
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
@@ -494,6 +490,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
+    # noinspection PyUnresolvedReferences
     cpdef void check_residuals(self) except *:
         for order_id, order in self.get_orders_working().items():
             self._log.warning(f"Residual working {order}.")
@@ -968,7 +965,6 @@ cdef class ExecutionEngine:
                  AccountId account_id,
                  ExecutionDatabase database,
                  Portfolio portfolio,
-                 PerformanceAnalyzer analyzer,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
@@ -979,7 +975,6 @@ cdef class ExecutionEngine:
         :param account_id: The account identifier for the engine.
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
-        :param analyzer: The performance analyzer for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid_factory for the engine.
         :param logger: The logger for the engine.
@@ -999,7 +994,6 @@ cdef class ExecutionEngine:
         self.database = database
         self.account = self.database.get_account(self.account_id)
         self.portfolio = portfolio
-        self.analyzer = analyzer
 
         self.command_count = 0
         self.event_count = 0
@@ -1188,12 +1182,7 @@ cdef class ExecutionEngine:
                 self._position_modified(position, strategy_id, event)
 
     cdef void _handle_position_event(self, PositionEvent event):
-        if isinstance(event, PositionOpened):
-            self.portfolio.update(event)
-        if isinstance(event, PositionClosed):
-            self.portfolio.update(event)
-            self.analyzer.add_return(event.timestamp, event.position.realized_return)
-
+        self.portfolio.update(event)
         self._send_to_strategy(event, event.strategy_id)
 
     cdef void _handle_account_event(self, AccountStateEvent event):
@@ -1204,11 +1193,9 @@ cdef class ExecutionEngine:
             if self.account_id.equals(account.id):
                 self.account = account
             self.database.add_account(self.account)
-            self.analyzer.initialize_account_data(event)
         elif account.id == event.account_id:
             account.apply(event)
             self.database.update_account(account)
-            self.analyzer.handle_transaction(event)
         else:
             self._log.warning(f"Cannot process event {event} "
                               f"(event account_id {event.account_id} does not match this account {account.id}).")

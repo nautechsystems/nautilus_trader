@@ -13,11 +13,10 @@ from decimal import Decimal
 
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderFilled, OrderWorking
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import (
     AccountId,
     TraderId,
-    StrategyId,
     IdTag,
     OrderId,
     PositionId,
@@ -28,13 +27,13 @@ from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.events import AccountStateEvent
-from nautilus_trader.model.enums import Currency, AccountType
+from nautilus_trader.model.enums import Currency
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.performance import PerformanceAnalyzer
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trade.strategy import TradingStrategy
 from test_kit.stubs import TestStubs
@@ -427,7 +426,6 @@ class ExecutionEngineTests(unittest.TestCase):
             account_id=self.account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
-            analyzer=self.analyzer,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=logger)

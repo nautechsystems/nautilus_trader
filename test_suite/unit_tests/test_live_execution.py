@@ -16,7 +16,7 @@ from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.guid import LiveGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.performance import PerformanceAnalyzer
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
@@ -64,7 +64,6 @@ class LiveExecutionTests(unittest.TestCase):
             account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
-            analyzer=self.analyzer,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)

@@ -36,7 +36,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.common.performance cimport PerformanceAnalyzer
+from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
@@ -399,7 +399,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             state[b'StateLog'] = state_log
 
         if len(state) == 0:
-            self._log.warning(f"No previous state found for Strategy(id={strategy.id.value}).")
+            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
             return
 
         for key, value in state.items():
@@ -479,6 +479,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Deleted Strategy(id={strategy.id.value}).")
 
+    # noinspection PyUnresolvedReferences
     cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
         for order_id, order in self.get_orders_working().items():
@@ -940,7 +941,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                  AccountId account_id,
                  ExecutionDatabase database,
                  Portfolio portfolio,
-                 PerformanceAnalyzer analyzer,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
@@ -951,7 +951,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         :param account_id: The account_id for the engine.
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
-        :param analyzer: The performance analyzer for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid factory for the engine.
         :param logger: The logger for the engine.
@@ -961,7 +960,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             account_id=account_id,
             database=database,
             portfolio=portfolio,
-            analyzer=analyzer,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)

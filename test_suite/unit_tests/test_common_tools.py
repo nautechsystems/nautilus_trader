@@ -199,7 +199,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         updater = IndicatorUpdater(ema)
 
         # Act
-        result = updater.build_features(bars)
+        result = updater.build_features_bars(bars)
 
         # Assert
         self.assertTrue('value' in result)

@@ -18,16 +18,6 @@ from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price, Bar, DataBar, Tick
 
-cdef str POINT = 'point'
-cdef str PRICE = 'price'
-cdef str MID = 'mid'
-cdef str OPEN = 'open'
-cdef str HIGH = 'high'
-cdef str LOW = 'low'
-cdef str CLOSE = 'close'
-cdef str VOLUME = 'volume'
-cdef str TIMESTAMP = 'timestamp'
-
 
 cdef class TickBuilder:
     """
@@ -218,6 +208,18 @@ cdef class BarBuilder:
                    int(values[4] * self._volume_multiple),
                    timestamp)
 
+cdef str BID = 'bid'
+cdef str ASK = 'ask'
+cdef str POINT = 'point'
+cdef str PRICE = 'price'
+cdef str MID = 'mid'
+cdef str OPEN = 'open'
+cdef str HIGH = 'high'
+cdef str LOW = 'low'
+cdef str CLOSE = 'close'
+cdef str VOLUME = 'volume'
+cdef str TIMESTAMP = 'timestamp'
+
 
 cdef class IndicatorUpdater:
     """
@@ -249,6 +251,8 @@ cdef class IndicatorUpdater:
         self._input_params = []
 
         cdef dict param_map = {
+            BID: BID,
+            ASK: ASK,
             POINT: CLOSE,
             PRICE: CLOSE,
             MID: CLOSE,
@@ -273,7 +277,8 @@ cdef class IndicatorUpdater:
         
         :param tick: The tick to update with.
         """
-        self._input_method(tick)
+        cdef str param
+        self._input_method(*[tick.__getattribute__(param).value for param in self._input_params])
 
     cpdef void update_bar(self, Bar bar):
         """
@@ -293,7 +298,26 @@ cdef class IndicatorUpdater:
         cdef str param
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
-    cpdef dict build_features(self, list bars):
+    cpdef dict build_features_ticks(self, list ticks):
+        """
+        Return a dictionary of output features from the given bars data.
+        
+        :return Dict[str, float].
+        """
+        cdef dict features = {}
+        for output in self._outputs:
+            features[output] = []
+
+        cdef Bar bar
+        cdef tuple value
+        for tick in ticks:
+            self.update_tick(tick)
+            for value in self._get_values():
+                features[value[0]].append(value[1])
+
+        return features
+
+    cpdef dict build_features_bars(self, list bars):
         """
         Return a dictionary of output features from the given bars data.
         

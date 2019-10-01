@@ -285,7 +285,7 @@ cdef class TradingStrategy:
             self,
             data_source,
             indicator,
-            update_method: Callable) except *:
+            update_method: Callable=None) except *:
         """
         Register the given indicator with the strategy to receive data of the
         given data_source (can be Symbol for ticks or BarType).
@@ -295,7 +295,7 @@ cdef class TradingStrategy:
         :param update_method: The update method for the indicator.
         :raises ConditionFailed: If the update_method is not of type Callable.
         """
-        Condition.type(update_method, Callable, 'update_method')
+        Condition.type_or_none(update_method, Callable, 'update_method')
 
         if indicator not in self._indicators:
             self._indicators.append(indicator)
@@ -1342,7 +1342,7 @@ cdef class TradingStrategy:
 
         if order.purpose == OrderPurpose.STOP_LOSS:
             if self._exec_engine.database.is_position_open(position_id):
-                self.log.error(f"Rejected {event.order_id} was a stop-loss ,flattening {position_id}.")
+                self.log.error(f"Rejected {event.order_id} was a stop-loss, now flattening {position_id}.")
                 self.flatten_position(position_id)
 
 
