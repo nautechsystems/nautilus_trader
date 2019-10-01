@@ -22,7 +22,7 @@ cdef class PerformanceAnalyzer:
     cdef object _transactions
     cdef object _equity_curve
 
-    cpdef void calculate_metrics(self, Account account, dict positions)
+    cpdef void calculate_statistics(self, Account account, dict positions)
     cpdef void handle_transaction(self, AccountStateEvent event)
     cpdef void add_return(self, datetime time, float value)
     cpdef void add_positions(self, datetime time, list positions, Money cash_balance)

@@ -119,7 +119,7 @@ class EMACrossPy(TradingStrategy):
         if not self.has_ticks(self.symbol):
             return  # Wait for ticks...
 
-        self.spread_analyzer.calculate_metrics()
+        self.spread_analyzer.calculate_statistics()
         self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
 
         if self.count_orders_working() == 0 and self.is_flat():

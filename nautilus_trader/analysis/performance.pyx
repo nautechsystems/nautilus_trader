@@ -49,7 +49,7 @@ cdef class PerformanceAnalyzer:
         self._transactions = pd.DataFrame(columns=['amount'])
         self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
 
-    cpdef void calculate_metrics(self, Account account, dict positions):
+    cpdef void calculate_statistics(self, Account account, dict positions):
         """
         Calculate performance metrics from the given data.
         """
