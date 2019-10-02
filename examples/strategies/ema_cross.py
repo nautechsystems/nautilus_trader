@@ -156,7 +156,7 @@ class EMACrossPy(TradingStrategy):
                         price_stop_loss=price_stop_loss,
                         price_take_profit=price_take_profit,
                         time_in_force=TimeInForce.GTD,
-                        expire_time=self.time_now() + timedelta(minutes=1))
+                        expire_time=bar.timestamp + timedelta(minutes=1))
                 else:
                     self.log.info("Insufficient equity for BUY signal.")
 
@@ -192,7 +192,7 @@ class EMACrossPy(TradingStrategy):
                         price_stop_loss=price_stop_loss,
                         price_take_profit=price_take_profit,
                         time_in_force=TimeInForce.GTD,
-                        expire_time=self.time_now() + timedelta(minutes=1))
+                        expire_time=bar.timestamp + timedelta(minutes=1))
                 else:
                     self.log.info("Insufficient equity for SELL signal.")
 
