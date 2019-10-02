@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Dict
 
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce
+from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, Currency, SecurityType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.events import OrderRejected
@@ -131,13 +131,18 @@ class EMACrossPy(TradingStrategy):
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
-                exchange_rate = self.get_exchange_rate(self.instrument.base_currency)
+                if self.instrument.security_type == SecurityType.FOREX:
+                    quote_currency = Currency[self.instrument.symbol.code[3:]]
+                    exchange_rate = self.xrate_for_account(quote_currency)
+                else:
+                    exchange_rate = self.xrate_for_account(self.instrument.base_currency)
+
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
-                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
+                    exchange_rate=exchange_rate,
                     commission_rate_bp=0.15,
                     hard_limit=20000000,
                     units=1,
@@ -161,14 +166,18 @@ class EMACrossPy(TradingStrategy):
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
-                exchange_rate = self.get_exchange_rate(self.instrument.base_currency)
-                print(f"Exchange rate from {self.instrument.base_currency} to {self.account().currency} is {exchange_rate}")
+                if self.instrument.security_type == SecurityType.FOREX:
+                    quote_currency = Currency[self.instrument.symbol.code[3:]]
+                    exchange_rate = self.xrate_for_account(quote_currency)
+                else:
+                    exchange_rate = self.xrate_for_account(self.instrument.base_currency)
+
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
-                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
+                    exchange_rate=exchange_rate,
                     commission_rate_bp=0.15,
                     hard_limit=20000000,
                     units=1,

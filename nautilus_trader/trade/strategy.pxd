@@ -123,7 +123,7 @@ cdef class TradingStrategy:
     cpdef Portfolio portfolio(self)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
-    cpdef float get_exchange_rate(self, Currency quote_currency, QuoteType quote_type=*)
+    cpdef float xrate_for_account(self, Currency quote_currency, QuoteType quote_type=*)
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)

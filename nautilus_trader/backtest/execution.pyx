@@ -709,8 +709,8 @@ cdef class BacktestExecClient(ExecutionClient):
         # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
-            quote_currency=instrument.base_currency,
-            base_currency=self._account.currency,
+            from_currency=instrument.base_currency,
+            to_currency=self._account.currency,
             quote_type=QuoteType.BID if event.order_side is OrderSide.SELL else QuoteType.ASK,
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
@@ -767,15 +767,16 @@ cdef class BacktestExecClient(ExecutionClient):
         for position in open_positions.values():
             instrument = self.instruments[position.symbol]
             if instrument.security_type == SecurityType.FOREX:
-                base_currency = currency_from_string(position.symbol.code[3:])
+                mid_price = float((self.current_asks[instrument.symbol] + self.current_bids[instrument.symbol]) / 2)
+                quote_currency = currency_from_string(position.symbol.code[3:])
                 interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)
                 exchange_rate = self.exchange_calculator.get_rate(
-                        quote_currency=self._account.currency,
-                        base_currency=base_currency,
+                        from_currency=quote_currency,
+                        to_currency=self._account.currency,
                         quote_type=QuoteType.MID,
                         bid_rates=self._build_current_bid_rates(),
                         ask_rates=self._build_current_ask_rates())
-                rollover_to_apply += Money(position.quantity.value * interest_rate * exchange_rate)
+                rollover_to_apply += Money(mid_price * position.quantity.value * interest_rate * exchange_rate)
 
         if iso_week_day == 3: # Book triple for Wednesdays
             rollover_to_apply = rollover_to_apply * 3

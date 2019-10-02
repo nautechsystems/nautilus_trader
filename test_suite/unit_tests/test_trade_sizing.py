@@ -121,7 +121,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         equity = Money(1000000)
 
         # Act
-        result = self.sizer.calculate(
+        result = sizer.calculate(
             equity,
             10,   # 0.1%
             Price('107.703'),

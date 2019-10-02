@@ -731,12 +731,12 @@ cdef class TradingStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    cpdef float get_exchange_rate(self, Currency quote_currency, QuoteType quote_type=QuoteType.MID):
+    cpdef float xrate_for_account(self, Currency quote_currency, QuoteType quote_type=QuoteType.MID):
         """
-        Return the calculated exchange rate for the give quote currency to the 
-        account base currency.
-        
-        :param quote_currency: The quote currency for the exchange rate.
+        Return the calculated exchange rate for the give trading instrument quote 
+        currency to the account currency.
+
+        :param quote_currency: The quote currency for the trading instrument.
         :param quote_type: The quote type for the exchange rate (default=MID).
         :return float.
         :raises ValueError: If the quote type is LAST.
@@ -753,8 +753,8 @@ cdef class TradingStrategy:
             ask_rates[symbol.code] = ticks[0].ask.as_float()
 
         return self._exchange_calculator.get_rate(
-            quote_currency=quote_currency,
-            base_currency=self.account().currency,
+            from_currency=quote_currency,
+            to_currency=self.account().currency,
             quote_type=quote_type,
             bid_rates=bid_rates,
             ask_rates=ask_rates)
