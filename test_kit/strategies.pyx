@@ -410,7 +410,7 @@ cdef class EMACross(TradingStrategy):
                         price_take_profit=price_take_profit,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
-                        expire_time=self.time_now() + timedelta(minutes=1))
+                        expire_time=bar.timestamp + timedelta(minutes=1))
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
@@ -445,7 +445,7 @@ cdef class EMACross(TradingStrategy):
                         price_take_profit=price_take_profit,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
-                        expire_time=self.time_now() + timedelta(minutes=1))
+                        expire_time=bar.timestamp + timedelta(minutes=1))
 
             # ENTRY ORDER SUBMISSION
             if atomic_order is not None:
