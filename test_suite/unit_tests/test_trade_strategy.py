@@ -430,7 +430,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.get_exchange_rate(Currency.JPY)
+        result = strategy.xrate_for_account(Currency.JPY)
 
         # Assert
         self.assertEqual(0.009025266394019127, result)
@@ -448,10 +448,10 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.get_exchange_rate(Currency.USD)
+        result = strategy.xrate_for_account(Currency.AUD)
 
         # Assert
-        self.assertEqual(1.0, result)
+        self.assertEqual(0.8000500202178955, result)
 
     def test_can_set_time_alert(self):
         # Arrange

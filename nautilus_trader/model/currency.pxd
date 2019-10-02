@@ -13,8 +13,8 @@ from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 cdef class ExchangeRateCalculator:
     cpdef float get_rate(
             self,
-            Currency quote_currency,
-            Currency base_currency,
+            Currency from_currency,
+            Currency to_currency,
             QuoteType quote_type,
             dict bid_rates,
             dict ask_rates) except *

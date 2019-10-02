@@ -17,13 +17,13 @@ from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_s
 cdef class ExchangeRateCalculator:
     """
     Provides exchange rates between currencies. An exchange rate is the value of
-    one nation's currency versus the currency of another nation or economic zone.
+    one nation or economic zones currency versus that of another.
     """
 
     cpdef float get_rate(
             self,
-            Currency quote_currency,
-            Currency base_currency,
+            Currency from_currency,
+            Currency to_currency,
             QuoteType quote_type,
             dict bid_rates,
             dict ask_rates) except *:
@@ -32,8 +32,8 @@ cdef class ExchangeRateCalculator:
         given base currency for the given quote type using the given dictionary of 
         bid and ask rates.
 
-        :param quote_currency: The quote currency to convert from.
-        :param base_currency: The base currency to convert to.
+        :param from_currency: The currency to convert from.
+        :param to_currency: The currency to convert to.
         :param quote_type: The quote type for conversion.
         :param bid_rates: The dictionary of currency pair bid rates Dict[str, float].
         :param ask_rates: The dictionary of currency pair ask rates Dict[str, float].
@@ -42,7 +42,7 @@ cdef class ExchangeRateCalculator:
         """
         Condition.equal_length(bid_rates, ask_rates, 'bid_rates', 'ask_rates')
 
-        if quote_currency == base_currency:
+        if from_currency == to_currency:
             return 1.0  # No exchange necessary
 
         if quote_type == QuoteType.BID:
@@ -92,10 +92,17 @@ cdef class ExchangeRateCalculator:
                 if ccy_pair[0] in exchange_rates[ccy_pair[1]]:
                     exchange_rates[ccy_pair[0]][ccy_pair[1]] = 1.0 / exchange_rates[ccy_pair[1]][ccy_pair[0]]
 
+        cdef str lhs_str = currency_to_string(from_currency)
+        cdef str rhs_str = currency_to_string(to_currency)
+        cdef float exchange_rate
+        try:
+            return exchange_rates[lhs_str][rhs_str]
+        except KeyError:
+            pass # Exchange rate not yet calculated
+
+        # Continue to calculate remaining currency rates
         cdef float common_ccy1
         cdef float common_ccy2
-
-        # Calculate remaining currency rates
         for ccy_pair in possible_pairs:
             if ccy_pair[0] not in exchange_rates[ccy_pair[1]]:
                 # Search for common currency
@@ -114,13 +121,8 @@ cdef class ExchangeRateCalculator:
                         # Check inverse and calculate if not found
                         if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
                             exchange_rates[ccy_pair[0]][ccy_pair[1]] = common_ccy1 / common_ccy2
-
-        cdef str lhs_str = currency_to_string(quote_currency)
-        cdef str rhs_str = currency_to_string(base_currency)
-        cdef float exchange_rate
         try:
-            exchange_rate = exchange_rates[lhs_str][rhs_str]
+            return exchange_rates[lhs_str][rhs_str]
         except KeyError:
             raise ValueError(f"Cannot calculate exchange rate for {lhs_str}{rhs_str} or {rhs_str}{lhs_str} "
                              f"(not enough data).")
-        return exchange_rate

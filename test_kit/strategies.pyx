@@ -14,6 +14,8 @@ from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarTyp
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
+from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -372,6 +374,7 @@ cdef class EMACross(TradingStrategy):
         self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
 
         cdef AtomicOrder atomic_order
+        cdef float exchange_rate
 
         if self.liquidity.is_liquid and self.count_orders_working() == 0 and self.is_flat():
             # BUY LOGIC
@@ -380,7 +383,12 @@ cdef class EMACross(TradingStrategy):
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
-                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.base_currency)
+                if self.instrument.security_type == SecurityType.FOREX:
+                    quote_currency = currency_from_string(self.instrument.symbol.code[3:])
+                    exchange_rate = self.xrate_for_account(quote_currency)
+                else:
+                    exchange_rate = self.xrate_for_account(self.instrument.base_currency)
+
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
                     risk_bp=self.risk_bp,
@@ -410,7 +418,12 @@ cdef class EMACross(TradingStrategy):
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
-                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.base_currency)
+                if self.instrument.security_type == SecurityType.FOREX:
+                    quote_currency = currency_from_string(self.instrument.symbol.code[3:])
+                    exchange_rate = self.xrate_for_account(quote_currency)
+                else:
+                    exchange_rate = self.xrate_for_account(self.instrument.base_currency)
+
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
                     risk_bp=self.risk_bp,
