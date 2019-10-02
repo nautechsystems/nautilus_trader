@@ -368,7 +368,7 @@ cdef class EMACross(TradingStrategy):
         if not self.has_ticks(self.symbol):
             return  # Wait for ticks...
 
-        self.spread_analyzer.calculate_statistics()
+        self.spread_analyzer.calculate_metrics()
         self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
 
         cdef AtomicOrder atomic_order
