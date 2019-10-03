@@ -384,18 +384,6 @@ cdef class PerformanceAnalyzer:
         """
         return beta(returns=self._returns, factor_returns=self._returns)
 
-    cpdef void create_returns_tear_sheet(self):
-        """
-        Create a pyfolio returns tear sheet based on analyzer data from the last run.
-        """
-        # Do nothing
-
-    cpdef void create_full_tear_sheet(self):
-        """
-        Create a pyfolio full tear sheet based on analyzer data from the last run.
-        """
-        # Do nothing
-
     cpdef dict get_performance_stats(self):
         """
         Return the performance statistics from the last backtest run.
