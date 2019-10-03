@@ -697,7 +697,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         try:
             orders_working = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
-            self._log.error("Cannot find order object in cached orders " + str(ex))
+            self._log.error("Cannot find Order object in cache " + str(ex))
 
         return orders_working
 
@@ -714,7 +714,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         try:
             orders_completed = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
-            self._log.error("Cannot find order object in cached orders " + str(ex))
+            self._log.error("Cannot find Order object in cache " + str(ex))
 
         return orders_completed
 
@@ -736,7 +736,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
-            self._log.warning(f"Cannot get position for {order_id} (no matching position id found).")
+            self._log.warning(f"Cannot get Position for {order_id} (no matching PositionId found).")
             return None
 
         return self._cached_positions.get(position_id)
@@ -750,7 +750,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self._index_order_position.get(order_id)
         if position_id is None:
-            self._log.warning(f"Cannot get position id for {order_id} (no matching position id found).")
+            self._log.warning(f"Cannot get PositionId for {order_id} (no matching PositionId found).")
 
         return position_id
 
@@ -763,7 +763,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self._index_broker_position.get(position_id_broker)
         if position_id is None:
-            self._log.warning(f"Cannot get position id for {position_id_broker} (no matching position id found).")
+            self._log.warning(f"Cannot get PositionId for {position_id_broker} (no matching PositionId found).")
 
         return position_id
 
@@ -781,7 +781,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
-            self._log.error("Cannot find position object in cached positions " + str(ex))
+            self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
@@ -799,7 +799,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
-            self._log.error("Cannot find position object in cached positions " + str(ex))
+            self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
@@ -817,7 +817,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
-            self._log.error("Cannot find position object in cached positions " + str(ex))
+            self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
@@ -1157,14 +1157,14 @@ cdef class ExecutionEngine:
             position_id = self.database.get_position_id_for_broker_id(event.position_id_broker)
 
         if position_id is None:
-            self._log.error(f"Cannot process event {event} (position_id for {event.order_id} not found).")
+            self._log.error(f"Cannot process event {event} (PositionId for {event.order_id} not found).")
             return  # Cannot process event further
 
         cdef Position position = self.database.get_position_for_order(event.order_id)  # Could still be None here
         cdef StrategyId strategy_id = self.database.get_strategy_for_position(position_id)
 
         if strategy_id is None:
-            self._log.error(f"Cannot process event {event} (strategy_id for {position_id} not found).")
+            self._log.error(f"Cannot process event {event} (StrategyId for {position_id} not found).")
             return  # Cannot process event further
 
         if position is None:
@@ -1198,7 +1198,7 @@ cdef class ExecutionEngine:
             self.database.update_account(account)
         else:
             self._log.warning(f"Cannot process event {event} "
-                              f"(event account_id {event.account_id} does not match this account {account.id}).")
+                              f"(event {event.account_id} does not match this account {account.id}).")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event):
         cdef PositionOpened position_opened = PositionOpened(

@@ -259,18 +259,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Check data integrity of reply
         if reply[0] > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The order_id {order.id.value} already existed in the orders and was appended to.")
+            self._log.error(f"The {order.id} already existed in the orders and was appended to.")
         if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-            self._log.error(f"The order_id {order.id.value} already existed in index_order_position and was overwritten.")
+            self._log.error(f"The {order.id} already existed in index_order_position and was overwritten.")
         if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-            self._log.error(f"The order_id {order.id.value} already existed in index_order_strategy and was overwritten.")
+            self._log.error(f"The {order.id} already existed in index_order_strategy and was overwritten.")
         # reply[3] index_position_strategy does not need to be checked as there will be multiple writes for atomic orders
         if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The order_id {order.id.value} already existed in index_orders.")
+            self._log.error(f"The {order.id} already existed in index_orders.")
         if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The order_id {order.id.value} already existed in index_position_orders.")
+            self._log.error(f"The {order.id} already existed in index_position_orders.")
         if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The order_id {order.id.value} already existed in index_strategy_orders.")
+            self._log.error(f"The {order.id} already existed in index_strategy_orders.")
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for atomic orders
 
         self._log.debug(f"Added Order(id={order.id.value}).")
@@ -297,11 +297,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Check data integrity of reply
         if reply[0] > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The position_id {position.id.value} already existed in the positions and was appended to.")
+            self._log.error(f"The {position.id_broker} already existed in the index_broker_position and was overwritten.")
         if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The position_id {position.id.value} already existed in index_positions.")
+            self._log.error(f"The {position.id} already existed in index_positions.")
         if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The position_id {position.id.value} already existed in index_positions_open.")
+            self._log.error(f"The {position.id} already existed in index_positions.")
+        if reply[3] == 0:  # Reply = 0 if the element was already a member of the set
+            self._log.error(f"The {position.id} already existed in index_positions_open.")
 
         self._log.debug(f"Added Position(id={position.id.value}).")
 
@@ -417,7 +419,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
         if len(events) == 0:
-            self._log.error(f"Cannot load {account_id} from database (not found).")
+            self._log.error(f"Cannot load Account(id={account_id.value}) from database (not found).")
             return None
 
         cdef AccountStateEvent last_event = self._event_serializer.deserialize(events.pop())
@@ -434,7 +436,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Check there is at least one event to pop
         if len(events) == 0:
-            self._log.error(f"Cannot load {order_id} from database (not found).")
+            self._log.error(f"Cannot load Order(id={order_id.value}) from database (not found).")
             return None
 
         cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
@@ -456,7 +458,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Check there is at least one event to pop
         if len(events) == 0:
-            self._log.error(f"Cannot load {position_id} from database (not found).")
+            self._log.error(f"Cannot load Position(id={position_id.value}) from database (not found).")
             return None
 
         cdef OrderFillEvent initial = self._event_serializer.deserialize(events.pop(0))
@@ -635,7 +637,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         try:
             orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
-            self._log.error("Cannot find order object in cached orders " + str(ex))
+            self._log.error("Cannot find Order object in cache " + str(ex))
 
         return orders
 
@@ -652,7 +654,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         try:
             orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
-            self._log.error("Cannot find order object in the cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
         return orders
 
@@ -669,7 +671,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         try:
             orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
-            self._log.error("Cannot find order object in cached orders " + str(ex))
+            self._log.error("Cannot find Order object in cache " + str(ex))
 
         return orders
 
@@ -691,7 +693,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
-            self._log.warning(f"Cannot get position for {order_id} (no matching position_id found in database).")
+            self._log.warning(f"Cannot get Position for {order_id} (no matching PositionId found in database).")
             return None
 
         return self._cached_positions.get(position_id)
@@ -705,7 +707,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
         if position_id_bytes is None:
-            self._log.warning(f"Cannot get position_id for {order_id} (no matching position_id found in database).")
+            self._log.warning(f"Cannot get PositionId for {order_id} (no matching PositionId found in database).")
             return position_id_bytes
 
         return PositionId(position_id_bytes.decode(UTF8))
@@ -719,7 +721,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id_broker.value)
         if position_id_bytes is None:
-            self._log.warning(f"Cannot get position_id for {position_id_broker} (no matching position_id found in database).")
+            self._log.warning(f"Cannot get PositionId for {position_id_broker} (no matching PositionId found in database).")
             return position_id_bytes
 
         return PositionId(position_id_bytes.decode(UTF8))
@@ -738,7 +740,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
-            self._log.error("Cannot find position object in cached positions " + str(ex))
+            self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
@@ -756,7 +758,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
-            self._log.error("Cannot find position object in cached positions " + str(ex))
+            self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
@@ -774,7 +776,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
-            self._log.error("Cannot find position object in cached positions " + str(ex))
+            self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
