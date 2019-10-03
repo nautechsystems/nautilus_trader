@@ -82,6 +82,35 @@ def make_extensions(directories: List[str]) -> [Extension]:
             define_macros=[('CYTHON_TRACE', '1')]))
     return extensions
 
+packages = [
+    PACKAGE_NAME,
+    f'{PACKAGE_NAME}.algorithm',
+    f'{PACKAGE_NAME}.analysis',
+    f'{PACKAGE_NAME}.backtest',
+    f'{PACKAGE_NAME}.common',
+    f'{PACKAGE_NAME}.core',
+    f'{PACKAGE_NAME}.data',
+    f'{PACKAGE_NAME}.live',
+    f'{PACKAGE_NAME}.model',
+    f'{PACKAGE_NAME}.network',
+    f'{PACKAGE_NAME}.serialization',
+    f'{PACKAGE_NAME}.trade'
+]
+
+package_data = {
+    PACKAGE_NAME: ['*.pxd'],
+    f'{PACKAGE_NAME}.algorithm': ['*.pxd'],
+    f'{PACKAGE_NAME}.analysis': ['*.pxd'],
+    f'{PACKAGE_NAME}.backtest': ['*.pxd'],
+    f'{PACKAGE_NAME}.common': ['*.pxd'],
+    f'{PACKAGE_NAME}.core': ['*.pxd'],
+    f'{PACKAGE_NAME}.data': ['*.pxd', '*.csv'],
+    f'{PACKAGE_NAME}.live': ['*.pxd'],
+    f'{PACKAGE_NAME}.model': ['*.pxd'],
+    f'{PACKAGE_NAME}.network': ['*.pxd'],
+    f'{PACKAGE_NAME}.serialization': ['*.pxd'],
+    f'{PACKAGE_NAME}.trade': ['*.pxd']
+}
 
 setup(
     name=PACKAGE_NAME,
@@ -92,12 +121,11 @@ setup(
     description=DESCRIPTION,
     license=LICENSE,
     url=URL,
-    packages=setuptools.find_packages(PACKAGE_NAME),
-    package_dir={'': PACKAGE_NAME},
-    package_data={PACKAGE_NAME: ['*.pxd', '*.csv']},
-    include_package_data=True,
     python_requires=PYTHON_REQUIRES,
     requires=REQUIREMENTS,
+    packages=packages,
+    package_data=package_data,
+    include_package_data=True,
     ext_modules=cythonize(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives),

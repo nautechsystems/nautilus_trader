@@ -23,10 +23,10 @@ from nautilus_trader.common.clock cimport Clock, TestClock
 from nautilus_trader.trade.sizing cimport PositionSizer, FixedRiskSizer
 from test_kit.mocks cimport ObjectStorer
 
-from nautilus_indicators.atr import AverageTrueRange
-from nautilus_indicators.average.ema import ExponentialMovingAverage
-from nautilus_indicators.spread_analyzer import SpreadAnalyzer
-from nautilus_indicators.liquidity_analyzer import LiquidityAnalyzer
+from nautilus_indicators.atr cimport AverageTrueRange
+from nautilus_indicators.average.ema cimport ExponentialMovingAverage
+from nautilus_indicators.spread_analyzer cimport SpreadAnalyzer
+from nautilus_indicators.liquidity_analyzer cimport LiquidityAnalyzer
 
 
 class PyStrategy(TradingStrategy):
