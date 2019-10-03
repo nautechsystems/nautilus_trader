@@ -22,7 +22,7 @@ from tools.linter import check_file_headers
 
 PACKAGE_NAME = 'nautilus_trader'
 AUTHOR = 'Nautech Systems Pty Ltd'
-MAINTAINER = 'Nautech Systems Pty Ltd'
+MAINTAINER = AUTHOR
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
 DESCRIPTION = 'An algorithmic trading framework written in Cython.'
 LICENSE = 'Nautech Systems Software License, April 2018'
@@ -83,14 +83,6 @@ def make_extensions(directories: List[str]) -> [Extension]:
     return extensions
 
 
-definition_ext = '*.pxd'
-modules = (get_directories(PACKAGE_NAME))
-package_data = {PACKAGE_NAME: [definition_ext]}
-for module in modules:
-    package_data[f'{PACKAGE_NAME}/{module}'] = [definition_ext]
-print(f"Including package data; {package_data}")
-
-
 setup(
     name=PACKAGE_NAME,
     version=__version__,
@@ -100,9 +92,10 @@ setup(
     description=DESCRIPTION,
     license=LICENSE,
     url=URL,
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(PACKAGE_NAME),
+    package_dir={'': PACKAGE_NAME},
+    package_data={PACKAGE_NAME: ['*.pxd', '*.csv']},
     include_package_data=True,
-    #package_data=package_data,
     python_requires=PYTHON_REQUIRES,
     requires=REQUIREMENTS,
     ext_modules=cythonize(
