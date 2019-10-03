@@ -57,8 +57,6 @@ cdef class PerformanceAnalyzer:
     cpdef float returns_tail_ratio(self)
     cpdef float alpha(self)
     cpdef float beta(self)
-    cpdef void create_returns_tear_sheet(self)
-    cpdef void create_full_tear_sheet(self)
     cpdef dict get_performance_stats(self)
 
     cdef list get_performance_stats_formatted(self)

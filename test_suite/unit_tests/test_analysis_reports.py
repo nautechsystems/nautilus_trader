@@ -61,7 +61,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price('0.80011'),
-            Currency.USD,
+            Currency.AUD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -108,7 +108,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price('0.80011'),
-            Currency.USD,
+            Currency.AUD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
