@@ -1,11 +1,11 @@
 # Nautilus Trader
 
-#### Features
+### Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
 * **Flexible:** Any FIX or REST broker API can be integrated into the platform with no changes to your strategy scripts.
 * **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
-* **AI Agent Training:** Backtest engine fast enough to be used to train Reinforcement Learning or Evolutionary AI trading agents.
-* **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or small hedge funds.
+* **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
+* **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
 * **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud enviornment.
 
 [Documentation](https://nautechsystems.io/nautilus/api)
