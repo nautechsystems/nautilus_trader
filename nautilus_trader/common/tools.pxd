@@ -44,10 +44,11 @@ cdef class IndicatorUpdater:
     cdef object _input_method
     cdef list _input_params
     cdef list _outputs
+    cdef bint _include_self
 
-    cpdef void update_tick(self, Tick tick)
-    cpdef void update_bar(self, Bar bar)
-    cpdef void update_databar(self, DataBar bar)
+    cpdef void update_tick(self, Tick tick) except *
+    cpdef void update_bar(self, Bar bar) except *
+    cpdef void update_databar(self, DataBar bar) except *
     cpdef dict build_features_ticks(self, list ticks)
     cpdef dict build_features_bars(self, list bars)
     cpdef dict build_features_databars(self, list bars)

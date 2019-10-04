@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import inspect
 from datetime import timedelta
 
 from nautilus_trader.model.events cimport Event
@@ -14,7 +15,7 @@ from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarTyp
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
+from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
@@ -188,8 +189,8 @@ cdef class TestStrategy1(TradingStrategy):
     """
     cdef readonly ObjectStorer object_storer
     cdef readonly BarType bar_type
-    cdef readonly object ema1
-    cdef readonly object ema2
+    cdef readonly ExponentialMovingAverage ema1
+    cdef readonly ExponentialMovingAverage ema2
     cdef readonly PositionId position_id
 
     def __init__(self,
@@ -277,12 +278,12 @@ cdef class EMACross(TradingStrategy):
     cdef readonly BarType bar_type
     cdef readonly PositionSizer position_sizer
     cdef readonly float risk_bp
-    cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
+    cdef readonly object entry_buffer
     cdef readonly object SL_buffer
-    cdef readonly object fast_ema
-    cdef readonly object slow_ema
-    cdef readonly object atr
+    cdef readonly ExponentialMovingAverage fast_ema
+    cdef readonly ExponentialMovingAverage slow_ema
+    cdef readonly AverageTrueRange atr
     cdef readonly SpreadAnalyzer spread_analyzer
     cdef readonly LiquidityAnalyzer liquidity
 
@@ -330,7 +331,8 @@ cdef class EMACross(TradingStrategy):
         self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
         self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
         self.register_indicator(self.bar_type, self.atr, self.atr.update)
-        #self.register_indicator(self.symbol, self.spread_analyzer, self.spread_analyzer.update)
+        # TODO: Indicator updating with ticks not working
+        # self.register_indicator(self.symbol, self.spread_analyzer, self.spread_analyzer.update)
 
     cpdef void on_start(self):
         """

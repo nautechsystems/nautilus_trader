@@ -264,32 +264,41 @@ cdef class IndicatorUpdater:
         }
 
         for param in inspect.signature(self._input_method).parameters:
-            self._input_params.append(param_map[param])
+            if param == 'self':
+                self._include_self = True
+            else:
+                self._input_params.append(param_map[param])
 
         if outputs is None or len(outputs) == 0:
             self._outputs = ['value']
         else:
             self._outputs = outputs
 
-    cpdef void update_tick(self, Tick tick):
+    cpdef void update_tick(self, Tick tick) except *:
         """
         Update the indicator with the given tick.
         
         :param tick: The tick to update with.
         """
         cdef str param
-        self._input_method(*[tick.__getattribute__(param).value for param in self._input_params])
+        if self._include_self:
+            self._input_method(self._indicator, *[tick.__getattribute__(param).value for param in self._input_params])
+        else:
+            self._input_method(*[tick.__getattribute__(param).value for param in self._input_params])
 
-    cpdef void update_bar(self, Bar bar):
+    cpdef void update_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 
         :param bar: The bar to update with.
         """
         cdef str param
-        self._input_method(*[bar.__getattribute__(param).value for param in self._input_params])
+        if self._include_self:
+            self._input_method(self._indicator, *[bar.__getattribute__(param).value for param in self._input_params])
+        else:
+            self._input_method(*[bar.__getattribute__(param).value for param in self._input_params])
 
-    cpdef void update_databar(self, DataBar bar):
+    cpdef void update_databar(self, DataBar bar) except *:
         """
         Update the indicator with the given data bar.
 
