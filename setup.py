@@ -43,6 +43,7 @@ REQUIREMENTS = ['cython',
 
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
 DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'test_suite']
+PACKAGE_EXCLUSIONS = ['test_kit']
 PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 
 
@@ -84,7 +85,7 @@ def make_extensions(directories: List[str]) -> [Extension]:
     return extensions
 
 
-packages = [module for module in setuptools.find_packages(exclude='test_kit')]
+packages = [module for module in setuptools.find_packages(exclude=PACKAGE_EXCLUSIONS)]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
 
 
