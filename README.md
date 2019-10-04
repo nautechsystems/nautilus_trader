@@ -8,7 +8,7 @@
 * **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
 * **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud enviornment.
 
-[Documentation](https://nautechsystems.io/nautilus/api)
+[API Documentation](https://nautechsystems.io/nautilus/api)
 
 ### Installation
 First make sure all required packages are installed (as found in the `setup.py` requirements).
@@ -28,7 +28,6 @@ All tests can be run via the `runtests.py` script, or through pytest.
 ### Support
 Please direct all questions, comments or bug reports to info@nautechsystems.io
 
-<br/><br/>
 ![Alt text](docs/artwork/cython-logo-small.png "cython")
 
 ![Alt text](docs/artwork/nautechsystems_logo_small.png?raw=true "logo")
