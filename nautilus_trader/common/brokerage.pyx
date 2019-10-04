@@ -18,7 +18,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_stri
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Money, Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.version import PACKAGE_ROOT
+from nautilus_trader.__info import PACKAGE_ROOT
 
 
 cdef class CommissionCalculator:

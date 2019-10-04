@@ -15,14 +15,14 @@ from setuptools import setup, Extension
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
-from nautilus_trader.version import __version__
-from tools.setup_tools import find_files, get_directories
+from nautilus_trader.__info import __version__
+from tools.setup_tools import find_files
 from tools.linter import check_file_headers
 
 
 PACKAGE_NAME = 'nautilus_trader'
 AUTHOR = 'Nautech Systems Pty Ltd'
-MAINTAINER = AUTHOR
+MAINTAINER = 'Nautech Systems Pty Ltd'
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
 DESCRIPTION = 'An algorithmic trading framework written in Cython.'
 LICENSE = 'Nautech Systems Software License, April 2018'
@@ -43,6 +43,7 @@ REQUIREMENTS = ['cython',
 
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
 DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'test_suite']
+PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 
 
 # Cython build options (edit here only)
@@ -82,35 +83,10 @@ def make_extensions(directories: List[str]) -> [Extension]:
             define_macros=[('CYTHON_TRACE', '1')]))
     return extensions
 
-packages = [
-    PACKAGE_NAME,
-    f'{PACKAGE_NAME}.algorithm',
-    f'{PACKAGE_NAME}.analysis',
-    f'{PACKAGE_NAME}.backtest',
-    f'{PACKAGE_NAME}.common',
-    f'{PACKAGE_NAME}.core',
-    f'{PACKAGE_NAME}.data',
-    f'{PACKAGE_NAME}.live',
-    f'{PACKAGE_NAME}.model',
-    f'{PACKAGE_NAME}.network',
-    f'{PACKAGE_NAME}.serialization',
-    f'{PACKAGE_NAME}.trade'
-]
 
-package_data = {
-    PACKAGE_NAME: ['*.pxd'],
-    f'{PACKAGE_NAME}.algorithm': ['*.pxd'],
-    f'{PACKAGE_NAME}.analysis': ['*.pxd'],
-    f'{PACKAGE_NAME}.backtest': ['*.pxd'],
-    f'{PACKAGE_NAME}.common': ['*.pxd'],
-    f'{PACKAGE_NAME}.core': ['*.pxd'],
-    f'{PACKAGE_NAME}.data': ['*.pxd', '*.csv'],
-    f'{PACKAGE_NAME}.live': ['*.pxd'],
-    f'{PACKAGE_NAME}.model': ['*.pxd'],
-    f'{PACKAGE_NAME}.network': ['*.pxd'],
-    f'{PACKAGE_NAME}.serialization': ['*.pxd'],
-    f'{PACKAGE_NAME}.trade': ['*.pxd']
-}
+packages = [module for module in setuptools.find_packages(exclude='test_kit')]
+package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
+
 
 setup(
     name=PACKAGE_NAME,
