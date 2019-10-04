@@ -14,7 +14,7 @@ from nautilus_trader.live.node import TradingNode
 
 from examples.strategies.ema_cross import EMACrossPy
 from examples.strategies.ema_cross_market_entry import EMACrossMarketEntryPy
-
+# TODO: AtomicOrder with Market entry not working (needs peg)
 
 # Requirements to run;
 #   - A Redis instance listening on the default port 6379
@@ -22,13 +22,12 @@ from examples.strategies.ema_cross_market_entry import EMACrossMarketEntryPy
 #   - A NautilusExecutor instance listening on the default ports
 
 
-# BAR_SPEC = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
-BAR_SPEC = BarSpecification(1, Resolution.SECOND, QuoteType.BID)
+BAR_SPEC = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
 
 symbols_to_trade = [
-    #Symbol('AUDUSD', Venue('FXCM')),
-    #Symbol('EURUSD', Venue('FXCM')),
-    #Symbol('GBPUSD', Venue('FXCM')),
+    Symbol('AUDUSD', Venue('FXCM')),
+    Symbol('EURUSD', Venue('FXCM')),
+    Symbol('GBPUSD', Venue('FXCM')),
     Symbol('USDJPY', Venue('FXCM')),
 ]
 
