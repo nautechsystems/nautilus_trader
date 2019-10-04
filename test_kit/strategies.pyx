@@ -276,8 +276,6 @@ cdef class EMACross(TradingStrategy):
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
     cdef readonly PositionSizer position_sizer
-    cdef readonly object spread_analyzer
-    cdef readonly object liquidity
     cdef readonly float risk_bp
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
@@ -285,7 +283,8 @@ cdef class EMACross(TradingStrategy):
     cdef readonly object fast_ema
     cdef readonly object slow_ema
     cdef readonly object atr
-    cdef readonly list trailing_stops
+    cdef readonly SpreadAnalyzer spread_analyzer
+    cdef readonly LiquidityAnalyzer liquidity
 
     def __init__(self,
                  Instrument instrument,
