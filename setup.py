@@ -80,8 +80,7 @@ def make_extensions(directories: List[str]) -> [Extension]:
         extensions.append(Extension(
             name=file.replace(os.path.sep, ".")[:-4],
             sources=[file],
-            include_dirs=['.'],
-            define_macros=[('CYTHON_TRACE', '1')]))
+            include_dirs=['.']))
     return extensions
 
 
