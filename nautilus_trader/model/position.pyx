@@ -32,6 +32,9 @@ cdef class Position:
         self._order_ids = {event.order_id}          # type: Set[OrderId]
         self._execution_ids = {event.execution_id}  # type: Set[ExecutionId]
         self._events = [event]                      # type: List[OrderFillEvent]
+        self._buy_quantities = {}                    # type: Dict[OrderId, int]
+        self._sell_quantities = {}                   # type: Dict[OrderId, int]
+        self._fill_prices = {}                       # type: Dict[OrderId, Decimal]
         self.last_event = event
         self.event_count = 1
 
@@ -55,8 +58,6 @@ cdef class Position:
         self.realized_pnl = Money.zero()
         self.realized_pnl_last = Money.zero()
 
-        self._filled_quantity_buys = 0              # Initialized in _update()
-        self._filled_quantity_sells = 0             # Initialized in _update()
         self.relative_quantity = 0                  # Initialized in _update()
         self.quantity = Quantity(0)                 # Initialized in _update()
         self.peak_quantity = Quantity(0)            # Initialized in _update()
@@ -278,54 +279,57 @@ cdef class Position:
             self.is_short = False
 
     cdef void _handle_buy_order_fill(self, OrderFillEvent event):
-        self._filled_quantity_buys += event.filled_quantity.value
+        self._buy_quantities[event.order_id] = event.filled_quantity.value
+        self._fill_prices[event.order_id] = event.average_price.value
         cdef Money pnl
 
         # LONG POSITION
         if self.relative_quantity > 0:
-            self.average_open_price = self._calculate_average_price(event, self.average_open_price, self._filled_quantity_buys)
+            self.average_open_price = self._calculate_average_price(self._buy_quantities)
 
         # SHORT POSITION
         elif self.relative_quantity < 0:
-            if self.average_close_price is None:
-                self.average_close_price = event.average_price.value
-            else:
-                self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_buys)
-
+            self.average_close_price = self._calculate_average_price(self._buy_quantities)
             self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
             self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
             pnl = self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
             self.realized_pnl += pnl
             self.realized_pnl_last = pnl
 
-        self.relative_quantity += event.filled_quantity.value
+        self.relative_quantity = self._calculate_relative_quantity()
 
     cdef void _handle_sell_order_fill(self, OrderFillEvent event):
-        self._filled_quantity_sells += event.filled_quantity.value
+        self._sell_quantities[event.order_id] = event.filled_quantity.value
+        self._fill_prices[event.order_id] = event.average_price.value
         cdef Money pnl
 
         # SHORT POSITION
         if self.relative_quantity < 0:
-            self.average_open_price = self._calculate_average_price(event, self.average_open_price, self._filled_quantity_sells)
+            self.average_open_price = self._calculate_average_price(self._sell_quantities)
 
         # LONG POSITION
         elif self.relative_quantity > 0:
-            if self.average_close_price is None:
-                self.average_close_price = event.average_price.value
-            else:
-                self.average_close_price = self._calculate_average_price(event, self.average_close_price, self._filled_quantity_sells)
-
+            self.average_close_price = self._calculate_average_price(self._sell_quantities)
             self.realized_points += self._calculate_points(self.average_open_price, event.average_price.value)
             self.realized_return += self._calculate_return(self.average_open_price, event.average_price.value)
             pnl = self._calculate_pnl(self.average_open_price, event.average_price.value, event.filled_quantity.value)
             self.realized_pnl += pnl
             self.realized_pnl_last = pnl
 
-        self.relative_quantity -= event.filled_quantity.value
+        self.relative_quantity = self._calculate_relative_quantity()
 
-    cdef object _calculate_average_price(self, OrderFillEvent event, current_average_price, long total_fills):
-        return (((self.quantity.value * current_average_price) + (event.filled_quantity.value * event.average_price.value))
-                / total_fills)
+    cdef int _calculate_relative_quantity(self):
+        return sum(self._buy_quantities.itervalues()) - sum(self._sell_quantities.itervalues())
+
+    cdef object _calculate_average_price(self, dict fills):
+        cdef int total_quantity = 0
+        cdef object cumulative_price = Decimal(0)
+
+        for order_id, quantity in fills.items():
+            total_quantity += quantity
+            cumulative_price += self._fill_prices[order_id] * quantity
+
+        return cumulative_price / total_quantity
 
     cdef object _calculate_points(self, opened_price, closed_price):
         if self.market_position == MarketPosition.LONG:

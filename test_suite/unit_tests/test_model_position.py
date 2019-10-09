@@ -234,8 +234,8 @@ class PositionTests(unittest.TestCase):
             PositionIdBroker('T123456'),
             order.symbol,
             order.side,
-            Quantity(50000),
-            Quantity(50000),
+            Quantity(100000),
+            Quantity(0),
             Price('1.00002'),
             Currency.USD,
             UNIX_EPOCH,
@@ -256,7 +256,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(MarketPosition.SHORT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(Decimal('1.000015'), position.average_open_price)
+        self.assertEqual(Decimal('1.00002'), position.average_open_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E1234561'), position.last_execution_id)
         self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
@@ -266,12 +266,12 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal(0), position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money.zero(), position.realized_pnl)
-        self.assertEqual(Decimal('-0.000465'), position.unrealized_points(last))
-        self.assertEqual(-0.0004649930342566222, position.unrealized_return(last))
-        self.assertEqual(Money(-46.50), position.unrealized_pnl(last))
-        self.assertEqual(Decimal('-0.000465'), position.total_points(last))
-        self.assertEqual(-0.0004649930342566222, position.total_return(last))
-        self.assertEqual(Money(-46.50), position.total_pnl(last))
+        self.assertEqual(Decimal('-0.00046'), position.unrealized_points(last))
+        self.assertEqual(-0.0004599908133968711, position.unrealized_return(last))
+        self.assertEqual(Money(-46.00), position.unrealized_pnl(last))
+        self.assertEqual(Decimal('-0.00046'), position.total_points(last))
+        self.assertEqual(-0.0004599908133968711, position.total_return(last))
+        self.assertEqual(Money(-46.00), position.total_pnl(last))
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -392,7 +392,7 @@ class PositionTests(unittest.TestCase):
             PositionIdBroker('T123456'),
             order2.symbol,
             order2.side,
-            Quantity(50000),
+            Quantity(100000),
             Quantity(0),
             Price('1.00003'),
             Currency.USD,
@@ -419,19 +419,19 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(ExecutionId('E1234562'), position.last_execution_id)
         self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(Decimal('1.00002'), position.average_close_price)
+        self.assertEqual(Decimal('1.00003'), position.average_close_price)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
         self.assertEqual(Decimal('-0.00004'), position.realized_points)
         self.assertEqual(-3.9999998989515007e-05, position.realized_return)
-        self.assertEqual(Money(-2.00), position.realized_pnl)
+        self.assertEqual(Money(-3.50), position.realized_pnl)
         self.assertEqual(Decimal(0), position.unrealized_points(last))
         self.assertEqual(0.0, position.unrealized_return(last))
         self.assertEqual(Money.zero(), position.unrealized_pnl(last))
         self.assertEqual(Decimal('-0.00004'), position.total_points(last))
         self.assertEqual(-3.9999998989515007e-05, position.total_return(last))
-        self.assertEqual(Money(-2.00), position.total_pnl(last))
+        self.assertEqual(Money(-3.50), position.total_pnl(last))
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
