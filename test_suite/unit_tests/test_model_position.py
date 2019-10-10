@@ -423,15 +423,15 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
-        self.assertEqual(Decimal('-0.00004'), position.realized_points)
-        self.assertEqual(-3.9999998989515007e-05, position.realized_return)
-        self.assertEqual(Money(-3.50), position.realized_pnl)
+        self.assertEqual(Decimal('-0.00003'), position.realized_points)
+        self.assertEqual(-2.9999999242136255e-05, position.realized_return)
+        self.assertEqual(Money(-3.00), position.realized_pnl)
         self.assertEqual(Decimal(0), position.unrealized_points(last))
         self.assertEqual(0.0, position.unrealized_return(last))
         self.assertEqual(Money.zero(), position.unrealized_pnl(last))
-        self.assertEqual(Decimal('-0.00004'), position.total_points(last))
-        self.assertEqual(-3.9999998989515007e-05, position.total_return(last))
-        self.assertEqual(Money(-3.50), position.total_pnl(last))
+        self.assertEqual(Decimal('-0.00003'), position.total_points(last))
+        self.assertEqual(-2.9999999242136255e-05, position.total_return(last))
+        self.assertEqual(Money(-3.00), position.total_pnl(last))
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
