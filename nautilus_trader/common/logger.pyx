@@ -19,7 +19,7 @@ import psutil
 import platform
 
 from platform import python_version
-from nautilus_trader.__info import __version__
+from nautilus_trader.__info__ import __version__
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition

@@ -15,7 +15,7 @@ from setuptools import setup, Extension
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
-from nautilus_trader.__info import __version__
+from nautilus_trader.__info__ import __version__
 from tools.setup_tools import find_files
 from tools.linter import check_file_headers
 
@@ -107,4 +107,5 @@ setup(
         compiler_directives=compiler_directives),
     cmdclass={'build_ext': build_ext},
     options={'build_ext': {'inplace': True, 'force': False}},
-    zip_safe=False)  # Allows cimport of pxd files
+    zip_safe=False  # Allows cimport of pxd files
+)
