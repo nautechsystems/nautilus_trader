@@ -11,47 +11,25 @@ import pandas as pd
 
 from pandas import Series, DataFrame
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+from nautilus_trader.data.loaders import CSVTickDataLoader, CSVBarDataLoader
+from test_kit.__info__ import PACKAGE_ROOT
+
 
 
 class TestDataProvider:
 
     @staticmethod
     def usdjpy_test_ticks() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'USDJPY_ticks.csv'),
-                           usecols=[1, 2, 3],
-                           index_col=0,
-                           header=None,
-                           parse_dates=True)
+        return CSVTickDataLoader.load(PACKAGE_ROOT + '/data/USDJPY_ticks.csv')
 
     @staticmethod
     def gbpusd_1min_bid() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'GBPUSD_1 Min_Bid.csv'),
-                           index_col='Time (UTC)',
-                           parse_dates=True)
+        return CSVBarDataLoader.load(PACKAGE_ROOT + '/data/GBPUSD_1 Min_Bid.csv')
 
     @staticmethod
     def usdjpy_1min_bid() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'USDJPY_1 Min_Bid.csv'),
-                           index_col='Time (UTC)',
-                           parse_dates=True)
+        return CSVBarDataLoader.load(PACKAGE_ROOT + '/data/USDJPY_1 Min_Bid.csv')
 
     @staticmethod
     def usdjpy_1min_ask() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'USDJPY_1 Min_Ask.csv'),
-                           index_col='Time (UTC)',
-                           parse_dates=True)
-
-    # @staticmethod
-    # def test_returns() -> Series:
-    #     data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_returns.csv.gz')),
-    #                     index_col=0,
-    #                     parse_dates=True)
-    #     return to_series(to_utc(data))
-    #
-    # @staticmethod
-    # def test_positions() -> DataFrame:
-    #     data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_positions.csv.gz')),
-    #                     index_col=0,
-    #                     parse_dates=True)
-    #     return to_utc(data)
+        return CSVBarDataLoader.load(PACKAGE_ROOT + '/data/USDJPY_1 Min_Ask.csv')
