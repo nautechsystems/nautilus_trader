@@ -26,9 +26,12 @@ cdef class Position:
     cdef set _order_ids
     cdef set _execution_ids
     cdef list _events
+    cdef dict _fill_prices
     cdef dict _buy_quantities
     cdef dict _sell_quantities
-    cdef dict _fill_prices
+    cdef long _buy_quantity
+    cdef long _sell_quantity
+    cdef long _relative_quantity
 
     cdef readonly PositionId id
     cdef readonly PositionIdBroker id_broker
@@ -53,7 +56,6 @@ cdef class Position:
     cdef readonly OrderFillEvent last_event
     cdef readonly int event_count
 
-    cdef readonly long relative_quantity
     cdef readonly Quantity quantity
     cdef readonly Quantity peak_quantity
     cdef readonly MarketPosition market_position
@@ -78,8 +80,7 @@ cdef class Position:
     cdef void _update(self, OrderFillEvent event) except *
     cdef void _handle_buy_order_fill(self, OrderFillEvent event)
     cdef void _handle_sell_order_fill(self, OrderFillEvent event)
-    cdef int _calculate_relative_quantity(self)
-    cdef object _calculate_average_price(self, dict fills)
-    cdef object _calculate_points(self, opened_price, closed_price)
-    cdef float _calculate_return(self, opened_price, closed_price)
-    cdef Money _calculate_pnl(self, opened_price, closed_price, long filled_quantity)
+    cdef object _calculate_average_price(self, dict fills, long total_quantity)
+    cdef object _calculate_points(self, open_price, close_price)
+    cdef float _calculate_return(self, open_price, close_price)
+    cdef Money _calculate_pnl(self, open_price, close_price, long filled_quantity)
