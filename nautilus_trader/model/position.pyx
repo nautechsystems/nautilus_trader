@@ -324,7 +324,6 @@ cdef class Position:
     cdef object _calculate_average_price(self, dict fills):
         cdef int total_quantity = 0
         cdef object cumulative_price = Decimal(0)
-
         for order_id, quantity in fills.items():
             total_quantity += quantity
             cumulative_price += self._fill_prices[order_id] * quantity
