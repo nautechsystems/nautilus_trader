@@ -25,13 +25,13 @@ from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.data.tools cimport IndicatorUpdater
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
-from nautilus_trader.common.tools cimport IndicatorUpdater
 
 
 cdef class TradingStrategy:
@@ -52,7 +52,7 @@ cdef class TradingStrategy:
         """
         Initializes a new instance of the TradingStrategy class.
 
-        :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
+        :param order_id_tag: The order_id tag for the strategy (must be unique at trader level).
         :param flatten_on_stop: The flag indicating whether the strategy should be flattened on stop.
         :param flatten_on_sl_reject: The flag indicating whether an open position should be flattened on SL reject.
         :param cancel_all_orders_on_stop: The flag indicating whether all residual orders should be cancelled on stop.
@@ -60,8 +60,7 @@ cdef class TradingStrategy:
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
-        :raises ConditionFailed: If the id_tag_trader is not a valid string.
-        :raises ConditionFailed: If the id_tag_strategy is not a valid string.
+        :raises ConditionFailed: If the order_id_tag is not a valid string.
         :raises ConditionFailed: If the tick_capacity is not positive (> 0).
         :raises ConditionFailed: If the bar_capacity is not positive (> 0).
         """

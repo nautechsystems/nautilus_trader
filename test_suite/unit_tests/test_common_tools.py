@@ -12,7 +12,7 @@ from pandas import Timestamp
 from datetime import datetime, timezone
 
 from nautilus_trader.model.objects import Price, Bar
-from nautilus_trader.common.tools import TickBuilder, BarBuilder, IndicatorUpdater
+from nautilus_trader.data.tools import TickBuilder, BarBuilder, IndicatorUpdater
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
