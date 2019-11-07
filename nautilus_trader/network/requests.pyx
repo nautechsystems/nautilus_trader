@@ -14,7 +14,7 @@ from nautilus_trader.core.message cimport Request
 
 cdef class DataRequest(Request):
     """
-    Represents a request for historical tick data.
+    Represents a request for data.
     """
 
     def __init__(self,
@@ -22,7 +22,7 @@ cdef class DataRequest(Request):
                  GUID request_id,
                  datetime request_timestamp):
         """
-        Initializes a new instance of the TickDataRequest class.
+        Initializes a new instance of the DataRequest class.
 
         :param query: The data query.
         :param request_id: The request identifier.
