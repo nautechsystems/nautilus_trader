@@ -19,7 +19,7 @@ cdef str UTF8 = 'utf-8'
 
 cdef class MQWorker:
     """
-    The abstract base class for all MQ workers.
+    The base class for all MQ workers.
     """
 
     def __init__(
