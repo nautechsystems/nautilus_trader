@@ -28,14 +28,14 @@ from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
 from nautilus_trader.common.logger cimport LogLevel
 
 
-cdef str HEADER = '\033[95m'
-cdef str OK_BLUE = '\033[94m'
-cdef str OK_GREEN = '\033[92m'
-cdef str WARN = '\033[1;33m'
-cdef str FAIL = '\033[01;31m'
-cdef str ENDC = '\033[0m'
-cdef str BOLD = '\033[1m'
-cdef str UNDERLINE = '\033[4m'
+cdef str _HEADER = '\033[95m'
+cdef str _OK_BLUE = '\033[94m'
+cdef str _OK_GREEN = '\033[92m'
+cdef str _WARN = '\033[1;33m'
+cdef str _FAIL = '\033[01;31m'
+cdef str _ENDC = '\033[0m'
+cdef str _BOLD = '\033[1m'
+cdef str _UNDERLINE = '\033[4m'
 
 RECV = '<--'
 SENT = '-->'
@@ -197,15 +197,15 @@ cdef class Logger:
         cdef str formatted_text
 
         if message.level == LogLevel.WARNING:
-            formatted_text = f'{WARN}[{message.level_string()}] {message.text}{ENDC}'
+            formatted_text = f'{_WARN}[{message.level_string()}] {message.text}{_ENDC}'
         elif message.level == LogLevel.ERROR:
-            formatted_text = f'{FAIL}[{message.level_string()}] {message.text}{ENDC}'
+            formatted_text = f'{_FAIL}[{message.level_string()}] {message.text}{_ENDC}'
         elif message.level == LogLevel.CRITICAL:
-            formatted_text = f'{FAIL}[{message.level_string()}] {message.text}{ENDC}'
+            formatted_text = f'{_FAIL}[{message.level_string()}] {message.text}{_ENDC}'
         else:
             formatted_text = f'[{message.level_string()}] {message.text}'
 
-        return f"{BOLD}{time}{ENDC} {thread}{formatted_text}"
+        return f"{_BOLD}{time}{_ENDC} {thread}{formatted_text}"
 
     cdef void _in_memory_log_store(self, LogLevel level, str text):
         # Store the given log message if the given log level is >= the log_level_store
@@ -419,9 +419,9 @@ cpdef void nautilus_header(LoggerAdapter logger):
         logger.info("#---------------------------------------------------------------#")
         logger.info("#--- VERSIONING ------------------------------------------------#")
         logger.info("#---------------------------------------------------------------#")
-        logger.info(f"python v{python_version()}")
-        logger.info(f"cython v{cython.__version__}")
-        logger.info(f"numpy v{np.__version__}")
-        logger.info(f"scipy v{scipy.__version__}")
-        logger.info(f"pandas v{pd.__version__}")
+        logger.info(f"python {python_version()}")
+        logger.info(f"cython {cython.__version__}")
+        logger.info(f"numpy {np.__version__}")
+        logger.info(f"scipy {scipy.__version__}")
+        logger.info(f"pandas {pd.__version__}")
         logger.info("#---------------------------------------------------------------#")
