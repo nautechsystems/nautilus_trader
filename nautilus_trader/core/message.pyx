@@ -22,7 +22,7 @@ cdef class Message:
                  GUID identifier,
                  datetime timestamp):
         """
-        Initializes a new instance of the Message abstract class.
+        Initializes a new instance of the Message class.
 
         :param message_type: The message type.
         :param identifier: The message identifier.
@@ -95,7 +95,7 @@ cdef class Command(Message):
 
     def __init__(self, GUID identifier, datetime timestamp):
         """
-        Initializes a new instance of the Command abstract class.
+        Initializes a new instance of the Command class.
 
         :param identifier: The command identifier.
         :param timestamp: The command timestamp.
@@ -112,7 +112,7 @@ cdef class Event(Message):
                  GUID identifier,
                  datetime timestamp):
         """
-        Initializes a new instance of the Event abstract class.
+        Initializes a new instance of the Event class.
 
         :param identifier: The event identifier.
         :param timestamp: The event timestamp.
@@ -127,7 +127,7 @@ cdef class Request(Message):
 
     def __init__(self, GUID identifier, datetime timestamp):
         """
-        Initializes a new instance of the Request abstract class.
+        Initializes a new instance of the Request class.
 
         :param identifier: The request identifier.
         :param timestamp: The request timestamp.
@@ -145,7 +145,7 @@ cdef class Response(Message):
                  GUID identifier,
                  datetime timestamp):
         """
-        Initializes a new instance of the Response abstract class.
+        Initializes a new instance of the Response class.
 
         :param identifier: The correlation identifier.
         :param identifier: The response identifier.

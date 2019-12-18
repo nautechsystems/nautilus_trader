@@ -13,7 +13,7 @@ from nautilus_trader.core.types cimport GUID
 
 cdef class GuidFactory:
     """
-    The abstract base class for all GUID factories.
+    The base class for all GUID factories.
     """
 
     cpdef GUID generate(self):
