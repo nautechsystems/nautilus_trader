@@ -12,7 +12,7 @@ import pytz
 
 cpdef str pad_string(str string, int length):
     """
-    Return the given string padded to the given length.
+    Return the given string front padded to the given length.
 
     :param string: The string to pad.
     :param length: The length to pad to.

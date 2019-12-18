@@ -128,12 +128,12 @@ cdef class ValidString:
 
 cdef class Identifier(ValidString):
     """
-    The abstract base class for all identifiers.
+    The base class for all identifiers.
     """
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the Identifier abstract class.
+        Initializes a new instance of the Identifier class.
 
         :param value: The value of the identifier.
         """

@@ -84,7 +84,7 @@ cdef class LogMessage:
 
 cdef class Logger:
     """
-    The abstract base class for all Loggers.
+    The base class for all Loggers.
     """
 
     def __init__(self,

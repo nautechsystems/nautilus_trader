@@ -26,7 +26,7 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 
 cdef class Clock:
     """
-    The abstract base class for all clocks. All times are timezone aware UTC.
+    The base class for all clocks. All times are timezone aware UTC.
     """
 
     def __init__(self):

@@ -13,7 +13,7 @@ from nautilus_trader.model.objects cimport Instrument
 
 cdef class QuerySerializer:
     """
-    The abstract base class for all query serializers.
+    The base class for all query serializers.
     """
 
     cpdef bytes serialize(self, dict query):
@@ -39,7 +39,7 @@ cdef class QuerySerializer:
 
 cdef class DataSerializer:
     """
-    The abstract base class for all data serializers.
+    The base class for all data serializers.
     """
 
     cpdef bytes serialize(self, dict data):
@@ -65,7 +65,7 @@ cdef class DataSerializer:
 
 cdef class InstrumentSerializer:
     """
-    The abstract base class for all instrument serializers.
+    The base class for all instrument serializers.
     """
 
     cpdef bytes serialize(self, Instrument instrument):
@@ -91,7 +91,7 @@ cdef class InstrumentSerializer:
 
 cdef class OrderSerializer:
     """
-    The abstract base class for all order serializers.
+    The base class for all order serializers.
     """
 
     cpdef bytes serialize(self, Order order):
@@ -117,7 +117,7 @@ cdef class OrderSerializer:
 
 cdef class CommandSerializer:
     """
-    The abstract base class for all command serializers.
+    The base class for all command serializers.
     """
 
     cpdef bytes serialize(self, Command command):
@@ -143,7 +143,7 @@ cdef class CommandSerializer:
 
 cdef class EventSerializer:
     """
-    The abstract base class for all event serializers.
+    The base class for all event serializers.
     """
 
     cpdef bytes serialize(self, Event event):
@@ -169,7 +169,7 @@ cdef class EventSerializer:
 
 cdef class RequestSerializer:
     """
-    The abstract base class for all request serializers.
+    The base class for all request serializers.
     """
 
     cpdef bytes serialize(self, Request request):
@@ -195,7 +195,7 @@ cdef class RequestSerializer:
 
 cdef class ResponseSerializer:
     """
-    The abstract base class for all response serializers.
+    The base class for all response serializers.
     """
 
     cpdef bytes serialize(self, Response response):
@@ -221,7 +221,7 @@ cdef class ResponseSerializer:
 
 cdef class LogSerializer:
     """
-    The abstract base class for all log message serializers.
+    The base class for all log message serializers.
     """
 
     cpdef bytes serialize(self, LogMessage message):
