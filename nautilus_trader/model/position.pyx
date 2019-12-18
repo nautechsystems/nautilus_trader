@@ -32,9 +32,9 @@ cdef class Position:
         self._order_ids = {event.order_id}          # type: Set[OrderId]
         self._execution_ids = {event.execution_id}  # type: Set[ExecutionId]
         self._events = [event]                      # type: List[OrderFillEvent]
-        self._buy_quantities = {}                    # type: Dict[OrderId, int]
-        self._sell_quantities = {}                   # type: Dict[OrderId, int]
-        self._fill_prices = {}                       # type: Dict[OrderId, Decimal]
+        self._buy_quantities = {}                   # type: Dict[OrderId, int]
+        self._sell_quantities = {}                  # type: Dict[OrderId, int]
+        self._fill_prices = {}                      # type: Dict[OrderId, Decimal]
         self.last_event = event
         self.event_count = 1
 
@@ -58,7 +58,7 @@ cdef class Position:
         self.realized_pnl = Money.zero()
         self.realized_pnl_last = Money.zero()
 
-        self._relative_quantity = 0                  # Initialized in _update()
+        self.relative_quantity = 0                  # Initialized in _update()
         self.quantity = Quantity(0)                 # Initialized in _update()
         self.peak_quantity = Quantity(0)            # Initialized in _update()
         self.market_position = MarketPosition.FLAT  # Initialized in _update()
@@ -115,7 +115,7 @@ cdef class Position:
 
         :return str.
         """
-        cdef str quantity = ' ' if self._relative_quantity == 0 else f' {self.quantity.to_string_formatted()} '
+        cdef str quantity = ' ' if self.relative_quantity == 0 else f' {self.quantity.to_string_formatted()} '
         return f"{market_position_to_string(self.market_position)}{quantity}{self.symbol}"
 
     cpdef list get_order_ids(self):
@@ -254,19 +254,19 @@ cdef class Position:
             raise RuntimeError(f"Cannot update position (event order side invalid {event.order_side})")
 
         # Set quantities
-        self._relative_quantity = self._buy_quantity - self._sell_quantity
-        self.quantity = Quantity(abs(self._relative_quantity))
+        self.relative_quantity = self._buy_quantity - self._sell_quantity
+        self.quantity = Quantity(abs(self.relative_quantity))
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
         # Set state
-        if self._relative_quantity > 0:
+        if self.relative_quantity > 0:
             self.market_position = MarketPosition.LONG
             self.is_open = True
             self.is_long = True
             self.is_closed = False
             self.is_short = False
-        elif self._relative_quantity < 0:
+        elif self.relative_quantity < 0:
             self.market_position = MarketPosition.SHORT
             self.is_open = True
             self.is_short = True
@@ -286,10 +286,10 @@ cdef class Position:
         self._buy_quantity = sum(self._buy_quantities.itervalues())
 
         # LONG POSITION
-        if self._relative_quantity > 0:
+        if self.relative_quantity > 0:
             self.average_open_price = self._calculate_average_price(self._buy_quantities, self._buy_quantity)
         # SHORT POSITION
-        elif self._relative_quantity < 0:
+        elif self.relative_quantity < 0:
             self.average_close_price = self._calculate_average_price(self._buy_quantities, self._buy_quantity)
             self.realized_points = self._calculate_points(self.average_open_price, self.average_close_price)
             self.realized_return = self._calculate_return(self.average_open_price, self.average_close_price)
@@ -300,10 +300,10 @@ cdef class Position:
         self._sell_quantity = sum(self._sell_quantities.itervalues())
 
         # SHORT POSITION
-        if self._relative_quantity < 0:
+        if self.relative_quantity < 0:
             self.average_open_price = self._calculate_average_price(self._sell_quantities, self._sell_quantity)
         # LONG POSITION
-        elif self._relative_quantity > 0:
+        elif self.relative_quantity > 0:
             self.average_close_price = self._calculate_average_price(self._sell_quantities, self._sell_quantity)
             self.realized_points = self._calculate_points(self.average_open_price, self.average_close_price)
             self.realized_return = self._calculate_return(self.average_open_price, self.average_close_price)
