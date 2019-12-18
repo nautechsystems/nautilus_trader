@@ -31,7 +31,6 @@ cdef class Position:
     cdef dict _sell_quantities
     cdef long _buy_quantity
     cdef long _sell_quantity
-    cdef long _relative_quantity
 
     cdef readonly PositionId id
     cdef readonly PositionIdBroker id_broker
@@ -56,6 +55,7 @@ cdef class Position:
     cdef readonly OrderFillEvent last_event
     cdef readonly int event_count
 
+    cdef readonly long relative_quantity
     cdef readonly Quantity quantity
     cdef readonly Quantity peak_quantity
     cdef readonly MarketPosition market_position
