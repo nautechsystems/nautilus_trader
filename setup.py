@@ -104,7 +104,8 @@ setup(
     include_package_data=True,
     ext_modules=cythonize(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
-        compiler_directives=compiler_directives),
+        compiler_directives=compiler_directives,
+        build_dir='build'),
     cmdclass={'build_ext': build_ext},
     options={'build_ext': {'inplace': True, 'force': False}},
     zip_safe=False  # Allows cimport of pxd files
