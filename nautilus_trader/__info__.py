@@ -11,9 +11,14 @@ import os
 PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
-MAJOR = 0
-MINOR = 99
-MICRO = 7
+# Semantic Versioning (https://semver.org/)
+_MAJOR_VERSION = 0
+_MINOR_VERSION = 99
+_PATCH_VERSION = 7
 
-__version__ = f'{MAJOR}.{MINOR}.{MICRO}'
+# Example: '0.99.7'
+__version__ = '.'.join([
+    str(_MAJOR_VERSION),
+    str(_MINOR_VERSION),
+    str(_PATCH_VERSION)])
 # $Source$
