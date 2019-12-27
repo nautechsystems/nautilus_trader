@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+"""Define common trading model value objects."""
+
 import iso8601
 import re
 
