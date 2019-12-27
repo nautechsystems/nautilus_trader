@@ -15,8 +15,8 @@ from decimal import Decimal
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, Bar, Instrument
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string, currency_from_string
-from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_to_string, security_type_from_string
+from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
+from nautilus_trader.model.c_enums.security_type cimport security_type_to_string, security_type_from_string
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.common cimport convert_datetime_to_string, convert_string_to_datetime

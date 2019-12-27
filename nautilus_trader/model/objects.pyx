@@ -775,20 +775,20 @@ cdef class BarSpecification:
     Represents the specification of a financial market trade bar.
     """
     def __init__(self,
-                 int period,
+                 int step,
                  BarStructure structure,
                  QuoteType quote_type):
         """
         Initializes a new instance of the BarSpecification class.
 
-        :param period: The bar period.
+        :param step: The bar step (> 0).
         :param structure: The bar structure.
         :param quote_type: The bar quote type.
-        :raises ConditionFailed: If the period is not positive (> 0).
+        :raises ConditionFailed: If the step is not positive (> 0).
         """
-        Condition.positive(period, 'period')
+        Condition.positive(step, 'step')
 
-        self.step = period
+        self.step = step
         self.structure = structure
         self.quote_type = quote_type
 
@@ -845,24 +845,6 @@ cdef class BarSpecification:
         :return str.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
-
-    # cpdef timedelta timedelta(self):
-    #     """
-    #     Return the time bar timedelta.
-    #     :return timedelta.
-    #     """
-    #     if self.structure == BarStructure.TICK:
-    #         return timedelta(0)
-    #     if self.structure == BarStructure.SECOND:
-    #         return timedelta(seconds=self.step)
-    #     if self.structure == BarStructure.MINUTE:
-    #         return timedelta(minutes=self.step)
-    #     if self.structure == BarStructure.HOUR:
-    #         return timedelta(hours=self.step)
-    #     if self.structure == BarStructure.DAY:
-    #         return timedelta(days=self.step)
-    #     else:
-    #         raise RuntimeError(f"Cannot calculate timedelta for {bar_structure_to_string(self.structure)}")
 
     cdef str structure_string(self):
         """
