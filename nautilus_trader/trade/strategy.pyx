@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 from collections import deque
 from typing import List, Dict, Deque, Callable
 
@@ -476,7 +476,7 @@ cdef class TradingStrategy:
         if to_datetime is None:
             to_datetime = self.clock.time_now()
         if from_datetime is None:
-            from_datetime = to_datetime - (self.bar_capacity * bar_type.specification.timedelta())
+            from_datetime = self.clock.time_now() - timedelta(days=1)
 
         Condition.true(from_datetime < to_datetime, 'from_datetime < to_date')
 

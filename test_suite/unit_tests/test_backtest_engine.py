@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime
 from pandas import Timestamp
 
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.model.identifiers import Venue
@@ -34,8 +34,8 @@ class BacktestEngineTests(unittest.TestCase):
     def setUp(self):
         instruments = [TestStubs.instrument_usdjpy()]
         tick_data = {USDJPY_FXCM: pd.DataFrame()}
-        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
-        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
+        bid_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
+        ask_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         self.engine = BacktestEngine(
             trader_id=None,
@@ -59,8 +59,8 @@ class BacktestEngineTests(unittest.TestCase):
         # Arrange
         instruments = [TestStubs.instrument_usdjpy()]
         tick_data = {USDJPY_FXCM: pd.DataFrame()}
-        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
-        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
+        bid_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
+        ask_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
@@ -97,8 +97,8 @@ class BacktestEngineTests(unittest.TestCase):
         # Arrange
         instruments = [TestStubs.instrument_usdjpy()]
         tick_data = {USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()}
-        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
-        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
+        bid_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
+        ask_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()

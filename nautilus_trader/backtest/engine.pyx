@@ -17,7 +17,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.objects cimport Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId, AccountId
@@ -48,8 +48,8 @@ cdef class BacktestEngine:
                  Venue venue,
                  list instruments: List[Instrument],
                  dict data_ticks: Dict[Symbol, DataFrame],
-                 dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 dict data_bars_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict data_bars_bid: Dict[Symbol, Dict[BarStructure, DataFrame]],
+                 dict data_bars_ask: Dict[Symbol, Dict[BarStructure, DataFrame]],
                  list strategies: List[TradingStrategy],
                  BacktestConfig config=BacktestConfig(),
                  FillModel fill_model=FillModel()):
@@ -212,7 +212,7 @@ cdef class BacktestEngine:
         :raises: ValueError: If the start is not >= the execution_data_index_min datetime.
         :raises: ValueError: If the stop is not None and timezone is not UTC.
         :raises: ValueError: If the stop is not <= the execution_data_index_max datetime.
-        :raises: ValueError: If the time_step is not None and is > the max time step for the execution resolution.
+        :raises: ValueError: If the time_step is not None and is > the max time step for the execution structure.
         :raises: ValueError: If the fill_model is a type other than FillModel or None.
         :raises: ValueError: If the strategies is a type other than list or None.
         :raises: ValueError: If the strategies list is not None and is empty, or contains a type other than TradingStrategy.
@@ -280,7 +280,7 @@ cdef class BacktestEngine:
         self.log.info(f"Running backtest...")
         self.trader.start()
 
-        if self.data_client.execution_resolution == Resolution.TICK:
+        if self.data_client.execution_structure == BarStructure.TICK:
             self._run_with_tick_execution(start, stop, time_step)
         else:
             self._run_with_bar_execution(start, stop, time_step)
@@ -298,7 +298,7 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        # Run the backtest with tick level execution resolution
+        # Run the backtest with tick level execution
 
         cdef Tick tick
         cdef TradingStrategy strategy
@@ -331,7 +331,7 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        # Run the backtest with bar level execution resolution
+        # Run the backtest with bar level execution
 
         cdef Symbol symbol
         cdef Tick tick
@@ -430,7 +430,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Iteration time-step:  {time_step}")
-        self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
+        self.log.info(f"Execution structure: {bar_structure_to_string(self.data_client.execution_structure)}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
@@ -457,7 +457,7 @@ cdef class BacktestEngine:
         self.log.info(f"Elapsed time (running):  {run_finished - run_started}")
 
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
-        self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
+        self.log.info(f"Execution structure: {bar_structure_to_string(self.data_client.execution_structure)}")
         self.log.info(f"Total events: {self.exec_engine.event_count}")
         self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total()}")
         self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total()}")

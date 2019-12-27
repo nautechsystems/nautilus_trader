@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.model.c_enums.resolution cimport Resolution
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers cimport Symbol
 
@@ -27,12 +27,12 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly set data_symbols
     cdef readonly datetime execution_data_index_min
     cdef readonly datetime execution_data_index_max
-    cdef readonly Resolution execution_resolution
+    cdef readonly BarStructure execution_structure
     cdef readonly timedelta max_time_step
 
     cdef void _setup_execution_data(self)
     cdef bint _check_ticks_exist(self)
-    cdef bint _check_bar_resolution_exists(self, Resolution resolution)
+    cdef bint _check_bar_resolution_exists(self, BarStructure structure)
     cdef void _set_execution_data_index(self, Symbol symbol, datetime first, datetime last)
     cdef void _build_bars(self, BarType bar_type)
     cpdef void set_initial_iteration_indexes(self, datetime to_time)
@@ -66,7 +66,7 @@ cdef class DataProvider:
     cpdef void deregister_ticks(self)
     cpdef void register_bars(self, BarType bar_type)
     cpdef void deregister_bars(self, BarType bar_type)
-    cpdef void set_execution_bar_res(self, Resolution resolution)
+    cpdef void set_execution_bar_res(self, BarStructure structure)
     cpdef void set_initial_iteration_indexes(self, datetime to_time)
     cpdef void set_tick_iteration_index(self, datetime to_time)
     cpdef void set_bar_iteration_index(self, BarType bar_type, datetime to_time)

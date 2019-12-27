@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import ValidString
-from nautilus_trader.model.enums import Resolution, QuoteType
+from nautilus_trader.model.enums import BarStructure, QuoteType
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
 from test_kit.stubs import TestStubs
@@ -494,9 +494,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_bar_spec_equality(self):
         # Arrange
-        bar_spec1 = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
-        bar_spec2 = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
-        bar_spec3 = BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
+        bar_spec1 = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
+        bar_spec2 = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
+        bar_spec3 = BarSpecification(1, BarStructure.MINUTE, QuoteType.ASK)
 
         # Act
         # Assert
@@ -504,25 +504,9 @@ class ObjectTests(unittest.TestCase):
         self.assertTrue(bar_spec1 == bar_spec2)
         self.assertTrue(bar_spec1 != bar_spec3)
 
-    def test_bar_spec_timedelta(self):
-        # Arrange
-        # Act
-        timedelta1 = BarSpecification(1, Resolution.TICK, QuoteType.BID).timedelta()
-        timedelta2 = BarSpecification(2, Resolution.SECOND, QuoteType.BID).timedelta()
-        timedelta3 = BarSpecification(3, Resolution.MINUTE, QuoteType.BID).timedelta()
-        timedelta4 = BarSpecification(4, Resolution.HOUR, QuoteType.BID).timedelta()
-        timedelta5 = BarSpecification(5, Resolution.DAY, QuoteType.BID).timedelta()
-
-        # Assert
-        self.assertEqual(timedelta(0), timedelta1)
-        self.assertEqual(timedelta(seconds=2), timedelta2)
-        self.assertEqual(timedelta(minutes=3), timedelta3)
-        self.assertEqual(timedelta(hours=4), timedelta4)
-        self.assertEqual(timedelta(days=5), timedelta5)
-
     def test_bar_spec_str_and_repr(self):
         # Arrange
-        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
 
         # Act
         # Assert
@@ -557,7 +541,7 @@ class ObjectTests(unittest.TestCase):
 
     def test_can_parse_bar_spec_from_string(self):
         # Arrange
-        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.MID)
 
         # Act
         result = BarSpecification.py_from_string(str(bar_spec))
@@ -569,7 +553,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         symbol1 = Symbol("AUDUSD", Venue('FXCM'))
         symbol2 = Symbol("GBPUSD", Venue('FXCM'))
-        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
         bar_type1 = BarType(symbol1, bar_spec)
         bar_type2 = BarType(symbol1, bar_spec)
         bar_type3 = BarType(symbol2, bar_spec)
@@ -583,7 +567,7 @@ class ObjectTests(unittest.TestCase):
     def test_bar_type_str_and_repr(self):
         # Arrange
         symbol = Symbol("AUDUSD", Venue('FXCM'))
-        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
         bar_type = BarType(symbol, bar_spec)
 
         # Act

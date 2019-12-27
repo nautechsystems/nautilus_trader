@@ -15,7 +15,7 @@ from decimal import Decimal
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string, resolution_from_string
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string, bar_structure_from_string
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_string, quote_type_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency
@@ -776,20 +776,20 @@ cdef class BarSpecification:
     """
     def __init__(self,
                  int period,
-                 Resolution resolution,
+                 BarStructure structure,
                  QuoteType quote_type):
         """
         Initializes a new instance of the BarSpecification class.
 
         :param period: The bar period.
-        :param resolution: The bar resolution.
+        :param structure: The bar structure.
         :param quote_type: The bar quote type.
         :raises ConditionFailed: If the period is not positive (> 0).
         """
         Condition.positive(period, 'period')
 
-        self.period = period
-        self.resolution = resolution
+        self.step = period
+        self.structure = structure
         self.quote_type = quote_type
 
     cdef bint equals(self, BarSpecification other):
@@ -799,8 +799,8 @@ cdef class BarSpecification:
         :param other: The other object.
         :return bool.
         """
-        return (self.period == other.period
-                and self.resolution == other.resolution
+        return (self.step == other.step
+                and self.structure == other.structure
                 and self.quote_type == other.quote_type)
 
     def __eq__(self, BarSpecification other) -> bool:
@@ -827,7 +827,7 @@ cdef class BarSpecification:
 
         :return int.
         """
-        return hash((self.period, self.resolution, self.quote_type))
+        return hash((self.step, self.structure, self.quote_type))
 
     def __str__(self) -> str:
         """
@@ -835,7 +835,7 @@ cdef class BarSpecification:
 
         :return str.
         """
-        return f"{self.period}-{resolution_to_string(self.resolution)}[{quote_type_to_string(self.quote_type)}]"
+        return f"{self.step}-{bar_structure_to_string(self.structure)}[{quote_type_to_string(self.quote_type)}]"
 
     def __repr__(self) -> str:
         """
@@ -846,31 +846,31 @@ cdef class BarSpecification:
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
-    cpdef timedelta timedelta(self):
-        """
-        Return the time bar timedelta.
-        :return timedelta.
-        """
-        if self.resolution == Resolution.TICK:
-            return timedelta(0)
-        if self.resolution == Resolution.SECOND:
-            return timedelta(seconds=self.period)
-        if self.resolution == Resolution.MINUTE:
-            return timedelta(minutes=self.period)
-        if self.resolution == Resolution.HOUR:
-            return timedelta(hours=self.period)
-        if self.resolution == Resolution.DAY:
-            return timedelta(days=self.period)
-        else:
-            raise RuntimeError(f"Cannot calculate timedelta for {resolution_to_string(self.resolution)}")
+    # cpdef timedelta timedelta(self):
+    #     """
+    #     Return the time bar timedelta.
+    #     :return timedelta.
+    #     """
+    #     if self.structure == BarStructure.TICK:
+    #         return timedelta(0)
+    #     if self.structure == BarStructure.SECOND:
+    #         return timedelta(seconds=self.step)
+    #     if self.structure == BarStructure.MINUTE:
+    #         return timedelta(minutes=self.step)
+    #     if self.structure == BarStructure.HOUR:
+    #         return timedelta(hours=self.step)
+    #     if self.structure == BarStructure.DAY:
+    #         return timedelta(days=self.step)
+    #     else:
+    #         raise RuntimeError(f"Cannot calculate timedelta for {bar_structure_to_string(self.structure)}")
 
-    cdef str resolution_string(self):
+    cdef str structure_string(self):
         """
-        Return the resolution as a string
+        Return the bar structure as a string
         
         :return str.
         """
-        return resolution_to_string(self.resolution)
+        return bar_structure_to_string(self.structure)
 
     cdef str quote_type_string(self):
         """
@@ -884,19 +884,19 @@ cdef class BarSpecification:
     cdef BarSpecification from_string(str value):
         """
         Return a bar specification parsed from the given string.
-    
-        Note: String format example is '1-MINUTE-[BID]'.
+
+        Note: String format example is '200-TICK-[MID]'.
         :param value: The bar specification string to parse.
         :return BarSpecification.
         """
         cdef list split1 = value.split('-')
         cdef list split2 = split1[1].split('[')
-        cdef str resolution = split2[0]
+        cdef str structure = split2[0]
         cdef str quote_type = split2[1].strip(']')
 
         return BarSpecification(
             int(split1[0]),
-            resolution_from_string(resolution),
+            bar_structure_from_string(structure),
             quote_type_from_string(quote_type))
 
     @staticmethod
@@ -982,13 +982,13 @@ cdef class BarType:
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
-    cdef str resolution_string(self):
+    cdef str structure_string(self):
         """
-        Return the resolution as a string
+        Return the bar structure as a string
         
         :return str.
         """
-        return self.specification.resolution_string()
+        return self.specification.structure_string()
 
     cdef str quote_type_string(self):
         """
@@ -1007,11 +1007,11 @@ cdef class BarType:
         :return BarType.
         """
         cdef list split_string = re.split(r'[.-]+', value)
-        cdef str resolution = split_string[3].split('[')[0]
+        cdef str structure = split_string[3].split('[')[0]
         cdef str quote_type = split_string[3].split('[')[1].strip(']')
         cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1]))
         cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
-                                                          resolution_from_string(resolution.upper()),
+                                                          bar_structure_from_string(structure.upper()),
                                                           quote_type_from_string(quote_type.upper()))
         return BarType(symbol, bar_spec)
 
