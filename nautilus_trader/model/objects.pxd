@@ -10,7 +10,7 @@ from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.c_enums.resolution cimport Resolution
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 
@@ -52,13 +52,13 @@ cdef class Tick:
 
 
 cdef class BarSpecification:
-    cdef readonly int period
-    cdef readonly Resolution resolution
+    cdef readonly int step
+    cdef readonly BarStructure structure
     cdef readonly QuoteType quote_type
 
-    cpdef timedelta timedelta(self)
+    #cpdef timedelta timedelta(self)
     cdef bint equals(self, BarSpecification other)
-    cdef str resolution_string(self)
+    cdef str structure_string(self)
     cdef str quote_type_string(self)
     @staticmethod
     cdef BarSpecification from_string(str value)
@@ -69,7 +69,7 @@ cdef class BarType:
     cdef readonly BarSpecification specification
 
     cdef bint equals(self, BarType other)
-    cdef str resolution_string(self)
+    cdef str structure_string(self)
     cdef str quote_type_string(self)
 
     @staticmethod

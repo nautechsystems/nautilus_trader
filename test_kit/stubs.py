@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import (
-    Resolution,
+    BarStructure,
     QuoteType,
     Currency,
     SecurityType,
@@ -136,19 +136,19 @@ class TestStubs:
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
-        return BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        return BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
 
     @staticmethod
     def bar_spec_1min_ask() -> BarSpecification:
-        return BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
+        return BarSpecification(1, BarStructure.MINUTE, QuoteType.ASK)
 
     @staticmethod
     def bar_spec_1min_mid() -> BarSpecification:
-        return BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
+        return BarSpecification(1, BarStructure.MINUTE, QuoteType.MID)
 
     @staticmethod
     def bar_spec_1sec_mid() -> BarSpecification:
-        return BarSpecification(1, Resolution.SECOND, QuoteType.MID)
+        return BarSpecification(1, BarStructure.SECOND, QuoteType.MID)
 
     @staticmethod
     def bartype_audusd_1min_bid() -> BarType:

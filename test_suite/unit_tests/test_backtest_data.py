@@ -14,7 +14,7 @@ from pandas import Timestamp
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.data import BacktestDataClient
 
@@ -41,15 +41,15 @@ class BacktestDataClientTests(unittest.TestCase):
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
-            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: self.ask_data_1min}},
+            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: self.bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 
         # Act
         # Assert
-        self.assertEqual(all(self.bid_data_1min), all(client.data_bars_bid[USDJPY_FXCM][Resolution.MINUTE]))
-        self.assertEqual(all(self.ask_data_1min), all(client.data_bars_bid[USDJPY_FXCM][Resolution.MINUTE]))
+        self.assertEqual(all(self.bid_data_1min), all(client.data_bars_bid[USDJPY_FXCM][BarStructure.MINUTE]))
+        self.assertEqual(all(self.ask_data_1min), all(client.data_bars_bid[USDJPY_FXCM][BarStructure.MINUTE]))
         self.assertEqual(pd.to_datetime(self.bid_data_1min.index[0], utc=True), client.execution_data_index_min)
 
     def test_can_set_initial_iteration(self):
@@ -58,8 +58,8 @@ class BacktestDataClientTests(unittest.TestCase):
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()},
-            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: self.ask_data_1min}},
+            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: self.bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 
@@ -83,8 +83,8 @@ class BacktestDataClientTests(unittest.TestCase):
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()},
-            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: self.ask_data_1min}},
+            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: self.bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 
@@ -109,8 +109,8 @@ class BacktestDataClientTests(unittest.TestCase):
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()},
-            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: self.ask_data_1min}},
+            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: self.bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 
@@ -136,8 +136,8 @@ class BacktestDataClientTests(unittest.TestCase):
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
-            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: self.ask_data_1min}},
+            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: self.bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 
@@ -163,8 +163,8 @@ class BacktestDataClientTests(unittest.TestCase):
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
-            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: self.ask_data_1min}},
+            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: self.bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 

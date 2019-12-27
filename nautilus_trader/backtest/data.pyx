@@ -15,7 +15,7 @@ from typing import Set, List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
-from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.objects cimport Instrument, Tick, BarType, Bar, BarSpecification
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.common.clock cimport TestClock
@@ -50,8 +50,8 @@ cdef class BacktestDataClient(DataClient):
                  Venue venue,
                  list instruments: List[Instrument],
                  dict data_ticks: Dict[Symbol, DataFrame],
-                 dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 dict data_bars_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict data_bars_bid: Dict[Symbol, Dict[BarStructure, DataFrame]],
+                 dict data_bars_ask: Dict[Symbol, Dict[BarStructure, DataFrame]],
                  TestClock clock,
                  Logger logger):
         """
@@ -84,15 +84,15 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(logger, 'logger')
 
         super().__init__(venue, clock, TestGuidFactory(), logger)
-        self.data_ticks = data_ticks                    # type: Dict[Symbol, DataFrame]
-        self.data_bars_bid = data_bars_bid              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
-        self.data_bars_ask = data_bars_ask              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
-        self.data_providers = {}                        # type: Dict[Symbol, DataProvider]
-        self.data_symbols = set()                       # type: Set[Symbol]
-        self.execution_data_index_min = None            # Set below
-        self.execution_data_index_max = None            # Set below
-        self.execution_resolution = Resolution.UNKNOWN  # Set below
-        self.max_time_step = timedelta(0)               # Set below
+        self.data_ticks = data_ticks                      # type: Dict[Symbol, DataFrame]
+        self.data_bars_bid = data_bars_bid                # type: Dict[Symbol, Dict[BarStructure, DataFrame]]
+        self.data_bars_ask = data_bars_ask                # type: Dict[Symbol, Dict[BarStructure, DataFrame]]
+        self.data_providers = {}                          # type: Dict[Symbol, DataProvider]
+        self.data_symbols = set()                         # type: Set[Symbol]
+        self.execution_data_index_min = None              # Set below
+        self.execution_data_index_max = None              # Set below
+        self.execution_structure = BarStructure.UNKNOWN   # Set below
+        self.max_time_step = timedelta(0)                 # Set below
 
         self._log.info("Preparing data...")
 
@@ -101,9 +101,9 @@ cdef class BacktestDataClient(DataClient):
             self._handle_instrument(instrument)
 
         # Create data symbols set
-        cdef set tick_data_symbols = { symbol for symbol in self.data_ticks }    # type: Set[Symbol]
-        cdef set bid_data_symbols = { symbol for symbol in self.data_bars_bid }  # type: Set[Symbol]
-        cdef set ask_data_symbols = { symbol for symbol in self.data_bars_ask }  # type: Set[Symbol]
+        cdef set tick_data_symbols = {symbol for symbol in self.data_ticks}    # type: Set[Symbol]
+        cdef set bid_data_symbols = {symbol for symbol in self.data_bars_bid}  # type: Set[Symbol]
+        cdef set ask_data_symbols = {symbol for symbol in self.data_bars_ask}  # type: Set[Symbol]
         assert(bid_data_symbols == ask_data_symbols)
         self.data_symbols = tick_data_symbols.union(bid_data_symbols.union(ask_data_symbols))
 
@@ -111,21 +111,21 @@ cdef class BacktestDataClient(DataClient):
         for key in self._instruments.keys():
             assert(key in self.data_symbols, f'The needed instrument {key} was not provided.')
 
-        # Check that all resolution DataFrames are of the same shape and index
-        cdef dict shapes = {}  # type: Dict[Resolution, tuple]
-        cdef dict indexs = {}  # type: Dict[Resolution, datetime]
+        # Check that all bar structure DataFrames are of the same shape and index
+        cdef dict shapes = {}  # type: Dict[BarStructure, tuple]
+        cdef dict indexs = {}  # type: Dict[BarStructure, datetime]
         for symbol, data in data_bars_bid.items():
-            for resolution, dataframe in data.items():
-                if resolution not in shapes:
-                    shapes[resolution] = dataframe.shape
-                if resolution not in indexs:
-                    indexs[resolution] = dataframe.index
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
+            for structure, dataframe in data.items():
+                if structure not in shapes:
+                    shapes[structure] = dataframe.shape
+                if structure not in indexs:
+                    indexs[structure] = dataframe.index
+                assert(dataframe.shape == shapes[structure], f'{dataframe} shape is not equal.')
+                assert(dataframe.index == indexs[structure], f'{dataframe} index is not equal.')
         for symbol, data in data_bars_ask.items():
-            for resolution, dataframe in data.items():
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
+            for structure, dataframe in data.items():
+                assert(dataframe.shape == shapes[structure], f'{dataframe} shape is not equal.')
+                assert(dataframe.index == indexs[structure], f'{dataframe} index is not equal.')
 
         # Create the data providers for the client based on the given instruments
         for symbol, instrument in self._instruments.items():
@@ -149,31 +149,31 @@ cdef class BacktestDataClient(DataClient):
         self._setup_execution_data()
 
     cdef void _setup_execution_data(self):
-        # Check if necessary data for TICK resolution
+        # Check if necessary data for TICK bar structure
         if self._check_ticks_exist():
-            self.execution_resolution = Resolution.TICK
+            self.execution_structure = BarStructure.TICK
             self.max_time_step = timedelta(seconds=1)
 
-        # Check if necessary data for SECOND resolution
-        if self.execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.SECOND):
-            self.execution_resolution = Resolution.SECOND
+        # Check if necessary data for SECOND bar structure
+        if self.execution_structure == BarStructure.UNKNOWN and self._check_bar_resolution_exists(BarStructure.SECOND):
+            self.execution_structure = BarStructure.SECOND
             self.max_time_step = timedelta(seconds=1)
 
-        # Check if necessary data for MINUTE resolution
-        if self.execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.MINUTE):
-            self.execution_resolution = Resolution.MINUTE
+        # Check if necessary data for MINUTE bar structure
+        if self.execution_structure == BarStructure.UNKNOWN and self._check_bar_resolution_exists(BarStructure.MINUTE):
+            self.execution_structure = BarStructure.MINUTE
             self.max_time_step = timedelta(minutes=1)
 
-        # Check if necessary data for HOUR resolution
-        if self.execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.HOUR):
-            self.execution_resolution = Resolution.HOUR
+        # Check if necessary data for HOUR bar structure
+        if self.execution_structure == BarStructure.UNKNOWN and self._check_bar_resolution_exists(BarStructure.HOUR):
+            self.execution_structure = BarStructure.HOUR
             self.max_time_step = timedelta(hours=1)
 
-        if self.execution_resolution == Resolution.UNKNOWN:
-            raise RuntimeError('Insufficient data for ANY execution resolution')
+        if self.execution_structure == BarStructure.UNKNOWN:
+            raise RuntimeError('Insufficient data for ANY execution bar structure')
 
-        # Setup the execution data based on the given resolution
-        if self.execution_resolution == Resolution.TICK:
+        # Setup the execution data based on the given structure
+        if self.execution_structure == BarStructure.TICK:
             for symbol in self.data_symbols:
                 # Set execution timestamp indexs
                 ticks = self.data_providers[symbol].ticks
@@ -183,7 +183,7 @@ cdef class BacktestDataClient(DataClient):
         else:
             # Build bars required for execution
             for data_provider in self.data_providers.values():
-                data_provider.set_execution_bar_res(self.execution_resolution)
+                data_provider.set_execution_bar_res(self.execution_structure)
                 self._build_bars(data_provider.bar_type_execution_bid)
                 self._build_bars(data_provider.bar_type_execution_ask)
                  # Check bars data integrity
@@ -197,7 +197,7 @@ cdef class BacktestDataClient(DataClient):
                 last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
                 self._set_execution_data_index(data_provider.instrument.symbol, first_timestamp, last_timestamp)
 
-        self._log.info(f"Execution resolution = {resolution_to_string(self.execution_resolution)}")
+        self._log.info(f"Execution bar structure = {bar_structure_to_string(self.execution_structure)}")
         self._log.info(f"Iteration maximum time-step = {self.max_time_step}")
 
     cdef bint _check_ticks_exist(self):
@@ -207,12 +207,12 @@ cdef class BacktestDataClient(DataClient):
                 return False
         return True
 
-    cdef bint _check_bar_resolution_exists(self, Resolution resolution):
-        # Check if the bar data contains the given resolution and is not empty
+    cdef bint _check_bar_resolution_exists(self, BarStructure structure):
+        # Check if the bar data contains the given bar structure and is not empty
         for symbol in self.data_symbols:
-            if resolution not in self.data_bars_bid[symbol] or len(self.data_bars_bid[symbol][resolution]) == 0:
+            if structure not in self.data_bars_bid[symbol] or len(self.data_bars_bid[symbol][structure]) == 0:
                 return False
-            if resolution not in self.data_bars_ask[symbol] or len(self.data_bars_ask[symbol][resolution]) == 0:
+            if structure not in self.data_bars_ask[symbol] or len(self.data_bars_ask[symbol][structure]) == 0:
                return False
         return True
 
@@ -512,15 +512,13 @@ cdef class DataProvider:
     def __init__(self,
                  Instrument instrument,
                  data_ticks: DataFrame,
-                 dict data_bars_bid: Dict[Resolution, DataFrame],
-                 dict data_bars_ask: Dict[Resolution, DataFrame]):
+                 dict data_bars_bid: Dict[BarStructure, DataFrame],
+                 dict data_bars_ask: Dict[BarStructure, DataFrame]):
         """
         Initializes a new instance of the DataProvider class.
 
         :param instrument: The instrument for the data provider.
         :param data_ticks: The tick data for the data provider.
-        :param data_bars_bid: The bid bars data for the data provider (must contain MINUTE resolution).
-        :param data_bars_ask: The ask bars data for the data provider (must contain MINUTE resolution).
         :raises ConditionFailed: If the data_ticks is a type other than None or DataFrame.
         :raises ConditionFailed: If the data_bars_bid is None.
         :raises ConditionFailed: If the data_bars_ask is None.
@@ -531,14 +529,14 @@ cdef class DataProvider:
 
         self.instrument = instrument
         self._dataframe_ticks = data_ticks
-        self._dataframes_bars_bid = data_bars_bid  # type: Dict[Resolution, DataFrame]
-        self._dataframes_bars_ask = data_bars_ask  # type: Dict[Resolution, DataFrame]
-        self.bar_type_sec_bid = BarType(self.instrument.symbol, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
-        self.bar_type_sec_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.SECOND, QuoteType.ASK))
-        self.bar_type_min_bid = BarType(self.instrument.symbol, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
-        self.bar_type_min_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.MINUTE, QuoteType.ASK))
-        self.bar_type_hour_bid = BarType(self.instrument.symbol, BarSpecification(1, Resolution.HOUR, QuoteType.BID))
-        self.bar_type_hour_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.HOUR, QuoteType.ASK))
+        self._dataframes_bars_bid = data_bars_bid  # type: Dict[BarStructure, DataFrame]
+        self._dataframes_bars_ask = data_bars_ask  # type: Dict[BarStructure, DataFrame]
+        self.bar_type_sec_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.SECOND, QuoteType.BID))
+        self.bar_type_sec_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.SECOND, QuoteType.ASK))
+        self.bar_type_min_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.MINUTE, QuoteType.BID))
+        self.bar_type_min_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.MINUTE, QuoteType.ASK))
+        self.bar_type_hour_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.HOUR, QuoteType.BID))
+        self.bar_type_hour_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.HOUR, QuoteType.ASK))
         self.bar_type_execution_bid = None
         self.bar_type_execution_ask = None
         self.ticks = []                            # type: List[Tick]
@@ -550,15 +548,15 @@ cdef class DataProvider:
         """
         Register ticks for the data provider.
         """
-        if Resolution.SECOND in self._dataframes_bars_bid:
-            bid_data = self._dataframes_bars_bid[Resolution.SECOND]
-            ask_data = self._dataframes_bars_ask[Resolution.SECOND]
-        elif Resolution.MINUTE in self._dataframes_bars_bid:
-            bid_data = self._dataframes_bars_bid[Resolution.MINUTE]
-            ask_data = self._dataframes_bars_ask[Resolution.MINUTE]
-        elif Resolution.HOUR in self._dataframes_bars_bid:
-            bid_data = self._dataframes_bars_bid[Resolution.HOUR]
-            ask_data = self._dataframes_bars_ask[Resolution.HOUR]
+        if BarStructure.SECOND in self._dataframes_bars_bid:
+            bid_data = self._dataframes_bars_bid[BarStructure.SECOND]
+            ask_data = self._dataframes_bars_ask[BarStructure.SECOND]
+        elif BarStructure.MINUTE in self._dataframes_bars_bid:
+            bid_data = self._dataframes_bars_bid[BarStructure.MINUTE]
+            ask_data = self._dataframes_bars_ask[BarStructure.MINUTE]
+        elif BarStructure.HOUR in self._dataframes_bars_bid:
+            bid_data = self._dataframes_bars_bid[BarStructure.HOUR]
+            ask_data = self._dataframes_bars_ask[BarStructure.HOUR]
         else:
             bid_data = pd.DataFrame()
             ask_data = pd.DataFrame()
@@ -588,13 +586,13 @@ cdef class DataProvider:
 
         if bar_type not in self.bars:
             if bar_type.specification.quote_type is QuoteType.BID:
-                data = self._dataframes_bars_bid[bar_type.specification.resolution]
+                data = self._dataframes_bars_bid[bar_type.specification.structure]
                 tick_precision = self.instrument.tick_precision
             elif bar_type.specification.quote_type is QuoteType.ASK:
-                data = self._dataframes_bars_ask[bar_type.specification.resolution]
+                data = self._dataframes_bars_ask[bar_type.specification.structure]
                 tick_precision = self.instrument.tick_precision
             elif bar_type.specification.quote_type is QuoteType.MID:
-                data = (self._dataframes_bars_bid[bar_type.specification.resolution] + self._dataframes_bars_ask[bar_type.specification.resolution]) / 2
+                data = (self._dataframes_bars_bid[bar_type.specification.structure] + self._dataframes_bars_ask[bar_type.specification.structure]) / 2
                 tick_precision = self.instrument.tick_precision + 1
             elif bar_type.specification.quote_type is QuoteType.LAST:
                 raise NotImplemented('QuoteType.LAST not supported for bar type.')
@@ -616,23 +614,23 @@ cdef class DataProvider:
         if bar_type in self.iterations:
             del self.iterations[bar_type]
 
-    cpdef void set_execution_bar_res(self, Resolution resolution):
+    cpdef void set_execution_bar_res(self, BarStructure structure):
         """
-        Set the execution bar type based on the given resolution.
+        Set the execution bar type based on the given structure.
         
-        :param resolution: The resolution.
+        :param structure: The structure.
         """
-        if resolution == Resolution.SECOND:
+        if structure == BarStructure.SECOND:
             self.bar_type_execution_bid = self.bar_type_sec_bid
             self.bar_type_execution_ask = self.bar_type_sec_ask
-        elif resolution == Resolution.MINUTE:
+        elif structure == BarStructure.MINUTE:
             self.bar_type_execution_bid = self.bar_type_min_bid
             self.bar_type_execution_ask = self.bar_type_min_ask
-        elif resolution == Resolution.HOUR:
+        elif structure == BarStructure.HOUR:
             self.bar_type_execution_bid = self.bar_type_hour_bid
             self.bar_type_execution_ask = self.bar_type_hour_ask
         else:
-            raise ValueError(f'cannot set execution bar resolution to {resolution_to_string(resolution)}')
+            raise ValueError(f'cannot set execution bar structure to {bar_structure_to_string(structure)}')
 
     cpdef void set_initial_iteration_indexes(self, datetime to_time):
         """

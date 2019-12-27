@@ -11,7 +11,7 @@ import unittest
 
 from datetime import datetime
 
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.models import FillModel
@@ -29,8 +29,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
     def setUp(self):
         instruments = [TestStubs.instrument_usdjpy()]
         tick_data = {USDJPY_FXCM: pd.DataFrame()}
-        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
-        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
+        bid_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
+        ask_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         self.engine = BacktestEngine(
             trader_id=None,

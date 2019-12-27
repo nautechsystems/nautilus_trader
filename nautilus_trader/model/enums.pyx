@@ -14,6 +14,6 @@ from nautilus_trader.model.c_enums.order_state import OrderState
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
 from nautilus_trader.model.c_enums.quote_type import QuoteType
-from nautilus_trader.model.c_enums.resolution import Resolution
+from nautilus_trader.model.c_enums.bar_structure import BarStructure
 from nautilus_trader.model.c_enums.security_type import SecurityType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce

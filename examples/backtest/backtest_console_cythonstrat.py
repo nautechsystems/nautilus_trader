@@ -12,7 +12,7 @@ import pandas as pd
 from datetime import datetime
 
 from nautilus_trader.common.logger import LogLevel
-from nautilus_trader.model.enums import Resolution, Currency
+from nautilus_trader.model.enums import BarStructure, Currency
 from nautilus_trader.model.identifiers import Venue, TraderId
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
@@ -29,8 +29,8 @@ if __name__ == "__main__":
 
     instruments = [TestStubs.instrument_usdjpy()]
     tick_data = {usdjpy.symbol: pd.DataFrame()}
-    bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-    ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+    bid_data = {usdjpy.symbol: {BarStructure.MINUTE: bid_data_1min}}
+    ask_data = {usdjpy.symbol: {BarStructure.MINUTE: ask_data_1min}}
 
     strategies = [EMACross(
         instrument=usdjpy,

@@ -15,7 +15,7 @@ from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.identifiers import Venue, IdTag, TraderId, StrategyId
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -48,8 +48,8 @@ class TraderTests(unittest.TestCase):
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
-            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: ask_data_1min}},
+            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: ask_data_1min}},
             clock=clock,
             logger=logger)
 

@@ -13,7 +13,7 @@ import unittest
 
 from datetime import datetime, timezone
 
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -36,8 +36,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         instruments = [TestStubs.instrument_usdjpy()]
         tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+        bid_data = {usdjpy.symbol: {BarStructure.MINUTE: bid_data_1min}}
+        ask_data = {usdjpy.symbol: {BarStructure.MINUTE: ask_data_1min}}
 
         strategies = [EmptyStrategy('001')]
 
@@ -83,8 +83,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         instruments = [TestStubs.instrument_usdjpy()]
         tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+        bid_data = {usdjpy.symbol: {BarStructure.MINUTE: bid_data_1min}}
+        ask_data = {usdjpy.symbol: {BarStructure.MINUTE: ask_data_1min}}
 
         strategies = [EMACross(
             instrument=usdjpy,

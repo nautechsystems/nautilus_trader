@@ -13,7 +13,7 @@ import pandas as pd
 from time import time
 from datetime import timedelta
 
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.backtest.data import DataProvider
 from test_kit.stubs import TestStubs
 from test_kit.data import TestDataProvider
@@ -26,8 +26,8 @@ class DataProviderPerformanceTest:
     def __init__(self):
 
         instrument = TestStubs.instrument_usdjpy()
-        bid_data = {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()[:100000]}
-        ask_data = {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()[:100000]}
+        bid_data = {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()[:100000]}
+        ask_data = {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()[:100000]}
 
         self.data_provider = DataProvider(instrument,
                                           pd.DataFrame(),
