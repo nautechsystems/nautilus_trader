@@ -297,12 +297,12 @@ cdef class AccountId(Identifier):
         Return an account_id from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
         
-        Example: 'FXCM-02851908'.
+        Example: 'FXCM-02851908-DEMO'.
 
         :param value: The value for the account_id.
         :return AccountId.
         """
-        cdef list split = value.split('-', maxsplit=3)
+        cdef list split = value.split('-', maxsplit=2)
         return AccountId(
             broker=split[0],
             account_number=split[1],
@@ -316,7 +316,7 @@ cdef class AccountId(Identifier):
         Return an account_id from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
 
-        Example: 'FXCM-02851908'.
+        Example: 'FXCM-02851908-DEMO'.
 
         :param value: The value for the account_id.
         :return AccountId.

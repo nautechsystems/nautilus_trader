@@ -16,8 +16,8 @@ from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_s
 
 cdef class ExchangeRateCalculator:
     """
-    Provides exchange rates between currencies. An exchange rate is the value of
-    one nation or economic zones currency versus that of another.
+    Provides exchange rate calculations between currencies. An exchange rate is
+    the value of one nation or economic zones currency versus that of another.
     """
 
     cpdef float get_rate(
