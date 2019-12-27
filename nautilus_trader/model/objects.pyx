@@ -720,7 +720,7 @@ cdef class Tick:
         :param values: The tick values string.
         :return Tick.
         """
-        cdef list split_values = values.split(',', maxsplit=3)
+        cdef list split_values = values.split(',', maxsplit=2)
 
         return Tick(
             symbol,
@@ -736,7 +736,7 @@ cdef class Tick:
         :param value: The tick value string to parse.
         :return Tick.
         """
-        cdef list split_values = value.split(',', maxsplit=4)
+        cdef list split_values = value.split(',', maxsplit=3)
 
         return Tick(
             Symbol.from_string(split_values[0]),
