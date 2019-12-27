@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+"""Define package location and version information."""
+
 import os
 
 PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
