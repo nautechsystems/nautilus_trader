@@ -126,6 +126,7 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _reset(self) except *:
+        # Reset the class to its initial state
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
@@ -1248,7 +1249,7 @@ cdef class ExecutionEngine:
 
     cdef void _reset(self):
         """
-        Reset the execution engine by clearing stateful values.
+        Reset the execution engine to its initial state.
         """
         self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
         self.command_count = 0
@@ -1316,5 +1317,6 @@ cdef class ExecutionClient:
 # -----------------------------------------------------------------------------#
 
     cdef void _reset(self):
+        # Reset the class to its initial state
         self.command_count = 0
         self.event_count = 0
