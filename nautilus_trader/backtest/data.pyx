@@ -248,8 +248,7 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void reset(self):
         """
-        Reset the data client by returning all stateful values to their
-        initial value, whilst preserving any constructed bar and tick data.
+        Reset the client to its initial state.
         """
         self._log.info(f"Resetting...")
 

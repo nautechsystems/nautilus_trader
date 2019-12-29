@@ -456,7 +456,7 @@ cdef class TradingStrategy:
             self.log.error("Cannot get instruments (data client not registered).")
             return
 
-        return self._data_client.get_instruments_all()
+        return self._data_client.get_instruments()
 
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
         """

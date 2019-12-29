@@ -147,7 +147,7 @@ cdef class DataClient:
         
         :return List[Symbol].
         """
-        return list(self._instruments).copy()
+        return list(self._instruments.keys())
 
     cpdef void register_strategy(self, TradingStrategy strategy):
         """
@@ -159,7 +159,7 @@ cdef class DataClient:
 
         self._log.debug(f"Registered {strategy}.")
 
-    cpdef dict get_instruments_all(self):
+    cpdef dict get_instruments(self):
         """
         Return a dictionary of all instruments held by the data client.
         
@@ -311,7 +311,7 @@ cdef class DataClient:
             self._handle_instrument(instrument)
 
     cdef void _reset(self):
-        # Reset the data client by returning all stateful internal values to their initial value
+        # Reset the class to its initial state
         self._tick_handlers.clear()
         self._bar_handlers.clear()
         self._instrument_handlers.clear()

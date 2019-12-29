@@ -51,7 +51,7 @@ cdef class DataClient:
     cpdef list subscribed_instruments(self)
     cpdef list instrument_symbols(self)
     cpdef void register_strategy(self, TradingStrategy strategy)
-    cpdef dict get_instruments_all(self)
+    cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
 
     cdef void _add_tick_handler(self, Symbol symbol, handler)
