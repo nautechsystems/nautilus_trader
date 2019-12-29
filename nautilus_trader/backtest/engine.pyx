@@ -44,8 +44,6 @@ cdef class BacktestEngine:
     """
 
     def __init__(self,
-                 TraderId trader_id,
-                 Venue venue,
                  list instruments: List[Instrument],
                  dict data_ticks: Dict[Symbol, DataFrame],
                  dict data_bars_bid: Dict[Symbol, Dict[BarStructure, DataFrame]],
@@ -56,8 +54,6 @@ cdef class BacktestEngine:
         """
         Initializes a new instance of the BacktestEngine class.
 
-        :param trader_id: The trader_id for the backtest engine.
-        :param venue: The venue for the backtest engine.
         :param data_ticks: The tick data for the backtest engine.
         :param data_bars_bid: The bid bar data needed for the backtest engine.
         :param data_bars_ask: The ask bar data needed for the backtest engine.
@@ -67,9 +63,7 @@ cdef class BacktestEngine:
         :raises ConditionFailed: If the instruments list contains a type other than Instrument.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
-        if trader_id is None:
-            trader_id = TraderId('BACKTESTER', '000')
-        self.trader_id = trader_id
+        self.trader_id = TraderId('BACKTESTER', '000')
         self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
 
         # Data checked in BacktestDataClient
@@ -132,9 +126,8 @@ cdef class BacktestEngine:
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
-        self.instruments = instruments
         self.data_client = BacktestDataClient(
-            venue=venue,
+            venue=Venue('BACKTEST'),
             instruments=instruments,
             data_ticks=data_ticks,
             data_bars_bid=data_bars_bid,

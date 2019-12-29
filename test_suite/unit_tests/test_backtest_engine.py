@@ -15,7 +15,6 @@ from pandas import Timestamp
 from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -38,8 +37,6 @@ class BacktestEngineTests(unittest.TestCase):
         ask_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         self.engine = BacktestEngine(
-            trader_id=None,
-            venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
@@ -52,7 +49,6 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_initialization(self):
-        self.assertEqual(TestStubs.instrument_usdjpy(), self.engine.instruments[0])
         self.assertEqual(1, len(self.engine.trader.strategy_status()))
 
     def test_timer_and_alert_sequencing_with_bar_execution(self):
@@ -68,8 +64,6 @@ class BacktestEngineTests(unittest.TestCase):
         tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
 
         engine = BacktestEngine(
-            trader_id=None,
-            venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
@@ -106,8 +100,6 @@ class BacktestEngineTests(unittest.TestCase):
         tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
 
         engine = BacktestEngine(
-            trader_id=None,
-            venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,

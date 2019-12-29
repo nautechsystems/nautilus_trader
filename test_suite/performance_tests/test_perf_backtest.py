@@ -14,7 +14,7 @@ import unittest
 from datetime import datetime, timezone
 
 from nautilus_trader.model.enums import BarStructure
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
+from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
@@ -43,8 +43,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         config = BacktestConfig(exec_db_type='in-memory')
         engine = BacktestEngine(
-            trader_id=None,
-            venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
@@ -106,8 +104,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             console_prints=False)
 
         engine = BacktestEngine(
-            trader_id=None,
-            venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
