@@ -12,7 +12,6 @@ import unittest
 from datetime import datetime
 
 from nautilus_trader.model.enums import BarStructure
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -33,8 +32,6 @@ class BacktestAcceptanceTests(unittest.TestCase):
         ask_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         self.engine = BacktestEngine(
-            trader_id=None,
-            venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,

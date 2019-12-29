@@ -41,7 +41,6 @@ cdef class BacktestEngine:
     cdef readonly Trader trader
     cdef readonly datetime created_time
     cdef readonly timedelta time_to_initialize
-    cdef readonly list instruments
     cdef readonly int iteration
 
     cpdef run(self, datetime start=*, datetime stop=*, timedelta time_step=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*)
