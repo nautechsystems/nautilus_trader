@@ -453,44 +453,6 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.8000500202178955, result)
 
-    def test_can_set_time_alert(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type, clock=LiveClock())
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        alert_time = datetime.now(timezone.utc) + timedelta(milliseconds=300)
-        strategy.clock.set_time_alert(Label("test_alert1"), alert_time)
-
-        # Act
-        strategy.start()
-        time.sleep(0.9)
-        strategy.stop()
-
-        # Assert
-        self.assertEqual(3, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
-
-    def test_can_cancel_time_alert(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        alert_time = datetime.now(timezone.utc) + timedelta(seconds=1)
-        strategy.clock.set_time_alert(Label("test_alert1"), alert_time)
-
-        # Act
-        strategy.start()
-        time.sleep(0.5)
-        strategy.clock.cancel_timer(Label("test_alert1"))
-        strategy.stop()
-
-        # Assert
-        self.assertEqual(2, strategy.object_storer.count)
-
     def test_stopping_a_strategy_cancels_a_running_time_alert(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -504,65 +466,6 @@ class TradeStrategyTests(unittest.TestCase):
         # Act
         strategy.start()
         time.sleep(0.1)
-        strategy.stop()
-
-        # Assert
-        self.assertEqual(2, strategy.object_storer.count)
-
-    def test_can_set_multiple_time_alerts(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type, clock=LiveClock())
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        alert_time1 = datetime.now(timezone.utc) + timedelta(milliseconds=200)
-        alert_time2 = datetime.now(timezone.utc) + timedelta(milliseconds=300)
-
-        # Act
-        strategy.clock.set_time_alert(Label("test_alert1"), alert_time1)
-        strategy.clock.set_time_alert(Label("test_alert2"), alert_time2)
-        strategy.start()
-        time.sleep(0.5)
-        strategy.stop()
-
-        # Assert
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[2], TimeEvent))
-
-    def test_can_set_timer(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type, clock=LiveClock())
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.clock.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, stop_time=None)
-
-        # Act
-        strategy.start()
-        time.sleep(0.5)
-        strategy.stop()
-
-        # Assert
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
-
-    def test_can_cancel_timer(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type, clock=LiveClock())
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.clock.set_timer(Label("test_timer2"), timedelta(milliseconds=100), start_time, stop_time=None)
-
-        # Act
-        strategy.start()
-        time.sleep(0.1)
-        strategy.clock.cancel_timer(Label("test_timer2"))
-        time.sleep(0.5)
         strategy.stop()
 
         # Assert
@@ -585,64 +488,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, strategy.object_storer.count)
-
-    def test_can_set_repeating_timer(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type, clock=LiveClock())
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.clock.set_timer(Label("test_timer4"), timedelta(milliseconds=100), start_time, stop_time=None)
-
-        # Act
-        strategy.start()
-        time.sleep(0.5)
-        strategy.stop()
-
-        # Assert
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[2], TimeEvent))
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], TimeEvent))
-
-    def test_can_cancel_repeating_timer(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type, clock=LiveClock())
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        stop_time = start_time + timedelta(seconds=5)
-        strategy.start()
-        strategy.clock.set_timer(Label("test_timer5"), timedelta(milliseconds=100), start_time, stop_time)
-
-        # Act
-        strategy.clock.cancel_timer(Label("test_timer5"))
-        strategy.stop()
-
-        # Assert
-        self.assertEqual(2, strategy.object_storer.count)
-
-    def test_can_set_two_repeating_timers(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type, clock=LiveClock())
-        self.data_client.register_strategy(strategy)
-        self.exec_engine.register_strategy(strategy)
-
-        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.clock.set_timer(Label("test_timer6"), timedelta(milliseconds=100), start_time, stop_time=None)
-        strategy.clock.set_timer(Label("test_timer7"), timedelta(milliseconds=100), start_time, stop_time=None)
-
-        # Act
-        strategy.start()
-        time.sleep(0.55)
-        strategy.stop()
-
-        # Assert
-        self.assertEqual(10, strategy.object_storer.count)
 
     def test_can_generate_position_id(self):
         # Arrange

@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date, datetime, timedelta
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.model.identifiers cimport Label
@@ -19,6 +19,8 @@ cdef class Clock:
     cdef dict _event_times
 
     cdef readonly list event_times
+    cdef readonly datetime next_event_time
+    cdef readonly bint has_event_times
     cdef readonly bint is_logger_registered
     cdef readonly bint is_handler_registered
 
@@ -32,7 +34,7 @@ cdef class Clock:
     cpdef void cancel_timer(self, Label label) except *
     cpdef void cancel_all_timers(self) except *
     cpdef void _raise_time_event(self, Label label, datetime alert_time) except *
-    cpdef void _repeating_timer(self, Label label, datetime alert_time, timedelta interval, datetime stop_time) except *
+    cpdef void _raise_time_event_repeating(self, Label label, datetime alert_time, timedelta interval, datetime stop_time) except *
     cdef object _get_timer(self, Label label, datetime event_time)
     cdef object _get_timer_repeating(self, Label label, datetime next_event_time, timedelta interval, datetime stop_time)
     cdef void _add_timer(self, Label label, timer, datetime event_time)
