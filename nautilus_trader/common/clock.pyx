@@ -8,7 +8,7 @@
 
 import uuid
 
-from cpython.datetime cimport date, datetime, timedelta
+from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer
 from typing import List, Dict, Callable
@@ -38,6 +38,8 @@ cdef class Clock:
         self._timers = {}
         self._event_times = {}
         self.event_times = []
+        self.next_event_time = None
+        self.has_event_times = False
         self.is_logger_registered = False
         self.is_handler_registered = False
 
@@ -95,14 +97,14 @@ cdef class Clock:
         :raises ConditionFailed: If the label is not unique for this clock.
         :raises ConditionFailed: If the alert_time is not > than the clocks current time.
         """
-        Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
         Condition.not_in(label, self._timers, 'label', 'timers')
+        Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
 
         timer = self._get_timer(label=label, event_time=alert_time)
         self._add_timer(label, timer, alert_time)
 
         if self.is_logger_registered:
-            self._log.info(f"Set TimeAlert('{label.value}') for {alert_time}")
+            self._log.info(f"Set Timer('{label.value}') with alert for {alert_time}.")
 
     cpdef void set_timer(
             self,
@@ -133,7 +135,7 @@ cdef class Clock:
         Condition.true(interval.total_seconds() > 0, 'interval > 0')
 
         if start_time is not None:
-            Condition.true(start_time >= self.time_now(), 'start_time >= self.clock.time_now()')
+            Condition.true(start_time >= self.time_now(), 'start_time >= time_now()')
         else:
             start_time = self.time_now()
         if stop_time is not None:
@@ -169,9 +171,8 @@ cdef class Clock:
         """
         Condition.is_in(label, self._timers, 'label', 'timers')
 
-        if self._timers[label] is not None:
-            self._timers[label].cancel()
-        self._timers.pop(label)
+        self._timers[label].cancel()
+        self._timers.pop(label, None)
         self._event_times.pop(label, None)
         self._sort_event_times()
 
@@ -192,7 +193,7 @@ cdef class Clock:
         if label in self._timers:
             self.cancel_timer(label)
 
-    cpdef void _repeating_timer(
+    cpdef void _raise_time_event_repeating(
             self,
             Label label,
             datetime event_time,
@@ -206,11 +207,9 @@ cdef class Clock:
             self.cancel_timer(label)
             return
 
-        cdef datetime next_event_time = event_time + interval
-
         timer = self._get_timer_repeating(
             label=label,
-            next_event_time=event_time,
+            next_event_time=event_time + interval,
             interval=interval,
             stop_time=stop_time)
 
@@ -236,6 +235,12 @@ cdef class Clock:
 
     cdef void _sort_event_times(self):
         self.event_times = sorted(set(self._event_times.values()))
+        if self.event_times:
+            self.next_event_time = self.event_times[0]
+            self.has_event_times = True
+        else:
+            self.next_event_time = None
+            self.has_event_times = False
 
 
 cdef class LiveClock(Clock):
@@ -251,13 +256,12 @@ cdef class LiveClock(Clock):
         """
         return datetime.now(timezone.utc)
 
-    cdef object _get_timer(self, Label label, datetime alert_time):
-
-        cdef float delay = (alert_time - self.time_now()).total_seconds()
+    cdef object _get_timer(self, Label label, datetime event_time):
+        cdef float delay = (event_time - self.time_now()).total_seconds()
         timer = Timer(
             interval=delay,
             function=self._raise_time_event,
-            args=[label, alert_time])
+            args=[self, label, event_time])
         timer.daemon = True
         timer.start()
 
@@ -269,12 +273,11 @@ cdef class LiveClock(Clock):
             datetime next_event_time,
             timedelta interval,
             datetime stop_time):
-
         cdef float delay = (next_event_time - self.time_now()).total_seconds()
         timer = Timer(
             interval=delay,
-            function=self._repeating_timer,
-            args=[label, next_event_time, interval, stop_time])
+            function=self._raise_time_event_repeating,
+            args=[self, label, next_event_time, interval, stop_time])
         timer.daemon = True
         timer.start()
 
@@ -325,8 +328,7 @@ cdef class TestTimer:
         return time_events
 
     cpdef void cancel(self):
-        # TODO: docs
-        pass
+        pass  # No thread to cancel
 
 
 cdef class TestClock(Clock):
@@ -370,15 +372,15 @@ cdef class TestClock(Clock):
         # Assumes to_time > self.time_now()
 
         cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
-        cdef Label label
 
         # Iterate timers
+        cdef Label label
         cdef TestTimer timer
         for label, timer in self._timers.copy().items():
             for timer_event in timer.advance(to_time):
                 time_events[timer_event] = self._event_handler
             if timer.expired:
-                del self._timers[label]  # Remove expired timer
+                self._timers.pop(label, None)  # Remove expired timer
 
         # Set the clock time to the given to_time
         self._time = to_time
