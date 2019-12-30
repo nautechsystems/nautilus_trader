@@ -32,6 +32,6 @@ Please direct all questions, comments or bug reports to info@nautechsystems.io
 
 ![Alt text](docs/artwork/nautechsystems_logo_small.png?raw=true "logo")
 
-Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
+Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 
 > https://nautechsystems.io
