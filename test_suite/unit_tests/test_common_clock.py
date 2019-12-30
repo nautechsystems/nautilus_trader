@@ -79,6 +79,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertEqual(timedelta, type(result))
 
 
+
 class TestClockTests(unittest.TestCase):
 
     def setUp(self):

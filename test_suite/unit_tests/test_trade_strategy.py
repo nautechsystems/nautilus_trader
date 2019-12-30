@@ -485,7 +485,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Act
         strategy.start()
         time.sleep(0.5)
-        strategy.clock.cancel_time_alert(Label("test_alert1"))
+        strategy.clock.cancel_timer(Label("test_alert1"))
         strategy.stop()
 
         # Assert
