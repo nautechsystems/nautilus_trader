@@ -45,7 +45,7 @@ cdef class Portfolio:
 
         self.daily_pnl_realized = Money.zero()
         self.total_pnl_realized = Money.zero()
-        self.date_now = self._clock.date_now()
+        self.date_now = self._clock.time_now().date()
 
     cpdef void update(self, PositionEvent event):
         """

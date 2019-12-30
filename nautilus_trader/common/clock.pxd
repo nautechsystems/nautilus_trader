@@ -15,30 +15,32 @@ from nautilus_trader.model.identifiers cimport Label
 cdef class Clock:
     cdef LoggerAdapter _log
     cdef object _event_handler
-    cdef dict _time_alerts
     cdef dict _timers
+    cdef dict _event_times
 
-    cdef readonly is_logger_registered
-    cdef readonly is_handler_registered
+    cdef readonly list event_times
+    cdef readonly bint is_logger_registered
+    cdef readonly bint is_handler_registered
 
-    cpdef void register_logger(self, LoggerAdapter logger)
-    cpdef void register_handler(self, handler)
-    cpdef date date_now(self)
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
-    cpdef set_time_alert(self, Label label, datetime alert_time)
-    cpdef set_timer(self, Label label, timedelta interval, datetime start_time=*, datetime stop_time=*)
-    cpdef list get_time_alert_labels(self)
     cpdef list get_timer_labels(self)
-    cpdef cancel_time_alert(self, Label label)
-    cpdef cancel_timer(self, Label label)
-    cpdef cancel_all_time_alerts(self)
-    cpdef cancel_all_timers(self)
+    cpdef void register_logger(self, LoggerAdapter logger)
+    cpdef void register_handler(self, handler)
+    cpdef void set_time_alert(self, Label label, datetime alert_time) except *
+    cpdef void set_timer(self, Label label, timedelta interval, datetime start_time=*, datetime stop_time=*) except *
+    cpdef void cancel_timer(self, Label label) except *
+    cpdef void cancel_all_timers(self) except *
+    cpdef void _raise_time_event(self, Label label, datetime alert_time) except *
+    cpdef void _repeating_timer(self, Label label, datetime alert_time, timedelta interval, datetime stop_time) except *
+    cdef object _get_timer(self, Label label, datetime event_time)
+    cdef object _get_timer_repeating(self, Label label, datetime next_event_time, timedelta interval, datetime stop_time)
+    cdef void _add_timer(self, Label label, timer, datetime event_time)
+    cdef void _sort_event_times(self)
 
 
 cdef class LiveClock(Clock):
-    cpdef void _raise_time_event(self, Label label, datetime alert_time)
-    cpdef void _repeating_timer(self, Label label, datetime alert_time, timedelta interval, datetime stop_time)
+    pass
 
 
 cdef class TestTimer:
@@ -50,6 +52,7 @@ cdef class TestTimer:
     cdef readonly bint expired
 
     cpdef list advance(self, datetime time)
+    cpdef void cancel(self)
 
 
 cdef class TestClock(Clock):

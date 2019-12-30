@@ -978,7 +978,6 @@ cdef class TradingStrategy:
         self.log.debug(f"Stopping...")
 
         # Clean up clock
-        self.clock.cancel_all_time_alerts()
         self.clock.cancel_all_timers()
 
         # Flatten open positions
