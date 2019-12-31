@@ -523,19 +523,13 @@ cdef class DataProvider:
         :raises ConditionFailed: If the data_bars_ask is None.
         """
         Condition.type_or_none(data_ticks, DataFrame, 'data_ticks')
-        Condition.not_none(data_bars_bid, 'data_bars_bid')
-        Condition.not_none(data_bars_ask, 'data_bars_ask')
+        Condition.type_or_none(data_bars_bid, Dict, 'data_bars_bid')
+        Condition.type_or_none(data_bars_ask, Dict, 'data_bars_ask')
 
         self.instrument = instrument
         self._dataframe_ticks = data_ticks
         self._dataframes_bars_bid = data_bars_bid  # type: Dict[BarStructure, DataFrame]
         self._dataframes_bars_ask = data_bars_ask  # type: Dict[BarStructure, DataFrame]
-        self.bar_type_sec_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.SECOND, QuoteType.BID))
-        self.bar_type_sec_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.SECOND, QuoteType.ASK))
-        self.bar_type_min_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.MINUTE, QuoteType.BID))
-        self.bar_type_min_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.MINUTE, QuoteType.ASK))
-        self.bar_type_hour_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.HOUR, QuoteType.BID))
-        self.bar_type_hour_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.HOUR, QuoteType.ASK))
         self.bar_type_execution_bid = None
         self.bar_type_execution_ask = None
         self.ticks = []                            # type: List[Tick]
@@ -560,11 +554,12 @@ cdef class DataProvider:
             bid_data = pd.DataFrame()
             ask_data = pd.DataFrame()
 
-        cdef TickBuilder builder = TickBuilder(symbol=self.instrument.symbol,
-                                               decimal_precision=self.instrument.tick_precision,
-                                               tick_data=self._dataframe_ticks,
-                                               bid_data=bid_data,
-                                               ask_data=ask_data)
+        cdef TickBuilder builder = TickBuilder(
+            symbol=self.instrument.symbol,
+            decimal_precision=self.instrument.tick_precision,
+            tick_data=self._dataframe_ticks,
+            bid_data=bid_data,
+            ask_data=ask_data)
         self.ticks = builder.build_ticks_all()
 
     cpdef void deregister_ticks(self):
@@ -620,14 +615,14 @@ cdef class DataProvider:
         :param structure: The structure.
         """
         if structure == BarStructure.SECOND:
-            self.bar_type_execution_bid = self.bar_type_sec_bid
-            self.bar_type_execution_ask = self.bar_type_sec_ask
+            self.bar_type_execution_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.SECOND, QuoteType.BID))
+            self.bar_type_execution_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.SECOND, QuoteType.ASK))
         elif structure == BarStructure.MINUTE:
-            self.bar_type_execution_bid = self.bar_type_min_bid
-            self.bar_type_execution_ask = self.bar_type_min_ask
+            self.bar_type_execution_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.MINUTE, QuoteType.BID))
+            self.bar_type_execution_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.MINUTE, QuoteType.ASK))
         elif structure == BarStructure.HOUR:
-            self.bar_type_execution_bid = self.bar_type_hour_bid
-            self.bar_type_execution_ask = self.bar_type_hour_ask
+            self.bar_type_execution_bid = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.HOUR, QuoteType.BID))
+            self.bar_type_execution_ask = BarType(self.instrument.symbol, BarSpecification(1, BarStructure.HOUR, QuoteType.ASK))
         else:
             raise ValueError(f'cannot set execution bar structure to {bar_structure_to_string(structure)}')
 
