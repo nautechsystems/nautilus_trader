@@ -172,9 +172,7 @@ cdef class Clock:
         Condition.is_in(label, self._timers, 'label', 'timers')
 
         self._timers[label].cancel()
-        self._timers.pop(label, None)
-        self._event_times.pop(label, None)
-        self._sort_event_times()
+        self._remove_timer(label)
 
         if self.is_logger_registered:
             self._log.info(f"Cancelled Timer('{label.value}').")
@@ -188,10 +186,12 @@ cdef class Clock:
 
     cpdef void _raise_time_event(self, Label label, datetime event_time) except *:
         # Create a new TimeEvent and pass it to the clocks event handler
-        self._event_handler(TimeEvent(label, GUID(uuid.uuid4()), event_time))
+        cdef TimeEvent event = TimeEvent(label, GUID(uuid.uuid4()), event_time)
+        self._event_handler(event)
+        self._log.debug(f"Raised {event}.")
 
         if label in self._timers:
-            self.cancel_timer(label)
+            self._remove_timer(label)
 
     cpdef void _raise_time_event_repeating(
             self,
@@ -201,12 +201,15 @@ cdef class Clock:
             datetime stop_time) except *:
         # Create a new TimeEvent and pass it to the clocks event handler
         # Then start a timer for the next time event if applicable
-        self._event_handler(TimeEvent(label, GUID(uuid.uuid4()), event_time))
+        cdef TimeEvent event = TimeEvent(label, GUID(uuid.uuid4()), event_time)
+        self._event_handler(event)
+        self._log.debug(f"Raised {event}.")
 
         if stop_time is not None and event_time + interval > stop_time and label in self._timers:
-            self.cancel_timer(label)
+            self._remove_timer(label)  # Timer now expired
             return
 
+        # Continue timing
         timer = self._get_timer_repeating(
             label=label,
             next_event_time=event_time + interval,
@@ -232,6 +235,12 @@ cdef class Clock:
         self._timers[label] = timer
         self._event_times[label] = event_time
         self._sort_event_times()
+
+    cdef void _remove_timer(self, Label label):
+        self._timers.pop(label, None)
+        self._event_times.pop(label, None)
+        self._sort_event_times()
+        self._log.debug(f"Removed Timer('{label.value}').")
 
     cdef void _sort_event_times(self):
         self.event_times = sorted(set(self._event_times.values()))
@@ -370,25 +379,33 @@ cdef class TestClock(Clock):
         """
         # Assumes time.tzinfo == self.timezone
         # Assumes to_time > self.time_now()
-
-        cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
+        cdef dict events = {}  # type: Dict[TimeEvent, Callable]
 
         # Iterate timers
         cdef Label label
         cdef TestTimer timer
+        cdef TimeEvent event
         for label, timer in self._timers.copy().items():
-            for timer_event in timer.advance(to_time):
-                time_events[timer_event] = self._event_handler
+            for event in timer.advance(to_time):
+                events[event] = self._event_handler
             if timer.expired:
-                self._timers.pop(label, None)  # Remove expired timer
+                self._remove_timer(label)  # Removes expired timer
 
         # Set the clock time to the given to_time
         self._time = to_time
 
-        return dict(sorted(time_events.items()))
+        return dict(sorted(events.items()))
 
     cdef object _get_timer(self, Label label, datetime event_time):
-        pass
+        return TestTimer(
+            label=label,
+            interval=event_time - self.time_now(),
+            start=self.time_now(),
+            stop=event_time)
 
     cdef object _get_timer_repeating(self, Label label, datetime next_event_time, timedelta interval, datetime stop_time):
-        pass
+        return TestTimer(
+            label=label,
+            interval=interval,
+            start=next_event_time,
+            stop=stop_time)
