@@ -41,7 +41,7 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(self.clock.date_now(), self.portfolio.date_now)
+        self.assertEqual(self.clock.time_now().date(), self.portfolio.date_now)
         self.assertEqual(Money.zero(), self.portfolio.daily_pnl_realized)
         self.assertEqual(Money.zero(), self.portfolio.total_pnl_realized)
         self.assertEqual(set(), self.portfolio.symbols_open())
@@ -90,7 +90,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.reset()
 
         # Assert
-        self.assertEqual(self.clock.date_now(), self.portfolio.date_now)
+        self.assertEqual(self.clock.time_now().date(), self.portfolio.date_now)
         self.assertEqual(Money.zero(), self.portfolio.daily_pnl_realized)
         self.assertEqual(Money.zero(), self.portfolio.total_pnl_realized)
         self.assertEqual(set(), self.portfolio.symbols_open())
