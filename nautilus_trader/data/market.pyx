@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="tools.pyx" company="Nautech Systems Pty Ltd">
+# <copyright file="market.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -26,29 +26,29 @@ cdef class TickBuilder:
     """
     def __init__(self,
                  Symbol symbol,
-                 int decimal_precision,
+                 int precision,
                  tick_data: DataFrame=None,
                  bid_data: DataFrame=None,
                  ask_data: DataFrame=None):
         """
         Initializes a new instance of the TickBuilder class.
 
-        :param decimal_precision: The decimal precision for the tick prices (>= 0).
+        :param precision: The decimal precision for the tick prices (>= 0).
         :param tick_data: The DataFrame containing the tick data.
         :param bid_data: The DataFrame containing the bid bars data.
         :param ask_data: The DataFrame containing the ask bars data.
-        :raises: ConditionFailed: If the decimal_precision is negative (< 0).
+        :raises: ConditionFailed: If the precision is negative (< 0).
         :raises: ConditionFailed: If the tick_data is a type other than None or DataFrame.
         :raises: ConditionFailed: If the bid_data is a type other than None or DataFrame.
         :raises: ConditionFailed: If the ask_data is a type other than None or DataFrame.
         """
-        Condition.not_negative(decimal_precision, 'decimal_precision')
+        Condition.not_negative(precision, 'precision')
         Condition.type_or_none(tick_data, DataFrame, 'tick_data')
         Condition.type_or_none(bid_data, DataFrame, 'bid_data')
         Condition.type_or_none(ask_data, DataFrame, 'ask_data')
 
         self._symbol = symbol
-        self._decimal_precision = decimal_precision
+        self._precision = precision
         self._tick_data = with_utc_index(tick_data)
         self._bid_data = with_utc_index(bid_data)
         self._ask_data = with_utc_index(ask_data)
@@ -79,16 +79,16 @@ cdef class TickBuilder:
             datetime timestamp):
         # Build a tick from the given values
         return Tick(self._symbol,
-                    Price(bid, self._decimal_precision),
-                    Price(ask, self._decimal_precision),
+                    Price(bid, self._precision),
+                    Price(ask, self._precision),
                     timestamp)
 
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
         # Build a tick from the given values. The function expects the values to
         # be an ndarray with 2 elements [bid, ask] of type double.
         return Tick(self._symbol,
-                    Price(values[0], self._decimal_precision),
-                    Price(values[1], self._decimal_precision),
+                    Price(values[0], self._precision),
+                    Price(values[1], self._precision),
                     timestamp)
 
 
@@ -99,24 +99,24 @@ cdef class BarBuilder:
     """
 
     def __init__(self,
-                 int decimal_precision,
+                 int precision,
                  int volume_multiple=1,
                  data: DataFrame=None):
         """
         Initializes a new instance of the BarBuilder class.
 
-        :param decimal_precision: The decimal precision for bar prices (>= 0).
+        :param precision: The decimal precision for bar prices (>= 0).
         :param data: The the bars market data.
         :param volume_multiple: The volume multiple for the builder (> 0).
         :raises: ConditionFailed: If the decimal_precision is negative (< 0).
         :raises: ConditionFailed: If the volume_multiple is not positive (> 0).
         :raises: ConditionFailed: If the data is a type other than DataFrame.
         """
-        Condition.not_negative(decimal_precision, 'decimal_precision')
+        Condition.not_negative(precision, 'precision')
         Condition.positive(volume_multiple, 'volume_multiple')
         Condition.type(data, DataFrame, 'data')
 
-        self._decimal_precision = decimal_precision
+        self._precision = precision
         self._volume_multiple = volume_multiple
         self._data = with_utc_index(data)
 
@@ -201,10 +201,10 @@ cdef class BarBuilder:
     cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
-        return Bar(Price(values[0], self._decimal_precision),
-                   Price(values[1], self._decimal_precision),
-                   Price(values[2], self._decimal_precision),
-                   Price(values[3], self._decimal_precision),
+        return Bar(Price(values[0], self._precision),
+                   Price(values[1], self._precision),
+                   Price(values[2], self._precision),
+                   Price(values[3], self._precision),
                    int(values[4] * self._volume_multiple),
                    timestamp)
 

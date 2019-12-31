@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="tools.pxd" company="Nautech Systems Pty Ltd">
+# <copyright file="market.pxd" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -14,7 +14,7 @@ from nautilus_trader.model.objects cimport Tick, Bar, DataBar
 
 cdef class TickBuilder:
     cdef Symbol _symbol
-    cdef int _decimal_precision
+    cdef int _precision
     cdef object _tick_data
     cdef object _bid_data
     cdef object _ask_data
@@ -25,7 +25,7 @@ cdef class TickBuilder:
 
 
 cdef class BarBuilder:
-    cdef int _decimal_precision
+    cdef int _precision
     cdef int _volume_multiple
     cdef object _data
 
