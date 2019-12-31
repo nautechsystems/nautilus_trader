@@ -23,7 +23,7 @@ To run the tests, first compile the C extensions for the package;
 
     $ python setup.py build_ext --inplace
 
-All tests can be run via the `runtests.py` script, or through pytest.
+All tests can be run via the `run_tests.py` script, or through pytest.
 
 ### Support
 Please direct all questions, comments or bug reports to info@nautechsystems.io
