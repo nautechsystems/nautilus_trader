@@ -200,15 +200,15 @@ cdef class BacktestEngine:
         :param strategies: The strategies change for the backtest run (optional can be None - will use previous).
         :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
 
-        :raises: ValueError: If the start is not None and timezone is not UTC.
-        :raises: ValueError: If the start is not < the stop datetime.
-        :raises: ValueError: If the start is not >= the execution_data_index_min datetime.
-        :raises: ValueError: If the stop is not None and timezone is not UTC.
-        :raises: ValueError: If the stop is not <= the execution_data_index_max datetime.
-        :raises: ValueError: If the time_step is not None and is > the max time step for the execution structure.
-        :raises: ValueError: If the fill_model is a type other than FillModel or None.
-        :raises: ValueError: If the strategies is a type other than list or None.
-        :raises: ValueError: If the strategies list is not None and is empty, or contains a type other than TradingStrategy.
+        :raises: ConditionFailed: If the start is not None and timezone is not UTC.
+        :raises: ConditionFailed: If the start is not < the stop datetime.
+        :raises: ConditionFailed: If the start is not >= the execution_data_index_min datetime.
+        :raises: ConditionFailed: If the stop is not None and timezone is not UTC.
+        :raises: ConditionFailed: If the stop is not <= the execution_data_index_max datetime.
+        :raises: ConditionFailed: If the time_step is not None and is > the max time step for the execution structure.
+        :raises: ConditionFailed: If the fill_model is a type other than FillModel or None.
+        :raises: ConditionFailed: If the strategies is a type other than list or None.
+        :raises: ConditionFailed: If the strategies list is not None and is empty, or contains a type other than TradingStrategy.
         """
         #  Setup start datetime
         if start is None:

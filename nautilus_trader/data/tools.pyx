@@ -37,10 +37,10 @@ cdef class TickBuilder:
         :param tick_data: The DataFrame containing the tick data.
         :param bid_data: The DataFrame containing the bid bars data.
         :param ask_data: The DataFrame containing the ask bars data.
-        :raises: ValueError: If the decimal_precision is negative (< 0).
-        :raises: ValueError: If the tick_data is a type other than None or DataFrame.
-        :raises: ValueError: If the bid_data is a type other than None or DataFrame.
-        :raises: ValueError: If the ask_data is a type other than None or DataFrame.
+        :raises: ConditionFailed: If the decimal_precision is negative (< 0).
+        :raises: ConditionFailed: If the tick_data is a type other than None or DataFrame.
+        :raises: ConditionFailed: If the bid_data is a type other than None or DataFrame.
+        :raises: ConditionFailed: If the ask_data is a type other than None or DataFrame.
         """
         Condition.not_negative(decimal_precision, 'decimal_precision')
         Condition.type_or_none(tick_data, DataFrame, 'tick_data')
@@ -108,9 +108,9 @@ cdef class BarBuilder:
         :param decimal_precision: The decimal precision for bar prices (>= 0).
         :param data: The the bars market data.
         :param volume_multiple: The volume multiple for the builder (> 0).
-        :raises: ValueError: If the decimal_precision is negative (< 0).
-        :raises: ValueError: If the volume_multiple is not positive (> 0).
-        :raises: ValueError: If the data is a type other than DataFrame.
+        :raises: ConditionFailed: If the decimal_precision is negative (< 0).
+        :raises: ConditionFailed: If the volume_multiple is not positive (> 0).
+        :raises: ConditionFailed: If the data is a type other than DataFrame.
         """
         Condition.not_negative(decimal_precision, 'decimal_precision')
         Condition.positive(volume_multiple, 'volume_multiple')
