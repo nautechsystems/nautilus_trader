@@ -12,7 +12,7 @@ from pandas import Timestamp
 from datetime import datetime, timezone
 
 from nautilus_trader.model.objects import Price, Bar
-from nautilus_trader.data.tools import TickBuilder, BarBuilder, IndicatorUpdater
+from nautilus_trader.data.market import TickBuilder, BarBuilder, IndicatorUpdater
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -39,7 +39,7 @@ class TickBuilderTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
         ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
         self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
-                                        decimal_precision=5,
+                                        precision=5,
                                         tick_data=tick_data,
                                         bid_data=bid_data,
                                         ask_data=ask_data)
@@ -56,7 +56,7 @@ class TickBuilderTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
         ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
         self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
-                                        decimal_precision=5,
+                                        precision=5,
                                         tick_data=None,
                                         bid_data=bid_data,
                                         ask_data=ask_data)

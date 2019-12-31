@@ -95,7 +95,7 @@ cdef class RolloverInterestCalculator:
         :param short_term_interest_csv_path: The path to the short term interest rate data csv.
         """
         if short_term_interest_csv_path == 'default':
-            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + '/data/', 'short_term_interest.csv')
+            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + '/data/packaged/', 'short_term_interest.csv')
         self._exchange_calculator = ExchangeRateCalculator()
 
         csv_rate_data = pd.read_csv(short_term_interest_csv_path)
