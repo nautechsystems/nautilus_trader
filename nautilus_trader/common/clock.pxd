@@ -38,6 +38,7 @@ cdef class Clock:
     cdef object _get_timer(self, Label label, datetime event_time)
     cdef object _get_timer_repeating(self, Label label, datetime next_event_time, timedelta interval, datetime stop_time)
     cdef void _add_timer(self, Label label, timer, datetime event_time)
+    cdef void _remove_timer(self, Label label)
     cdef void _sort_event_times(self)
 
 
