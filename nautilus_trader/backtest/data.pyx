@@ -22,7 +22,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.data.market cimport TickBuilder, BarBuilder
+from nautilus_trader.data.market cimport TickDataWrangler, BarDataWrangler
 
 
 cdef class BidAskBarPair:
@@ -554,7 +554,7 @@ cdef class DataProvider:
             bid_data = pd.DataFrame()
             ask_data = pd.DataFrame()
 
-        cdef TickBuilder builder = TickBuilder(
+        cdef TickDataWrangler builder = TickDataWrangler(
             symbol=self.instrument.symbol,
             precision=self.instrument.tick_precision,
             tick_data=self._dataframe_ticks,
@@ -591,7 +591,7 @@ cdef class DataProvider:
             elif bar_type.specification.quote_type is QuoteType.LAST:
                 raise NotImplemented('QuoteType.LAST not supported for bar type.')
 
-            builder = BarBuilder(precision=tick_precision, data=data)
+            builder = BarDataWrangler(precision=tick_precision, data=data)
             self.bars[bar_type] = builder.build_bars_all()
 
         if bar_type not in self.iterations:

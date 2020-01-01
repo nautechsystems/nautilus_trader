@@ -6,13 +6,16 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
+from nautilus_trader.model.events cimport TimeEvent
+from nautilus_trader.data.market cimport BarBuilder
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
@@ -65,3 +68,27 @@ cdef class DataClient:
     cdef void _handle_instrument(self, Instrument instrument)
     cdef void _handle_instruments(self, list instruments)
     cdef void _reset(self)
+
+
+cdef class BarAggregator:
+    cdef LoggerAdapter _log
+    cdef object _handler
+    cdef BarBuilder _builder
+
+    cdef readonly BarType bar_type
+
+    cpdef void update(self, Tick tick, long volume=*)
+    cdef void _handle_bar(self, Bar bar)
+
+
+cdef class TickBarAggregator(BarAggregator):
+    cdef int step
+
+
+cdef class TimeBarAggregator(BarAggregator):
+    cdef readonly timedelta interval
+
+    cdef timedelta _get_interval(self)
+    cdef datetime _get_start_time(self, BarStructure structure)
+    cdef void _set_build_timer(self, BarStructure structure, timedelta interval)
+    cdef void _build_event(self, TimeEvent event)
