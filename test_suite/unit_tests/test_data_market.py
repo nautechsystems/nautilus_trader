@@ -19,6 +19,9 @@ from test_kit.stubs import TestStubs
 from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange
 
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+UNIX_EPOCH = TestStubs.unix_epoch()
+
 
 class TickDataWranglerTests(unittest.TestCase):
 
@@ -290,22 +293,22 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_spec, use_previous_close=True)
 
         tick1 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00001'),
             ask=Price('1.00004'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00002'),
             ask=Price('1.00005'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00000'),
             ask=Price('1.00003'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         # Act
         builder.update(tick1)
@@ -315,7 +318,7 @@ class BarBuilderTests(unittest.TestCase):
         # Assert
         self.assertEqual(bar_spec, builder.bar_spec)
         self.assertEqual(3, builder.count)
-        self.assertEqual(TestStubs.unix_epoch(), builder.last_update)
+        self.assertEqual(UNIX_EPOCH, builder.last_update)
 
     def test_build_bid(self):
         # Arrange
@@ -323,22 +326,22 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_spec, use_previous_close=True)
 
         tick1 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00001'),
             ask=Price('1.00004'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00002'),
             ask=Price('1.00005'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00000'),
             ask=Price('1.00003'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
         builder.update(tick2)
@@ -353,8 +356,9 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price('1.00000'), bar.low)
         self.assertEqual(Price('1.00000'), bar.close)
         self.assertEqual(3, bar.volume)
+        self.assertEqual(UNIX_EPOCH, bar.timestamp)
+        self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
-        self.assertEqual(TestStubs.unix_epoch(), builder.last_update)
 
     def test_build_mid(self):
         # Arrange
@@ -362,22 +366,22 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_spec, use_previous_close=True)
 
         tick1 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00001'),
             ask=Price('1.00004'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00002'),
             ask=Price('1.00005'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00000'),
             ask=Price('1.00003'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
         builder.update(tick2)
@@ -392,8 +396,9 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price('1.000015'), bar.low)
         self.assertEqual(Price('1.000015'), bar.close)
         self.assertEqual(3, bar.volume)
+        self.assertEqual(UNIX_EPOCH, bar.timestamp)
+        self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
-        self.assertEqual(TestStubs.unix_epoch(), builder.last_update)
 
     def test_build_with_previous_close(self):
         # Arrange
@@ -401,22 +406,22 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_spec, use_previous_close=True)
 
         tick1 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00001'),
             ask=Price('1.00004'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00002'),
             ask=Price('1.00005'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
-            symbol=TestStubs.symbol_audusd_fxcm(),
+            symbol=AUDUSD_FXCM,
             bid=Price('1.00000'),
             ask=Price('1.00003'),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
         builder.update(tick2)
@@ -432,5 +437,6 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price('1.000015'), bar.low)
         self.assertEqual(Price('1.000015'), bar.close)
         self.assertEqual(0, bar.volume)
+        self.assertEqual(UNIX_EPOCH, bar.timestamp)
+        self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
-        self.assertEqual(TestStubs.unix_epoch(), builder.last_update)

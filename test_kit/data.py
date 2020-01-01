@@ -6,14 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import os
-import pandas as pd
-
-from pandas import Series, DataFrame
+from pandas import DataFrame
 
 from nautilus_trader.data.loaders import CSVTickDataLoader, CSVBarDataLoader
 from test_kit.__info__ import PACKAGE_ROOT
-
 
 
 class TestDataProvider:
