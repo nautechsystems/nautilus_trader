@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+import numpy as np
 import pandas as pd
 
 from cpython.datetime cimport datetime
@@ -15,11 +16,13 @@ from pandas.core.frame import DataFrame
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_string
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Price, Bar, DataBar, Tick
+from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarSpecification
 
 
-cdef class TickBuilder:
+cdef class TickDataWrangler:
     """
     Provides a means of building lists of ticks from the given Pandas DataFrames
     of bid and ask data. Provided data can either be tick data or bar data.
@@ -92,7 +95,44 @@ cdef class TickBuilder:
                     timestamp)
 
 
-cdef class BarBuilder:
+cdef class TickBarGenerator:
+    """
+    Provides generation of tick bars from given data.
+    """
+
+    @staticmethod
+    def generate(data:pd.DataFrame, int period):
+        """
+        Return the generated tick bars from the given data.
+        Data must have a DateTime index with 'price' and 'volume' columns.
+
+        :param data: The data to generate the tick bars from.
+        :param period: The period for each tick bar.
+        :return: pd.DataFrame.
+        """
+        if 'volume' not in data:
+            data['volume'] = 1
+
+        cdef int length = round(len(data) // period) * period
+        cdef int groups = int(length / period)
+
+        bar_groups = np.split(data[:length], groups, axis=0)
+        data = [[
+            group.index[-1],
+            group['price'][0],
+            group['price'].max(),
+            group['price'].min(),
+            group['price'][-1],
+            sum(group['volume'])
+        ] for group in bar_groups]
+
+        cdef list columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        tick_bars = pd.DataFrame(data, columns=columns).set_index('timestamp')
+
+        return tick_bars
+
+
+cdef class BarDataWrangler:
     """
     Provides a means of building lists of bars from a given Pandas DataFrame of
     the correct specification.
@@ -368,3 +408,86 @@ cdef class IndicatorUpdater:
         # Create a list of the current indicator outputs. The list will contain
         # a tuple of the name of the output and the float value. Returns List[(str, float)].
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
+
+
+cdef class BarBuilder:
+    """
+    The base class for all bar builders.
+    """
+
+    def __init__(self, BarSpecification bar_spec, bint use_previous_close=False):
+        """
+        Initializes a new instance of the BarBuilder class.
+
+        :param bar_spec: The bar specification for the builder.
+        :param use_previous_close: Set true if the previous close price should
+        be the open price of a new bar.
+        """
+        self.bar_spec = bar_spec
+        self.last_update = None
+        self.count = 0
+
+        self._open = None
+        self._high = None
+        self._low = None
+        self._close = None
+        self._volume = 0
+        self._use_previous_close = use_previous_close
+
+    cpdef void update(self, Tick tick, long volume=1):
+        cdef Price quote = self._get_price(tick)
+
+        if self._open is None:
+            # Initialize builder
+            self._open = quote
+            self._high = quote
+            self._low = quote
+        elif quote.value > self._high.value:
+            self._high = quote
+        elif quote.value < self._low.value:
+            self._low = quote
+
+        self._close = quote
+        self._volume += volume
+        self.count += 1
+        self.last_update = tick.timestamp
+
+    cpdef Bar build(self, datetime close_time=None):
+        if close_time is None:
+            close_time = self.last_update
+
+        cdef Bar bar = Bar(
+            open_price=self._open,
+            high_price=self._high,
+            low_price=self._low,
+            close_price=self._close,
+            volume=self._volume,
+            timestamp=close_time,
+            checked=False  # Class logic will prevent invalid bars
+        )
+
+        self._reset()
+        return bar
+
+    cdef void _reset(self):
+        if self._use_previous_close:
+            self._open = self._close
+            self._high = self._close
+            self._low = self._close
+        else:
+            self._open = None
+            self._high = None
+            self._low = None
+            self._close = None
+
+        self._volume = 0
+        self.count = 0
+
+    cdef Price _get_price(self, Tick tick):
+        if self.bar_spec.quote_type == QuoteType.MID:
+            return Price((tick.bid.value + tick.ask.value) / 2)
+        elif self.bar_spec.quote_type == QuoteType.BID:
+            return tick.bid
+        else:
+            return tick.ask
+        # Condition: quote_type != QuoteType.LAST checked in BarSpecification

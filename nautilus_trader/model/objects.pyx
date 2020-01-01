@@ -785,8 +785,10 @@ cdef class BarSpecification:
         :param structure: The bar structure.
         :param quote_type: The bar quote type.
         :raises ConditionFailed: If the step is not positive (> 0).
+        :raises ConditionFailed: If the quote type is LAST.
         """
         Condition.positive(step, 'step')
+        Condition.true(quote_type != QuoteType.LAST, 'quote_type != QuoteType.LAST')
 
         self.step = step
         self.structure = structure
@@ -1030,7 +1032,7 @@ cdef class Bar:
         :param high_price: The bars high price.
         :param low_price: The bars low price.
         :param close_price: The bars close price.
-        :param volume: The bars volume.
+        :param volume: The bars volume (>= 0).
         :param timestamp: The bars timestamp (UTC).
         :param checked: A value indicating whether the bar was checked valid.
         :raises ConditionFailed: If checked is true and the volume is negative.

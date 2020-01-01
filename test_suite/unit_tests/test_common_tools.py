@@ -12,7 +12,7 @@ from pandas import Timestamp
 from datetime import datetime, timezone
 
 from nautilus_trader.model.objects import Price, Bar
-from nautilus_trader.data.market import TickBuilder, BarBuilder, IndicatorUpdater
+from nautilus_trader.data.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -38,11 +38,11 @@ class TickBuilderTests(unittest.TestCase):
         tick_data = TestDataProvider.usdjpy_test_ticks()
         bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
         ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
-        self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
-                                        precision=5,
-                                        tick_data=tick_data,
-                                        bid_data=bid_data,
-                                        ask_data=ask_data)
+        self.tick_builder = TickDataWrangler(symbol=TestStubs.instrument_usdjpy().symbol,
+                                             precision=5,
+                                             tick_data=tick_data,
+                                             bid_data=bid_data,
+                                             ask_data=ask_data)
 
         # Act
         ticks = self.tick_builder.build_ticks_all()
@@ -55,11 +55,11 @@ class TickBuilderTests(unittest.TestCase):
         # Arrange
         bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
         ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
-        self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
-                                        precision=5,
-                                        tick_data=None,
-                                        bid_data=bid_data,
-                                        ask_data=ask_data)
+        self.tick_builder = TickDataWrangler(symbol=TestStubs.instrument_usdjpy().symbol,
+                                             precision=5,
+                                             tick_data=None,
+                                             bid_data=bid_data,
+                                             ask_data=ask_data)
 
         # Act
         ticks = self.tick_builder.build_ticks_all()
@@ -73,7 +73,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def setUp(self):
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        self.bar_builder = BarBuilder(5, 1, data)
+        self.bar_builder = BarDataWrangler(5, 1, data)
 
     def test_build_databars_all(self):
         # Arrange
@@ -161,7 +161,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
     def test_can_update_indicator_with_bars(self):
         # Arrange
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(5, 1, data)
+        bar_builder = BarDataWrangler(5, 1, data)
         bars = bar_builder.build_bars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
@@ -177,7 +177,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
     def test_can_update_indicator_with_data_bars(self):
         # Arrange
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(5, 1, data)
+        bar_builder = BarDataWrangler(5, 1, data)
         bars = bar_builder.build_databars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
@@ -193,7 +193,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
     def test_can_build_features_from_bars(self):
         # Arrange
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(5, 1, data)
+        bar_builder = BarDataWrangler(5, 1, data)
         bars = bar_builder.build_bars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
@@ -209,7 +209,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
     def test_can_build_features_from_data_bars(self):
         # Arrange
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(5, 1, data)
+        bar_builder = BarDataWrangler(5, 1, data)
         bars = bar_builder.build_databars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)

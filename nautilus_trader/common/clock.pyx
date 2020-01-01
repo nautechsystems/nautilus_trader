@@ -126,23 +126,22 @@ cdef class Clock:
         :param stop_time: The stop time for the timer (optional can be None - then repeats indefinitely).
         :raises ConditionFailed: If the label is not unique.
         :raises ConditionFailed: If the interval is not positive (> 0).
-        :raises ConditionFailed: If the start_time is not None and not >= the current time (UTC).
+        :raises ConditionFailed: If the start_time and stop_time are not None and start_time >= stop_time.
+        :raises ConditionFailed: If the start_time is not None and start_time + interval > the current time (UTC).
         :raises ConditionFailed: If the stop_time is not None and not > than the start_time (UTC).
-        :raises ConditionFailed: If the stop_time is not None and start_time plus interval is greater
-        than the stop_time.
+        :raises ConditionFailed: If the stop_time is not None and start_time + interval > stop_time.
         """
         Condition.not_in(label, self._timers, 'label', 'timers')
         Condition.true(interval.total_seconds() > 0, 'interval > 0')
 
-        if start_time is not None:
-            Condition.true(start_time >= self.time_now(), 'start_time >= time_now()')
-        else:
+        if start_time is None:
             start_time = self.time_now()
         if stop_time is not None:
-            Condition.true(stop_time > start_time, 'stop_time > start_time')
+            Condition.true(start_time < stop_time, 'start_time < stop_time')
             Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
 
         cdef datetime event_time = start_time + interval
+        Condition.true(event_time >= self.time_now(), 'event_time >= time_now')
 
         timer = self._get_timer_repeating(
             label=label,

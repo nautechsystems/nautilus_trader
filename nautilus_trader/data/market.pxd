@@ -6,13 +6,13 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Tick, Bar, DataBar
+from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarSpecification
 
 
-cdef class TickBuilder:
+cdef class TickDataWrangler:
     cdef Symbol _symbol
     cdef int _precision
     cdef object _tick_data
@@ -24,7 +24,7 @@ cdef class TickBuilder:
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp)
 
 
-cdef class BarBuilder:
+cdef class BarDataWrangler:
     cdef int _precision
     cdef int _volume_multiple
     cdef object _data
@@ -53,3 +53,21 @@ cdef class IndicatorUpdater:
     cpdef dict build_features_bars(self, list bars)
     cpdef dict build_features_databars(self, list bars)
     cdef list _get_values(self)
+
+
+cdef class BarBuilder:
+    cdef readonly BarSpecification bar_spec
+    cdef readonly datetime last_update
+    cdef readonly int count
+
+    cdef Price _open
+    cdef Price _high
+    cdef Price _low
+    cdef Price _close
+    cdef long _volume
+    cdef bint _use_previous_close
+
+    cpdef void update(self, Tick tick, long volume=*)
+    cpdef Bar build(self, datetime close_time=*)
+    cdef void _reset(self)
+    cdef Price _get_price(self, Tick tick)
