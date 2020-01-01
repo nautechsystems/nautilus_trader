@@ -12,7 +12,7 @@ import iso8601
 import re
 
 from decimal import Decimal
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string, bar_structure_from_string
