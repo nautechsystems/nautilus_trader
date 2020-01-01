@@ -420,8 +420,7 @@ cdef class BarBuilder:
         Initializes a new instance of the BarBuilder class.
 
         :param bar_spec: The bar specification for the builder.
-        :param use_previous_close: Set true if the previous close price should
-        be the open price of a new bar.
+        :param use_previous_close: Set true if the previous close price should be the open price of a new bar.
         """
         self.bar_spec = bar_spec
         self.last_update = None

@@ -331,13 +331,15 @@ cdef class BarAggregator:
     def __init__(self,
                  BarType bar_type,
                  object handler,
-                 Logger logger):
+                 Logger logger,
+                 bint use_previous_close):
         """
         Initializes a new instance of the BarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The handler to receive built bars (must be Callable).
         :param logger: The logger for the aggregator.
+        :param use_previous_close: Set true if the previous close price should be the open price of a new bar.
         :raises: ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
@@ -347,7 +349,7 @@ cdef class BarAggregator:
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._builder = BarBuilder(
             bar_spec=self.bar_type.specification,
-            handler=self._handle_bar)
+            use_previous_close=use_previous_close)
 
     cpdef void update(self, Tick tick, long volume=1):
         # Raise exception if not overridden in implementation
@@ -376,6 +378,7 @@ cdef class TickBarAggregator(BarAggregator):
         # Condition: handler checked in BarAggregator
         super().__init__(bar_type=bar_type,
                          handler=handler,
+                         logger=logger,
                          use_previous_close=False)
 
         self.step = bar_type.specification.step
@@ -390,7 +393,7 @@ cdef class TickBarAggregator(BarAggregator):
         self._builder.update(tick, volume)
 
         if self._builder.count == self.step:
-            self._handler(self._builder.build())
+            self._handle_bar(self._builder.build())
 
 
 cdef class TimeBarAggregator(BarAggregator):
@@ -412,14 +415,17 @@ cdef class TimeBarAggregator(BarAggregator):
         # Condition: handler checked in BarAggregator
         super().__init__(bar_type=bar_type,
                          handler=handler,
+                         logger=logger,
                          use_previous_close=True)
         if is_live:
-            self._clock = LiveClock()
+            self.clock = LiveClock()
         else:
-            self._clock = TestClock()
-        self._clock.register_handler(self._build_event)
+            self.clock = TestClock()
+        self.clock.register_logger(self._log)
+        self.clock.register_handler(self._build_event)
         self.interval = self._get_interval()
-        self._set_build_timer(self.bar_type.specification.structure, self.interval())
+        self._set_build_timer(self.bar_type.specification.structure, self.interval)
+        self.is_live = is_live
 
     cpdef void update(self, Tick tick, long volume=1):
         """
@@ -430,20 +436,30 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         self._builder.update(tick, volume)
 
+        cdef TimeEvent event
+        if not self.is_live:
+            events = self.clock.iterate_time(tick.timestamp)
+            if events:
+                for event, handler in events.items():
+                    handler(event)
+
+    cpdef void _build_event(self, TimeEvent event):
+        self._handle_bar(self._builder.build(event.timestamp))
+
     cdef timedelta _get_interval(self):
         if self.bar_type.specification.structure == BarStructure.SECOND:
-            return timedelta(seconds=1 * self.bar_type.specification.step)
+            return timedelta(seconds=(1 * self.bar_type.specification.step))
         elif self.bar_type.specification.structure == BarStructure.MINUTE:
-            return timedelta(minutes=1 * self.bar_type.specification.step)
+            return timedelta(minutes=(1 * self.bar_type.specification.step))
         elif self.bar_type.specification.structure == BarStructure.HOUR:
-            return timedelta(hours=1 * self.bar_type.specification.step)
+            return timedelta(hours=(1 * self.bar_type.specification.step))
         elif self.bar_type.specification.structure == BarStructure.DAY:
-            return timedelta(days=1 * self.bar_type.specification.step)
+            return timedelta(days=(1 * self.bar_type.specification.step))
         else:
             raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
 
     cdef datetime _get_start_time(self, BarStructure structure):
-        cdef datetime now = self._clock.time_now()
+        cdef datetime now = self.clock.time_now()
         cdef datetime start
         if structure == BarStructure.SECOND:
             return datetime(
@@ -482,11 +498,9 @@ cdef class TimeBarAggregator(BarAggregator):
             raise ValueError(f"The BarStructure {bar_structure_to_string(structure)} is not supported.")
 
     cdef void _set_build_timer(self, BarStructure structure, timedelta interval):
-        self._clock.set_timer(
+        cdef datetime start_time = self._get_start_time(self.bar_type.specification.structure)
+        self.clock.set_timer(
             label=Label(str(self.bar_type)),
             interval=interval,
-            start_time=self._get_start_time(self.bar_type.specification.structure),
+            start_time=start_time,
             stop_time=None)
-
-    cdef void _build_event(self, TimeEvent event):
-        self._builder.build(event.timestamp)
