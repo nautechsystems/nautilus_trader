@@ -371,8 +371,8 @@ class TestClockTests(unittest.TestCase):
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
-        self.assertEqual(3, len(events))
-        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=timezone.utc), list(events.keys())[2].timestamp)
+        self.assertEqual(4, len(events))
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=timezone.utc), list(events.keys())[3].timestamp)
 
     def test_can_set_timer(self):
         # Arrange
@@ -388,24 +388,19 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
 
         # Assert
-        print(events)
         self.assertEqual([label], self.clock.get_timer_labels())
-        self.assertEqual(3, len(events))
+        self.assertEqual(4, len(events))
 
     def test_can_set_timer_with_stop_time(self):
         # Arrange
         label = Label('test_timer')
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now()
-        stop_time = self.clock.time_now() + timedelta(milliseconds=300)
 
         # Act
-        print(self.clock.time_now())
         self.clock.set_timer(
             label=label,
             interval=interval,
-            start_time=start_time,
-            stop_time=stop_time)
+            stop_time=self.clock.time_now() + timedelta(milliseconds=300))
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
 
         # Assert
@@ -469,23 +464,24 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_two_repeating_timers(self):
         # Arrange
-        interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now()
+        interval = timedelta(milliseconds=100)
 
         # Act
         self.clock.set_timer(
             label=Label('test_timer1'),
             interval=interval,
-            start_time=start_time,
+            start_time=self.clock.time_now(),
             stop_time=None)
 
         self.clock.set_timer(
             label=Label('test_timer2'),
             interval=interval,
-            start_time=start_time,
+            start_time=self.clock.time_now(),
             stop_time=None)
 
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=500))
 
         # Assert
-        self.assertEqual(8, len(events))
+        self.assertEqual(10, len(events))
+        self.assertEqual(start_time + timedelta(milliseconds=500), self.clock.time_now())

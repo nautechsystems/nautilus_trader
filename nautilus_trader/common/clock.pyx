@@ -331,7 +331,6 @@ cdef class TestTimer:
         """
         cdef list time_events = []  # type: List[TimeEvent]
         while not self.expired and to_time >= self.next_time:
-            print(self.next_time)
             time_events.append(TimeEvent(self.label, GUID(uuid.uuid4()), self.next_time))
             self.next_time += self.interval
             if self.stop_time is not None and self.next_time > self.stop_time:
