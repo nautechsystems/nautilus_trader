@@ -10,8 +10,9 @@ import unittest
 
 from datetime import datetime, timedelta, timezone
 
+from nautilus_trader.common.clock import LiveClock, TestClock
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.common.data import TickBarAggregator, TimeBarTimedAggregator
+from nautilus_trader.common.data import TickBarAggregator, TimeBarAggregator
 from nautilus_trader.model.enums import BarStructure, QuoteType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType
 
@@ -73,7 +74,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         symbol = TestStubs.symbol_audusd_fxcm()
         bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.MID)
         bar_type = BarType(symbol, bar_spec)
-        aggregator = TimeBarTimedAggregator(bar_type, handler, TestLogger())
+        aggregator = TimeBarAggregator(bar_type, handler, LiveClock(), TestLogger())
 
         stop_time = UNIX_EPOCH + timedelta(minutes=2)
 
