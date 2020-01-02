@@ -48,9 +48,8 @@ cdef class LiveClock(Clock):
 cdef class TestTimer:
     cdef readonly Label label
     cdef readonly timedelta interval
-    cdef readonly datetime start
-    cdef readonly datetime stop
-    cdef readonly datetime next_event
+    cdef readonly datetime next_time
+    cdef readonly datetime stop_time
     cdef readonly expired
 
     cpdef list advance(self, datetime to_time)
