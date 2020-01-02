@@ -86,8 +86,11 @@ cdef class TickBarAggregator(BarAggregator):
 
 
 cdef class TimeBarAggregator(BarAggregator):
-    cdef readonly Clock clock
+    cdef Clock _clock
+
     cdef readonly timedelta interval
+    cdef readonly datetime next_close
+    cdef readonly bint is_timed
     cdef readonly bint is_live
 
     cpdef void _build_event(self, TimeEvent event)
