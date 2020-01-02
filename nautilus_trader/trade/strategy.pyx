@@ -78,7 +78,7 @@ cdef class TradingStrategy:
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.clock.register_logger(self.log)
-        self.clock.register_handler(self.handle_event)
+        self.clock.register_default_handler(self.handle_event)
 
         # Order management flags
         self.flatten_on_stop = flatten_on_stop
@@ -1354,7 +1354,7 @@ cdef class TradingStrategy:
         """
         self.clock = clock
         self.clock.register_logger(self.log)
-        self.clock.register_handler(self.handle_event)
+        self.clock.register_default_handler(self.handle_event)
 
         self.order_factory = OrderFactory(
             id_tag_trader=self.trader_id.order_id_tag,
@@ -1400,4 +1400,4 @@ cdef class TradingStrategy:
         :param time: The time to iterate the clock to.
         :return Dict[TimeEvent, Callable].
         """
-        return self.clock.iterate_time(time)
+        return self.clock.advance_time(time)
