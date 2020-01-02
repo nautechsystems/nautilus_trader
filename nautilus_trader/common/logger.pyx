@@ -387,7 +387,7 @@ cpdef void nautilus_header(LoggerAdapter logger):
         logger.info("#---------------------------------------------------------------#")
         logger.info(f" Nautilus Trader - Algorithmic Trading Platform")
         logger.info(f" by Nautech Systems Pty Ltd. ")
-        logger.info(f" Copyright (C) 2015-2019. All rights reserved.")
+        logger.info(f" Copyright (C) 2015-2020. All rights reserved.")
         logger.info("#---------------------------------------------------------------#")
         logger.info("                                                                 ")
         logger.info("                            .......                              ")
