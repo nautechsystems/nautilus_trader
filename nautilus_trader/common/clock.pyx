@@ -304,21 +304,20 @@ cdef class TestTimer:
     def __init__(self,
                  Label label,
                  timedelta interval,
-                 datetime start_time,
+                 datetime next_time,
                  datetime stop_time=None):
         """
         Initializes a new instance of the TestTimer class.
         :param label: The label for the timer.
         :param interval: The timedelta interval for the timer.
-        :param start_time: The start UTC datetime for the timer.
+        :param next_time: The start UTC datetime for the timer.
         :param stop_time: The stop UTC datetime for the timer.
         """
         # Condition: assumes interval not negative.
         self.label = label
         self.interval = interval
-        self.start = start_time
-        self.stop = stop_time
-        self.next_event = start_time + interval
+        self.next_time = next_time
+        self.stop_time = stop_time
         self.expired = False
 
     cpdef list advance(self, datetime to_time):
@@ -331,10 +330,11 @@ cdef class TestTimer:
         :return List[TimeEvent].
         """
         cdef list time_events = []  # type: List[TimeEvent]
-        while not self.expired and to_time >= self.next_event:
-            time_events.append(TimeEvent(self.label, GUID(uuid.uuid4()), self.next_event))
-            self.next_event += self.interval
-            if self.stop is not None and self.next_event > self.stop:
+        while not self.expired and to_time >= self.next_time:
+            print(self.next_time)
+            time_events.append(TimeEvent(self.label, GUID(uuid.uuid4()), self.next_time))
+            self.next_time += self.interval
+            if self.stop_time is not None and self.next_time > self.stop_time:
                 self.expired = True
 
         return time_events
@@ -407,17 +407,17 @@ cdef class TestClock(Clock):
         return TestTimer(
             label=label,
             interval=event_time - self.time_now(),
-            start_time=self.time_now(),
+            next_time=event_time,
             stop_time=event_time)
 
     cdef object _get_timer_repeating(
             self,
             Label label,
             timedelta interval,
-            datetime next_event,
+            datetime next_time,
             datetime stop_time):
         return TestTimer(
             label=label,
             interval=interval,
-            start_time=next_event,
+            next_time=next_time,
             stop_time=stop_time)

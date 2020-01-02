@@ -400,6 +400,7 @@ class TestClockTests(unittest.TestCase):
         stop_time = self.clock.time_now() + timedelta(milliseconds=300)
 
         # Act
+        print(self.clock.time_now())
         self.clock.set_timer(
             label=label,
             interval=interval,
@@ -436,7 +437,7 @@ class TestClockTests(unittest.TestCase):
         # Act
         self.clock.set_timer(
             label=label,
-            interval=timedelta(milliseconds=100),
+            interval=interval,
             start_time=self.clock.time_now(),
             stop_time=None)
 
