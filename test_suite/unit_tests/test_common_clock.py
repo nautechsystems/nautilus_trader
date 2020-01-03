@@ -243,6 +243,7 @@ class LiveClockTests(unittest.TestCase):
         self.clock.cancel_timer(label)
 
         # Assert
+        print(self.handler)
         self.assertEqual(3, len(self.handler))
 
     def test_can_set_two_repeating_timers(self):

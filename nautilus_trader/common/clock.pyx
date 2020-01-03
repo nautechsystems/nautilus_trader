@@ -50,15 +50,12 @@ cdef class Timer:
         self.start_time = start_time
         self.next_time = start_time + interval
         self.stop_time = stop_time
-        self.expired = False
 
     cpdef void iterate_next(self):
         """
         Sets the next time and checks if expired.
         """
         self.next_time += self.interval
-        if self.stop_time and self.next_time > self.stop_time:
-            self.expired = True
 
     cpdef void cancel(self) except *:
         """
@@ -122,6 +119,7 @@ cdef class TestTimer(Timer):
         super().__init__(label, interval, start_time, stop_time)
 
         self._interval = interval
+        self.expired = False
 
     cpdef list advance(self, datetime to_time):
         """
@@ -136,6 +134,8 @@ cdef class TestTimer(Timer):
         while not self.expired and to_time >= self.next_time:
             time_events.append(TimeEvent(self.label, GUID(uuid.uuid4()), self.next_time))
             self.iterate_next()
+            if self.stop_time and self.next_time > self.stop_time:
+                self.expired = True
 
         return time_events
 
@@ -183,7 +183,6 @@ cdef class LiveTimer(Timer):
         Continue the timer.
         """
         self._internal = self._start_timer(now)
-        self.expired = True
 
     cpdef void cancel(self) except *:
         """
@@ -494,7 +493,7 @@ cdef class LiveClock(Clock):
 
     cpdef datetime time_now(self):
         """
-        Return the current UTC datetime of the clock.
+        Return the current datetime of the clock (UTC).
         
         :return datetime.
         """
@@ -522,18 +521,16 @@ cdef class LiveClock(Clock):
             stop_time=stop_time)
 
     cpdef void _raise_time_event(self, LiveTimer timer, datetime event_time) except *:
-        cdef TimeEvent event = TimeEvent(timer.label, GUID(uuid.uuid4()), event_time)
-        self._handle_time_event(event)
+        self._handle_time_event(TimeEvent(timer.label, GUID(uuid.uuid4()), event_time))
         self._remove_timer(timer)
 
     cpdef void _raise_time_event_repeating(self, LiveTimer timer, datetime event_time) except *:
-        cdef TimeEvent event = TimeEvent(timer.label, GUID(uuid.uuid4()), event_time)
-        self._handle_time_event(event)
+        self._handle_time_event(TimeEvent(timer.label, GUID(uuid.uuid4()), event_time))
 
-        timer.iterate_next()
-        if timer.expired:
+        if timer.stop_time and event_time >= timer.stop_time:
             self._remove_timer(timer)
         else:  # Continue timing
+            timer.iterate_next()
             timer.repeat(self.time_now())
             self._update_timing()
 
