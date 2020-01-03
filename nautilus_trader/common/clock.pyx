@@ -183,6 +183,7 @@ cdef class LiveTimer(Timer):
         Continue the timer.
         """
         self._internal = self._start_timer(now)
+        self.expired = True
 
     cpdef void cancel(self) except *:
         """
