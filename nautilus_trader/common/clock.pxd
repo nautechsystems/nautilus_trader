@@ -15,7 +15,7 @@ from nautilus_trader.model.events cimport TimeEvent
 
 cdef class Timer:
     cdef readonly Label label
-    cdef timedelta interval
+    cdef readonly timedelta interval
     cdef readonly datetime start_time
     cdef readonly datetime next_time
     cdef readonly datetime stop_time
@@ -25,8 +25,6 @@ cdef class Timer:
 
 
 cdef class TestTimer(Timer):
-    cdef timedelta _interval
-
     cdef readonly expired
 
     cpdef list advance(self, datetime to_time)
