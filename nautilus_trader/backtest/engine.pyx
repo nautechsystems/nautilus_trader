@@ -255,7 +255,7 @@ cdef class BacktestEngine:
         assert(self.exec_client.time_now() == start)
 
         # Setup data
-        self._backtest_header(run_started, start, stop, time_step)
+        self._backtest_header(run_started, start, stop)
         self.log.info(f"Setting up backtest...")
         self.log.debug("Setting initial iterations...")
         self.data_client.set_initial_iteration_indexes(start)  # Also sets clock to start time
@@ -282,7 +282,7 @@ cdef class BacktestEngine:
         self.log.info("Stopping...")
         self.trader.stop()
         self.log.info("Stopped.")
-        self._backtest_footer(run_started, self.clock.time_now(), start, stop, time_step)
+        self._backtest_footer(run_started, self.clock.time_now(), start, stop)
         if print_log_store:
             self.print_log_store()
 
@@ -412,8 +412,7 @@ cdef class BacktestEngine:
             self,
             datetime run_started,
             datetime start,
-            datetime stop,
-            timedelta time_step):
+            datetime stop):
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#----------------------- BACKTEST RUN --------------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -422,8 +421,7 @@ cdef class BacktestEngine:
         self.log.info(f"Run started datetime:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Iteration time-step:  {time_step}")
-        self.log.info(f"Execution structure: {bar_structure_to_string(self.data_client.execution_structure)}")
+        self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
@@ -435,8 +433,7 @@ cdef class BacktestEngine:
             datetime run_started,
             datetime run_finished,
             datetime start,
-            datetime stop,
-            timedelta time_step):
+            datetime stop):
         cdef str account_currency = currency_to_string(self.config.account_currency)
         cdef int account_starting_length = len(str(self.config.starting_capital))
 
@@ -449,8 +446,8 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Elapsed time (running):  {run_finished - run_started}")
 
-        self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
-        self.log.info(f"Execution structure: {bar_structure_to_string(self.data_client.execution_structure)}")
+        self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
+        self.log.info(f"Iterations: {self.iteration}")
         self.log.info(f"Total events: {self.exec_engine.event_count}")
         self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total()}")
         self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total()}")
