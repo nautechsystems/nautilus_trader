@@ -19,6 +19,7 @@ cdef class Handler:
     def __init__(self, handler: Callable):
         """
         Initializes a new instance of the TickHandler class.
+
         :param handler: The callable handler.
         """
         Condition.type(handler, Callable, 'handler')
@@ -60,6 +61,7 @@ cdef class TickHandler(Handler):
     def __init__(self, handler: Callable):
         """
         Initializes a new instance of the TickHandler class.
+
         :param handler: The callable handler.
         """
         super().__init__(handler)
@@ -73,6 +75,7 @@ cdef class BarHandler(Handler):
     def __init__(self, handler: Callable):
         """
         Initializes a new instance of the BarHandler class.
+
         :param handler: The callable handler.
         """
         super().__init__(handler)
@@ -86,6 +89,7 @@ cdef class InstrumentHandler(Handler):
     def __init__(self, handler: Callable):
         """
         Initializes a new instance of the InstrumentHandler class.
+
         :param handler: The callable handler.
         """
         super().__init__(handler)
@@ -99,6 +103,7 @@ cdef class EventHandler(Handler):
     def __init__(self, handler: Callable):
         """
         Initializes a new instance of the EventHandler class.
+
         :param handler: The callable handler.
         """
         super().__init__(handler)
