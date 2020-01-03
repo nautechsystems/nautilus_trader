@@ -19,7 +19,6 @@ cdef class Timer:
     cdef readonly datetime start_time
     cdef readonly datetime next_time
     cdef readonly datetime stop_time
-    cdef readonly expired
 
     cpdef void iterate_next(self)
     cpdef void cancel(self) except *
@@ -27,6 +26,8 @@ cdef class Timer:
 
 cdef class TestTimer(Timer):
     cdef timedelta _interval
+
+    cdef readonly expired
 
     cpdef list advance(self, datetime to_time)
 
