@@ -15,7 +15,7 @@ from nautilus_trader.model.identifiers cimport Symbol, Venue, Label
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.data.market cimport BarBuilder
-from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
 from nautilus_trader.trade.strategy cimport TradingStrategy
