@@ -424,7 +424,8 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._clock = clock
         self.interval = self._get_interval()
-        self._set_build_timer(self.bar_type.specification.structure, self.interval)
+        self.next_close = self._clock.next_event_time
+        self._set_build_timer()
 
     cpdef void update(self, Tick tick, long volume=1):
         """
@@ -442,6 +443,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 events = self._clock.advance_time(tick.timestamp)
                 for event, handler in sorted(events.items()):
                     handler(event)
+                self.next_close = self._clock.next_event_time
 
     cpdef void _build_event(self, TimeEvent event):
         self._handle_bar(self._builder.build(event.timestamp))
@@ -458,10 +460,9 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
 
-    cdef datetime _get_start_time(self, BarStructure structure):
+    cdef datetime _get_start_time(self):
         cdef datetime now = self._clock.time_now()
-        cdef datetime start
-        if structure == BarStructure.SECOND:
+        if self.bar_type.specification.structure == BarStructure.SECOND:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -471,7 +472,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 second=now.second,
                 tzinfo=now.tzinfo
             )
-        elif structure == BarStructure.MINUTE:
+        elif self.bar_type.specification.structure == BarStructure.MINUTE:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -480,7 +481,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 minute=now.minute,
                 tzinfo=now.tzinfo
             )
-        elif structure == BarStructure.HOUR:
+        elif self.bar_type.specification.structure == BarStructure.HOUR:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -488,20 +489,19 @@ cdef class TimeBarAggregator(BarAggregator):
                 hour=now.hour,
                 tzinfo=now.tzinfo
             )
-        elif structure == BarStructure.DAY:
+        elif self.bar_type.specification.structure == BarStructure.DAY:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day,
             )
         else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(structure)} is not supported.")
+            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
 
-    cdef void _set_build_timer(self, BarStructure structure, timedelta interval):
-        cdef datetime start_time = self._get_start_time(self.bar_type.specification.structure)
+    cdef void _set_build_timer(self):
         self._clock.set_timer(
             label=Label(str(self.bar_type)),
-            interval=interval,
-            start_time=start_time,
+            interval=self._get_interval(),
+            start_time=self._get_start_time(),
             stop_time=None,
             handler=self._build_event)

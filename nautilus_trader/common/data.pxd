@@ -90,10 +90,8 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cdef readonly timedelta interval
     cdef readonly datetime next_close
-    cdef readonly bint is_timed
-    cdef readonly bint is_live
 
     cpdef void _build_event(self, TimeEvent event)
     cdef timedelta _get_interval(self)
-    cdef datetime _get_start_time(self, BarStructure structure)
-    cdef void _set_build_timer(self, BarStructure structure, timedelta interval)
+    cdef datetime _get_start_time(self)
+    cdef void _set_build_timer(self)
