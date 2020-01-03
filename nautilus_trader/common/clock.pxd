@@ -47,6 +47,7 @@ cdef class Clock:
 
     cdef readonly datetime next_event_time
     cdef readonly bint has_timers
+    cdef readonly bint is_test_clock
     cdef readonly bint is_logger_registered
     cdef readonly bint is_default_handler_registered
 

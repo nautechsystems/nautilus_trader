@@ -67,14 +67,14 @@ class TickBarAggregatorTests(unittest.TestCase):
 
 class TimeBarAggregatorTests(unittest.TestCase):
 
-    def test_update_sends_bar_to_handler(self):
+    def test_update_with_test_clock_sends_bars_to_handler(self):
         # Arrange
         bar_store = []
         handler = bar_store.append
         symbol = TestStubs.symbol_audusd_fxcm()
         bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.MID)
         bar_type = BarType(symbol, bar_spec)
-        aggregator = TimeBarAggregator(bar_type, handler, LiveClock(), TestLogger())
+        aggregator = TimeBarAggregator(bar_type, handler, TestClock(), TestLogger())
 
         stop_time = UNIX_EPOCH + timedelta(minutes=2)
 
@@ -102,10 +102,12 @@ class TimeBarAggregatorTests(unittest.TestCase):
         aggregator.update(tick3)
 
         # Assert
-        self.assertEqual(1, len(bar_store))
+        self.assertEqual(2, len(bar_store))
         self.assertEqual(Price('1.000025'), bar_store[0].open)
         self.assertEqual(Price('1.000035'), bar_store[0].high)
         self.assertEqual(Price('1.000015'), bar_store[0].low)
         self.assertEqual(Price('1.000015'), bar_store[0].close)
         self.assertEqual(3, bar_store[0].volume)
-        self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=timezone.utc), bar_store[0].timestamp)
+        self.assertEqual(0, bar_store[1].volume)
+        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=timezone.utc), bar_store[0].timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=timezone.utc), bar_store[1].timestamp)

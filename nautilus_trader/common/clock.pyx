@@ -419,6 +419,7 @@ cdef class TestClock(Clock):
         """
         super().__init__()
         self._time = initial_time
+        self.is_test_clock = True
 
     cpdef datetime time_now(self):
         """
