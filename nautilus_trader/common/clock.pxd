@@ -19,14 +19,13 @@ cdef class Timer:
     cdef readonly datetime start_time
     cdef readonly datetime next_time
     cdef readonly datetime stop_time
+    cdef readonly expired
 
-    cpdef void iterate_next(self)
+    cpdef TimeEvent iterate_event(self, datetime now)
     cpdef void cancel(self) except *
 
 
 cdef class TestTimer(Timer):
-    cdef readonly expired
-
     cpdef list advance(self, datetime to_time)
 
 
@@ -60,8 +59,7 @@ cdef class Clock:
     cpdef void cancel_timer(self, Label label) except *
     cpdef void cancel_all_timers(self) except *
 
-    cdef object _get_timer(self, Label label, datetime event_time)
-    cdef object _get_timer_repeating(self, Label label, timedelta interval, datetime start_time, datetime stop_time)
+    cdef object _get_timer(self, Label label, timedelta interval, datetime now, datetime start_time, datetime stop_time)
     cdef void _add_timer(self, Timer timer, handler) except *
     cdef void _remove_timer(self, Timer timer) except *
     cdef void _update_timing(self) except *
@@ -75,7 +73,6 @@ cdef class TestClock(Clock):
 
 
 cdef class LiveClock(Clock):
-    cpdef void _raise_time_event(self, LiveTimer timer, datetime event_time) except *
-    cpdef void _raise_time_event_repeating(self, LiveTimer timer, datetime event_time) except *
+    cpdef void _raise_time_event(self, LiveTimer timer) except *
 
     cdef void _handle_time_event(self, TimeEvent event) except *
