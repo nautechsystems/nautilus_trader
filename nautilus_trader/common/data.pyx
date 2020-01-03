@@ -439,7 +439,7 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef dict events
         cdef TimeEvent event
         if self._clock.is_test_clock:
-            if self._clock.has_timers and tick.timestamp >= self._clock.next_event_time:
+            if tick.timestamp >= self._clock.next_event_time:
                 events = self._clock.advance_time(tick.timestamp)
                 for event, handler in sorted(events.items()):
                     handler(event)
