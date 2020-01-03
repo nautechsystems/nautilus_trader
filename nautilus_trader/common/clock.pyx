@@ -118,7 +118,6 @@ cdef class TestTimer(Timer):
 
         super().__init__(label, interval, start_time, stop_time)
 
-        self._interval = interval
         self.expired = False
 
     cpdef list advance(self, datetime to_time):
