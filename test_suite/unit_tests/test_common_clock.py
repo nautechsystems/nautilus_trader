@@ -87,7 +87,7 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_set_time_alert(self):
         # Arrange
-        label = Label('test_alert')
+        label = Label('TEST_ALERT')
         interval = timedelta(milliseconds=100)
         alert_time = self.clock.time_now() + interval
 
@@ -101,7 +101,7 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_cancel_time_alert(self):
         # Arrange
-        label = Label('test_alert')
+        label = Label('TEST_ALERT')
         interval = timedelta(milliseconds=100)
         alert_time = self.clock.time_now() + interval
 
@@ -120,8 +120,8 @@ class LiveClockTests(unittest.TestCase):
         alert_time2 = self.clock.time_now() + timedelta(milliseconds=300)
 
         # Act
-        self.clock.set_time_alert(Label('test_alert1'), alert_time1)
-        self.clock.set_time_alert(Label('test_alert2'), alert_time2)
+        self.clock.set_time_alert(Label('TEST_ALERT1'), alert_time1)
+        self.clock.set_time_alert(Label('TEST_ALERT2'), alert_time2)
         time.sleep(0.5)
 
         # Assert
@@ -132,7 +132,7 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_set_timer_with_immediate_start_time(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
 
         # Act
         self.clock.set_timer(
@@ -149,7 +149,7 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_set_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now() + interval
 
@@ -169,9 +169,9 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_set_timer_with_stop_time(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now() + interval
+        start_time = self.clock.time_now()
         stop_time = start_time + interval
 
         # Act
@@ -190,14 +190,10 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_cancel_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
 
-        self.clock.set_timer(
-            label=label,
-            interval=interval,
-            start_time=self.clock.time_now() + timedelta(milliseconds=10),
-            stop_time=None)
+        self.clock.set_timer(label=label, interval=interval)
 
         # Act
         time.sleep(0.2)
@@ -205,11 +201,11 @@ class LiveClockTests(unittest.TestCase):
 
         # Assert
         self.assertEqual([], self.clock.get_timer_labels())
-        self.assertEqual(1, len(self.handler))
+        self.assertEqual(2, len(self.handler))
 
     def test_can_set_repeating_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now()
 
@@ -231,9 +227,9 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_cancel_repeating_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now() + interval
+        start_time = self.clock.time_now()
         stop_time = start_time + timedelta(seconds=5)
 
         self.clock.set_timer(
@@ -243,11 +239,11 @@ class LiveClockTests(unittest.TestCase):
             stop_time=stop_time)
 
         # Act
-        time.sleep(0.2)
+        time.sleep(0.3)
         self.clock.cancel_timer(label)
 
         # Assert
-        self.assertEqual(1, len(self.handler))
+        self.assertEqual(3, len(self.handler))
 
     def test_can_set_two_repeating_timers(self):
         # Arrange
@@ -256,13 +252,13 @@ class LiveClockTests(unittest.TestCase):
 
         # Act
         self.clock.set_timer(
-            label=Label('test_timer1'),
+            label=Label('TEST_TIMER1'),
             interval=interval,
             start_time=start_time,
             stop_time=None)
 
         self.clock.set_timer(
-            label=Label('test_timer2'),
+            label=Label('TEST_TIMER2'),
             interval=interval,
             start_time=start_time,
             stop_time=None)
@@ -316,7 +312,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_time_alert(self):
         # Arrange
-        label = Label('test_alert')
+        label = Label('TEST_ALERT')
         alert_time = self.clock.time_now() + timedelta(milliseconds=100)
 
         # Act
@@ -330,7 +326,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_cancel_time_alert(self):
         # Arrange
-        label = Label('test_alert')
+        label = Label('TEST_ALERT')
         interval = timedelta(milliseconds=100)
         alert_time = self.clock.time_now() + interval
 
@@ -349,8 +345,8 @@ class TestClockTests(unittest.TestCase):
         alert_time2 = self.clock.time_now() + timedelta(milliseconds=300)
 
         # Act
-        self.clock.set_time_alert(Label('test_alert1'), alert_time1)
-        self.clock.set_time_alert(Label('test_alert2'), alert_time2)
+        self.clock.set_time_alert(Label('TEST_ALERT1'), alert_time1)
+        self.clock.set_time_alert(Label('TEST_ALERT2'), alert_time2)
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
 
         # Assert
@@ -359,7 +355,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_timer_with_immediate_start_time(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
 
         # Act
         self.clock.set_timer(
@@ -376,7 +372,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
 
         # Act
@@ -393,7 +389,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_timer_with_stop_time(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
 
         # Act
@@ -409,7 +405,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_cancel_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
 
         self.clock.set_timer(
@@ -426,7 +422,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_repeating_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
 
         # Act
@@ -445,7 +441,7 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_cancel_repeating_timer(self):
         # Arrange
-        label = Label('test_timer')
+        label = Label('TEST_TIMER')
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now()
         stop_time = start_time + timedelta(seconds=5)
@@ -469,13 +465,13 @@ class TestClockTests(unittest.TestCase):
 
         # Act
         self.clock.set_timer(
-            label=Label('test_timer1'),
+            label=Label('TEST_TIMER1'),
             interval=interval,
             start_time=self.clock.time_now(),
             stop_time=None)
 
         self.clock.set_timer(
-            label=Label('test_timer2'),
+            label=Label('TEST_TIMER2'),
             interval=interval,
             start_time=self.clock.time_now(),
             stop_time=None)
