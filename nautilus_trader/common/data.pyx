@@ -435,6 +435,14 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         self._builder.update(tick, volume)
 
+        cdef dict events
+        cdef TimeEvent event
+        if self._clock.is_test_clock:
+            if self._clock.has_timers and tick.timestamp >= self._clock.next_event_time:
+                events = self._clock.advance_time(tick.timestamp)
+                for event, handler in sorted(events.items()):
+                    handler(event)
+
     cpdef void _build_event(self, TimeEvent event):
         self._handle_bar(self._builder.build(event.timestamp))
 
