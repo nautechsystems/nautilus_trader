@@ -358,7 +358,7 @@ cdef class BarAggregator:
 
     cpdef void _handle_bar(self, Bar bar):
         self._log.debug(f"Built {self.bar_type} {bar}")
-        self._handler(self.bar_type, bar)
+        #self._handler(self.bar_type, bar)
 
 
 cdef class TickBarAggregator(BarAggregator):

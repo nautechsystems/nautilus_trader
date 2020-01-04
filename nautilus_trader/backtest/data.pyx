@@ -40,6 +40,13 @@ from nautilus_trader.data.market cimport TickDataWrangler, BarDataWrangler
 #         self.bid = bid_bar
 #         self.ask = ask_bar
 
+cdef list _TIME_BARS = [
+        BarStructure.SECOND,
+        BarStructure.MINUTE,
+        BarStructure.HOUR,
+        BarStructure.DAY,
+    ]
+
 
 cdef class BacktestDataClient(DataClient):
     """
@@ -431,7 +438,6 @@ cdef class BacktestDataClient(DataClient):
         Condition.type_or_none(handler, Callable, 'handler')
 
         self._add_tick_handler(symbol, handler)
-        #self.data_providers[symbol].set_tick_iteration_index(self.time_now())
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -447,8 +453,8 @@ cdef class BacktestDataClient(DataClient):
 
         if bar_type.specification.structure == BarStructure.TICK:
             aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
-        elif bar_type.specification.structure == BarStructure.MINUTE:
-            aggregator = TimeBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
+        elif bar_type.specification.structure in _TIME_BARS:
+            aggregator = TimeBarAggregator(bar_type, self._handle_bar, self._clock, self._log.get_logger())
 
         if bar_type not in self._bar_aggregators:
             self._bar_aggregators[bar_type] = aggregator
