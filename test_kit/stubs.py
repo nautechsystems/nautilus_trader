@@ -15,7 +15,7 @@ from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import (
     BarStructure,
-    QuoteType,
+    PriceType,
     Currency,
     SecurityType,
     AccountType,
@@ -136,19 +136,19 @@ class TestStubs:
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
-        return BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
+        return BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
 
     @staticmethod
     def bar_spec_1min_ask() -> BarSpecification:
-        return BarSpecification(1, BarStructure.MINUTE, QuoteType.ASK)
+        return BarSpecification(1, BarStructure.MINUTE, PriceType.ASK)
 
     @staticmethod
     def bar_spec_1min_mid() -> BarSpecification:
-        return BarSpecification(1, BarStructure.MINUTE, QuoteType.MID)
+        return BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
 
     @staticmethod
     def bar_spec_1sec_mid() -> BarSpecification:
-        return BarSpecification(1, BarStructure.SECOND, QuoteType.MID)
+        return BarSpecification(1, BarStructure.SECOND, PriceType.MID)
 
     @staticmethod
     def bartype_audusd_1min_bid() -> BarType:

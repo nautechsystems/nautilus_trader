@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import ValidString
-from nautilus_trader.model.enums import BarStructure, QuoteType
+from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
 from test_kit.stubs import TestStubs
@@ -494,9 +494,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_bar_spec_equality(self):
         # Arrange
-        bar_spec1 = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
-        bar_spec2 = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
-        bar_spec3 = BarSpecification(1, BarStructure.MINUTE, QuoteType.ASK)
+        bar_spec1 = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+        bar_spec2 = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+        bar_spec3 = BarSpecification(1, BarStructure.MINUTE, PriceType.ASK)
 
         # Act
         # Assert
@@ -506,7 +506,7 @@ class ObjectTests(unittest.TestCase):
 
     def test_bar_spec_str_and_repr(self):
         # Arrange
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
 
         # Act
         # Assert
@@ -541,7 +541,7 @@ class ObjectTests(unittest.TestCase):
 
     def test_can_parse_bar_spec_from_string(self):
         # Arrange
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.MID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
 
         # Act
         result = BarSpecification.py_from_string(str(bar_spec))
@@ -553,7 +553,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         symbol1 = Symbol("AUDUSD", Venue('FXCM'))
         symbol2 = Symbol("GBPUSD", Venue('FXCM'))
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
         bar_type1 = BarType(symbol1, bar_spec)
         bar_type2 = BarType(symbol1, bar_spec)
         bar_type3 = BarType(symbol2, bar_spec)
@@ -567,7 +567,7 @@ class ObjectTests(unittest.TestCase):
     def test_bar_type_str_and_repr(self):
         # Arrange
         symbol = Symbol("AUDUSD", Venue('FXCM'))
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.BID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
 
         # Act

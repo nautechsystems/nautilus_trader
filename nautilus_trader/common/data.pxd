@@ -23,6 +23,7 @@ cdef class DataClient:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
+    cdef dict _bar_aggregators
     cdef dict _tick_handlers
     cdef dict _bar_handlers
     cdef dict _instrument_handlers
@@ -57,17 +58,17 @@ cdef class DataClient:
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
 
-    cdef void _add_tick_handler(self, Symbol symbol, handler)
-    cdef void _add_bar_handler(self, BarType bar_type, handler)
-    cdef void _add_instrument_handler(self, Symbol symbol, handler)
-    cdef void _remove_tick_handler(self, Symbol symbol, handler)
-    cdef void _remove_bar_handler(self, BarType bar_type, handler)
-    cdef void _remove_instrument_handler(self, Symbol symbol, handler)
-    cdef void _handle_tick(self, Tick tick)
-    cdef void _handle_bar(self, BarType bar_type, Bar bar)
-    cdef void _handle_instrument(self, Instrument instrument)
-    cdef void _handle_instruments(self, list instruments)
-    cdef void _reset(self)
+    cpdef void _add_tick_handler(self, Symbol symbol, handler)
+    cpdef void _add_bar_handler(self, BarType bar_type, handler)
+    cpdef void _add_instrument_handler(self, Symbol symbol, handler)
+    cpdef void _remove_tick_handler(self, Symbol symbol, handler)
+    cpdef void _remove_bar_handler(self, BarType bar_type, handler)
+    cpdef void _remove_instrument_handler(self, Symbol symbol, handler)
+    cpdef void _handle_tick(self, Tick tick)
+    cpdef void _handle_bar(self, BarType bar_type, Bar bar)
+    cpdef void _handle_instrument(self, Instrument instrument)
+    cpdef void _handle_instruments(self, list instruments)
+    cpdef void _reset(self)
 
 
 cdef class BarAggregator:
@@ -77,8 +78,8 @@ cdef class BarAggregator:
 
     cdef readonly BarType bar_type
 
-    cpdef void update(self, Tick tick, long volume=*)
-    cdef void _handle_bar(self, Bar bar)
+    cpdef void update(self, Tick tick) except *
+    cpdef void _handle_bar(self, Bar bar)
 
 
 cdef class TickBarAggregator(BarAggregator):

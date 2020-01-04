@@ -67,7 +67,8 @@ cdef class BarBuilder:
     cdef long _volume
     cdef bint _use_previous_close
 
-    cpdef void update(self, Tick tick, long volume=*)
+    cpdef void update(self, Tick tick)
     cpdef Bar build(self, datetime close_time=*)
     cdef void _reset(self)
     cdef Price _get_price(self, Tick tick)
+    cdef int _get_volume(self, Tick tick)

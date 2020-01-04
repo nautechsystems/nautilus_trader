@@ -11,7 +11,7 @@ from itertools import permutations
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 
 
 cdef class ExchangeRateCalculator:
@@ -24,7 +24,7 @@ cdef class ExchangeRateCalculator:
             self,
             Currency from_currency,
             Currency to_currency,
-            QuoteType quote_type,
+            PriceType price_type,
             dict bid_rates,
             dict ask_rates) except *:
         """
@@ -34,7 +34,7 @@ cdef class ExchangeRateCalculator:
 
         :param from_currency: The currency to convert from.
         :param to_currency: The currency to convert to.
-        :param quote_type: The quote type for conversion.
+        :param price_type: The quote type for conversion.
         :param bid_rates: The dictionary of currency pair bid rates Dict[str, float].
         :param ask_rates: The dictionary of currency pair ask rates Dict[str, float].
         :return float.
@@ -45,16 +45,16 @@ cdef class ExchangeRateCalculator:
         if from_currency == to_currency:
             return 1.0  # No exchange necessary
 
-        if quote_type == QuoteType.BID:
+        if price_type == PriceType.BID:
             calculation_rates = bid_rates
-        elif quote_type == QuoteType.ASK:
+        elif price_type == PriceType.ASK:
             calculation_rates = ask_rates
-        elif quote_type == QuoteType.MID:
+        elif price_type == PriceType.MID:
             calculation_rates = {}  # type: Dict[str, float]
             for ccy_pair in bid_rates.keys():
                 calculation_rates[ccy_pair] = (bid_rates[ccy_pair] + ask_rates[ccy_pair]) / 2.0
         else:
-            raise ValueError(f"Cannot calculate exchange rate for quote type {quote_type_to_string(quote_type)}.")
+            raise ValueError(f"Cannot calculate exchange rate for quote type {price_type_to_string(price_type)}.")
 
         cdef dict exchange_rates = {}
         cdef set symbols = set()

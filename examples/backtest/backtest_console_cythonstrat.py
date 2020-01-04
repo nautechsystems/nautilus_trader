@@ -8,11 +8,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pytz
 
 from datetime import datetime
 
 from nautilus_trader.common.logger import LogLevel
-from nautilus_trader.model.enums import BarStructure, Currency
+from nautilus_trader.model.enums import BarStructure, Currency, PriceType
+from nautilus_trader.model.objects import BarSpecification
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -22,18 +24,18 @@ from test_kit.strategies import EMACross
 
 
 if __name__ == "__main__":
-    usdjpy = TestStubs.instrument_usdjpy()
-    bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-    ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+    USDJPY = TestStubs.instrument_usdjpy()
+    instruments = [USDJPY]
 
-    instruments = [TestStubs.instrument_usdjpy()]
-    tick_data = {usdjpy.symbol: pd.DataFrame()}
-    bid_data = {usdjpy.symbol: {BarStructure.MINUTE: bid_data_1min}}
-    ask_data = {usdjpy.symbol: {BarStructure.MINUTE: ask_data_1min}}
+    data = {
+        'ticks': {USDJPY.symbol: TestDataProvider.usdjpy_test_ticks()},
+        'bars_bid': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}},
+        'bars_ask': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}},
+    }
 
     strategies = [EMACross(
-        instrument=usdjpy,
-        bar_spec=TestStubs.bar_spec_1min_bid(),
+        instrument=USDJPY,
+        bar_spec=BarSpecification(10, BarStructure.TICK, PriceType.BID),
         risk_bp=10,
         fast_ema=10,
         slow_ema=20,
@@ -63,17 +65,15 @@ if __name__ == "__main__":
 
     engine = BacktestEngine(
         instruments=instruments,
-        data_ticks=tick_data,
-        data_bars_bid=bid_data,
-        data_bars_ask=ask_data,
+        data=data,
         strategies=strategies,
         config=config,
         fill_model=fill_model)
 
     input("Press Enter to continue...")
 
-    start = datetime(2013, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 3, 1, 1, 0, 0, 0)
+    start = datetime(2000, 2, 1, 0, 0, 0, 0, pytz.UTC)
+    stop = datetime(2020, 3, 1, 1, 0, 0, 0, pytz.UTC)
 
     engine.run(start, stop)
 

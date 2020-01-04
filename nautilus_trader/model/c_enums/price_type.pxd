@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="quote_type.pxd" company="Nautech Systems Pty Ltd">
+# <copyright file="price_type.pxd" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum QuoteType:
+cpdef enum PriceType:
     UNKNOWN = -1,
     BID = 0,
     ASK = 1,
@@ -15,7 +15,7 @@ cpdef enum QuoteType:
     LAST = 3
 
 
-cdef inline str quote_type_to_string(int value):
+cdef inline str price_type_to_string(int value):
     if value == 0:
         return 'BID'
     elif value == 1:
@@ -28,14 +28,14 @@ cdef inline str quote_type_to_string(int value):
         return 'UNKNOWN'
 
 
-cdef inline QuoteType quote_type_from_string(str value):
+cdef inline PriceType price_type_from_string(str value):
     if value == "BID":
-        return QuoteType.BID
+        return PriceType.BID
     elif value == "ASK":
-        return QuoteType.ASK
+        return PriceType.ASK
     elif value == "MID":
-        return QuoteType.MID
+        return PriceType.MID
     elif value == "LAST":
-        return QuoteType.LAST
+        return PriceType.LAST
     else:
-        return QuoteType.UNKNOWN
+        return PriceType.UNKNOWN

@@ -16,7 +16,7 @@ from pandas.core.frame import DataFrame
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarSpecification
@@ -433,7 +433,7 @@ cdef class BarBuilder:
         self._volume = 0
         self._use_previous_close = use_previous_close
 
-    cpdef void update(self, Tick tick, long volume=1):
+    cpdef void update(self, Tick tick):
         cdef Price quote = self._get_price(tick)
 
         if self._open is None:
@@ -447,7 +447,7 @@ cdef class BarBuilder:
             self._low = quote
 
         self._close = quote
-        self._volume += volume
+        self._volume += self._get_volume(tick)
         self.count += 1
         self.last_update = tick.timestamp
 
@@ -483,10 +483,21 @@ cdef class BarBuilder:
         self.count = 0
 
     cdef Price _get_price(self, Tick tick):
-        if self.bar_spec.quote_type == QuoteType.MID:
+        if self.bar_spec.price_type == PriceType.MID:
             return Price((tick.bid.value + tick.ask.value) / 2)
-        elif self.bar_spec.quote_type == QuoteType.BID:
+        elif self.bar_spec.price_type == PriceType.BID:
             return tick.bid
-        else:
+        elif self.bar_spec.price_type == PriceType.ASK:
             return tick.ask
-        # Condition: quote_type != QuoteType.LAST checked in BarSpecification
+        else:
+            raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
+
+    cdef int _get_volume(self, Tick tick):
+        if self.bar_spec.price_type == PriceType.MID:
+            return tick.bid_size + tick.ask_size
+        elif self.bar_spec.price_type == PriceType.BID:
+            return tick.bid_size
+        elif self.bar_spec.price_type == PriceType.ASK:
+            return tick.ask_size
+        else:
+            raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")

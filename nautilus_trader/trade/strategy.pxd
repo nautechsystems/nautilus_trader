@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
@@ -123,7 +123,7 @@ cdef class TradingStrategy:
     cpdef Portfolio portfolio(self)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
-    cpdef float xrate_for_account(self, Currency quote_currency, QuoteType quote_type=*)
+    cpdef float xrate_for_account(self, Currency quote_currency, PriceType price_type=*)
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)
@@ -172,4 +172,4 @@ cdef class TradingStrategy:
     cpdef void change_guid_factory(self, GuidFactory guid_factory)
     cpdef void change_logger(self, Logger logger)
     cpdef void set_time(self, datetime time)
-    cpdef dict iterate(self, datetime time)
+    cpdef dict advance_time(self, datetime time)
