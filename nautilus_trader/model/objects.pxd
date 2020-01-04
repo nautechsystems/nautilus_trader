@@ -11,7 +11,8 @@ from cpython.datetime cimport datetime
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.tick_type cimport TickType
 from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 
 
@@ -40,9 +41,12 @@ cdef class Money:
 
 
 cdef class Tick:
+    cdef readonly TickType type
     cdef readonly Symbol symbol
     cdef readonly Price bid
     cdef readonly Price ask
+    cdef readonly int bid_size
+    cdef readonly int ask_size
     cdef readonly datetime timestamp
 
     @staticmethod
@@ -54,7 +58,7 @@ cdef class Tick:
 cdef class BarSpecification:
     cdef readonly int step
     cdef readonly BarStructure structure
-    cdef readonly QuoteType quote_type
+    cdef readonly PriceType price_type
 
     cdef bint equals(self, BarSpecification other)
     cdef str structure_string(self)

@@ -43,6 +43,7 @@ cdef class DataClient:
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._bar_aggregators = {}      # type: Dict[BarType, BarAggregator]
         self._tick_handlers = {}        # type: Dict[Symbol, List[TickHandler]]
         self._bar_handlers = {}         # type: Dict[BarType, List[BarHandler]]
         self._instrument_handlers = {}  # type: Dict[Symbol, List[InstrumentHandler]]
@@ -182,7 +183,7 @@ cdef class DataClient:
 
         return self._instruments[symbol]
 
-    cdef void _add_tick_handler(self, Symbol symbol, handler: Callable):
+    cpdef void _add_tick_handler(self, Symbol symbol, handler: Callable):
         # Subscribe to tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -197,7 +198,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
-    cdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
+    cpdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
         # Subscribe to bar data for the given bar type and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -212,7 +213,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
 
-    cdef void _add_instrument_handler(self, Symbol symbol, handler: Callable):
+    cpdef void _add_instrument_handler(self, Symbol symbol, handler: Callable):
         # Subscribe to tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -227,7 +228,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
 
-    cdef void _remove_tick_handler(self, Symbol symbol, handler: Callable):
+    cpdef void _remove_tick_handler(self, Symbol symbol, handler: Callable):
         # Unsubscribe from tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -245,7 +246,7 @@ cdef class DataClient:
         if len(self._tick_handlers[symbol]) == 0:
             del self._tick_handlers[symbol]
 
-    cdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
+    cpdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
         # Unsubscribe from bar data for the given bar type and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -263,7 +264,7 @@ cdef class DataClient:
         if len(self._bar_handlers[bar_type]) == 0:
             del self._bar_handlers[bar_type]
 
-    cdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable):
+    cpdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable):
         # Unsubscribe from tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -281,21 +282,21 @@ cdef class DataClient:
         if len(self._instrument_handlers[symbol]) == 0:
             del self._instrument_handlers[symbol]
 
-    cdef void _handle_tick(self, Tick tick):
+    cpdef void _handle_tick(self, Tick tick):
         # Handle the given tick by sending it to all tick handlers for that symbol
         cdef TickHandler handler
         if tick.symbol in self._tick_handlers:
             for handler in self._tick_handlers[tick.symbol]:
                 handler.handle(tick)
 
-    cdef void _handle_bar(self, BarType bar_type, Bar bar):
+    cpdef void _handle_bar(self, BarType bar_type, Bar bar):
         # Handle the given bar by sending it to all bar handlers for that bar type
         cdef BarHandler handler
         if bar_type in self._bar_handlers:
             for handler in self._bar_handlers[bar_type]:
                 handler.handle(bar_type, bar)
 
-    cdef void _handle_instrument(self, Instrument instrument):
+    cpdef void _handle_instrument(self, Instrument instrument):
         # Handle the given instrument by sending it to all instrument handlers for that symbol
         if instrument.symbol in self._instruments:
             # Remove instrument key if already exists
@@ -308,12 +309,12 @@ cdef class DataClient:
             for handler in self._instrument_handlers[instrument.symbol]:
                 handler.handle(instrument)
 
-    cdef void _handle_instruments(self, list instruments):
+    cpdef void _handle_instruments(self, list instruments):
         # Handle all instruments individually
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cdef void _reset(self):
+    cpdef void _reset(self):
         # Reset the class to its initial state
         self._tick_handlers.clear()
         self._bar_handlers.clear()
@@ -351,13 +352,13 @@ cdef class BarAggregator:
             bar_spec=self.bar_type.specification,
             use_previous_close=use_previous_close)
 
-    cpdef void update(self, Tick tick, long volume=1):
+    cpdef void update(self, Tick tick) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef void _handle_bar(self, Bar bar):
-        self._log.debug(f"Built {self.bar_type} bar.")
-        self._handler(bar)
+    cpdef void _handle_bar(self, Bar bar):
+        self._log.debug(f"Built {self.bar_type} {bar}")
+        self._handler(self.bar_type, bar)
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -385,14 +386,13 @@ cdef class TickBarAggregator(BarAggregator):
 
         self.step = bar_type.specification.step
 
-    cpdef void update(self, Tick tick, long volume=1):
+    cpdef void update(self, Tick tick) except *:
         """
         Update the builder with the given tick.
 
         :param tick: The tick for the update.
-        :param volume: The market volume for the update.
         """
-        self._builder.update(tick, volume)
+        self._builder.update(tick)
 
         if self._builder.count == self.step:
             self._handle_bar(self._builder.build())
@@ -427,14 +427,13 @@ cdef class TimeBarAggregator(BarAggregator):
         self.next_close = self._clock.next_event_time
         self._set_build_timer()
 
-    cpdef void update(self, Tick tick, long volume=1):
+    cpdef void update(self, Tick tick) except *:
         """
         Update the builder with the given tick.
 
         :param tick: The tick for the update.
-        :param volume: The market volume for the update.
         """
-        self._builder.update(tick, volume)
+        self._builder.update(tick)
 
         cdef dict events
         cdef TimeEvent event

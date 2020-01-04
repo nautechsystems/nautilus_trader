@@ -29,7 +29,7 @@ from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
+from nautilus_trader.backtest.data cimport BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 
@@ -45,9 +45,10 @@ cdef class BacktestEngine:
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict data_ticks: Dict[Symbol, DataFrame],
-                 dict data_bars_bid: Dict[Symbol, Dict[BarStructure, DataFrame]],
-                 dict data_bars_ask: Dict[Symbol, Dict[BarStructure, DataFrame]],
+                 dict data,
+                 # dict data_ticks: Dict[Symbol, DataFrame],
+                 # dict data_bars_bid: Dict[Symbol, Dict[BarStructure, DataFrame]],
+                 # dict data_bars_ask: Dict[Symbol, Dict[BarStructure, DataFrame]],
                  list strategies: List[TradingStrategy],
                  BacktestConfig config=BacktestConfig(),
                  FillModel fill_model=FillModel()):
@@ -129,9 +130,10 @@ cdef class BacktestEngine:
         self.data_client = BacktestDataClient(
             venue=Venue('BACKTEST'),
             instruments=instruments,
-            data_ticks=data_ticks,
-            data_bars_bid=data_bars_bid,
-            data_bars_ask=data_bars_ask,
+            data=data,
+            # data_ticks=data_ticks,
+            # data_bars_bid=data_bars_bid,
+            # data_bars_ask=data_bars_ask,
             clock=self.test_clock,
             logger=self.test_logger)
 
@@ -186,7 +188,6 @@ cdef class BacktestEngine:
             self,
             datetime start=None,
             datetime stop=None,
-            timedelta time_step=None,
             FillModel fill_model=None,
             list strategies=None,
             bint print_log_store=True):
@@ -195,7 +196,6 @@ cdef class BacktestEngine:
 
         :param start: The start UTC datetime for the backtest run (optional can be None - will run from the start of the data).
         :param stop: The stop UTC datetime for the backtest run (optional can be None - will run to the end of the data).
-        :param time_step: The iteration time step for the backtest run.
         :param fill_model: The fill model change for the backtest run (optional can be None - will use previous).
         :param strategies: The strategies change for the backtest run (optional can be None - will use previous).
         :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
@@ -211,27 +211,27 @@ cdef class BacktestEngine:
         :raises: ConditionFailed: If the strategies list is not None and is empty, or contains a type other than TradingStrategy.
         """
         #  Setup start datetime
-        if start is None:
-            start = self.data_client.execution_data_index_min
-        else:
-            start = as_utc_timestamp(start)
+        # if start is None:
+        #     start = self.data_client.execution_data_index_min
+        # else:
+        #     start = as_utc_timestamp(start)
+        #
+        # # Setup stop datetime
+        # if stop is None:
+        #     stop = self.data_client.execution_data_index_max
+        # else:
+        #     stop = as_utc_timestamp(stop)
+        #
+        # # Setup time step
+        # if time_step is None:
+        #     time_step = self.data_client.max_time_step
+        # else:
+        #     Condition.true(time_step <= self.data_client.max_time_step, 'time_step <= data_client.max_time_step')
 
-        # Setup stop datetime
-        if stop is None:
-            stop = self.data_client.execution_data_index_max
-        else:
-            stop = as_utc_timestamp(stop)
-
-        # Setup time step
-        if time_step is None:
-            time_step = self.data_client.max_time_step
-        else:
-            Condition.true(time_step <= self.data_client.max_time_step, 'time_step <= data_client.max_time_step')
-
-        Condition.true(start.tz == pytz.UTC, 'start.tz == UTC')
-        Condition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
-        Condition.true(start >= self.data_client.execution_data_index_min, 'start >= execution_data_index_min')
-        Condition.true(start <= self.data_client.execution_data_index_max, 'stop <= execution_data_index_max')
+        # Condition.true(start.tz == pytz.UTC, 'start.tz == UTC')
+        # Condition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
+        # Condition.true(start >= self.data_client.execution_data_index_min, 'start >= execution_data_index_min')
+        # Condition.true(start <= self.data_client.execution_data_index_max, 'stop <= execution_data_index_max')
         Condition.true(start < stop, 'start < stop')
         Condition.type_or_none(fill_model, FillModel, 'fill_model')
         Condition.type_or_none(strategies, list, 'strategies')
@@ -258,7 +258,7 @@ cdef class BacktestEngine:
         self._backtest_header(run_started, start, stop)
         self.log.info(f"Setting up backtest...")
         self.log.debug("Setting initial iterations...")
-        self.data_client.set_initial_iteration_indexes(start)  # Also sets clock to start time
+        # self.data_client.set_initial_iteration_indexes(start)  # Also sets clock to start time
 
         # Setup new fill model
         if fill_model is not None:
@@ -273,10 +273,35 @@ cdef class BacktestEngine:
         self.log.info(f"Running backtest...")
         self.trader.start()
 
-        if self.data_client.execution_structure == BarStructure.TICK:
-            self._run_with_tick_execution(start, stop, time_step)
-        else:
-            self._run_with_bar_execution(start, stop, time_step)
+        # Run the backtest with tick level execution
+
+        cdef Tick tick
+        cdef TradingStrategy strategy
+        cdef dict time_events
+        cdef TimeEvent event
+
+        # -- MAIN BACKTEST LOOP -----------------------------------------------#
+        for tick in self.data_client.get_ticks():
+            if tick.timestamp < start:
+                continue
+            if tick.timestamp > stop:
+                continue
+
+            time_events = {}  # type: Dict[TimeEvent, Callable]
+            for strategy in self.trader.strategies:
+                time_events = dict(sorted({**time_events, **strategy.advance_time(tick.timestamp)}))
+            for event, handler in time_events.copy().items():
+                self.test_clock.set_time(event.timestamp)
+                handler(event)
+            self.test_clock.set_time(tick.timestamp)
+            self.exec_client.process_tick(tick)
+            self.data_client.process_tick(tick)
+            self.iteration += 1
+
+        # if self.data_client.execution_structure == BarStructure.TICK:
+        #     self._run_with_tick_execution(start, stop, time_step)
+        # else:
+        #     self._run_with_bar_execution(start, stop, time_step)
         # ---------------------------------------------------------------------#
 
         self.log.info("Stopping...")
@@ -286,72 +311,39 @@ cdef class BacktestEngine:
         if print_log_store:
             self.print_log_store()
 
-    cdef void _run_with_tick_execution(
-            self,
-            datetime start,
-            datetime stop,
-            timedelta time_step):
-        # Run the backtest with tick level execution
-
-        cdef Tick tick
-        cdef TradingStrategy strategy
-        cdef dict time_events
-        cdef TimeEvent event
-
-        cdef datetime time = start
-
-        # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        while time <= stop:
-            for tick in self.data_client.iterate_ticks(time):
-                self.test_clock.set_time(tick.timestamp)
-                self.exec_client.process_tick(tick)
-                time_events = {}  # type: Dict[TimeEvent, Callable]
-                for strategy in self.trader.strategies:
-                    time_events = {**time_events, **strategy.iterate(tick.timestamp)}
-                for event, handler in dict(sorted(time_events.items())).items():
-                    self.test_clock.set_time(event.timestamp)
-                    handler(event)
-                self.test_clock.set_time(tick.timestamp)
-                self.data_client.process_tick(tick)
-            self.test_clock.set_time(time)
-            self.data_client.process_bars(self.data_client.iterate_bars(time))
-            time += time_step
-            self.iteration += 1
-        # ---------------------------------------------------------------------#
-
-    cdef void _run_with_bar_execution(
-            self,
-            datetime start,
-            datetime stop,
-            timedelta time_step):
-        # Run the backtest with bar level execution
-
-        cdef Symbol symbol
-        cdef Tick tick
-        cdef TradingStrategy strategy
-        cdef BidAskBarPair execution_bars
-        cdef dict time_events
-        cdef TimeEvent event
-
-        cdef datetime time = start
-
-        # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        while time <= stop:
-            time_events = {}  # type: Dict[TimeEvent, Callable]
-            for strategy in self.trader.strategies:
-                time_events = {**time_events, **strategy.iterate(time)}
-            for event, handler in dict(sorted(time_events.items())).items():
-                self.test_clock.set_time(event.timestamp)
-                handler(event)
-            for symbol, execution_bars in self.data_client.get_next_execution_bars(time).items():
-                self.exec_client.process_bars(symbol, execution_bars.bid, execution_bars.ask)
-            for tick in self.data_client.iterate_ticks(time):
-                self.data_client.process_tick(tick)
-            self.test_clock.set_time(time)
-            self.data_client.process_bars(self.data_client.iterate_bars(time))
-            time += time_step
-            self.iteration += 1
-        # ---------------------------------------------------------------------#
+    # cdef void _run_with_bar_execution(
+    #         self,
+    #         datetime start,
+    #         datetime stop,
+    #         timedelta time_step):
+    #     # Run the backtest with bar level execution
+    #
+    #     cdef Symbol symbol
+    #     cdef Tick tick
+    #     cdef TradingStrategy strategy
+    #     cdef BidAskBarPair execution_bars
+    #     cdef dict time_events
+    #     cdef TimeEvent event
+    #
+    #     cdef datetime time = start
+    #
+    #     # -- MAIN BACKTEST LOOP -----------------------------------------------#
+    #     while time <= stop:
+    #         time_events = {}  # type: Dict[TimeEvent, Callable]
+    #         for strategy in self.trader.strategies:
+    #             time_events = {**time_events, **strategy.advance_time(time)}
+    #         for event, handler in dict(sorted(time_events.items())).items():
+    #             self.test_clock.set_time(event.timestamp)
+    #             handler(event)
+    #         for symbol, execution_bars in self.data_client.get_next_execution_bars(time).items():
+    #             self.exec_client.process_bars(symbol, execution_bars.bid, execution_bars.ask)
+    #         for tick in self.data_client.iterate_ticks(time):
+    #             self.data_client.process_tick(tick)
+    #         self.test_clock.set_time(time)
+    #         self.data_client.process_bars(self.data_client.iterate_bars(time))
+    #         time += time_step
+    #         self.iteration += 1
+    #     # ---------------------------------------------------------------------#
 
     cpdef list get_log_store(self):
         """
@@ -421,7 +413,7 @@ cdef class BacktestEngine:
         self.log.info(f"Run started datetime:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
+        #self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
@@ -446,7 +438,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Elapsed time (running):  {run_finished - run_started}")
 
-        self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
+        #self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
         self.log.info(f"Iterations: {self.iteration}")
         self.log.info(f"Total events: {self.exec_engine.event_count}")
         self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total()}")

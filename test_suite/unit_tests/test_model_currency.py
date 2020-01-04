@@ -8,7 +8,7 @@
 
 import unittest
 
-from nautilus_trader.model.enums import Currency, QuoteType
+from nautilus_trader.model.enums import Currency, PriceType
 from nautilus_trader.model.currency import ExchangeRateCalculator
 
 
@@ -26,7 +26,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
                           converter.get_rate,
                           Currency.USD,
                           Currency.JPY,
-                          QuoteType.BID,
+                          PriceType.BID,
                           bid_rates,
                           ask_rates)
 
@@ -40,7 +40,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         result = converter.get_rate(
             Currency.AUD,
             Currency.USD,
-            QuoteType.BID,
+            PriceType.BID,
             bid_rates,
             ask_rates)
 
@@ -57,7 +57,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         result = converter.get_rate(
             Currency.JPY,
             Currency.USD,
-            QuoteType.BID,
+            PriceType.BID,
             bid_rates,
             ask_rates)
 
@@ -79,14 +79,14 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         result1 = converter.get_rate(
             Currency.JPY,
             Currency.AUD,
-            QuoteType.BID,
+            PriceType.BID,
             bid_rates,
             ask_rates)
 
         result2 = converter.get_rate(
             Currency.AUD,
             Currency.JPY,
-            QuoteType.ASK,
+            PriceType.ASK,
             bid_rates,
             ask_rates)
 
@@ -104,7 +104,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         result = converter.get_rate(
             Currency.JPY,
             Currency.USD,
-            QuoteType.MID,
+            PriceType.MID,
             bid_rates,
             ask_rates)
 
@@ -121,7 +121,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         result = converter.get_rate(
             Currency.USD,
             Currency.JPY,
-            QuoteType.MID,
+            PriceType.MID,
             bid_rates,
             ask_rates)
 

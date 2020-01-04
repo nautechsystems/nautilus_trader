@@ -15,7 +15,7 @@ from typing import List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -173,25 +173,26 @@ cdef class BacktestExecClient(ExecutionClient):
 
         :param tick: The tick data to update with.
         """
+        self._clock.set_time(tick.timestamp)
         self.current_bids[tick.symbol] = tick.bid
         self.current_asks[tick.symbol] = tick.ask
         self._process_market(tick.symbol, tick.bid, tick.ask)
 
-    cpdef void process_bars(
-            self,
-            Symbol symbol,
-            Bar bid_bar,
-            Bar ask_bar):
-        """
-        Process the execution client markets with the given data.
-        
-        :param symbol: The symbol for the update data.
-        :param bid_bar: The bid bar data to update with.
-        :param ask_bar: The ask bar data to update with.
-        """
-        self.current_bids[symbol] = bid_bar.close
-        self.current_asks[symbol] = ask_bar.close
-        self._process_market(symbol, bid_bar.low, ask_bar.high)
+    # cpdef void process_bars(
+    #         self,
+    #         Symbol symbol,
+    #         Bar bid_bar,
+    #         Bar ask_bar):
+    #     """
+    #     Process the execution client markets with the given data.
+    #
+    #     :param symbol: The symbol for the update data.
+    #     :param bid_bar: The bid bar data to update with.
+    #     :param ask_bar: The ask bar data to update with.
+    #     """
+    #     self.current_bids[symbol] = bid_bar.close
+    #     self.current_asks[symbol] = ask_bar.close
+    #     self._process_market(symbol, bid_bar.low, ask_bar.high)
 
     cdef void _process_market(
             self,
@@ -710,7 +711,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef float exchange_rate = self.exchange_calculator.get_rate(
             from_currency=instrument.base_currency,
             to_currency=self._account.currency,
-            quote_type=QuoteType.BID if event.order_side is OrderSide.SELL else QuoteType.ASK,
+            price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
 
@@ -772,7 +773,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 exchange_rate = self.exchange_calculator.get_rate(
                         from_currency=quote_currency,
                         to_currency=self._account.currency,
-                        quote_type=QuoteType.MID,
+                        price_type=PriceType.MID,
                         bid_rates=self._build_current_bid_rates(),
                         ask_rates=self._build_current_ask_rates())
                 rollover_to_apply += Money(mid_price * position.quantity.value * interest_rate * exchange_rate)

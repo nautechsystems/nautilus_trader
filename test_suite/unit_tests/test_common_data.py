@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from nautilus_trader.common.clock import LiveClock, TestClock
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.data import TickBarAggregator, TimeBarAggregator
-from nautilus_trader.model.enums import BarStructure, QuoteType
+from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType
 
 from test_kit.stubs import TestStubs
@@ -29,7 +29,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         bar_store = []
         handler = bar_store.append
         symbol = TestStubs.symbol_audusd_fxcm()
-        bar_spec = BarSpecification(3, BarStructure.TICK, QuoteType.MID)
+        bar_spec = BarSpecification(3, BarStructure.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger())
 
@@ -62,7 +62,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price('1.000035'), bar_store[0].high)
         self.assertEqual(Price('1.000015'), bar_store[0].low)
         self.assertEqual(Price('1.000015'), bar_store[0].close)
-        self.assertEqual(3, bar_store[0].volume)
+        self.assertEqual(6, bar_store[0].volume)
 
 
 class TimeBarAggregatorTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         bar_store = []
         handler = bar_store.append
         symbol = TestStubs.symbol_audusd_fxcm()
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, QuoteType.MID)
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TimeBarAggregator(bar_type, handler, TestClock(), TestLogger())
 
@@ -107,7 +107,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price('1.000035'), bar_store[0].high)
         self.assertEqual(Price('1.000015'), bar_store[0].low)
         self.assertEqual(Price('1.000015'), bar_store[0].close)
-        self.assertEqual(3, bar_store[0].volume)
+        self.assertEqual(6, bar_store[0].volume)
         self.assertEqual(0, bar_store[1].volume)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=timezone.utc), bar_store[0].timestamp)
         self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=timezone.utc), bar_store[1].timestamp)

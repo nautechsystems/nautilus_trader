@@ -58,7 +58,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void register_exec_db(self, ExecutionDatabase exec_db)
     cpdef void change_fill_model(self, FillModel fill_model)
     cpdef void process_tick(self, Tick tick)
-    cpdef void process_bars(self, Symbol symbol, Bar bid_bar, Bar ask_bar)
+    #cpdef void process_bars(self, Symbol symbol, Bar bid_bar, Bar ask_bar)
     cdef void _process_market(self, Symbol symbol, Price lowest_bid, Price highest_ask)
     cpdef void check_residuals(self)
     cpdef void reset(self)

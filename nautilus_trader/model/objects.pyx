@@ -16,7 +16,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string, bar_structure_from_string
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_string, quote_type_from_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string, price_type_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Venue
@@ -610,7 +610,10 @@ cdef class Tick:
                  Symbol symbol,
                  Price bid,
                  Price ask,
-                 datetime timestamp):
+                 datetime timestamp,
+                 TickType tick_type=TickType.TRADE,
+                 int bid_size=1,
+                 int ask_size=1):
         """
         Initializes a new instance of the Tick class.
 
@@ -618,12 +621,17 @@ cdef class Tick:
         :param bid: The tick best bid price.
         :param ask: The tick best ask price.
         :param timestamp: The tick timestamp (UTC).
-        :raises ConditionFailed: If the bid price is not positive (> 0).
-        :raises ConditionFailed: If the ask price is not positive (> 0).
+        :param tick_type: The optional tick type (default=TRADE).
+        :param tick_type: The optional tick type (default=TRADE).
+        :raises ConditionFailed: If the bid_size price is negative (< 0).
+        :raises ConditionFailed: If the ask_size price is negative (< 0).
         """
+        self.type = TickType.TRADE
         self.symbol = symbol
         self.bid = bid
         self.ask = ask
+        self.bid_size = bid_size
+        self.ask_size = ask_size
         self.timestamp = timestamp
 
     def __eq__(self, Tick other) -> bool:
@@ -777,22 +785,22 @@ cdef class BarSpecification:
     def __init__(self,
                  int step,
                  BarStructure structure,
-                 QuoteType quote_type):
+                 PriceType price_type):
         """
         Initializes a new instance of the BarSpecification class.
 
         :param step: The bar step (> 0).
         :param structure: The bar structure.
-        :param quote_type: The bar quote type.
+        :param price_type: The bar quote type.
         :raises ConditionFailed: If the step is not positive (> 0).
         :raises ConditionFailed: If the quote type is LAST.
         """
         Condition.positive(step, 'step')
-        Condition.true(quote_type != QuoteType.LAST, 'quote_type != QuoteType.LAST')
+        Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
 
         self.step = step
         self.structure = structure
-        self.quote_type = quote_type
+        self.price_type = price_type
 
     cdef bint equals(self, BarSpecification other):
         """
@@ -803,7 +811,7 @@ cdef class BarSpecification:
         """
         return (self.step == other.step
                 and self.structure == other.structure
-                and self.quote_type == other.quote_type)
+                and self.price_type == other.price_type)
 
     def __eq__(self, BarSpecification other) -> bool:
         """
@@ -829,7 +837,7 @@ cdef class BarSpecification:
 
         :return int.
         """
-        return hash((self.step, self.structure, self.quote_type))
+        return hash((self.step, self.structure, self.price_type))
 
     def __str__(self) -> str:
         """
@@ -837,7 +845,7 @@ cdef class BarSpecification:
 
         :return str.
         """
-        return f"{self.step}-{bar_structure_to_string(self.structure)}[{quote_type_to_string(self.quote_type)}]"
+        return f"{self.step}-{bar_structure_to_string(self.structure)}[{price_type_to_string(self.price_type)}]"
 
     def __repr__(self) -> str:
         """
@@ -862,7 +870,7 @@ cdef class BarSpecification:
         
         :return str.
         """
-        return quote_type_to_string(self.quote_type)
+        return price_type_to_string(self.price_type)
 
     @staticmethod
     cdef BarSpecification from_string(str value):
@@ -876,12 +884,12 @@ cdef class BarSpecification:
         cdef list split1 = value.split('-')
         cdef list split2 = split1[1].split('[')
         cdef str structure = split2[0]
-        cdef str quote_type = split2[1].strip(']')
+        cdef str price_type = split2[1].strip(']')
 
         return BarSpecification(
             int(split1[0]),
             bar_structure_from_string(structure),
-            quote_type_from_string(quote_type))
+            price_type_from_string(price_type))
 
     @staticmethod
     def py_from_string(value: str) -> BarSpecification:
@@ -992,11 +1000,11 @@ cdef class BarType:
         """
         cdef list split_string = re.split(r'[.-]+', value)
         cdef str structure = split_string[3].split('[')[0]
-        cdef str quote_type = split_string[3].split('[')[1].strip(']')
+        cdef str price_type = split_string[3].split('[')[1].strip(']')
         cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1]))
         cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
                                                           bar_structure_from_string(structure.upper()),
-                                                          quote_type_from_string(quote_type.upper()))
+                                                          price_type_from_string(price_type.upper()))
         return BarType(symbol, bar_spec)
 
     @staticmethod
