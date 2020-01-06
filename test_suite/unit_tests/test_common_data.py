@@ -63,7 +63,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price('1.000035'), bar_store.get_store()[0][1].high)
         self.assertEqual(Price('1.000015'), bar_store.get_store()[0][1].low)
         self.assertEqual(Price('1.000015'), bar_store.get_store()[0][1].close)
-        self.assertEqual(6, bar_store.get_store()[0][1].volume)
+        self.assertEqual(3, bar_store.get_store()[0][1].volume)
 
 
 class TimeBarAggregatorTests(unittest.TestCase):
@@ -108,7 +108,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price('1.000035'), bar_store.get_store()[0][1].high)
         self.assertEqual(Price('1.000015'), bar_store.get_store()[0][1].low)
         self.assertEqual(Price('1.000015'), bar_store.get_store()[0][1].close)
-        self.assertEqual(6, bar_store.get_store()[0][1].volume)
+        self.assertEqual(3, bar_store.get_store()[0][1].volume)
         self.assertEqual(0, bar_store.get_store()[1][1].volume)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=timezone.utc), bar_store.get_store()[0][1].timestamp)
         self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=timezone.utc), bar_store.get_store()[1][1].timestamp)

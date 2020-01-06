@@ -448,10 +448,11 @@ cdef class TimeBarAggregator(BarAggregator):
 
         cdef TimeEvent event
         if self._clock.is_test_clock:
-            self._clock.advance_time(tick.timestamp)
-            for event, handler in self._clock.get_pending_events().items():
-                handler(event)
-            self.next_close = self._clock.next_event_time
+            if self._clock.next_event_time <= tick.timestamp:
+                self._clock.advance_time(tick.timestamp)
+                for event, handler in self._clock.get_pending_events().items():
+                    handler(event)
+                self.next_close = self._clock.next_event_time
 
     cpdef void _build_event(self, TimeEvent event):
         self._handle_bar(self._builder.build(event.timestamp))
