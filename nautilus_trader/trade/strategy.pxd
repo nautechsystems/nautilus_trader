@@ -171,5 +171,3 @@ cdef class TradingStrategy:
     cpdef void change_clock(self, Clock clock)
     cpdef void change_guid_factory(self, GuidFactory guid_factory)
     cpdef void change_logger(self, Logger logger)
-    cpdef void set_time(self, datetime time)
-    cpdef dict advance_time(self, datetime time)

@@ -37,7 +37,7 @@ cdef class Quantity:
         :param value: The value of the quantity (>= 0).
         :raises ConditionFailed: If the value is negative (< 0).
         """
-        Condition.not_negative(value, 'value')
+        Condition.not_negative_int(value, 'value')
 
         self.value = value
 
@@ -208,11 +208,11 @@ cdef class Price:
             self.value = Decimal(value)
             self.precision = _get_precision(value)
         elif isinstance(value, float):
-            Condition.positive(precision, 'precision')
+            Condition.positive_int(precision, 'precision')
             self.value = Decimal(_get_decimal_str(value, precision))
             self.precision = precision
         elif isinstance(value, int):
-            Condition.positive(precision, 'precision')
+            Condition.positive_int(precision, 'precision')
             self.value = Decimal(_get_decimal_str(float(value), precision))
             self.precision = precision
         elif isinstance(value, Decimal):
@@ -221,8 +221,7 @@ cdef class Price:
         else:
             raise TypeError(f'Cannot initialize a Price with a {type(value)}.')
 
-        if self.value <= 0:
-            raise ValueError('the value of the price was not positive')
+        Condition.positive(self.value, 'value')
 
     cdef bint equals(self, Price other):
         """
@@ -626,6 +625,9 @@ cdef class Tick:
         :raises ConditionFailed: If the bid_size price is negative (< 0).
         :raises ConditionFailed: If the ask_size price is negative (< 0).
         """
+        Condition.not_negative_int(bid_size, 'bid_size')
+        Condition.not_negative_int(ask_size, 'ask_size')
+
         self.type = TickType.TRADE
         self.symbol = symbol
         self.bid = bid
@@ -795,7 +797,7 @@ cdef class BarSpecification:
         :raises ConditionFailed: If the step is not positive (> 0).
         :raises ConditionFailed: If the quote type is LAST.
         """
-        Condition.positive(step, 'step')
+        Condition.positive_int(step, 'step')
         Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
 
         self.step = step
@@ -1049,7 +1051,7 @@ cdef class Bar:
         :raises ConditionFailed: If checked is true and the low_price is not <= close_price.
         """
         if checked:
-            Condition.not_negative(volume, 'volume')
+            Condition.not_negative_int(volume, 'volume')
             Condition.true(high_price >= low_price, 'high_price >= low_price')
             Condition.true(high_price >= close_price, 'high_price >= close_price')
             Condition.true(low_price <= close_price, 'low_price <= close_price')
@@ -1260,15 +1262,15 @@ cdef class Instrument:
         :param timestamp: The timestamp the instrument was created/updated at.
         """
         Condition.valid_string(broker_symbol, 'broker_symbol')
-        Condition.not_negative(tick_precision, 'tick_precision')
+        Condition.not_negative_int(tick_precision, 'tick_precision')
         Condition.positive(tick_size, 'tick_size')
-        Condition.not_negative(min_stop_distance_entry, 'min_stop_distance_entry')
-        Condition.not_negative(min_limit_distance_entry, 'min_limit_distance_entry')
-        Condition.not_negative(min_stop_distance, 'min_stop_distance')
-        Condition.not_negative(min_limit_distance, 'min_limit_distance')
-        Condition.not_negative(min_limit_distance, 'min_limit_distance')
-        Condition.positive(min_trade_size.value, 'min_trade_size')
-        Condition.positive(max_trade_size.value, 'max_trade_size')
+        Condition.not_negative_int(min_stop_distance_entry, 'min_stop_distance_entry')
+        Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
+        Condition.not_negative_int(min_stop_distance, 'min_stop_distance')
+        Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
+        Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
+        Condition.positive_int(min_trade_size.value, 'min_trade_size')
+        Condition.positive_int(max_trade_size.value, 'max_trade_size')
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol

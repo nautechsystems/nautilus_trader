@@ -45,7 +45,7 @@ cdef class TickDataWrangler:
         :raises: ConditionFailed: If the bid_data is a type other than None or DataFrame.
         :raises: ConditionFailed: If the ask_data is a type other than None or DataFrame.
         """
-        Condition.not_negative(precision, 'precision')
+        Condition.not_negative_int(precision, 'precision')
         Condition.type_or_none(tick_data, DataFrame, 'tick_data')
         Condition.type_or_none(bid_data, DataFrame, 'bid_data')
         Condition.type_or_none(ask_data, DataFrame, 'ask_data')
@@ -152,8 +152,8 @@ cdef class BarDataWrangler:
         :raises: ConditionFailed: If the volume_multiple is not positive (> 0).
         :raises: ConditionFailed: If the data is a type other than DataFrame.
         """
-        Condition.not_negative(precision, 'precision')
-        Condition.positive(volume_multiple, 'volume_multiple')
+        Condition.not_negative_int(precision, 'precision')
+        Condition.positive_int(volume_multiple, 'volume_multiple')
         Condition.type(data, DataFrame, 'data')
 
         self._precision = precision
@@ -176,7 +176,7 @@ cdef class BarDataWrangler:
         
         :return List[DataBar].
         """
-        Condition.not_negative(index, 'index')
+        Condition.not_negative_int(index, 'index')
 
         return list(map(self._build_databar,
                         self._data.iloc[index:].values,
@@ -188,7 +188,7 @@ cdef class BarDataWrangler:
         
         :return List[DataBar].
         """
-        Condition.not_negative(start, 'start')
+        Condition.not_negative_int(start, 'start')
 
         return list(map(self._build_databar,
                         self._data.iloc[start:end].values,
@@ -210,7 +210,7 @@ cdef class BarDataWrangler:
 
         :return List[Bar].
         """
-        Condition.not_negative(index, 'index')
+        Condition.not_negative_int(index, 'index')
 
         return list(map(self._build_bar,
                         self._data.iloc[index:].values,
@@ -222,7 +222,7 @@ cdef class BarDataWrangler:
 
         :return List[Bar].
         """
-        Condition.not_negative(start, 'start')
+        Condition.not_negative_int(start, 'start')
 
         return list(map(self._build_bar,
                         self._data.iloc[start:end].values,

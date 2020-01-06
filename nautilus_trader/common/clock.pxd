@@ -67,9 +67,11 @@ cdef class Clock:
 
 cdef class TestClock(Clock):
     cdef datetime _time
+    cdef dict _pending_events
 
     cpdef void set_time(self, datetime to_time)
-    cpdef dict advance_time(self, datetime to_time)
+    cpdef void advance_time(self, datetime to_time)
+    cpdef dict get_pending_events(self)
 
 
 cdef class LiveClock(Clock):

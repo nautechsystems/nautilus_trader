@@ -87,7 +87,7 @@ cdef class Order:
         :raises ConditionFailed: If the order type should have a price and the price is None.
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
-        Condition.positive(quantity.value, 'quantity')
+        Condition.positive_int(quantity.value, 'quantity')
 
         # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:

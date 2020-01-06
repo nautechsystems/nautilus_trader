@@ -44,20 +44,16 @@ cdef class BacktestEngine:
     """
 
     def __init__(self,
-                 list instruments: List[Instrument],
                  dict data,
-                 # dict data_ticks: Dict[Symbol, DataFrame],
-                 # dict data_bars_bid: Dict[Symbol, Dict[BarStructure, DataFrame]],
-                 # dict data_bars_ask: Dict[Symbol, Dict[BarStructure, DataFrame]],
+                 list instruments: List[Instrument],
                  list strategies: List[TradingStrategy],
                  BacktestConfig config=BacktestConfig(),
                  FillModel fill_model=FillModel()):
         """
         Initializes a new instance of the BacktestEngine class.
 
-        :param data_ticks: The tick data for the backtest engine.
-        :param data_bars_bid: The bid bar data needed for the backtest engine.
-        :param data_bars_ask: The ask bar data needed for the backtest engine.
+        :param data: The data for the backtest engine.
+        :param instruments: The instruments for the backtest engine.
         :param strategies: The initial strategies for the backtest engine.
         :param config: The configuration for the backtest engine.
         :param fill_model: The initial fill model for the backtest engine.
@@ -129,11 +125,8 @@ cdef class BacktestEngine:
 
         self.data_client = BacktestDataClient(
             venue=Venue('BACKTEST'),
-            instruments=instruments,
             data=data,
-            # data_ticks=data_ticks,
-            # data_bars_bid=data_bars_bid,
-            # data_bars_ask=data_bars_ask,
+            instruments=instruments,
             clock=self.test_clock,
             logger=self.test_logger)
 
@@ -210,28 +203,22 @@ cdef class BacktestEngine:
         :raises: ConditionFailed: If the strategies is a type other than list or None.
         :raises: ConditionFailed: If the strategies list is not None and is empty, or contains a type other than TradingStrategy.
         """
-        #  Setup start datetime
-        # if start is None:
-        #     start = self.data_client.execution_data_index_min
-        # else:
-        #     start = as_utc_timestamp(start)
-        #
-        # # Setup stop datetime
-        # if stop is None:
-        #     stop = self.data_client.execution_data_index_max
-        # else:
-        #     stop = as_utc_timestamp(stop)
-        #
-        # # Setup time step
-        # if time_step is None:
-        #     time_step = self.data_client.max_time_step
-        # else:
-        #     Condition.true(time_step <= self.data_client.max_time_step, 'time_step <= data_client.max_time_step')
+        # Setup start datetime
+        if start is None:
+            start = self.data_client.min_timestamp
+        else:
+            start = max(as_utc_timestamp(start), self.data_client.min_timestamp)
 
-        # Condition.true(start.tz == pytz.UTC, 'start.tz == UTC')
-        # Condition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
-        # Condition.true(start >= self.data_client.execution_data_index_min, 'start >= execution_data_index_min')
-        # Condition.true(start <= self.data_client.execution_data_index_max, 'stop <= execution_data_index_max')
+        # Setup stop datetime
+        if stop is None:
+            stop = self.data_client.max_timestamp
+        else:
+            stop = min(as_utc_timestamp(stop), self.data_client.max_timestamp)
+
+        Condition.true(start.tz == pytz.UTC, 'start.tz == UTC')
+        Condition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
+        Condition.true(start >= self.data_client.min_timestamp, 'start >= data_client.min_timestamp')
+        Condition.true(start <= self.data_client.max_timestamp, 'stop <= data_client.max_timestamp')
         Condition.true(start < stop, 'start < stop')
         Condition.type_or_none(fill_model, FillModel, 'fill_model')
         Condition.type_or_none(strategies, list, 'strategies')
@@ -269,28 +256,22 @@ cdef class BacktestEngine:
             self.trader.initialize_strategies(strategies)
         self._change_clocks_and_loggers(self.trader.strategies)
 
-        # -- RUN BACKTEST -----------------------------------------------------#
+        # Run the backtest
         self.log.info(f"Running backtest...")
         self.trader.start()
 
-        # Run the backtest with tick level execution
-
         cdef Tick tick
-        cdef TradingStrategy strategy
         cdef dict time_events
+        cdef TradingStrategy strategy
         cdef TimeEvent event
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        for tick in self.data_client.get_ticks():
-            if tick.timestamp < start:
-                continue
-            if tick.timestamp > stop:
-                continue
-
+        for tick in self.data_client.ticks:
             time_events = {}  # type: Dict[TimeEvent, Callable]
             for strategy in self.trader.strategies:
-                time_events = dict(sorted({**time_events, **strategy.advance_time(tick.timestamp)}))
-            for event, handler in time_events.copy().items():
+                strategy.clock.advance_time(tick.timestamp)
+                time_events = {**time_events, **strategy.clock.get_pending_events()}
+            for event, handler in dict(sorted(time_events.items())):
                 self.test_clock.set_time(event.timestamp)
                 handler(event)
             self.test_clock.set_time(tick.timestamp)
@@ -298,52 +279,12 @@ cdef class BacktestEngine:
             self.data_client.process_tick(tick)
             self.iteration += 1
 
-        # if self.data_client.execution_structure == BarStructure.TICK:
-        #     self._run_with_tick_execution(start, stop, time_step)
-        # else:
-        #     self._run_with_bar_execution(start, stop, time_step)
-        # ---------------------------------------------------------------------#
-
         self.log.info("Stopping...")
         self.trader.stop()
         self.log.info("Stopped.")
         self._backtest_footer(run_started, self.clock.time_now(), start, stop)
         if print_log_store:
             self.print_log_store()
-
-    # cdef void _run_with_bar_execution(
-    #         self,
-    #         datetime start,
-    #         datetime stop,
-    #         timedelta time_step):
-    #     # Run the backtest with bar level execution
-    #
-    #     cdef Symbol symbol
-    #     cdef Tick tick
-    #     cdef TradingStrategy strategy
-    #     cdef BidAskBarPair execution_bars
-    #     cdef dict time_events
-    #     cdef TimeEvent event
-    #
-    #     cdef datetime time = start
-    #
-    #     # -- MAIN BACKTEST LOOP -----------------------------------------------#
-    #     while time <= stop:
-    #         time_events = {}  # type: Dict[TimeEvent, Callable]
-    #         for strategy in self.trader.strategies:
-    #             time_events = {**time_events, **strategy.advance_time(time)}
-    #         for event, handler in dict(sorted(time_events.items())).items():
-    #             self.test_clock.set_time(event.timestamp)
-    #             handler(event)
-    #         for symbol, execution_bars in self.data_client.get_next_execution_bars(time).items():
-    #             self.exec_client.process_bars(symbol, execution_bars.bid, execution_bars.ask)
-    #         for tick in self.data_client.iterate_ticks(time):
-    #             self.data_client.process_tick(tick)
-    #         self.test_clock.set_time(time)
-    #         self.data_client.process_bars(self.data_client.iterate_bars(time))
-    #         time += time_step
-    #         self.iteration += 1
-    #     # ---------------------------------------------------------------------#
 
     cpdef list get_log_store(self):
         """
@@ -466,6 +407,6 @@ cdef class BacktestEngine:
         for strategy in strategies:
             # Separate test clocks to iterate independently
             strategy.change_clock(TestClock())
-            strategy.set_time(self.test_clock.time_now())
+            strategy.clock.set_time(self.test_clock.time_now())
             # Replace the strategies logger with the engines test logger
             strategy.change_logger(self.test_logger)

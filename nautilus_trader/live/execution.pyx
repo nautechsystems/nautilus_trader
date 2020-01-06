@@ -89,7 +89,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :raises ConditionFailed: If the port is not in range [0, 65535].
         """
         Condition.valid_string(host, 'host')
-        Condition.in_range(port, 'port', 0, 65535)
+        Condition.valid_port(port, 'port')
 
         super().__init__(trader_id, logger)
 
@@ -1042,8 +1042,8 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Condition.valid_string(service_address, 'service_address')
         Condition.valid_string(events_topic, 'events_topic')
-        Condition.in_range(commands_port, 'commands_port', 0, 65535)
-        Condition.in_range(events_port, 'events_port', 0, 65535)
+        Condition.in_range_int(commands_port, 0, 65535, 'commands_port')
+        Condition.in_range_int(events_port, 0, 65535, 'events_port')
 
         super().__init__(exec_engine, logger)
         self._zmq_context = zmq_context

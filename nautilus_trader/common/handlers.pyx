@@ -16,7 +16,7 @@ cdef class Handler:
     """
     The base class for all handlers.
     """
-    def __init__(self, handler: Callable):
+    def __init__(self, handler):
         """
         Initializes a new instance of the TickHandler class.
 
@@ -60,7 +60,7 @@ cdef class TickHandler(Handler):
 
     def __init__(self, handler: Callable):
         """
-        Initializes a new instance of the TickHandler class.
+        Initializes a new instance of the BarHandler class.
 
         :param handler: The callable handler.
         """

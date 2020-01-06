@@ -6,11 +6,14 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import cython
+
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
@@ -58,12 +61,13 @@ cdef class DataClient:
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
 
-    cpdef void _add_tick_handler(self, Symbol symbol, handler)
-    cpdef void _add_bar_handler(self, BarType bar_type, handler)
-    cpdef void _add_instrument_handler(self, Symbol symbol, handler)
-    cpdef void _remove_tick_handler(self, Symbol symbol, handler)
-    cpdef void _remove_bar_handler(self, BarType bar_type, handler)
-    cpdef void _remove_instrument_handler(self, Symbol symbol, handler)
+    cdef void _self_generate_bars(self, BarType bar_type, handler)
+    cdef void _add_tick_handler(self, Symbol symbol, handler)
+    cdef void _add_bar_handler(self, BarType bar_type, handler)
+    cdef void _add_instrument_handler(self, Symbol symbol, handler)
+    cdef void _remove_tick_handler(self, Symbol symbol, handler)
+    cdef void _remove_bar_handler(self, BarType bar_type, handler)
+    cdef void _remove_instrument_handler(self, Symbol symbol, handler)
     cpdef void _handle_tick(self, Tick tick)
     cpdef void _handle_bar(self, BarType bar_type, Bar bar)
     cpdef void _handle_instrument(self, Instrument instrument)
@@ -73,7 +77,8 @@ cdef class DataClient:
 
 cdef class BarAggregator:
     cdef LoggerAdapter _log
-    cdef object _handler
+    cdef DataClient _client
+    cdef BarHandler _handler
     cdef BarBuilder _builder
 
     cdef readonly BarType bar_type

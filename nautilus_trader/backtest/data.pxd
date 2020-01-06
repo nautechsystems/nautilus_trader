@@ -24,6 +24,9 @@ cdef class BacktestDataClient(DataClient):
     #cdef readonly dict data_bars_bid
     #cdef readonly dict data_bars_ask
     cdef readonly dict data_providers
+    cdef readonly list ticks
+    cdef readonly datetime min_timestamp
+    cdef readonly datetime max_timestamp
     #cdef readonly set data_symbols
     # cdef readonly datetime execution_data_index_min
     # cdef readonly datetime execution_data_index_max
@@ -43,16 +46,9 @@ cdef class BacktestDataClient(DataClient):
     # cpdef void process_bars(self, dict bars)
     cpdef void reset(self)
 
-    cpdef list get_ticks(self)
-
 
 cdef class DataProvider:
     cdef readonly Instrument instrument
-    # cdef readonly object _dataframe_ticks
-    # cdef readonly dict _dataframes_bars_bid
-    # cdef readonly dict _dataframes_bars_ask
-    # cdef readonly BarType bar_type_execution_bid
-    # cdef readonly BarType bar_type_execution_ask
     cdef readonly list ticks
     # cdef readonly dict bars
     # cdef readonly dict iterations

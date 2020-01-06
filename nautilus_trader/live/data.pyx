@@ -84,12 +84,12 @@ cdef class LiveDataClient(DataClient):
         :raises ConditionFailed: If the inst_sub_port is not in range [0, 65535].
         """
         Condition.valid_string(service_address, 'service_address')
-        Condition.in_range(tick_rep_port, 'tick_rep_port', 0, 65535)
-        Condition.in_range(tick_pub_port, 'tick_pub_port', 0, 65535)
-        Condition.in_range(bar_rep_port, 'bar_rep_port', 0, 65535)
-        Condition.in_range(bar_pub_port, 'bar_pub_port', 0, 65535)
-        Condition.in_range(inst_rep_port, 'inst_rep_port', 0, 65535)
-        Condition.in_range(inst_pub_port, 'inst_pub_port', 0, 65535)
+        Condition.valid_port(tick_rep_port, 'tick_rep_port')
+        Condition.valid_port(tick_pub_port, 'tick_pub_port')
+        Condition.valid_port(bar_rep_port, 'bar_rep_port')
+        Condition.valid_port(bar_pub_port, 'bar_pub_port')
+        Condition.valid_port(inst_rep_port, 'inst_rep_port')
+        Condition.valid_port(inst_pub_port, 'inst_pub_port')
 
         super().__init__(venue, clock, guid_factory, logger)
         self._zmq_context = zmq_context
