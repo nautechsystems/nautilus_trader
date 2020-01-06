@@ -118,11 +118,11 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_rollover = Money.zero()
         self.fill_model = fill_model
 
-        self.current_bids = {}         # type: Dict[Symbol, Price]
-        self.current_asks = {}         # type: Dict[Symbol, Price]
-        self.working_orders = {}       # type: Dict[OrderId, Order]
-        self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
-        self.oco_orders = {}           # type: Dict[OrderId, OrderId]
+        self._market_bids = {}         # type: Dict[Symbol, Price]
+        self._market_asks = {}         # type: Dict[Symbol, Price]
+        self._working_orders = {}       # type: Dict[OrderId, Order]
+        self._atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
+        self._oco_orders = {}           # type: Dict[OrderId, OrderId]
 
         self._set_slippage_index()
 
@@ -164,38 +164,14 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void process_tick(self, Tick tick):
         """
-        Update the execution client with the given data.
-
-        :param tick: The tick data to update with.
+        Process the execution client with the given tick. Market dynamics are
+        simulated against working orders.
+        
+        :param tick: The tick data to process with.
         """
         self._clock.set_time(tick.timestamp)
-        self.current_bids[tick.symbol] = tick.bid
-        self.current_asks[tick.symbol] = tick.ask
-        self._process_market(tick.symbol, tick.bid, tick.ask)
-
-    # cpdef void process_bars(
-    #         self,
-    #         Symbol symbol,
-    #         Bar bid_bar,
-    #         Bar ask_bar):
-    #     """
-    #     Process the execution client markets with the given data.
-    #
-    #     :param symbol: The symbol for the update data.
-    #     :param bid_bar: The bid bar data to update with.
-    #     :param ask_bar: The ask bar data to update with.
-    #     """
-    #     self.current_bids[symbol] = bid_bar.close
-    #     self.current_asks[symbol] = ask_bar.close
-    #     self._process_market(symbol, bid_bar.low, ask_bar.high)
-
-    cdef void _process_market(
-            self,
-            Symbol symbol,
-            Price lowest_bid,
-            Price highest_ask):
-        # Process the working orders for the given symbol by simulating market
-        # dynamics using the lowest bid and highest ask.
+        self._market_bids[tick.symbol] = tick.bid
+        self._market_asks[tick.symbol] = tick.ask
 
         cdef datetime time_now = self._clock.time_now()
 
@@ -223,11 +199,11 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Cannot calculate rollover interest
                 self._log.error(str(ex))
 
-        # Simulate market dynamics
+        # Simulate market
         cdef OrderId order_id
         cdef Order order
-        for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
-            if order.symbol != symbol:
+        for order_id, order in self._working_orders.copy().items():  # Copies dict to avoid resize during loop
+            if order.symbol != tick.symbol:
                 continue  # Order is for a different symbol
             if order.state != OrderState.WORKING:
                 continue  # Orders state has changed since the loop commenced
@@ -235,54 +211,54 @@ cdef class BacktestExecClient(ExecutionClient):
             # Check for order fill
             if order.side == OrderSide.BUY:
                 if order.type in STOP_ORDER_TYPES:
-                    if highest_ask > order.price or (highest_ask == order.price and self.fill_model.is_stop_filled()):
-                        del self.working_orders[order.id]  # Remove order from working orders
+                    if tick.ask > order.price or (tick.ask == order.price and self.fill_model.is_stop_filled()):
+                        del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
-                            self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
+                            self._fill_order(order, Price(order.price + self._slippage_index[order.symbol]))
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if highest_ask < order.price or (highest_ask == order.price and self.fill_model.is_limit_filled()):
-                        del self.working_orders[order.id]  # Remove order from working orders
+                    if tick.ask < order.price or (tick.ask == order.price and self.fill_model.is_limit_filled()):
+                        del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
-                            self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
+                            self._fill_order(order, Price(order.price + self._slippage_index[order.symbol]))
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type in STOP_ORDER_TYPES:
-                    if lowest_bid < order.price or (lowest_bid == order.price and self.fill_model.is_stop_filled()):
-                        del self.working_orders[order.id]  # Remove order from working orders
+                    if tick.bid < order.price or (tick.bid == order.price and self.fill_model.is_stop_filled()):
+                        del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
-                            self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
+                            self._fill_order(order, Price(order.price - self._slippage_index[order.symbol]))
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if lowest_bid > order.price or (lowest_bid == order.price and self.fill_model.is_limit_filled()):
-                        del self.working_orders[order.id]  # Remove order from working orders
+                    if tick.bid > order.price or (tick.bid == order.price and self.fill_model.is_limit_filled()):
+                        del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
-                            self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
+                            self._fill_order(order, Price(order.price - self._slippage_index[order.symbol]))
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
 
             # Check for order expiry
             if order.expire_time is not None and time_now >= order.expire_time:
-                if order.id in self.working_orders:  # Order may have been removed since loop started
-                    del self.working_orders[order.id]
+                if order.id in self._working_orders:  # Order may have been removed since loop started
+                    del self._working_orders[order.id]
                     self._expire_order(order)
 
     cpdef void check_residuals(self):
         """
         Check for any residual objects and log warnings if any are found.
         """
-        for order_list in self.atomic_child_orders.values():
+        for order_list in self._atomic_child_orders.values():
             for order in order_list:
                 self._log.warning(f"Residual child-order {order}")
 
-        for order_id in self.oco_orders.values():
+        for order_id in self._oco_orders.values():
             self._log.warning(f"Residual OCO {order_id}")
 
     cpdef void reset(self):
@@ -297,9 +273,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_activity_day = Money.zero()
         self._account = Account(self.reset_account_event())
         self.total_commissions = Money.zero()
-        self.working_orders = {}       # type: Dict[OrderId, Order]
-        self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
-        self.oco_orders = {}           # type: Dict[OrderId, OrderId]
+        self._working_orders = {}       # type: Dict[OrderId, Order]
+        self._atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
+        self._oco_orders = {}           # type: Dict[OrderId, OrderId]
 
         self._log.info("Reset.")
 
@@ -332,7 +308,7 @@ cdef class BacktestExecClient(ExecutionClient):
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = instrument.tick_size
 
-        self.slippage_index = slippage_index
+        self._slippage_index = slippage_index
 
 
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #
@@ -370,10 +346,10 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef list atomic_orders = [command.atomic_order.stop_loss]
         if command.atomic_order.has_take_profit:
             atomic_orders.append(command.atomic_order.take_profit)
-            self.oco_orders[command.atomic_order.take_profit.id] = command.atomic_order.stop_loss.id
-            self.oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.take_profit.id
+            self._oco_orders[command.atomic_order.take_profit.id] = command.atomic_order.stop_loss.id
+            self._oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.take_profit.id
 
-        self.atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
+        self._atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
 
         # Generate command
         cdef SubmitOrder submit_order = SubmitOrder(
@@ -388,11 +364,11 @@ cdef class BacktestExecClient(ExecutionClient):
         self.submit_order(submit_order)
 
     cpdef void cancel_order(self, CancelOrder command):
-        if command.order_id not in self.working_orders:
+        if command.order_id not in self._working_orders:
             self._cancel_reject_order(command.order_id, 'cancel order', 'order not found')
             return  # Rejected the cancel order command
 
-        cdef Order order = self.working_orders[command.order_id]
+        cdef Order order = self._working_orders[command.order_id]
 
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
@@ -403,17 +379,17 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         # Remove from working orders (checked it was in dictionary above)
-        del self.working_orders[command.order_id]
+        del self._working_orders[command.order_id]
 
         self._exec_engine.handle_event(cancelled)
         self._check_oco_order(command.order_id)
 
     cpdef void modify_order(self, ModifyOrder command):
-        if command.order_id not in self.working_orders:
+        if command.order_id not in self._working_orders:
             self._cancel_reject_order(command.order_id, 'modify order', 'order not found')
             return  # Rejected the modify order command
 
-        cdef Order order = self.working_orders[command.order_id]
+        cdef Order order = self._working_orders[command.order_id]
         cdef Instrument instrument = self.instruments[order.symbol]
         cdef Price current_ask
         cdef Price current_bid
@@ -423,7 +399,7 @@ cdef class BacktestExecClient(ExecutionClient):
             return  # Cannot modify order
 
         if order.side == OrderSide.BUY:
-            current_ask = self.current_asks[order.symbol]
+            current_ask = self._market_asks[order.symbol]
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value < current_ask + (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
@@ -433,7 +409,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._cancel_reject_order(order, 'modify order', f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
         elif order.side == OrderSide.SELL:
-            current_bid = self.current_bids[order.symbol]
+            current_bid = self._market_bids[order.symbol]
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value > current_bid - (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
@@ -516,21 +492,22 @@ cdef class BacktestExecClient(ExecutionClient):
 
         cdef OrderId first_child_order_id
         cdef OrderId other_oco_order_id
-        if order.id in self.atomic_child_orders:
+        if order.id in self._atomic_child_orders:
             # Remove any unprocessed atomic child order OCO identifiers
-            first_child_order_id = self.atomic_child_orders[order.id][0].id
-            if first_child_order_id in self.oco_orders:
-                other_oco_order_id = self.oco_orders[first_child_order_id]
-                del self.oco_orders[first_child_order_id]
-                del self.oco_orders[other_oco_order_id]
+            first_child_order_id = self._atomic_child_orders[order.id][0].id
+            if first_child_order_id in self._oco_orders:
+                other_oco_order_id = self._oco_orders[first_child_order_id]
+                del self._oco_orders[first_child_order_id]
+                del self._oco_orders[other_oco_order_id]
         else:
             self._check_oco_order(order.id)
         self._clean_up_child_orders(order.id)
 
     cdef void _process_order(self, Order order):
-        # Work the given order
-
-        Condition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
+        """
+        Work the given order.
+        """
+        Condition.not_in(order.id, self._working_orders, 'order.id', 'working_orders')
 
         cdef Instrument instrument = self.instruments[order.symbol]
 
@@ -542,13 +519,13 @@ cdef class BacktestExecClient(ExecutionClient):
             self._reject_order(order,  f'order quantity of {order.quantity} is less than the minimum trade size of {instrument.min_trade_size}')
             return  # Cannot accept order
 
+        cdef Price current_bid = self._market_bids.get(order.symbol, None)
+        cdef Price current_ask = self._market_asks.get(order.symbol, None)
+
         # Check market exists
-        if order.symbol not in self.current_bids:  # Market not initialized
+        if not current_bid:  # Market not initialized
             self._reject_order(order,  f'no market for {order.symbol}')
             return  # Cannot accept order
-
-        cdef Price current_bid = self.current_bids[order.symbol]
-        cdef Price current_ask = self.current_asks[order.symbol]
 
         # Check order price is valid or reject
         if order.side == OrderSide.BUY:
@@ -556,7 +533,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
-                    self._fill_order(order, Price(current_ask + self.slippage_index[order.symbol]))
+                    self._fill_order(order, Price(current_ask + self._slippage_index[order.symbol]))
                 else:
                     self._fill_order(order, current_ask)
                 return  # Order filled - nothing further to process
@@ -573,7 +550,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
-                    self._fill_order(order, Price(current_bid - self.slippage_index[order.symbol]))
+                    self._fill_order(order, Price(current_bid - self._slippage_index[order.symbol]))
                 else:
                     self._fill_order(order, current_bid)
                 return  # Order filled - nothing further to process
@@ -590,7 +567,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._accept_order(order)
 
         # Order now becomes working
-        self.working_orders[order.id] = order
+        self._working_orders[order.id] = order
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
@@ -636,39 +613,39 @@ cdef class BacktestExecClient(ExecutionClient):
         self._check_oco_order(order.id)
 
         # Work any atomic child orders
-        if order.id in self.atomic_child_orders:
-            for child_order in self.atomic_child_orders[order.id]:
+        if order.id in self._atomic_child_orders:
+            for child_order in self._atomic_child_orders[order.id]:
                 if not child_order.is_completed:  # The order may already be cancelled or rejected
                     self._process_order(child_order)
-            del self.atomic_child_orders[order.id]
+            del self._atomic_child_orders[order.id]
 
     cdef void _clean_up_child_orders(self, OrderId order_id):
         # Clean up any residual child orders from the completed order associated
         # with the given identifier.
-        if order_id in self.atomic_child_orders:
-            del self.atomic_child_orders[order_id]
+        if order_id in self._atomic_child_orders:
+            del self._atomic_child_orders[order_id]
 
     cdef void _check_oco_order(self, OrderId order_id):
         # Check held OCO orders and remove any paired with the given order_id
         cdef OrderId oco_order_id
         cdef Order oco_order
 
-        if order_id in self.oco_orders:
-            oco_order_id = self.oco_orders[order_id]
+        if order_id in self._oco_orders:
+            oco_order_id = self._oco_orders[order_id]
             oco_order = self._exec_engine.database.get_order(oco_order_id)
-            del self.oco_orders[order_id]
-            del self.oco_orders[oco_order_id]
+            del self._oco_orders[order_id]
+            del self._oco_orders[oco_order_id]
 
             # Reject any latent atomic child orders
-            for atomic_order_id, child_orders in self.atomic_child_orders.items():
+            for atomic_order_id, child_orders in self._atomic_child_orders.items():
                 for order in child_orders:
                     if oco_order.equals(order):
                         self._reject_oco_order(order, order_id)
 
             # Cancel any working OCO orders
-            if oco_order_id in self.working_orders:
-                self._cancel_oco_order(self.working_orders[oco_order_id], order_id)
-                del self.working_orders[oco_order_id]
+            if oco_order_id in self._working_orders:
+                self._cancel_oco_order(self._working_orders[oco_order_id], order_id)
+                del self._working_orders[oco_order_id]
 
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id):
         # order is the OCO order to reject
@@ -762,7 +739,7 @@ cdef class BacktestExecClient(ExecutionClient):
         for position in open_positions.values():
             instrument = self.instruments[position.symbol]
             if instrument.security_type == SecurityType.FOREX:
-                mid_price = float((self.current_asks[instrument.symbol] + self.current_bids[instrument.symbol]) / 2)
+                mid_price = float((self._market_asks[instrument.symbol] + self._market_bids[instrument.symbol]) / 2)
                 quote_currency = currency_from_string(position.symbol.code[3:])
                 interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)
                 exchange_rate = self.exchange_calculator.get_rate(
@@ -805,11 +782,11 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef dict _build_current_bid_rates(self):
         # Return the current currency bid rates in the markets as Dict[str, float]
-        return {symbol.code: price.as_float() for symbol, price in self.current_bids.items()}
+        return {symbol.code: price.as_float() for symbol, price in self._market_bids.items()}
 
     cdef dict _build_current_ask_rates(self):
         # Return the current currency ask rates in the markets as Dict[str, float]
-        return {symbol.code: price.as_float() for symbol, price in self.current_asks.items()}
+        return {symbol.code: price.as_float() for symbol, price in self._market_asks.items()}
 
     cdef Money _calculate_pnl(
             self,
