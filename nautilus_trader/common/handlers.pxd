@@ -6,23 +6,26 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
+from nautilus_trader.core.message cimport Event
+
+#cdef void (*_handler)(Tick tick)
 
 cdef class Handler:
     cdef readonly object handle
 
 
 cdef class TickHandler(Handler):
-    #cdef void (*_handler)(Tick tick)
-    pass
+    cdef void handle(self, Tick tick) except *
 
 
 cdef class BarHandler(Handler):
-    pass
+    cdef void handle(self, BarType bar_type, Bar bar)  except *
 
 
 cdef class InstrumentHandler(Handler):
-    pass
+    cdef void handle(self, Instrument instrument)  except *
 
 
 cdef class EventHandler(Handler):
-    pass
+    cdef void handle(self, Event event)  except *

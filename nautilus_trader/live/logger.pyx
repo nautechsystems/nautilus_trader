@@ -39,7 +39,7 @@ cdef class LogStore:
         :raises ConditionFailed: If the redis_port is not in range [0, 65535].
         """
         Condition.valid_string(host, 'host')
-        Condition.in_range(port, 'port', 0, 65535)
+        Condition.valid_port(port, 'port')
 
         self._key = f'Trader-{trader_id.value}:LogStore'
         self._redis = redis.Redis(host=host, port=port, db=0)

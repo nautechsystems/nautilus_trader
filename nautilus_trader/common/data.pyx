@@ -21,6 +21,14 @@ from nautilus_trader.common.handlers cimport TickHandler, BarHandler, Instrument
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
+cdef list _TIME_BARS = [
+        BarStructure.SECOND,
+        BarStructure.MINUTE,
+        BarStructure.HOUR,
+        BarStructure.DAY,
+    ]
+
+
 cdef class DataClient:
     """
     The base class for all data clients.
@@ -183,7 +191,21 @@ cdef class DataClient:
 
         return self._instruments[symbol]
 
-    cpdef void _add_tick_handler(self, Symbol symbol, handler: Callable):
+    cdef void _self_generate_bars(self, BarType bar_type, handler):
+        cdef BarAggregator aggregator
+        if bar_type.specification.structure == BarStructure.TICK:
+            aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
+
+        elif bar_type.specification.structure in _TIME_BARS:
+            aggregator = TimeBarAggregator(bar_type,  self._handle_bar, self._clock, self._log.get_logger())
+
+        if bar_type not in self._bar_aggregators:
+            self._bar_aggregators[bar_type] = aggregator
+            self.subscribe_ticks(bar_type.symbol, aggregator.update)
+
+        self._add_bar_handler(bar_type, handler)
+
+    cdef void _add_tick_handler(self, Symbol symbol, handler: Callable):
         # Subscribe to tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -198,7 +220,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
-    cpdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
+    cdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
         # Subscribe to bar data for the given bar type and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -213,7 +235,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
 
-    cpdef void _add_instrument_handler(self, Symbol symbol, handler: Callable):
+    cdef void _add_instrument_handler(self, Symbol symbol, handler: Callable):
         # Subscribe to tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -228,7 +250,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
 
-    cpdef void _remove_tick_handler(self, Symbol symbol, handler: Callable):
+    cdef void _remove_tick_handler(self, Symbol symbol, handler: Callable):
         # Unsubscribe from tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -246,7 +268,7 @@ cdef class DataClient:
         if len(self._tick_handlers[symbol]) == 0:
             del self._tick_handlers[symbol]
 
-    cpdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
+    cdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
         # Unsubscribe from bar data for the given bar type and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -264,7 +286,7 @@ cdef class DataClient:
         if len(self._bar_handlers[bar_type]) == 0:
             del self._bar_handlers[bar_type]
 
-    cpdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable):
+    cdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable):
         # Unsubscribe from tick data for the given symbol and handler
         Condition.type(handler, Callable, 'handler')
 
@@ -284,33 +306,34 @@ cdef class DataClient:
 
     cpdef void _handle_tick(self, Tick tick):
         # Handle the given tick by sending it to all tick handlers for that symbol
+        cdef list tick_handlers = self._tick_handlers.get(tick.symbol, None)
         cdef TickHandler handler
-        if tick.symbol in self._tick_handlers:
-            for handler in self._tick_handlers[tick.symbol]:
+        if tick_handlers:
+            for handler in tick_handlers:
                 handler.handle(tick)
 
     cpdef void _handle_bar(self, BarType bar_type, Bar bar):
         # Handle the given bar by sending it to all bar handlers for that bar type
+        cdef list bar_handlers = self._bar_handlers.get(bar_type, None)
         cdef BarHandler handler
-        if bar_type in self._bar_handlers:
-            for handler in self._bar_handlers[bar_type]:
+        if bar_handlers:
+            for handler in bar_handlers:
                 handler.handle(bar_type, bar)
 
     cpdef void _handle_instrument(self, Instrument instrument):
         # Handle the given instrument by sending it to all instrument handlers for that symbol
-        if instrument.symbol in self._instruments:
-            # Remove instrument key if already exists
-            del self._instruments[instrument.symbol]
         self._instruments[instrument.symbol] = instrument
         self._log.info(f"Updated instrument {instrument.symbol}")
 
+        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol, None)
         cdef InstrumentHandler handler
-        if instrument.symbol in self._instrument_handlers:
-            for handler in self._instrument_handlers[instrument.symbol]:
+        if instrument_handlers:
+            for handler in instrument_handlers:
                 handler.handle(instrument)
 
     cpdef void _handle_instruments(self, list instruments):
         # Handle all instruments individually
+        cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
 
@@ -338,15 +361,11 @@ cdef class BarAggregator:
         Initializes a new instance of the BarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
-        :param handler: The handler to receive built bars (must be Callable).
         :param logger: The logger for the aggregator.
         :param use_previous_close: If the previous close price should be the open price of a new bar.
-        :raises: ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
-
         self.bar_type = bar_type
-        self._handler = handler
+        self._handler = BarHandler(handler)
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._builder = BarBuilder(
             bar_spec=self.bar_type.specification,
@@ -358,7 +377,7 @@ cdef class BarAggregator:
 
     cpdef void _handle_bar(self, Bar bar):
         self._log.debug(f"Built {self.bar_type} {bar}")
-        #self._handler(self.bar_type, bar)
+        self._handler.handle(self.bar_type, bar)
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -374,11 +393,7 @@ cdef class TickBarAggregator(BarAggregator):
         Initializes a new instance of the TickBarBuilder class.
 
         :param bar_type: The bar type for the aggregator.
-        :param handler: The handler builder (must be Callable).
-        :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
-
         super().__init__(bar_type=bar_type,
                          handler=handler,
                          logger=logger,
@@ -411,12 +426,8 @@ cdef class TimeBarAggregator(BarAggregator):
         Initializes a new instance of the TickBarBuilder class.
 
         :param bar_type: The bar type for the aggregator.
-        :param handler: The handler builder (must be Callable).
         :param clock: If the clock for the aggregator.
-        :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
-
         super().__init__(bar_type=bar_type,
                          handler=handler,
                          logger=logger,
@@ -435,14 +446,18 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         self._builder.update(tick)
 
-        cdef dict events
         cdef TimeEvent event
         if self._clock.is_test_clock:
-            if tick.timestamp >= self._clock.next_event_time:
-                events = self._clock.advance_time(tick.timestamp)
-                for event, handler in sorted(events.items()):
-                    handler(event)
-                self.next_close = self._clock.next_event_time
+            self._clock.advance_time(tick.timestamp)
+            for event, handler in self._clock.get_pending_events().items():
+                handler(event)
+            self.next_close = self._clock.next_event_time
+
+            # if tick.timestamp >= self._clock.next_event_time:
+            #     events = self._clock.advance_time(tick.timestamp)
+            #     for event, handler in sorted(events.items()):
+            #         handler(event)
+            #     self.next_close = self._clock.next_event_time
 
     cpdef void _build_event(self, TimeEvent event):
         self._handle_bar(self._builder.build(event.timestamp))

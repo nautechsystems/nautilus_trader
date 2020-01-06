@@ -55,7 +55,7 @@ cdef class BacktestConfig:
         :raises ConditionFailed: If the commission_rate is negative (< 0).
         """
         Condition.valid_string(exec_db_type, 'exec_db_type')
-        Condition.positive(starting_capital, 'starting_capital')
+        Condition.positive_int(starting_capital, 'starting_capital')
         Condition.valid_string(short_term_interest_csv_path, 'short_term_interest_csv_path')
         Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
 

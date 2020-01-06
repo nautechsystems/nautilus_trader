@@ -9,40 +9,46 @@
 
 import pandas as pd
 
-from datetime import datetime
-
-from nautilus_trader.model.enums import BarStructure, Currency
 from nautilus_trader.common.logger import LogLevel
+from nautilus_trader.model.enums import BarStructure, Currency, PriceType
+from nautilus_trader.model.objects import BarSpecification
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
-from examples.strategies.ema_cross import EMACrossPy
-from examples.strategies.ema_cross_market_entry import EMACrossMarketEntryPy
+from examples.strategies.ema_cross import EMACrossPy, EMACrossMarketEntryPy
 
 
 if __name__ == "__main__":
-    usdjpy = TestStubs.instrument_usdjpy()
-    bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-    ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+    USDJPY = TestStubs.instrument_usdjpy()
+    instruments = [USDJPY]
 
-    instruments = [TestStubs.instrument_usdjpy()]
-    tick_data = {usdjpy.symbol: pd.DataFrame()}
-    bid_data = {usdjpy.symbol: {BarStructure.MINUTE: bid_data_1min}}
-    ask_data = {usdjpy.symbol: {BarStructure.MINUTE: ask_data_1min}}
+    data = {
+        'ticks': {USDJPY.symbol: TestDataProvider.usdjpy_test_ticks()},
+        'bars_bid': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}},
+        'bars_ask': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}},
+    }
 
     strategies = [EMACrossPy(
-        symbol=usdjpy.symbol,
-        bar_spec=TestStubs.bar_spec_1min_bid())]
+        symbol=USDJPY.symbol,
+        bar_spec=BarSpecification(10, BarStructure.SECOND, PriceType.BID),
+        risk_bp=10,
+        fast_ema=10,
+        slow_ema=20,
+        atr_period=20,
+        sl_atr_multiple=2.0)]
 
     config = BacktestConfig(
         exec_db_type='in-memory',
-        exec_db_flush=True,
+        exec_db_flush=False,
         frozen_account=False,
         starting_capital=1000000,
         account_currency=Currency.USD,
-        level_console=LogLevel.INFO,
+        short_term_interest_csv_path='default',
+        commission_rate_bp=0.20,
+        bypass_logging=False,
+        level_console=LogLevel.DEBUG,
         level_file=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,
@@ -55,18 +61,13 @@ if __name__ == "__main__":
         random_seed=None)
 
     engine = BacktestEngine(
+        data=data,
         instruments=instruments,
-        data_ticks=tick_data,
-        data_bars_bid=bid_data,
-        data_bars_ask=ask_data,
         strategies=strategies,
         config=config,
         fill_model=fill_model)
 
-    start = datetime(2013, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 2, 3, 0, 0, 0, 0)
-
-    engine.run(start, stop)
+    engine.run()
 
     with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
         pass

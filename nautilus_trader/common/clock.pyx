@@ -42,8 +42,9 @@ cdef class Timer:
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The stop datetime for the timer (UTC).
         """
-        # Condition: assumes interval not negative
-        # Condition: assumes start_time + interval <= stop_time (if not None)
+        Condition.positive(interval.total_seconds(), 'interval')
+        if stop_time:
+            Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
 
         self.label = label
         self.interval = interval
@@ -120,8 +121,8 @@ cdef class TestTimer(Timer):
         :param start_time: The stop datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC).
         """
-        # Condition: assumes interval not negative
-        # Condition: assumes start_time < stop_time (if not None)
+        # Condition: interval checked in base class
+        # Condition: stop_time checked in base class
 
         super().__init__(label, interval, start_time, stop_time)
 
@@ -169,8 +170,8 @@ cdef class LiveTimer(Timer):
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The stop datetime for the timer (UTC).
         """
-        # Condition: assumes interval not negative
-        # Condition: assumes start_time < stop_time (if not None)
+        # Condition: interval checked in base class
+        # Condition: stop_time checked in base class
 
         super().__init__(label, interval, start_time, stop_time)
 
@@ -419,6 +420,7 @@ cdef class TestClock(Clock):
         """
         super().__init__()
         self._time = initial_time
+        self._pending_events = {}
         self.is_test_clock = True
 
     cpdef datetime time_now(self):
@@ -437,34 +439,35 @@ cdef class TestClock(Clock):
         """
         self._time = to_time
 
-    cpdef dict advance_time(self, datetime to_time):
+    cpdef void advance_time(self, datetime to_time):
         """
         Iterates the clocks time to the given datetime.
         
         :param to_time: The datetime to iterate the test clock to.
         :return Dict[TimeEvent].
         """
-        # Condition: assumes time.tzinfo == self.timezone
-        # Condition: assumes to_time > self.time_now()
+        assert to_time >= self.time_now()
 
-        cdef dict events = {}  # type: Dict[TimeEvent, Callable]
+        self._pending_events = {}  # type: Dict[TimeEvent, Callable]
 
         if not self.has_timers or to_time < self.next_event_time:
-            return events  # No timer events to iterate
+            return # No timer events to iterate
 
         # Iterate timers
         cdef TestTimer timer
         cdef TimeEvent event
-        for timer in self._timers.copy().values():  # Copy to avoid resize during loop
+        for timer in self._timers.copy().values():  # To avoid resize during loop
             for event in timer.advance(to_time):
-                events[event] = self._handlers[timer.label]
+                self._pending_events[event] = self._handlers[timer.label]
             if timer.expired:
                 self._remove_timer(timer)
 
         self._update_timing()
         self._time = to_time
+        self._pending_events = dict(sorted(self._pending_events.items()))
 
-        return dict(sorted(events.items()))
+    cpdef dict get_pending_events(self):
+        return self._pending_events
 
     cdef object _get_timer(
             self,

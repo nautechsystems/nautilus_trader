@@ -49,7 +49,7 @@ cdef class MQWorker:
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')
-        Condition.in_range(service_port, 'service_port', 0, 65535)
+        Condition.valid_port(service_port, 'service_port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
         super().__init__()
@@ -115,7 +115,7 @@ cdef class RequestWorker(MQWorker):
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')
-        Condition.in_range(service_port, 'service_port', 0, 65535)
+        Condition.valid_port(service_port, 'service_port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
         super().__init__(
@@ -179,7 +179,7 @@ cdef class SubscriberWorker(MQWorker):
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')
-        Condition.in_range(service_port, 'port', 0, 65535)
+        Condition.valid_port(service_port, 'port')
         Condition.type(handler, Callable, 'handler')
 
         super().__init__(

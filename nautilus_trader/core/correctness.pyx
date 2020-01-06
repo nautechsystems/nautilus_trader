@@ -16,7 +16,7 @@ cdef class Condition:
     """
     Provides static methods for the checking of function or method conditions.
     A condition is a predicate which must be true just prior to the execution
-    of some section of code for correct behaviour as per the design specification.
+    of some section of code - for correct behaviour as per the design specification.
     """
     @staticmethod
     cdef void true(bint predicate, str description) except *:
@@ -28,47 +28,47 @@ cdef class Condition:
         :raises ConditionFailed: If the predicate condition is False.
         """
         if not predicate:
-            raise ConditionFailed(f"The predicate condition {description} was False")
+            raise ConditionFailed(f"The predicate condition \'{description}\' was False")
 
     @staticmethod
-    cdef void none(object argument, str param_name) except *:
+    cdef void none(object argument, str param) except *:
         """
         Check the argument is None.
 
         :param argument: The argument to check.
-        :param param_name: The parameter name.
+        :param param: The arguments parameter name.
         :raises ConditionFailed: If the argument is not None.
         """
         if argument is not None:
-            raise ConditionFailed(f"The {param_name} argument was not None")
+            raise ConditionFailed(f"The \'{param}\' argument was not None")
 
     @staticmethod
-    cdef void not_none(object argument, str param_name) except *:
+    cdef void not_none(object argument, str param) except *:
         """
         Check the argument is not None.
 
         :param argument: The argument to check.
-        :param param_name: The parameter name.
+        :param param: The arguments parameter name.
         :raises ConditionFailed: If the argument is None.
         """
         if argument is None:
-            raise ConditionFailed(f"The {param_name} argument was None")
+            raise ConditionFailed(f"The \'{param}\' argument was None")
 
     @staticmethod
-    cdef void valid_string(str argument, str param_name) except *:
+    cdef void valid_string(str argument, str param) except *:
         """
-        Check the string is not None, empty or whitespace.
+        Check the string argument is not None, empty or whitespace.
 
         :param argument: The string argument to check.
-        :param param_name: The parameter name.
+        :param param: The arguments parameter name.
         :raises ConditionFailed: If the string argument is None, empty or whitespace.
         """
         if argument is None:
-            raise ConditionFailed(f"The {param_name} string argument was None")
+            raise ConditionFailed(f"The \'{param}\' string argument was None")
         if argument == '':
-            raise ConditionFailed(f"The {param_name} string argument was empty")
+            raise ConditionFailed(f"The \'{param}\' string argument was empty")
         if argument.isspace():
-            raise ConditionFailed(f"The {param_name} string argument was whitespace")
+            raise ConditionFailed(f"The \'{param}\' string argument was whitespace")
 
     @staticmethod
     cdef void equal(object object1, object object2) except *:
@@ -85,178 +85,223 @@ cdef class Condition:
             raise ConditionFailed(f"The {object1} object was not equal to the {object2} object")
 
     @staticmethod
-    cdef void type(object argument, object expected_type, str param_name) except *:
+    cdef void type(object argument, object expected_type, str param) except *:
         """
         Check the argument is of the specified type.
 
         :param argument: The argument to check.
         :param expected_type: The expected argument type.
-        :param param_name: The parameter name.
+        :param param: The arguments parameter name.
         :raises ConditionFailed: If the object is not of the expected type.
         """
         if not isinstance(argument, expected_type):
-            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type}, was {type(argument)}")
+            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected_type}, was {type(argument)}")
 
     @staticmethod
-    cdef void type_or_none(object argument, object expected_type, str param_name) except *:
+    cdef void type_or_none(object argument, object expected_type, str param) except *:
         """
         Check the argument is of the specified type, or is None.
 
         :param argument: The argument to check.
         :param expected_type: The expected argument type (if not None).
-        :param param_name: The parameter name.
+        :param param: The arguments parameter name.
         :raises ConditionFailed: If the object is not None and not of the expected type.
         """
         if argument is None:
             return
 
         if not isinstance(argument, expected_type):
-            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type} or None, was {type(argument)}")
+            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected_type} or None, was {type(argument)}")
 
     @staticmethod
-    cdef void list_type(list list, type expected_type, str list_name) except *:
+    cdef void list_type(list list, type expected_type, str param) except *:
         """
         Check the list only contains types of the given expected type.
 
         :param list: The list to check.
         :param expected_type: The expected element type (if not empty).
-        :param list_name: The list name.
+        :param param: The lists parameter name.
         :raises ConditionFailed: If the list is not empty and contains a type other than the expected type.
         """
         for element in list:
             if not isinstance(element, expected_type):
-                raise ConditionFailed(f"The {list_name} list contained an element with a type other than {expected_type}, was {type(element)}")
+                raise ConditionFailed(f"The \'{param}\' list contained an element with a type other than {expected_type}, was {type(element)}")
 
     @staticmethod
-    cdef void dict_types(dict dictionary, type key_type, type value_type, str dictionary_name) except *:
+    cdef void dict_types(dict dictionary, type key_type, type value_type, str param) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
         :param dictionary: The dictionary to check.
         :param key_type: The expected type of the keys (if not empty).
         :param value_type: The expected type of the values (if not empty).
-        :param dictionary_name: The dictionary name.
+        :param param: The dictionaries parameter name.
         :raises ConditionFailed: If the dictionary is not empty and contains a key type other than the key_type.
         :raises ConditionFailed: If the dictionary is not empty and contains a value type other than the value_type.
         """
         for key, value in dictionary.items():
             if not isinstance(key, key_type):
-                raise ConditionFailed(f"The {dictionary_name} dictionary contained a key type other than {key_type}, was {type(key)}")
+                raise ConditionFailed(f"The \'{param}\' dictionary contained a key type other than {key_type}, was {type(key)}")
             if not isinstance(value, value_type):
-                raise ConditionFailed(f"The {dictionary_name} dictionary contained a value type other than {value_type}, was {type(value)}")
+                raise ConditionFailed(f"The \'{param}\' dictionary contained a value type other than {value_type}, was {type(value)}")
 
     @staticmethod
-    cdef void is_in(object element, object collection, str element_name, str collection_name) except *:
+    cdef void is_in(object element, object collection, str param1, str param2) except *:
         """
         Check the element is contained within the specified collection.
     
         :param element: The element to check.
         :param collection: The collection to check.
-        :param element_name: The elements name.
-        :param collection_name: The collections name.
+        :param param1: The elements parameter name.
+        :param param2: The collections name.
         :raises ConditionFailed: If the element is not contained in the collection.
         """
         if element not in collection:
-            raise ConditionFailed(f"The {element_name} {element} was not contained in the {collection_name} collection")
+            raise ConditionFailed(f"The \'{param1}\' {element} was not contained in the {param2} collection")
 
     @staticmethod
-    cdef void not_in(object element, object collection, str element_name, str collection_name) except *:
+    cdef void not_in(object element, object collection, str param1, str param2) except *:
         """
         Check the element is not contained within the specified collection.
     
         :param element: The element to check.
         :param collection: The collection to check.
-        :param element_name: The element name.
-        :param collection_name: The collections name.
+        :param param1: The element name.
+        :param param2: The collections parameter name.
         :raises ConditionFailed: If the element is already contained in the collection.
         """
         if element in collection:
-            raise ConditionFailed(f"The {element_name} {element} was already contained in the {collection_name} collection")
+            raise ConditionFailed(f"The \'{param1}\' {element} was already contained in the \'{param2}\' collection")
 
     @staticmethod
-    cdef void not_empty(object collection, str param_name) except *:
+    cdef void not_empty(object collection, str param) except *:
         """
         Check the collection is not empty.
 
         :param collection: The collection to check.
-        :param param_name: The collections name.
+        :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is empty.
         """
         if len(collection) == 0:
-            raise ConditionFailed(f"The {param_name} was empty")
+            raise ConditionFailed(f"The \'{param}\' collection was empty")
 
     @staticmethod
-    cdef void empty(object collection, str param_name) except *:
+    cdef void empty(object collection, str param) except *:
         """
         Check the collection is empty.
 
         :param collection: The collection to check.
-        :param param_name: The collections name.
+        :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is not empty.
         """
         if len(collection) > 0:
-            raise ConditionFailed(f"The {param_name} was not empty")
+            raise ConditionFailed(f"The \'{param}\' collection was not empty")
 
     @staticmethod
     cdef void equal_length(
             object collection1,
             object collection2,
-            str collection1_name,
-            str collection2_name) except *:
+            str param1,
+            str param2) except *:
         """
         Check the collections have equal lengths.
 
         :param collection1: The first collection to check.
         :param collection2: The second collection to check.
-        :param collection1_name: The first collections name.
-        :param collection2_name: The second collections name.
+        :param param1: The first collections parameter name.
+        :param param2: The second collections parameter name.
         :raises ConditionFailed: If the collection lengths are not equal.
         """
         if len(collection1) != len(collection2):
             raise ConditionFailed(
-                f"The length of {collection1_name} was not equal to {collection2_name}, lengths were {len(collection1)} and {len(collection2)}")
+                f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
 
     @staticmethod
-    cdef void positive(float value, str param_name) except *:
+    cdef void positive(float value, str param) except *:
         """
-        Check the float value is positive (> 0)
+        Check the real value is positive (> 0.0).
 
         :param value: The value to check.
-        :param param_name: The name of the value.
+        :param param: The name of the values parameter.
+        :raises ConditionFailed: If the value is not positive (> 0).
+        """
+        if value <= 0.:
+            raise ConditionFailed(f"The \'{param}\' was not a positive real, was {value}")
+
+    @staticmethod
+    cdef void positive_int(int value, str param) except *:
+        """
+        Check the integer value is a positive integer (> 0).
+
+        :param value: The value to check.
+        :param param: The name of the values parameter.
         :raises ConditionFailed: If the value is not positive (> 0).
         """
         if value <= 0:
-            raise ConditionFailed(f"The {param_name} was not positive, was {value}")
+            raise ConditionFailed(f"The \'{param}\' was not positive integer, was {value}")
 
     @staticmethod
-    cdef void not_negative(float value, str param_name) except *:
+    cdef void not_negative(float value, str param) except *:
         """
-        Check the float value is not negative (>= 0).
+        Check the float value is not a negative integer (< 0).
 
         :param value: The value to check.
-        :param param_name: The values name.
-        :raises ConditionFailed: If the value is negative (< 0).
+        :param param: The name of the values parameter.
+        :raises ConditionFailed: If the value is a negative integer (< 0).
+        """
+        if value < 0.:
+            raise ConditionFailed(f"The \'{param}\' was a negative real, was {value}")
+
+    @staticmethod
+    cdef void not_negative_int(int value, str param) except *:
+        """
+        Check the integer value is not negative (< 0).
+
+        :param value: The value to check.
+        :param param: The name of the values parameter.
+        :raises ConditionFailed: If the value is a negative integer (< 0).
         """
         if value < 0:
-            raise ConditionFailed(f"The {param_name} was negative, was {value}")
+            raise ConditionFailed(f"The \'{param}\' was negative integer, was {value}")
 
     @staticmethod
-    cdef void in_range(
-            float value,
-            str param_name,
-            float start,
-            float end) except *:
+    cdef void in_range(float value, float start, float end, str param) except *:
         """
-        Check the float value is within the specified range (inclusive).
+        Check the real value is within the specified range (inclusive).
 
         :param value: The value to check.
-        :param param_name: The values name.
         :param start: The start of the range.
         :param end: The end of the range.
+        :param param: The name of the values parameter.
         :raises ConditionFailed: If the value is not in the inclusive range.
         """
         if value < start or value > end:
-            raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}], was {value}")
+            raise ConditionFailed(f"The \'{param}\' was out of range [{start}-{end}], was {value}")
+
+    @staticmethod
+    cdef void in_range_int(int value, int start, int end, str param) except *:
+        """
+        Check the integer value is within the specified range (inclusive).
+
+        :param value: The value to check.
+        :param start: The start of the range.
+        :param end: The end of the range.
+        :param param: The name of the values parameter.
+        :raises ConditionFailed: If the value is not in the inclusive range.
+        """
+        if value < start or value > end:
+            raise ConditionFailed(f"The \'{param}\' was out of range [{start}-{end}], was {value}")
+
+    @staticmethod
+    cdef void valid_port(int value, str param) except *:
+        """
+        Check the port integer value is valid in range [0, 65535].
+
+        :param value: The integer value to check.
+        :param param: The name of the ports parameter.
+        :raises ConditionFailed: If the value is not in range [0, 65535].
+        """
+        Condition.in_range_int(value, 0, 65535, param)
 
 
 class PyCondition:
@@ -266,72 +311,81 @@ class PyCondition:
         Condition.true(predicate, description)
 
     @staticmethod
-    def none(argument, param_name):
-        Condition.none(argument, param_name)
+    def none(argument, param):
+        Condition.none(argument, param)
 
     @staticmethod
-    def not_none(argument, param_name):
-        Condition.not_none(argument, param_name)
+    def not_none(argument, param):
+        Condition.not_none(argument, param)
 
     @staticmethod
-    def type(argument, expected_type, param_name):
-        Condition.type(argument, expected_type, param_name)
+    def type(argument, expected_type, param):
+        Condition.type(argument, expected_type, param)
 
     @staticmethod
-    def type_or_none(argument, expected_type, param_name):
-        Condition.type_or_none(argument, expected_type, param_name)
+    def type_or_none(argument, expected_type, param):
+        Condition.type_or_none(argument, expected_type, param)
 
     @staticmethod
-    def list_type(list, expected_type, list_name):
-        Condition.list_type(list, expected_type, list_name)
+    def list_type(list, expected_type, param):
+        Condition.list_type(list, expected_type, param)
 
     @staticmethod
-    def dict_types(dictionary, key_type, value_type, dictionary_name):
-        Condition.dict_types(dictionary, key_type, value_type, dictionary_name)
+    def dict_types(dictionary, key_type, value_type, param):
+        Condition.dict_types(dictionary, key_type, value_type, param)
 
     @staticmethod
-    def is_in(object element, object collection, str element_name, str collection_name):
-        Condition.is_in(element, collection, element_name, collection_name)
+    def is_in(object element, object collection, str param1, str param2):
+        Condition.is_in(element, collection, param1, param2)
 
     @staticmethod
-    def not_in(object element, object collection, str element_name, str collection_name):
-        Condition.not_in(element, collection, element_name, collection_name)
+    def not_in(object element, object collection, str param1, str param2):
+        Condition.not_in(element, collection, param1, param2)
 
     @staticmethod
-    def valid_string(argument, param_name):
-        Condition.valid_string(argument, param_name)
+    def valid_string(argument, param):
+        Condition.valid_string(argument, param)
 
     @staticmethod
     def equal(argument1, argument2):
         Condition.equal(argument1, argument2)
 
     @staticmethod
-    def not_empty(argument, param_name):
-        Condition.not_empty(argument, param_name)
+    def not_empty(argument, param):
+        Condition.not_empty(argument, param)
 
     @staticmethod
-    def empty(argument, param_name):
-        Condition.empty(argument, param_name)
+    def empty(argument, param):
+        Condition.empty(argument, param)
 
     @staticmethod
-    def equal_length(collection1, collection2, collection1_name, collection2_name):
-        Condition.equal_length(collection1,
-                               collection2,
-                               collection1_name,
-                               collection2_name)
+    def equal_length(collection1, collection2, param1, param2):
+        Condition.equal_length(collection1, collection2, param1, param2)
 
     @staticmethod
-    def positive(value, param_name):
-        Condition.positive(value, param_name)
+    def positive(value, param):
+        Condition.positive(value, param)
 
     @staticmethod
-    def not_negative(value, param_name):
-        Condition.not_negative(value, param_name)
+    def positive_int(value, param):
+        Condition.positive_int(value, param)
 
     @staticmethod
-    def in_range(
-            value,
-            param_name,
-            start,
-            end):
-        Condition.in_range(value, param_name, start, end)
+    def not_negative(value, param):
+        Condition.not_negative(value, param)
+
+    @staticmethod
+    def not_negative_int(value, param):
+        Condition.not_negative_int(value, param)
+
+    @staticmethod
+    def in_range(value, start, end, param):
+        Condition.in_range(value, start, end, param)
+
+    @staticmethod
+    def in_range_int(value, start, end, param):
+        Condition.in_range_int(value, start, end, param)
+
+    @staticmethod
+    def valid_port(int value, param):
+        Condition.valid_port(value, param)

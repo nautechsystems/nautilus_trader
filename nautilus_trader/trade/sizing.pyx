@@ -145,8 +145,8 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.positive(risk_bp, 'risk_bp')
         Condition.positive(exchange_rate, 'exchange_rate')
         Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
-        Condition.positive(units, 'units')
-        Condition.positive(unit_batch_size, 'unit_batch_size')
+        Condition.positive_int(units, 'units')
+        Condition.positive_int(unit_batch_size, 'unit_batch_size')
 
         cdef int risk_points = self._calculate_risk_ticks(price_entry, price_stop_loss)
         cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate_bp, exchange_rate)

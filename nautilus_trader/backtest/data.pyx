@@ -7,45 +7,21 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pytz
 
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.objects cimport Instrument, Tick, BarType, Bar, BarSpecification
 from nautilus_trader.model.identifiers cimport Symbol, Venue
+from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.data cimport DataClient, BarAggregator, TickBarAggregator, TimeBarAggregator
 from nautilus_trader.data.market cimport TickDataWrangler, BarDataWrangler
-
-
-# cdef class BidAskBarPair:
-#     """
-#     Represents a bid ask bar pair for the same market and timestamp.
-#     """
-#
-#     def __init__(self, Bar bid_bar, Bar ask_bar):
-#         """
-#          Initializes a new instance of the BidAskBarPair class.
-#
-#         :param bid_bar: The bid bar for the pair.
-#         :param ask_bar: The ask bar for the pair.
-#         """
-#         self.bid = bid_bar
-#         self.ask = ask_bar
-
-cdef list _TIME_BARS = [
-        BarStructure.SECOND,
-        BarStructure.MINUTE,
-        BarStructure.HOUR,
-        BarStructure.DAY,
-    ]
 
 
 cdef class BacktestDataClient(DataClient):
@@ -55,21 +31,16 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  Venue venue,
-                 list instruments: List[Instrument],
                  dict data,
-                 # dict data_ticks: Dict[Symbol, DataFrame],
-                 # dict data_bars_bid: Dict[Symbol, Dict[BarStructure, DataFrame]],
-                 # dict data_bars_ask: Dict[Symbol, Dict[BarStructure, DataFrame]],
+                 list instruments: List[Instrument],
                  TestClock clock,
                  Logger logger):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param venue: The venue for the data client.
+        :param data: The historical data needed for the backtest.
         :param instruments: The instruments needed for the backtest.
-        :param data_ticks: The historical tick data needed for the backtest.
-        :param data_bars_bid: The historical bid bar data needed for the backtest.
-        :param data_bars_ask: The historical ask bar data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         :raises ConditionFailed: If the instruments list contains a type other than Instrument.
@@ -84,17 +55,10 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the logger is None.
         """
         Condition.list_type(instruments, Instrument, 'instruments')
-        # Condition.dict_types(data_ticks, Symbol, DataFrame, 'dataframes_ticks')
-        # Condition.dict_types(data_bars_bid, Symbol, dict, 'dataframes_bars_bid')
-        # Condition.dict_types(data_bars_ask, Symbol, dict, 'dataframes_bars_ask')
-        # Condition.true(data_bars_bid.keys() == data_bars_ask.keys(), 'dataframes_bars_bid.keys() == dataframes_bars_ask.keys()')
         Condition.not_none(clock, 'clock')
         Condition.not_none(logger, 'logger')
 
         super().__init__(venue, clock, TestGuidFactory(), logger)
-        # self.data_ticks = data_ticks                      # type: Dict[Symbol, DataFrame]
-        # self.data_bars_bid = data_bars_bid                # type: Dict[Symbol, Dict[BarStructure, DataFrame]]
-        # self.data_bars_ask = data_bars_ask                # type: Dict[Symbol, Dict[BarStructure, DataFrame]]
         self.data_providers = {}                           # type: Dict[Symbol, DataProvider]
         #self.data_symbols = set()                         # type: Set[Symbol]
         #self.execution_data_index_min = None              # Set below
@@ -159,6 +123,14 @@ cdef class BacktestDataClient(DataClient):
             # Check tick data timestamp integrity (UTC timezone)
             # ticks = self.data_providers[symbol].ticks
             # assert(ticks[0].timestamp.tz == pytz.UTC)
+
+        cdef list ticks = []
+        for symbol, provider in self.data_providers.items():
+            ticks += provider.ticks
+
+        self.ticks = sorted(ticks)
+        self.min_timestamp = ticks[0].timestamp
+        self.max_timestamp = ticks[-1].timestamp
 
         #self._setup_execution_data()
 
@@ -305,12 +277,6 @@ cdef class BacktestDataClient(DataClient):
     #     ticks.sort()
     #     return ticks
 
-    cpdef list get_ticks(self):
-        cdef list ticks = []
-        for symbol, provider in self.data_providers.items():
-            ticks += provider.ticks
-        return sorted(ticks)
-
     # cpdef dict iterate_bars(self, datetime to_time):
     #     """
     #     Return the iterated bars up to the given time.
@@ -348,11 +314,20 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void process_tick(self, Tick tick):
         """
-        Iterate the data client one time step.
+        Process the given tick with the data client.
         
         :param tick: The tick to process.
         """
         self._handle_tick(tick)
+
+        if tick.timestamp < self._clock.next_event_time:
+            return  # No events to handle yet
+
+        self._clock.advance_time(tick.timestamp)
+
+        cdef TimeEvent event
+        for event, handler in self._clock.get_pending_events().items():
+            handler(event)
 
     # cpdef void process_bars(self, dict bars):
     #     """
@@ -451,16 +426,7 @@ cdef class BacktestDataClient(DataClient):
         Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
-        if bar_type.specification.structure == BarStructure.TICK:
-            aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
-        elif bar_type.specification.structure in _TIME_BARS:
-            aggregator = TimeBarAggregator(bar_type, self._handle_bar, self._clock, self._log.get_logger())
-
-        if bar_type not in self._bar_aggregators:
-            self._bar_aggregators[bar_type] = aggregator
-            self.subscribe_ticks(bar_type.symbol, aggregator.update)
-
-        self._add_bar_handler(bar_type, handler)
+        self._self_generate_bars(bar_type, handler)
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable):
         """

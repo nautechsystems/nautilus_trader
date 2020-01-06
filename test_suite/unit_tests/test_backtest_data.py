@@ -31,18 +31,26 @@ class BacktestDataClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.usdjpy = TestStubs.instrument_usdjpy()
-        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid().iloc[:2000]
-        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask().iloc[:2000]
+        self.data = {
+            'ticks': {self.usdjpy.symbol: TestDataProvider.usdjpy_test_ticks()},
+            'bars_bid': {self.usdjpy.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid().iloc[:2000]}},
+            'bars_ask': {self.usdjpy.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask().iloc[:2000]}},
+        }
+
         self.test_clock = TestClock()
 
     def test_can_initialize_client_with_data(self):
         # Arrange
+        data = {
+            'ticks': {self.usdjpy.symbol: TestDataProvider.usdjpy_test_ticks()},
+            'bars_bid': {self.usdjpy.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}},
+            'bars_ask': {self.usdjpy.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}},
+        }
+
         client = BacktestDataClient(
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
-            data_ticks={USDJPY_FXCM: pd.DataFrame()},
-            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: self.bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: self.ask_data_1min}},
+            data=data,
             clock=self.test_clock,
             logger=TestLogger())
 
@@ -79,6 +87,7 @@ class BacktestDataClientTests(unittest.TestCase):
 
     def test_can_iterate_all_ticks(self):
         # Arrange
+
         client = BacktestDataClient(
             venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],

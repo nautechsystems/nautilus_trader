@@ -33,44 +33,44 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.none, "something", "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.none, "something", "param")
 
     def test_condition_is_none_when_arg_is_none_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.none(None, "param_name")
+        PyCondition.none(None, "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_not_none_when_arg_none_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.not_none, None, "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.not_none, None, "param")
 
     def test_condition_not_none_when_arg_not_none_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.not_none("something", "param_name")
+        PyCondition.not_none("something", "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_valid_with_various_invalid_strings_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.valid_string, None, "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.valid_string, "", "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.valid_string, " ", "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.valid_string, "   ", "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.valid_string, None, "param")
+        self.assertRaises(ConditionFailed, PyCondition.valid_string, "", "param")
+        self.assertRaises(ConditionFailed, PyCondition.valid_string, " ", "param")
+        self.assertRaises(ConditionFailed, PyCondition.valid_string, "   ", "param")
 
     def test_condition_valid_string_with_valid_string_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.valid_string("123", "param_name")
-        PyCondition.valid_string(" 123", "param_name")
-        PyCondition.valid_string("abc  ", "param_name")
+        PyCondition.valid_string("123", "param")
+        PyCondition.valid_string(" 123", "param")
+        PyCondition.valid_string("abc  ", "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_equal_when_args_not_equal_raises_condition_failed(self):
@@ -91,50 +91,50 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.type, "a string", int, "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.type, "a string", int, "param")
 
     def test_condition_type_when_type_is_correct_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.type("a string", str, "param_name")
+        PyCondition.type("a string", str, "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_type_or_none_when_type_is_incorrect_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.type, "a string", int, "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.type, "a string", int, "param")
 
     def test_condition_type_or_none_when_type_is_correct_or_none_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.type_or_none("a string", str, "param_name")
-        PyCondition.type_or_none(None, str, "param_name")
+        PyCondition.type_or_none("a string", str, "param")
+        PyCondition.type_or_none(None, str, "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_list_type_when_contains_incorrect_types_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.list_type, ['a', 'b', 3], str, "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.list_type, ['a', 'b', 3], str, "param")
 
     def test_condition_list_type_when_contains_correct_types_or_none_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.list_type(['a', 'b', 'c'], str, "param_name")
-        PyCondition.list_type([], None, "param_name")
+        PyCondition.list_type(['a', 'b', 'c'], str, "param")
+        PyCondition.list_type([], None, "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_dict_types_when_contains_incorrect_types_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.dict_types, {'key': 1}, str, str, "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.dict_types, {1: 1}, str, str, "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.dict_types, {1: "value"}, str, str, "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.dict_types, {'key': 1}, str, str, "param")
+        self.assertRaises(ConditionFailed, PyCondition.dict_types, {1: 1}, str, str, "param")
+        self.assertRaises(ConditionFailed, PyCondition.dict_types, {1: "value"}, str, str, "param")
 
     def test_condition_dict_types_when_contains_correct_types_or_none_does_nothing(self):
         # Arrange
@@ -255,55 +255,103 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.not_negative, -float("inf"), "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.not_negative, -1, "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.not_negative, -0.00000000000000001, "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.not_negative, Decimal('-0.1'), "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.not_negative, -float("inf"), "param")
+        self.assertRaises(ConditionFailed, PyCondition.not_negative, -0.00000000000000001, "param")
+        self.assertRaises(ConditionFailed, PyCondition.not_negative, Decimal('-0.1'), "param")
 
     def test_condition_not_negative_when_args_zero_or_positive_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.not_negative(0, "param_name")
-        PyCondition.not_negative(1, "param_name")
-        PyCondition.not_negative(-0.0, "param_name")
-        PyCondition.not_negative(Decimal('0'), "param_name")
-        PyCondition.not_negative(float("inf"), "param_name")
+        PyCondition.not_negative(-0.0, "param")
+        PyCondition.not_negative(Decimal('0'), "param")
+        PyCondition.not_negative(float("inf"), "param")
+        self.assertTrue(True)  # ConditionFailed not raised
+
+    def test_condition_not_negative_int_when_arg_negative_raises_condition_failed(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ConditionFailed, PyCondition.not_negative_int, -1, "param")
+
+    def test_condition_not_negative_int_when_args_zero_or_positive_does_nothing(self):
+        # Arrange
+        # Act
+        # Assert
+        PyCondition.not_negative_int(0, "param")
+        PyCondition.not_negative_int(1, "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_positive_when_args_negative_or_zero_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.positive, -float("inf"), "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.positive, -0.0000000001, "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.positive, 0, "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.positive, 0., "param_name")
-        self.assertRaises(ConditionFailed, PyCondition.positive, Decimal('0'), "param_name")
+        self.assertRaises(ConditionFailed, PyCondition.positive, -float("inf"), "param")
+        self.assertRaises(ConditionFailed, PyCondition.positive, -0.0000000001, "param")
+        self.assertRaises(ConditionFailed, PyCondition.positive, 0, "param")
+        self.assertRaises(ConditionFailed, PyCondition.positive, 0., "param")
+        self.assertRaises(ConditionFailed, PyCondition.positive, Decimal('0'), "param")
 
     def test_condition_positive_when_args_positive_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.positive(float("inf"), "param_name")
-        PyCondition.positive(0.000000000000000000000000000000000001, "param_name")
-        PyCondition.positive(1, "param_name")
-        PyCondition.positive(1.0, "param_name")
-        PyCondition.positive(Decimal('1.0'), "param_name")
+        PyCondition.positive(float("inf"), "param")
+        PyCondition.positive(0.000000000000000000000000000000000001, "param")
+        PyCondition.positive(1, "param")
+        PyCondition.positive(1.0, "param")
+        PyCondition.positive(Decimal('1.0'), "param")
+        self.assertTrue(True)  # AssertionError not raised
+
+    def test_condition_positive_int_when_args_negative_or_zero_raises_condition_failed(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ConditionFailed, PyCondition.positive_int, 0, "param")
+        self.assertRaises(ConditionFailed, PyCondition.positive_int, -1, "param")
+
+    def test_condition_positive_int_when_args_positive_does_nothing(self):
+        # Arrange
+        # Act
+        # Assert
+        PyCondition.positive_int(1, "param")
         self.assertTrue(True)  # AssertionError not raised
 
     def test_condition_in_range_when_arg_out_of_range_raises_condition_failed(self):
         # Arrange
         # Act
-        self.assertRaises(ConditionFailed, PyCondition.in_range, -1, "param_name", 0, 1)
-        self.assertRaises(ConditionFailed, PyCondition.in_range, 2, "param_name", 0, 1)
-        self.assertRaises(ConditionFailed, PyCondition.in_range, -0.000001, "param_name", 0., 1.)
-        self.assertRaises(ConditionFailed, PyCondition.in_range, 1.0000001, "param_name", 0., 1.)
-        self.assertRaises(ConditionFailed, PyCondition.in_range, Decimal('-1.0'), "param_name", 0, 1)
+        self.assertRaises(ConditionFailed, PyCondition.in_range, -0.000001, 0., 1., "param")
+        self.assertRaises(ConditionFailed, PyCondition.in_range, 1.0000001, 0., 1., "param")
+        self.assertRaises(ConditionFailed, PyCondition.in_range, Decimal('-1.0'), 0, 1, "param")
 
     def test_condition_in_range_when_args_in_range_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.in_range(0, "param_name", 0, 1)
-        PyCondition.in_range(1, "param_name", 0, 1)
+        PyCondition.in_range(0., 0., 1., "param")
+        PyCondition.in_range(1., 0., 1., "param")
+        self.assertTrue(True)  # ConditionFailed not raised
+
+    def test_condition_in_range_int_when_arg_out_of_range_raises_condition_failed(self):
+        # Arrange
+        # Act
+        self.assertRaises(ConditionFailed, PyCondition.in_range_int, -1, 0, 1, "param")
+        self.assertRaises(ConditionFailed, PyCondition.in_range_int, 2, 0, 1, "param")
+
+    def test_condition_in_range_int_when_args_in_range_does_nothing(self):
+        # Arrange
+        # Act
+        PyCondition.in_range_int(0, 0, 1, "param")
+        PyCondition.in_range_int(1, 0, 1, "param")
+        self.assertTrue(True)  # ConditionFailed not raised
+
+    def test_condition_valid_port_when_value_out_of_range_raises_condition_failed(self):
+        # Arrange
+        # Act
+        self.assertRaises(ConditionFailed, PyCondition.valid_port, -1, "port")
+        self.assertRaises(ConditionFailed, PyCondition.valid_port, 65536, "port")
+
+    def test_condition_valid_port_when_in_range_does_nothing(self):
+        # Arrange
+        # Act
+        PyCondition.valid_port(1, "port")
         self.assertTrue(True)  # ConditionFailed not raised

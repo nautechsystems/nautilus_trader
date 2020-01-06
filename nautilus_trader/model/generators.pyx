@@ -35,7 +35,7 @@ cdef class IdentifierGenerator:
         :raises ConditionFailed: If the initial count is negative (< 0).
         """
         Condition.valid_string(prefix, 'prefix')
-        Condition.not_negative(initial_count, 'initial_count')
+        Condition.not_negative_int(initial_count, 'initial_count')
 
         self._clock = clock
         self.prefix = prefix
