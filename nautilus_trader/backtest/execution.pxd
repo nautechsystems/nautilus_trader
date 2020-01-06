@@ -47,19 +47,18 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover
     cdef readonly FillModel fill_model
-    cdef readonly dict current_bids
-    cdef readonly dict current_asks
-    cdef readonly dict slippage_index
-    cdef readonly dict working_orders
-    cdef readonly dict atomic_child_orders
-    cdef readonly dict oco_orders
+
+    cdef dict _market_bids
+    cdef dict _market_asks
+    cdef dict _slippage_index
+    cdef dict _working_orders
+    cdef dict _atomic_child_orders
+    cdef dict _oco_orders
 
     cpdef datetime time_now(self)
     cpdef void register_exec_db(self, ExecutionDatabase exec_db)
     cpdef void change_fill_model(self, FillModel fill_model)
     cpdef void process_tick(self, Tick tick)
-    #cpdef void process_bars(self, Symbol symbol, Bar bid_bar, Bar ask_bar)
-    cdef void _process_market(self, Symbol symbol, Price lowest_bid, Price highest_ask)
     cpdef void check_residuals(self)
     cpdef void reset(self)
 
