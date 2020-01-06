@@ -394,7 +394,6 @@ cdef class BacktestEngine:
 
     cdef void _change_clocks_and_loggers(self, list strategies):
         # Replace the clocks and loggers for every strategy in the given list
-
         for strategy in strategies:
             # Separate test clocks to iterate independently
             strategy.change_clock(TestClock())
