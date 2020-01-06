@@ -68,7 +68,7 @@ class TickBarAggregatorTests(unittest.TestCase):
 
 class TimeBarAggregatorTests(unittest.TestCase):
 
-    def test_update_with_test_clock_sends_bars_to_handler(self):
+    def test_update_timed_with_test_clock_sends_bars_to_handler(self):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store_2

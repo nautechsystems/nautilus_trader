@@ -361,6 +361,7 @@ cdef class BarAggregator:
         Initializes a new instance of the BarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
+        :param handler: The bar handler for the aggregator.
         :param logger: The logger for the aggregator.
         :param use_previous_close: If the previous close price should be the open price of a new bar.
         """
@@ -393,6 +394,8 @@ cdef class TickBarAggregator(BarAggregator):
         Initializes a new instance of the TickBarBuilder class.
 
         :param bar_type: The bar type for the aggregator.
+        :param handler: The bar handler for the aggregator.
+        :param logger: The logger for the aggregator.
         """
         super().__init__(bar_type=bar_type,
                          handler=handler,
@@ -426,7 +429,9 @@ cdef class TimeBarAggregator(BarAggregator):
         Initializes a new instance of the TickBarBuilder class.
 
         :param bar_type: The bar type for the aggregator.
+        :param handler: The bar handler for the aggregator.
         :param clock: If the clock for the aggregator.
+        :param logger: The logger for the aggregator.
         """
         super().__init__(bar_type=bar_type,
                          handler=handler,
