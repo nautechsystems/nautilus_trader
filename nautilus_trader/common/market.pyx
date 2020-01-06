@@ -10,15 +10,19 @@ import inspect
 import numpy as np
 import pandas as pd
 
-from cpython.datetime cimport datetime
-from typing import Callable, List
-from pandas.core.frame import DataFrame
+from cpython.datetime cimport datetime, timedelta
+from typing import List, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarSpecification
+from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarType, BarSpecification
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
+from nautilus_trader.model.identifiers cimport Symbol, Label
+from nautilus_trader.model.events cimport TimeEvent
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.handlers cimport BarHandler
 
 
 cdef class TickDataWrangler:
@@ -29,9 +33,9 @@ cdef class TickDataWrangler:
     def __init__(self,
                  Symbol symbol,
                  int precision,
-                 tick_data: DataFrame=None,
-                 bid_data: DataFrame=None,
-                 ask_data: DataFrame=None):
+                 tick_data: pd.DataFrame=None,
+                 bid_data: pd.DataFrame=None,
+                 ask_data: pd.DataFrame=None):
         """
         Initializes a new instance of the TickBuilder class.
 
@@ -45,9 +49,9 @@ cdef class TickDataWrangler:
         :raises: ConditionFailed: If the ask_data is a type other than None or DataFrame.
         """
         Condition.not_negative_int(precision, 'precision')
-        Condition.type_or_none(tick_data, DataFrame, 'tick_data')
-        Condition.type_or_none(bid_data, DataFrame, 'bid_data')
-        Condition.type_or_none(ask_data, DataFrame, 'ask_data')
+        Condition.type_or_none(tick_data, pd.DataFrame, 'tick_data')
+        Condition.type_or_none(bid_data, pd.DataFrame, 'bid_data')
+        Condition.type_or_none(ask_data, pd.DataFrame, 'ask_data')
 
         self._symbol = symbol
         self._precision = precision
@@ -141,7 +145,7 @@ cdef class BarDataWrangler:
     def __init__(self,
                  int precision,
                  int volume_multiple=1,
-                 data: DataFrame=None):
+                 data: pd.DataFrame=None):
         """
         Initializes a new instance of the BarBuilder class.
 
@@ -154,7 +158,7 @@ cdef class BarDataWrangler:
         """
         Condition.not_negative_int(precision, 'precision')
         Condition.positive_int(volume_multiple, 'volume_multiple')
-        Condition.type(data, DataFrame, 'data')
+        Condition.type(data, pd.DataFrame, 'data')
 
         self._precision = precision
         self._volume_multiple = volume_multiple
@@ -248,17 +252,17 @@ cdef class BarDataWrangler:
                    int(values[4] * self._volume_multiple),
                    timestamp)
 
-cdef str BID = 'bid'
-cdef str ASK = 'ask'
-cdef str POINT = 'point'
-cdef str PRICE = 'price'
-cdef str MID = 'mid'
-cdef str OPEN = 'open'
-cdef str HIGH = 'high'
-cdef str LOW = 'low'
-cdef str CLOSE = 'close'
-cdef str VOLUME = 'volume'
-cdef str TIMESTAMP = 'timestamp'
+cdef str _BID = 'bid'
+cdef str _ASK = 'ask'
+cdef str _POINT = 'point'
+cdef str _PRICE = 'price'
+cdef str _MID = 'mid'
+cdef str _OPEN = 'open'
+cdef str _HIGH = 'high'
+cdef str _LOW = 'low'
+cdef str _CLOSE = 'close'
+cdef str _VOLUME = 'volume'
+cdef str _TIMESTAMP = 'timestamp'
 
 
 cdef class IndicatorUpdater:
@@ -291,16 +295,16 @@ cdef class IndicatorUpdater:
         self._input_params = []
 
         cdef dict param_map = {
-            BID: BID,
-            ASK: ASK,
-            POINT: CLOSE,
-            PRICE: CLOSE,
-            MID: CLOSE,
-            OPEN: OPEN,
-            HIGH: HIGH,
-            LOW: LOW,
-            CLOSE: CLOSE,
-            TIMESTAMP: TIMESTAMP
+            _BID: _BID,
+            _ASK: _ASK,
+            _POINT: _CLOSE,
+            _PRICE: _CLOSE,
+            _MID: _CLOSE,
+            _OPEN: _OPEN,
+            _HIGH: _HIGH,
+            _LOW: _LOW,
+            _CLOSE: _CLOSE,
+            _TIMESTAMP: _TIMESTAMP
         }
 
         for param in inspect.signature(self._input_method).parameters:
@@ -513,3 +517,177 @@ cdef class BarBuilder:
             return tick.ask_size
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
+
+
+cdef class BarAggregator:
+    """
+    Provides a means of aggregating built bars to the registered handler.
+    """
+
+    def __init__(self,
+                 BarType bar_type,
+                 handler,
+                 Logger logger,
+                 bint use_previous_close):
+        """
+        Initializes a new instance of the BarAggregator class.
+
+        :param bar_type: The bar type for the aggregator.
+        :param handler: The bar handler for the aggregator.
+        :param logger: The logger for the aggregator.
+        :param use_previous_close: If the previous close price should be the open price of a new bar.
+        """
+        self.bar_type = bar_type
+        self._handler = BarHandler(handler)
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._builder = BarBuilder(
+            bar_spec=self.bar_type.specification,
+            use_previous_close=use_previous_close)
+
+    cpdef void update(self, Tick tick) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void _handle_bar(self, Bar bar):
+        self._log.debug(f"Built {self.bar_type} {bar}")
+        self._handler.handle(self.bar_type, bar)
+
+
+cdef class TickBarAggregator(BarAggregator):
+    """
+    Provides a means of building tick bars from ticks.
+    """
+
+    def __init__(self,
+                 BarType bar_type,
+                 handler,
+                 Logger logger):
+        """
+        Initializes a new instance of the TickBarBuilder class.
+
+        :param bar_type: The bar type for the aggregator.
+        :param handler: The bar handler for the aggregator.
+        :param logger: The logger for the aggregator.
+        """
+        super().__init__(bar_type=bar_type,
+                         handler=handler,
+                         logger=logger,
+                         use_previous_close=False)
+
+        self.step = bar_type.specification.step
+
+    cpdef void update(self, Tick tick) except *:
+        """
+        Update the builder with the given tick.
+
+        :param tick: The tick for the update.
+        """
+        self._builder.update(tick)
+
+        if self._builder.count == self.step:
+            self._handle_bar(self._builder.build())
+
+
+cdef class TimeBarAggregator(BarAggregator):
+    """
+    Provides a means of building time bars from ticks with an internal timer.
+    """
+    def __init__(self,
+                 BarType bar_type,
+                 handler,
+                 Clock clock,
+                 Logger logger):
+        """
+        Initializes a new instance of the TickBarBuilder class.
+
+        :param bar_type: The bar type for the aggregator.
+        :param handler: The bar handler for the aggregator.
+        :param clock: If the clock for the aggregator.
+        :param logger: The logger for the aggregator.
+        """
+        super().__init__(bar_type=bar_type,
+                         handler=handler,
+                         logger=logger,
+                         use_previous_close=True)
+
+        self._clock = clock
+        self.interval = self._get_interval()
+        self.next_close = self._clock.next_event_time
+        self._set_build_timer()
+
+    cpdef void update(self, Tick tick) except *:
+        """
+        Update the builder with the given tick.
+
+        :param tick: The tick for the update.
+        """
+        self._builder.update(tick)
+
+        cdef TimeEvent event
+        if self._clock.is_test_clock:
+            if self._clock.next_event_time <= tick.timestamp:
+                self._clock.advance_time(tick.timestamp)
+                for event, handler in self._clock.get_pending_events().items():
+                    handler(event)
+                self.next_close = self._clock.next_event_time
+
+    cpdef void _build_event(self, TimeEvent event):
+        self._handle_bar(self._builder.build(event.timestamp))
+
+    cdef timedelta _get_interval(self):
+        if self.bar_type.specification.structure == BarStructure.SECOND:
+            return timedelta(seconds=(1 * self.bar_type.specification.step))
+        elif self.bar_type.specification.structure == BarStructure.MINUTE:
+            return timedelta(minutes=(1 * self.bar_type.specification.step))
+        elif self.bar_type.specification.structure == BarStructure.HOUR:
+            return timedelta(hours=(1 * self.bar_type.specification.step))
+        elif self.bar_type.specification.structure == BarStructure.DAY:
+            return timedelta(days=(1 * self.bar_type.specification.step))
+        else:
+            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
+
+    cdef datetime _get_start_time(self):
+        cdef datetime now = self._clock.time_now()
+        if self.bar_type.specification.structure == BarStructure.SECOND:
+            return datetime(
+                year=now.year,
+                month=now.month,
+                day=now.day,
+                hour=now.hour,
+                minute=now.minute,
+                second=now.second,
+                tzinfo=now.tzinfo
+            )
+        elif self.bar_type.specification.structure == BarStructure.MINUTE:
+            return datetime(
+                year=now.year,
+                month=now.month,
+                day=now.day,
+                hour=now.hour,
+                minute=now.minute,
+                tzinfo=now.tzinfo
+            )
+        elif self.bar_type.specification.structure == BarStructure.HOUR:
+            return datetime(
+                year=now.year,
+                month=now.month,
+                day=now.day,
+                hour=now.hour,
+                tzinfo=now.tzinfo
+            )
+        elif self.bar_type.specification.structure == BarStructure.DAY:
+            return datetime(
+                year=now.year,
+                month=now.month,
+                day=now.day,
+            )
+        else:
+            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
+
+    cdef void _set_build_timer(self):
+        self._clock.set_timer(
+            label=Label(str(self.bar_type)),
+            interval=self._get_interval(),
+            start_time=self._get_start_time(),
+            stop_time=None,
+            handler=self._build_event)

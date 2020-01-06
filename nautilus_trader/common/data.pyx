@@ -6,18 +6,17 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
-from nautilus_trader.model.identifiers cimport Symbol, Venue, Label
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
-from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.data.market cimport BarBuilder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
+from nautilus_trader.common.market cimport BarAggregator, TickBarAggregator, TimeBarAggregator
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
@@ -192,7 +191,6 @@ cdef class DataClient:
         return self._instruments[symbol]
 
     cdef void _self_generate_bars(self, BarType bar_type, handler):
-        cdef BarAggregator aggregator
         if bar_type.specification.structure == BarStructure.TICK:
             aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
 
@@ -345,177 +343,3 @@ cdef class DataClient:
         self._instruments.clear()
 
         self._log.debug("Reset.")
-
-
-cdef class BarAggregator:
-    """
-    Provides a means of aggregating built bars to the registered handler.
-    """
-
-    def __init__(self,
-                 BarType bar_type,
-                 handler,
-                 Logger logger,
-                 bint use_previous_close):
-        """
-        Initializes a new instance of the BarAggregator class.
-
-        :param bar_type: The bar type for the aggregator.
-        :param handler: The bar handler for the aggregator.
-        :param logger: The logger for the aggregator.
-        :param use_previous_close: If the previous close price should be the open price of a new bar.
-        """
-        self.bar_type = bar_type
-        self._handler = BarHandler(handler)
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._builder = BarBuilder(
-            bar_spec=self.bar_type.specification,
-            use_previous_close=use_previous_close)
-
-    cpdef void update(self, Tick tick) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void _handle_bar(self, Bar bar):
-        self._log.debug(f"Built {self.bar_type} {bar}")
-        self._handler.handle(self.bar_type, bar)
-
-
-cdef class TickBarAggregator(BarAggregator):
-    """
-    Provides a means of building tick bars from ticks.
-    """
-
-    def __init__(self,
-                 BarType bar_type,
-                 handler,
-                 Logger logger):
-        """
-        Initializes a new instance of the TickBarBuilder class.
-
-        :param bar_type: The bar type for the aggregator.
-        :param handler: The bar handler for the aggregator.
-        :param logger: The logger for the aggregator.
-        """
-        super().__init__(bar_type=bar_type,
-                         handler=handler,
-                         logger=logger,
-                         use_previous_close=False)
-
-        self.step = bar_type.specification.step
-
-    cpdef void update(self, Tick tick) except *:
-        """
-        Update the builder with the given tick.
-
-        :param tick: The tick for the update.
-        """
-        self._builder.update(tick)
-
-        if self._builder.count == self.step:
-            self._handle_bar(self._builder.build())
-
-
-cdef class TimeBarAggregator(BarAggregator):
-    """
-    Provides a means of building time bars from ticks with an internal timer.
-    """
-    def __init__(self,
-                 BarType bar_type,
-                 handler,
-                 Clock clock,
-                 Logger logger):
-        """
-        Initializes a new instance of the TickBarBuilder class.
-
-        :param bar_type: The bar type for the aggregator.
-        :param handler: The bar handler for the aggregator.
-        :param clock: If the clock for the aggregator.
-        :param logger: The logger for the aggregator.
-        """
-        super().__init__(bar_type=bar_type,
-                         handler=handler,
-                         logger=logger,
-                         use_previous_close=True)
-
-        self._clock = clock
-        self.interval = self._get_interval()
-        self.next_close = self._clock.next_event_time
-        self._set_build_timer()
-
-    cpdef void update(self, Tick tick) except *:
-        """
-        Update the builder with the given tick.
-
-        :param tick: The tick for the update.
-        """
-        self._builder.update(tick)
-
-        cdef TimeEvent event
-        if self._clock.is_test_clock:
-            if self._clock.next_event_time <= tick.timestamp:
-                self._clock.advance_time(tick.timestamp)
-                for event, handler in self._clock.get_pending_events().items():
-                    handler(event)
-                self.next_close = self._clock.next_event_time
-
-    cpdef void _build_event(self, TimeEvent event):
-        self._handle_bar(self._builder.build(event.timestamp))
-
-    cdef timedelta _get_interval(self):
-        if self.bar_type.specification.structure == BarStructure.SECOND:
-            return timedelta(seconds=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.MINUTE:
-            return timedelta(minutes=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.HOUR:
-            return timedelta(hours=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.DAY:
-            return timedelta(days=(1 * self.bar_type.specification.step))
-        else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
-
-    cdef datetime _get_start_time(self):
-        cdef datetime now = self._clock.time_now()
-        if self.bar_type.specification.structure == BarStructure.SECOND:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-                hour=now.hour,
-                minute=now.minute,
-                second=now.second,
-                tzinfo=now.tzinfo
-            )
-        elif self.bar_type.specification.structure == BarStructure.MINUTE:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-                hour=now.hour,
-                minute=now.minute,
-                tzinfo=now.tzinfo
-            )
-        elif self.bar_type.specification.structure == BarStructure.HOUR:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-                hour=now.hour,
-                tzinfo=now.tzinfo
-            )
-        elif self.bar_type.specification.structure == BarStructure.DAY:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-            )
-        else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
-
-    cdef void _set_build_timer(self):
-        self._clock.set_timer(
-            label=Label(str(self.bar_type)),
-            interval=self._get_interval(),
-            start_time=self._get_start_time(),
-            stop_time=None,
-            handler=self._build_event)

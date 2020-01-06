@@ -8,8 +8,13 @@
 
 from cpython.datetime cimport datetime, timedelta
 
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.handlers cimport BarHandler
+from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarSpecification
+from nautilus_trader.model.objects cimport Price, Tick, BarType, BarSpecification, Bar, DataBar
+from nautilus_trader.model.events cimport TimeEvent
 
 
 cdef class TickDataWrangler:
@@ -72,3 +77,31 @@ cdef class BarBuilder:
     cdef void _reset(self)
     cdef Price _get_price(self, Tick tick)
     cdef int _get_volume(self, Tick tick)
+
+
+cdef class BarAggregator:
+    cdef LoggerAdapter _log
+    cdef DataClient _client
+    cdef BarHandler _handler
+    cdef BarBuilder _builder
+
+    cdef readonly BarType bar_type
+
+    cpdef void update(self, Tick tick) except *
+    cpdef void _handle_bar(self, Bar bar)
+
+
+cdef class TickBarAggregator(BarAggregator):
+    cdef int step
+
+
+cdef class TimeBarAggregator(BarAggregator):
+    cdef Clock _clock
+
+    cdef readonly timedelta interval
+    cdef readonly datetime next_close
+
+    cpdef void _build_event(self, TimeEvent event)
+    cdef timedelta _get_interval(self)
+    cdef datetime _get_start_time(self)
+    cdef void _set_build_timer(self)
