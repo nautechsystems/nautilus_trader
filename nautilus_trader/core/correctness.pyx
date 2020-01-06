@@ -84,7 +84,7 @@ cdef class Condition:
         :raises ConditionFailed: If the objects are not equal.
         """
         if not object1.equals(object2):
-            raise ConditionFailed(f"The \'{param1}\' {type(object1)} was not equal to the \'{param2}\' {type(object1)}")
+            raise ConditionFailed(f"The \'{param1}\' {type(object1)} was not equal to the \'{param2}\' {type(object2)}")
 
     @staticmethod
     cdef void type(object argument, object expected_type, str param) except *:
