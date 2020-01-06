@@ -9,11 +9,11 @@
 import pandas as pd
 
 from cpython.datetime cimport datetime, timedelta
-from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.objects cimport Instrument, Tick, BarType, Bar, BarSpecification
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.events cimport TimeEvent
@@ -24,6 +24,40 @@ from nautilus_trader.common.data cimport DataClient, BarAggregator, TickBarAggre
 from nautilus_trader.data.market cimport TickDataWrangler, BarDataWrangler
 
 
+cdef class BacktestDataContainer:
+    """
+    Provides a container for backtest data.
+    """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the BacktestDataContainer class.
+        """
+        self.instruments = {}
+        self.ticks = {}
+        self.bars_bid = {}
+        self.bars_ask = {}
+
+    cpdef void add_instrument(self, Instrument instrument):
+        self.instruments[instrument.symbol] = instrument
+
+    cpdef void add_ticks(self, Symbol symbol, data: pd.DataFrame):
+        self.ticks[symbol] = data
+
+    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data: pd.DataFrame):
+        Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
+
+        if price_type == PriceType.BID:
+            if symbol not in self.bars_bid:
+                self.bars_bid[symbol] = {}
+            self.bars_bid[symbol][structure] = data
+
+        if price_type == PriceType.ASK:
+            if symbol not in self.bars_ask:
+                self.bars_ask[symbol] = {}
+            self.bars_ask[symbol][structure] = data
+
+
 cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for backtesting.
@@ -31,16 +65,14 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  Venue venue,
-                 dict data,
-                 list instruments: List[Instrument],
+                 BacktestDataContainer data,
                  TestClock clock,
                  Logger logger):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param venue: The venue for the data client.
-        :param data: The historical data needed for the backtest.
-        :param instruments: The instruments needed for the backtest.
+        :param data: The data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         :raises ConditionFailed: If the instruments list contains a type other than Instrument.
@@ -54,7 +86,6 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the clock is None.
         :raises ConditionFailed: If the logger is None.
         """
-        Condition.list_type(instruments, Instrument, 'instruments')
         Condition.not_none(clock, 'clock')
         Condition.not_none(logger, 'logger')
 
@@ -69,13 +100,13 @@ cdef class BacktestDataClient(DataClient):
         self._log.info("Preparing data...")
 
         # Update instruments dictionary
-        for instrument in instruments:
+        for instrument in data.instruments.values():
             self._handle_instrument(instrument)
 
         # Create data symbols set
-        cdef set data_symbols = {symbol for symbol in data['ticks']}    # type: Set[Symbol]
-        [data_symbols.add(symbol) for symbol in data['bars_bid']]  # type: Set[Symbol]
-        [data_symbols.add(symbol) for symbol in data['bars_ask']]  # type: Set[Symbol]
+        cdef set data_symbols = {symbol for symbol in data.ticks}  # type: Set[Symbol]
+        [data_symbols.add(symbol) for symbol in data.bars_bid]
+        [data_symbols.add(symbol) for symbol in data.bars_ask]
         #assert(bid_data_symbols == ask_data_symbols)
         #self.data_symbols = tick_data_symbols.union(bid_data_symbols.union(ask_data_symbols))
 
@@ -114,9 +145,9 @@ cdef class BacktestDataClient(DataClient):
             self._log.info(f"Building {symbol} ticks...")
             self.data_providers[symbol] = DataProvider(
                 instrument=instrument,
-                data_ticks=None if symbol not in data['ticks'] else data['ticks'][symbol],
-                data_bars_bid=data['bars_bid'][symbol],
-                data_bars_ask=data['bars_ask'][symbol])
+                ticks=None if symbol not in data.ticks else data.ticks[symbol],
+                bars_bid=data.bars_bid[symbol],
+                bars_ask=data.bars_ask[symbol])
             #self.data_providers[symbol].register_ticks()
             self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
@@ -320,7 +351,7 @@ cdef class BacktestDataClient(DataClient):
         """
         self._handle_tick(tick)
 
-        if tick.timestamp < self._clock.next_event_time:
+        if self._clock.has_timers and tick.timestamp < self._clock.next_event_time:
             return  # No events to handle yet
 
         self._clock.advance_time(tick.timestamp)
@@ -497,21 +528,23 @@ cdef class DataProvider:
 
     def __init__(self,
                  Instrument instrument,
-                 data_ticks: DataFrame,
-                 dict data_bars_bid: Dict[BarStructure, DataFrame],
-                 dict data_bars_ask: Dict[BarStructure, DataFrame]):
+                 ticks: pd.DataFrame,
+                 dict bars_bid: Dict[BarStructure, pd.DataFrame],
+                 dict bars_ask: Dict[BarStructure, pd.DataFrame]):
         """
         Initializes a new instance of the DataProvider class.
 
         :param instrument: The instrument for the data provider.
-        :param data_ticks: The tick data for the data provider.
+        :param ticks: The tick data for the data provider.
+        :param bars_bid: The bid bars data for the data provider.
+        :param bars_ask: The ask bars data for the data provider.
         :raises ConditionFailed: If the data_ticks is a type other than None or DataFrame.
         :raises ConditionFailed: If the data_bars_bid is None.
         :raises ConditionFailed: If the data_bars_ask is None.
         """
-        Condition.type_or_none(data_ticks, DataFrame, 'data_ticks')
-        Condition.type_or_none(data_bars_bid, Dict, 'data_bars_bid')
-        Condition.type_or_none(data_bars_ask, Dict, 'data_bars_ask')
+        Condition.type_or_none(ticks, pd.DataFrame, 'data_ticks')
+        Condition.type_or_none(bars_bid, Dict, 'data_bars_bid')
+        Condition.type_or_none(bars_ask, Dict, 'data_bars_ask')
 
         self.instrument = instrument
         # self._dataframe_ticks = data_ticks
@@ -524,15 +557,15 @@ cdef class DataProvider:
         # self.iterations = {}                       # type: Dict[BarType, int]
         # self.tick_index = 0
 
-        if BarStructure.SECOND in data_bars_bid:
-            bid_data = data_bars_bid[BarStructure.SECOND]
-            ask_data = data_bars_ask[BarStructure.SECOND]
-        elif BarStructure.MINUTE in data_bars_bid:
-            bid_data = data_bars_bid[BarStructure.MINUTE]
-            ask_data = data_bars_ask[BarStructure.MINUTE]
-        elif BarStructure.HOUR in data_bars_bid:
-            bid_data = data_bars_bid[BarStructure.HOUR]
-            ask_data = data_bars_ask[BarStructure.HOUR]
+        if BarStructure.SECOND in bars_bid:
+            bid_data = bars_bid[BarStructure.SECOND]
+            ask_data = bars_ask[BarStructure.SECOND]
+        elif BarStructure.MINUTE in bars_bid:
+            bid_data = bars_bid[BarStructure.MINUTE]
+            ask_data = bars_ask[BarStructure.MINUTE]
+        elif BarStructure.HOUR in bars_bid:
+            bid_data = bars_bid[BarStructure.HOUR]
+            ask_data = bars_ask[BarStructure.HOUR]
         else:
             bid_data = pd.DataFrame()
             ask_data = pd.DataFrame()
@@ -540,7 +573,7 @@ cdef class DataProvider:
         cdef TickDataWrangler builder = TickDataWrangler(
             symbol=self.instrument.symbol,
             precision=self.instrument.tick_precision,
-            tick_data=data_ticks,
+            tick_data=ticks,
             bid_data=bid_data,
             ask_data=ask_data)
 

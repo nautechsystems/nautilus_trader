@@ -12,6 +12,7 @@ import pandas as pd
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, Currency, PriceType
 from nautilus_trader.model.objects import BarSpecification
+from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -22,13 +23,12 @@ from examples.strategies.ema_cross import EMACrossPy, EMACrossMarketEntryPy
 
 if __name__ == "__main__":
     USDJPY = TestStubs.instrument_usdjpy()
-    instruments = [USDJPY]
 
-    data = {
-        'ticks': {USDJPY.symbol: TestDataProvider.usdjpy_test_ticks()},
-        'bars_bid': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}},
-        'bars_ask': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}},
-    }
+    data = BacktestDataContainer()
+    data.add_instrument(USDJPY)
+    data.add_ticks(USDJPY.symbol, TestDataProvider.usdjpy_test_ticks())
+    data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+    data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
     strategies = [EMACrossPy(
         symbol=USDJPY.symbol,
@@ -62,7 +62,6 @@ if __name__ == "__main__":
 
     engine = BacktestEngine(
         data=data,
-        instruments=instruments,
         strategies=strategies,
         config=config,
         fill_model=fill_model)
