@@ -71,7 +71,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     def __init__(self,
                  ExecutionEngine exec_engine,
-                 list instruments: List[Instrument],
+                 dict instruments: Dict[Symbol, Instrument],
                  BacktestConfig config,
                  FillModel fill_model,
                  TestClock clock,
@@ -89,19 +89,14 @@ cdef class BacktestExecClient(ExecutionClient):
         :param logger: The logger for the component.
         :raises ConditionFailed: If the instruments list contains a type other than Instrument.
         """
-        Condition.list_type(instruments, Instrument, 'instruments')
+        Condition.dict_types(instruments, Symbol, Instrument, 'instruments')
 
         super().__init__(exec_engine, logger)
 
         self._clock = clock
         self._guid_factory = guid_factory
 
-        # Convert instruments list to dictionary indexed by symbol
-        cdef dict instruments_dict = {}      # type: Dict[Symbol, Instrument]
-        for instrument in instruments:
-            instruments_dict[instrument.symbol] = instrument
-
-        self.instruments = instruments_dict  # type: Dict[Symbol, Instrument]
+        self.instruments = instruments
 
         self.day_number = 0
         self.rollover_time = None

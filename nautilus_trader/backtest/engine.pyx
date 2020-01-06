@@ -9,18 +9,16 @@
 import psutil
 import pytz
 
-from cpython.datetime cimport datetime, timedelta
-from pandas import DataFrame
+from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.objects cimport Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId, AccountId
+from nautilus_trader.model.identifiers cimport Venue, TraderId, AccountId
 from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
@@ -29,7 +27,7 @@ from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.data cimport BacktestDataClient
+from nautilus_trader.backtest.data cimport BacktestDataContainer, BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 
@@ -44,8 +42,7 @@ cdef class BacktestEngine:
     """
 
     def __init__(self,
-                 dict data,
-                 list instruments: List[Instrument],
+                 BacktestDataContainer data,
                  list strategies: List[TradingStrategy],
                  BacktestConfig config=BacktestConfig(),
                  FillModel fill_model=FillModel()):
@@ -53,7 +50,6 @@ cdef class BacktestEngine:
         Initializes a new instance of the BacktestEngine class.
 
         :param data: The data for the backtest engine.
-        :param instruments: The instruments for the backtest engine.
         :param strategies: The initial strategies for the backtest engine.
         :param config: The configuration for the backtest engine.
         :param fill_model: The initial fill model for the backtest engine.
@@ -64,7 +60,6 @@ cdef class BacktestEngine:
         self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
 
         # Data checked in BacktestDataClient
-        Condition.list_type(instruments, Instrument, 'instruments')
         Condition.list_type(strategies, TradingStrategy, 'strategies')
 
         self.config = config
@@ -126,7 +121,6 @@ cdef class BacktestEngine:
         self.data_client = BacktestDataClient(
             venue=Venue('BACKTEST'),
             data=data,
-            instruments=instruments,
             clock=self.test_clock,
             logger=self.test_logger)
 
@@ -148,7 +142,7 @@ cdef class BacktestEngine:
 
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
-            instruments=instruments,
+            instruments=data.instruments,
             config=config,
             fill_model=fill_model,
             clock=self.test_clock,

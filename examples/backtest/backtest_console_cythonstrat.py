@@ -8,13 +8,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pytz
-
-from datetime import datetime
 
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, Currency, PriceType
 from nautilus_trader.model.objects import BarSpecification
+from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -25,13 +23,12 @@ from test_kit.strategies import EMACross
 
 if __name__ == "__main__":
     USDJPY = TestStubs.instrument_usdjpy()
-    instruments = [USDJPY]
 
-    data = {
-        'ticks': {USDJPY.symbol: TestDataProvider.usdjpy_test_ticks()},
-        'bars_bid': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}},
-        'bars_ask': {USDJPY.symbol: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}},
-    }
+    data = BacktestDataContainer()
+    data.add_instrument(USDJPY)
+    data.add_ticks(USDJPY.symbol, TestDataProvider.usdjpy_test_ticks())
+    data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+    data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
     strategies = [EMACross(
         instrument=USDJPY,
@@ -64,7 +61,6 @@ if __name__ == "__main__":
         random_seed=None)
 
     engine = BacktestEngine(
-        instruments=instruments,
         data=data,
         strategies=strategies,
         config=config,
@@ -72,10 +68,7 @@ if __name__ == "__main__":
 
     input("Press Enter to continue...")
 
-    start = datetime(2000, 2, 1, 0, 0, 0, 0, pytz.UTC)
-    stop = datetime(2020, 3, 1, 1, 0, 0, 0, pytz.UTC)
-
-    engine.run(start, stop)
+    engine.run()
 
     with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
         pass

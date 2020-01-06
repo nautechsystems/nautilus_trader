@@ -6,17 +6,24 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
 
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.objects cimport Tick, Instrument
 from nautilus_trader.model.identifiers cimport Symbol
 
 
-# cdef class BidAskBarPair:
-#     cdef readonly Bar bid
-#     cdef readonly Bar ask
+cdef class BacktestDataContainer:
+    cdef readonly dict instruments
+    cdef readonly dict ticks
+    cdef readonly dict bars_bid
+    cdef readonly dict bars_ask
+
+    cpdef void add_instrument(self, Instrument instrument)
+    cpdef void add_ticks(self, Symbol symbol, data)
+    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data)
 
 
 cdef class BacktestDataClient(DataClient):
