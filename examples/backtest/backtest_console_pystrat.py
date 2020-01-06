@@ -8,6 +8,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pytz
+
+from datetime import datetime
 
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, Currency, PriceType
@@ -32,7 +35,7 @@ if __name__ == "__main__":
 
     strategies = [EMACrossPy(
         symbol=USDJPY.symbol,
-        bar_spec=BarSpecification(10, BarStructure.SECOND, PriceType.BID),
+        bar_spec=BarSpecification(1, BarStructure.MINUTE, PriceType.BID),
         risk_bp=10,
         fast_ema=10,
         slow_ema=20,

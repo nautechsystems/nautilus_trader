@@ -33,7 +33,7 @@ cdef class PositionSizer:
         :param instrument: The instrument for update.
         :raises ConditionFailed: If the instruments symbol does not equal the held instrument symbol.
         """
-        Condition.equal(self.instrument.symbol, instrument.symbol)
+        Condition.equals(self.instrument.symbol, instrument.symbol, 'instrument.symbol', 'instrument.symbol')
 
         self.instrument = instrument
 

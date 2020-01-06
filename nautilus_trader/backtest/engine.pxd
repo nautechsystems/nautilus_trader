@@ -44,8 +44,6 @@ cdef class BacktestEngine:
     cdef readonly int iteration
 
     cpdef run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*)
-    #cdef void _run(self, datetime time, datetime stop)
-    #cdef void _run_with_bar_execution(self, datetime time, datetime stop, timedelta time_step)
 
     cpdef list get_log_store(self)
     cpdef void print_log_store(self)

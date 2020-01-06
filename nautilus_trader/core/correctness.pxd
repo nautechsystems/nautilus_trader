@@ -17,7 +17,7 @@ cdef class Condition:
     @staticmethod
     cdef void valid_string(str argument, str param) except *
     @staticmethod
-    cdef void equal(object argument1, object argument2) except *
+    cdef void equals(object argument1, object argument2, str param1, str param2) except *
     @staticmethod
     cdef void type(object argument, object expected_type, str param) except *
     @staticmethod
