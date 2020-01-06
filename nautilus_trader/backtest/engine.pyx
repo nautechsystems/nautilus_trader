@@ -16,7 +16,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.objects cimport Instrument, Tick
+from nautilus_trader.model.objects cimport Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.model.identifiers cimport Venue, TraderId, AccountId
 from nautilus_trader.common.clock cimport LiveClock, TestClock

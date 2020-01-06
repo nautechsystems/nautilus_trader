@@ -10,5 +10,13 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Instrument
 
 
+cdef class CSVTickDataLoader:
+    pass
+
+
+cdef class CSVBarDataLoader:
+    pass
+
+
 cdef class InstrumentLoader:
     cpdef Instrument default_fx_ccy(self, Symbol symbol, int tick_precision)
