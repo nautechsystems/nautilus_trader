@@ -73,18 +73,18 @@ class ConditionTests(unittest.TestCase):
         PyCondition.valid_string("abc  ", "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_equal_when_args_not_equal_raises_condition_failed(self):
+    def test_condition_equals_when_args_not_equal_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.equal, OrderId('O-123456'), OrderId('O-123'))
-        self.assertRaises(ConditionFailed, PyCondition.equal, OrderId('O-123456'), PositionId('P-123456'))
+        self.assertRaises(ConditionFailed, PyCondition.equals, OrderId('O-123456'), OrderId('O-123'))
+        self.assertRaises(ConditionFailed, PyCondition.equals, OrderId('O-123456'), PositionId('P-123456'))
 
-    def test_condition_equal_when_args_are_equal_does_nothing(self):
+    def test_condition_equals_when_args_are_equal_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.equal(OrderId('O-123456'), OrderId('O-123456'))
+        PyCondition.equals(OrderId('O-123456'), OrderId('O-123456'))
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_type_when_type_is_incorrect_raises_condition_failed(self):

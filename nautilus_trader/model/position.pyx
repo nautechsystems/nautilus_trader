@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Set, List
+from typing import Set, List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
@@ -169,7 +169,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Decimal.
         """
-        Condition.equal(self.symbol, last.symbol)
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         if self.market_position == MarketPosition.LONG:
             return self._calculate_points(self.average_open_price, last.bid.value)
@@ -185,7 +185,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return float.
         """
-        Condition.equal(self.symbol, last.symbol)
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         if self.market_position == MarketPosition.LONG:
             return self._calculate_return(self.average_open_price, last.bid.value)
@@ -201,7 +201,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Money.
         """
-        Condition.equal(self.symbol, last.symbol)
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         if self.market_position == MarketPosition.LONG:
             return self._calculate_pnl(self.average_open_price, last.bid.value, self.quantity.value)
@@ -217,7 +217,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Decimal.
         """
-        Condition.equal(self.symbol, last.symbol)
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         return self.realized_points + self.unrealized_points(last)
 
@@ -228,7 +228,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return float.
         """
-        Condition.equal(self.symbol, last.symbol)
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         return self.realized_return + self.unrealized_return(last)
 
@@ -239,7 +239,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Money.
         """
-        Condition.equal(self.symbol, last.symbol)
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         return self.realized_pnl + self.unrealized_pnl(last)
 

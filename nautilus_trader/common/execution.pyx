@@ -981,7 +981,7 @@ cdef class ExecutionEngine:
         :param logger: The logger for the engine.
         :raises ConditionFailed: If the trader_id is not equal to the database.trader_id.
         """
-        Condition.equal(trader_id, database.trader_id)
+        Condition.equals(trader_id, database.trader_id, 'trader_id', 'database.trader_id')
 
         self._clock = clock
         self._guid_factory = guid_factory

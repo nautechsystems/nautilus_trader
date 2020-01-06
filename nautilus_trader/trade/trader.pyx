@@ -47,8 +47,8 @@ cdef class Trader:
         :raises ConditionFailed: If the trader_id is not equal to the exec_engine.trader_id.
         :raises ConditionFailed: If the account_id is not equal to the exec_engine.account_id.
         """
-        Condition.equal(trader_id, exec_engine.trader_id)
-        Condition.equal(account_id, exec_engine.account_id)
+        Condition.equals(trader_id, exec_engine.trader_id, 'trader_id', 'exec_engine.trader_id')
+        Condition.equals(account_id, exec_engine.account_id, 'account_id', 'exec_engine.account_id')
 
         self._clock = clock
         self._guid_factory = guid_factory

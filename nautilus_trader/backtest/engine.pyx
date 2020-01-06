@@ -56,12 +56,10 @@ cdef class BacktestEngine:
         :raises ConditionFailed: If the instruments list contains a type other than Instrument.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
-        self.trader_id = TraderId('BACKTESTER', '000')
-        self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
-
-        # Data checked in BacktestDataClient
         Condition.list_type(strategies, TradingStrategy, 'strategies')
 
+        self.trader_id = TraderId('BACKTESTER', '000')
+        self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
         self.config = config
         self.clock = LiveClock()
         self.created_time = self.clock.time_now()
@@ -99,7 +97,6 @@ cdef class BacktestEngine:
         nautilus_header(self.log)
         self.log.info("Building engine...")
 
-        # Execution Database
         if config.exec_db_type == 'in-memory':
             self.exec_db = InMemoryExecutionDatabase(
                 trader_id=self.trader_id,
@@ -348,7 +345,7 @@ cdef class BacktestEngine:
         self.log.info(f"Run started datetime:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        #self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
+        self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
@@ -373,7 +370,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Elapsed time (running):  {run_finished - run_started}")
 
-        #self.log.info(f"Execution resolution: {bar_structure_to_string(self.data_client.execution_structure)}")
+        self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
         self.log.info(f"Iterations: {self.iteration}")
         self.log.info(f"Total events: {self.exec_engine.event_count}")
         self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total()}")

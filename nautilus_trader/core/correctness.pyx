@@ -71,7 +71,7 @@ cdef class Condition:
             raise ConditionFailed(f"The \'{param}\' string argument was whitespace")
 
     @staticmethod
-    cdef void equal(object object1, object object2) except *:
+    cdef void equals(object object1, object object2, str param1, str param2) except *:
         """
         Check the objects are equal.
         
@@ -79,10 +79,12 @@ cdef class Condition:
 
         :param object1: The first object to check.
         :param object2: The second object to check.
+        :param param1: The first objects parameter name.
+        :param param2: The first objects parameter name.
         :raises ConditionFailed: If the objects are not equal.
         """
         if not object1.equals(object2):
-            raise ConditionFailed(f"The {object1} object was not equal to the {object2} object")
+            raise ConditionFailed(f"The \'{param1}\' {type(object1)} was not equal to the \'{param2}\' {type(object1)}")
 
     @staticmethod
     cdef void type(object argument, object expected_type, str param) except *:
@@ -347,8 +349,8 @@ class PyCondition:
         Condition.valid_string(argument, param)
 
     @staticmethod
-    def equal(argument1, argument2):
-        Condition.equal(argument1, argument2)
+    def equals(argument1, argument2, param1, param2):
+        Condition.equals(argument1, argument2, param1, param2)
 
     @staticmethod
     def not_empty(argument, param):

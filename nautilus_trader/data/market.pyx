@@ -17,7 +17,6 @@ from pandas.core.frame import DataFrame
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarSpecification
 

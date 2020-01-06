@@ -270,9 +270,9 @@ cdef class Order:
         :raises ConditionFailed: If the order_events order_id is not equal to the event.order_id.
         :raises ConditionFailed: If the order account_id is not None and is not equal to the event.account_id.
         """
-        Condition.equal(self.id, event.order_id)
+        Condition.equals(self.id, event.order_id, 'id', 'event.order_id')
         if self.account_id is not None:
-            Condition.equal(self.account_id, event.account_id)
+            Condition.equals(self.account_id, event.account_id, 'account_id', 'event.account_id')
 
         # Update events
         self._events.append(event)
