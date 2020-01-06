@@ -70,6 +70,7 @@ cdef class Symbol(Identifier):
         Example: 'AUDUSD.FXCM'.
 
         :param value: The symbol string value to parse.
+
         :return Symbol.
         """
         return Symbol.from_string(value)
@@ -187,6 +188,7 @@ cdef class TraderId(Identifier):
         Example: 'TESTER-001'.
 
         :param value: The value for the strategy_id.
+        
         :return TraderId.
         """
         cdef tuple partitioned = value.partition('-')
@@ -207,6 +209,7 @@ cdef class TraderId(Identifier):
         Example: 'TESTER-001'.
 
         :param value: The value for the trader_id.
+
         :return TraderId.
         """
         return TraderId.from_string(value)
@@ -245,6 +248,7 @@ cdef class StrategyId(Identifier):
         Example: 'EMACross-001'.
 
         :param value: The value for the strategy_id.
+        
         :return StrategyId.
         """
         cdef tuple partitioned = value.partition('-')
@@ -264,6 +268,7 @@ cdef class StrategyId(Identifier):
         Example: 'EMACross-001'.
 
         :param value: The value for the strategy_id.
+
         :return StrategyId.
         """
         return StrategyId.from_string(value)
@@ -300,6 +305,7 @@ cdef class AccountId(Identifier):
         Example: 'FXCM-02851908-DEMO'.
 
         :param value: The value for the account_id.
+        
         :return AccountId.
         """
         cdef list split = value.split('-', maxsplit=2)
@@ -319,6 +325,7 @@ cdef class AccountId(Identifier):
         Example: 'FXCM-02851908-DEMO'.
 
         :param value: The value for the account_id.
+
         :return AccountId.
         """
         return AccountId.from_string(value)

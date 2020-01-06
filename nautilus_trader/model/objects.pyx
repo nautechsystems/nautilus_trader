@@ -883,8 +883,8 @@ cdef class BarSpecification:
         :param value: The bar specification string to parse.
         :return BarSpecification.
         """
-        cdef list split1 = value.split('-')
-        cdef list split2 = split1[1].split('[')
+        cdef list split1 = value.split('-', maxsplit=2)
+        cdef list split2 = split1[1].split('[', maxsplit=1)
         cdef str structure = split2[0]
         cdef str price_type = split2[1].strip(']')
 
@@ -1001,8 +1001,8 @@ cdef class BarType:
         :return BarType.
         """
         cdef list split_string = re.split(r'[.-]+', value)
-        cdef str structure = split_string[3].split('[')[0]
-        cdef str price_type = split_string[3].split('[')[1].strip(']')
+        cdef str structure = split_string[3].split('[', maxsplit=1)[0]
+        cdef str price_type = split_string[3].split('[', maxsplit=1)[1].strip(']')
         cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1]))
         cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
                                                           bar_structure_from_string(structure.upper()),
@@ -1123,7 +1123,7 @@ cdef class Bar:
         :param value: The bar string to parse.
         :return Bar.
         """
-        cdef list split_bar = value.split(',')
+        cdef list split_bar = value.split(',', maxsplit=5)
 
         return Bar(Price(split_bar[0]),
                    Price(split_bar[1]),

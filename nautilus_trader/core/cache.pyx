@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
+
 
 cdef class ObjectCache:
     """
@@ -16,8 +18,8 @@ cdef class ObjectCache:
         """
         Initializes a new instance of the ObjectCache class.
         """
-        assert type_value is not None, 'The type_value type cannot be None'
-        assert type_value is not type(None), 'The type_value type cannot be NoneType'
+        Condition.true(type_value is not None, 'type_value is not None')
+        Condition.true(type_value is not type(None), 'type_value is not type(None)')
 
         self.type_key = str
         self.type_value = type_value
@@ -30,11 +32,12 @@ cdef class ObjectCache:
         the parsed key.
 
         :param key: The key to check.
+        
         :return object.
         """
         parsed = self._cache.get(key, None)
 
-        if parsed is None:
+        if not parsed:
             parsed = self._parser(key)
             self._cache[key] = parsed
 

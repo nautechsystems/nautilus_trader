@@ -40,7 +40,6 @@ class BacktestExecClientTests(unittest.TestCase):
         self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()[:2000]
         self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()[:2000]
 
-        self.instruments = [self.usdjpy]
         self.data_ticks = {self.usdjpy.symbol: pd.DataFrame()}
         self.data_bars_bid = {self.usdjpy.symbol: self.bid_data_1min}
         self.data_bars_ask = {self.usdjpy.symbol: self.ask_data_1min}
@@ -81,7 +80,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
-            instruments=self.instruments,
+            instruments={self.usdjpy.symbol: self.usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=TestClock(),
@@ -107,8 +106,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -129,8 +127,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.limit(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -152,8 +149,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         atomic_order = strategy.order_factory.atomic_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -164,7 +160,6 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Assert
-        # print(strategy.object_storer.get_store())
         self.assertEqual(7, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('80.000'), atomic_order.stop_loss.price)
@@ -177,8 +172,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         atomic_order = strategy.order_factory.atomic_stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -191,7 +185,6 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Assert
-        # print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
         self.assertTrue(atomic_order.entry.id in self.exec_client.atomic_child_orders)
@@ -205,8 +198,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -230,8 +222,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         atomic_order = strategy.order_factory.atomic_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -258,7 +249,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
-            instruments=self.instruments,
+            instruments={self.usdjpy.symbol: self.usdjpy},
             config=BacktestConfig(),
             fill_model=fill_model,
             clock=TestClock(),
@@ -271,8 +262,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -313,8 +303,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,

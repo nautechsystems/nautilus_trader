@@ -118,6 +118,7 @@ cdef class TradingStrategy:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+        
         :return bool.
         """
         return self.id.equals(other.id)
@@ -127,6 +128,7 @@ cdef class TradingStrategy:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return self.equals(other)
@@ -136,6 +138,7 @@ cdef class TradingStrategy:
         Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return not self.equals(other)

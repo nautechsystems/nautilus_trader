@@ -456,7 +456,7 @@ cdef class OrderWorking(OrderEvent):
         :param working_time: The event order working time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
-        :param expire_time: The event order expire time (optional can be None).
+        :param expire_time: The optional event order expire time (for GTD orders).
         """
         Condition.type_or_none(expire_time, datetime, 'expire_time')
 

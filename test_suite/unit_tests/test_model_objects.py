@@ -122,7 +122,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price, -1.0, 2)
+        self.assertRaises(ConditionFailed, Price, -1.0, 2)
 
     def test_price_initialized_with_negative_precision_raises_exception(self):
         # Arrange
@@ -307,7 +307,7 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, price2.subtract, price1)
+        self.assertRaises(ConditionFailed, price2.subtract, price1)
 
     def test_price_subtract_returns_expected_price(self):
         # Arrange

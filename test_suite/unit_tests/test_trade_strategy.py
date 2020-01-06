@@ -77,9 +77,10 @@ class TradeStrategyTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=self.logger)
 
+        USDJPY = TestStubs.instrument_usdjpy()
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
-            instruments=[TestStubs.instrument_usdjpy()],
+            instruments={USDJPY.symbol: USDJPY},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=self.clock,
@@ -89,8 +90,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.handle_event(TestStubs.account_event())
 
-        bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(USDJPY_FXCM, bar, bar)  # Prepare market
+        self.exec_client.process_tick(TestStubs.tick_3decimal(USDJPY.symbol))  # Prepare market
 
         print('\n')
 

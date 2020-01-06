@@ -36,6 +36,7 @@ cdef class ReportProvider:
         Return an orders report dataframe.
         
         :param orders: The dictionary of order_ids and order objects.
+
         :return pd.DataFrame.
         """
         if len(orders) == 0:
@@ -50,6 +51,7 @@ cdef class ReportProvider:
         Return an order fills report dataframe.
         
         :param orders: The dictionary of order_ids and order objects.
+
         :return pd.DataFrame.
         """
         if len(orders) == 0:
@@ -64,6 +66,7 @@ cdef class ReportProvider:
         Return a positions report dataframe.
         
         :param positions: The dictionary of position_ids and objects.
+
         :return pd.DataFrame.
         """
         if len(positions) == 0:
@@ -80,6 +83,7 @@ cdef class ReportProvider:
         :param events: The accounts state events list.
         :param start: The start of the account reports period.
         :param end: The end of the account reports period.
+        
         :return: pd.DataFrame.
         """
         if start is None:

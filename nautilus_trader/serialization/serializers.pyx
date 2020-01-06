@@ -91,6 +91,7 @@ cdef class MsgPackSerializer:
         Serialize the given message to MessagePack specification bytes.
 
         :param message: The message to serialize.
+        
         :return bytes.
         """
         return msgpack.packb(message)
@@ -101,6 +102,7 @@ cdef class MsgPackSerializer:
         Deserialize the given MessagePack specification bytes to a dictionary.
 
         :param message_bytes: The message bytes to deserialize.
+        
         :return Dict.
         """
         return msgpack.unpackb(message_bytes, raw=False)
@@ -113,6 +115,7 @@ cdef class MsgPackSerializer:
 
         :param message_bytes: The message bytes to deserialize.
         :param ignore: The tuple of byte keys to not deserialize.
+        
         :return Dict.
         """
         cdef dict unpacked_raw = msgpack.unpackb(message_bytes)

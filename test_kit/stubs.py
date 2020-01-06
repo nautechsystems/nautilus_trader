@@ -20,17 +20,18 @@ from nautilus_trader.model.enums import (
     SecurityType,
     AccountType,
     OrderSide)
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import (
     Quantity,
     Money,
     Price,
+    Tick,
     BarSpecification,
     BarType,
     Bar,
     Instrument)
 from nautilus_trader.model.identifiers import (
     Venue,
+    Symbol,
     IdTag,
     TraderId,
     AccountId,
@@ -195,6 +196,13 @@ class TestStubs:
                    Price('90.003'),
                    100000,
                    UNIX_EPOCH)
+
+    @staticmethod
+    def tick_3decimal(symbol) -> Tick:
+        return Tick(symbol,
+                    Price('90.002'),
+                    Price('90.003'),
+                    UNIX_EPOCH)
 
     @staticmethod
     def trader_id() -> TraderId:

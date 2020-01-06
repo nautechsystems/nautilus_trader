@@ -70,6 +70,7 @@ cdef class Position:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+    
         :return bool.
         """
         return self.id.equals(other.id)
@@ -79,6 +80,7 @@ cdef class Position:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return self.equals(other)
@@ -88,6 +90,7 @@ cdef class Position:
         Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return not self.equals(other)
@@ -167,6 +170,7 @@ cdef class Position:
         Return the calculated unrealized points for the position from the given current price.
          
         :param last: The position symbols last tick.
+        
         :return Decimal.
         """
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
@@ -183,6 +187,7 @@ cdef class Position:
         Return the calculated unrealized return for the position from the given current price.
          
         :param last: The position symbols last tick.
+        
         :return float.
         """
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
@@ -199,6 +204,7 @@ cdef class Position:
         Return the calculated unrealized return for the position from the given current price.
          
         :param last: The position symbols last tick.
+        
         :return Money.
         """
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
@@ -215,6 +221,7 @@ cdef class Position:
         Return the calculated unrealized points for the position from the given current price.
          
         :param last: The position symbols last tick.
+        
         :return Decimal.
         """
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
