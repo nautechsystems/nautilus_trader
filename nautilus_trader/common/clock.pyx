@@ -33,14 +33,14 @@ cdef class Timer:
                  Label label,
                  timedelta interval,
                  datetime start_time,
-                 datetime stop_time):
+                 datetime stop_time=None):
         """
         Initializes a new instance of the Timer class.
 
         :param label: The label for the timer.
         :param interval: The time interval for the timer (not negative).
         :param start_time: The start datetime for the timer (UTC).
-        :param stop_time: The stop datetime for the timer (UTC).
+        :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
         Condition.positive(interval.total_seconds(), 'interval')
         if stop_time:
@@ -119,7 +119,7 @@ cdef class TestTimer(Timer):
         :param label: The label for the timer.
         :param interval: The time interval for the timer (not negative).
         :param start_time: The stop datetime for the timer (UTC).
-        :param stop_time: The optional stop datetime for the timer (UTC).
+        :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
         # Condition: interval checked in base class
         # Condition: stop_time checked in base class
@@ -168,7 +168,7 @@ cdef class LiveTimer(Timer):
         :param interval: The time interval for the timer.
         :param now: The datetime now (UTC).
         :param start_time: The start datetime for the timer (UTC).
-        :param stop_time: The stop datetime for the timer (UTC).
+        :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
         # Condition: interval checked in base class
         # Condition: stop_time checked in base class
@@ -279,7 +279,7 @@ cdef class Clock:
 
         :param label: The label for the alert (must be unique for this clock).
         :param alert_time: The time for the alert.
-        :param handler: The optional handler to receive time events (if None then must be Callable).
+        :param handler: The optional handler to receive time events (must be Callable).
         :raises ConditionFailed: If the label is not unique for this clock.
         :raises ConditionFailed: If the alert_time is not >= the clocks current time.
         :raises ConditionFailed: If the handler is not of type Callable or None.
@@ -320,7 +320,7 @@ cdef class Clock:
         :param interval: The time interval for the timer.
         :param start_time: The optional start time for the timer (if None then starts immediately).
         :param stop_time: The optional stop time for the timer (if None then repeats indefinitely).
-        :param handler: The optional handler to receive time events (if None then must be Callable).
+        :param handler: The optional handler to receive time events (must be Callable).
         :raises ConditionFailed: If the label is not unique for this clock.
         :raises ConditionFailed: If the interval is not positive (> 0).
         :raises ConditionFailed: If the stop_time is not None and stop_time < time_now.

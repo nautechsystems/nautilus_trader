@@ -45,7 +45,7 @@ cdef class Utf8TickSerializer:
         :param values_bytes: The tick value bytes to deserialize.
         :return Tick.
         """
-        cdef list values = values_bytes.decode(UTF8).split(',')
+        cdef list values = values_bytes.decode(UTF8).split(',', maxsplit=2)
 
         return Tick(
             symbol,
@@ -84,7 +84,7 @@ cdef class Utf8BarSerializer:
         :param bar_bytes: The bar bytes to deserialize.
         :return Bar.
         """
-        cdef list values = bar_bytes.decode(UTF8).split(',')
+        cdef list values = bar_bytes.decode(UTF8).split(',', maxsplit=5)
 
         return Bar(Price(values[0]),
                    Price(values[1]),

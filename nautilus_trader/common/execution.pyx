@@ -549,7 +549,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all order_ids.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Set[OrderId].
         """
         if strategy_id is None:
@@ -565,7 +565,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all working order_ids.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Set[OrderId].
         """
         if strategy_id is None:
@@ -581,7 +581,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all completed order_ids.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Set[OrderId].
         """
         if strategy_id is None:
@@ -597,7 +597,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all position_ids.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Set[PositionId].
         """
         if strategy_id is None:
@@ -613,7 +613,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all open position_ids.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Set[PositionId].
         """
         if strategy_id is None:
@@ -630,7 +630,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all closed position_ids.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Set[PositionId].
         """
         if strategy_id is None:
@@ -672,7 +672,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all orders.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_ids(strategy_id)
@@ -689,7 +689,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all working orders.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_working_ids(strategy_id)
@@ -706,7 +706,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all completed orders.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_completed_ids(strategy_id)
@@ -772,7 +772,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all positions.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_ids(strategy_id)
@@ -790,7 +790,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all open positions.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_open_ids(strategy_id)
@@ -808,7 +808,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all closed positions.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_closed_ids(strategy_id)
@@ -905,7 +905,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of order_ids held by the execution database.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return int.
         """
         return len(self.get_order_ids(strategy_id))
@@ -914,7 +914,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of working order_ids held by the execution database.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return int.
         """
         return len(self.get_order_working_ids(strategy_id))
@@ -923,7 +923,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of completed order_ids held by the execution database.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return int.
         """
         return len(self.get_order_completed_ids(strategy_id))
@@ -932,7 +932,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of position_ids held by the execution database.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return int.
         """
         return len(self.get_position_ids(strategy_id))
@@ -941,7 +941,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of open position_ids held by the execution database.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return int.
         """
         return len(self.get_position_open_ids(strategy_id))
@@ -950,7 +950,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of closed position_ids held by the execution database.
         
-        :param strategy_id: The strategy_id query filter (optional can be None).
+        :param strategy_id: The optional strategy_id query filter.
         :return int.
         """
         return len(self.get_position_closed_ids(strategy_id))

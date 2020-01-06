@@ -16,6 +16,7 @@ cpdef str pad_string(str string, int length):
 
     :param string: The string to pad.
     :param length: The length to pad to.
+    
     :return str.
     """
     return ((length - len(string)) * ' ') + string
@@ -26,6 +27,7 @@ cpdef str format_zulu_datetime(datetime dt):
     Return the formatted string from the given datetime.
     
     :param dt: The datetime to format.
+    
     :return str.
     """
     cdef str formatted_dt = ''
@@ -44,6 +46,7 @@ cpdef float basis_points_as_percentage(float basis_points):
     Return the given basis points expressed as a percentage where 100% = 1.0.
     
     :param basis_points: The basis points to convert to percentage.
+    
     :return float.
     """
     return basis_points * 0.0001
@@ -55,6 +58,7 @@ cpdef object with_utc_index(dataframe):
         or converted to UTC. If the DataFrame is None then returns None.
         
         :param dataframe: The pd.DataFrame to localize.
+        
         :return pd.DataFrame or None.
         """
         if dataframe is not None:

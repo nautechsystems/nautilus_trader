@@ -107,6 +107,7 @@ cdef class TickBarGenerator:
 
         :param data: The data to generate the tick bars from.
         :param period: The period for each tick bar.
+
         :return: pd.DataFrame.
         """
         if 'volume' not in data:

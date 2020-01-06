@@ -76,10 +76,10 @@ cdef class Order:
         :param quantity: The order quantity (> 0).
         :param timestamp: The order initialization timestamp.
         :param price: The order price (must be None for non-priced orders).
-        :param label: The order label / secondary identifier (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The specified order purpose (default=NONE).
         :param time_in_force: The order time in force (default=DAY).
-        :param expire_time: The order expire time (optional can be None).
+        :param expire_time: The optional order expire time (for GTD orders).
         :param init_id: The order initialization event identifier.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the order side is UNKNOWN.
@@ -153,6 +153,7 @@ cdef class Order:
         Return an order from the given initialized event.
         
         :param event: The event to initialize with.
+        
         :return Order.
         """
         return Order(
@@ -174,6 +175,7 @@ cdef class Order:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+        
         :return bool.
         """
         return self.id.equals(other.id)
@@ -183,6 +185,7 @@ cdef class Order:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return self.equals(other)
@@ -192,6 +195,7 @@ cdef class Order:
         Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return not self.equals(other)
@@ -366,7 +370,7 @@ cdef class AtomicOrder:
 
         :param entry: The entry 'parent' order.
         :param stop_loss: The stop-loss (SL) 'child' order.
-        :param take_profit: The take-profit (TP) 'child' order (optional can be None).
+        :param take_profit: The optional take-profit (TP) 'child' order.
         """
         self.id = AtomicOrderId('A' + entry.id.value)
         self.entry = entry
@@ -380,6 +384,7 @@ cdef class AtomicOrder:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+        
         :return bool.
         """
         return self.id.equals(other.id)
@@ -389,6 +394,7 @@ cdef class AtomicOrder:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return self.equals(other)
@@ -398,6 +404,7 @@ cdef class AtomicOrder:
         Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
+
         :return bool.
         """
         return not self.equals(other)
@@ -413,8 +420,6 @@ cdef class AtomicOrder:
     def __str__(self) -> str:
         """
         Return a string representation of this object.
-
-        :return str.
 
         :return str.
         """
@@ -449,6 +454,8 @@ cdef class OrderFactory:
         :param clock: The clock for the component.
         :raises ConditionFailed: If the initial count is negative (< 0).
         """
+        Condition.not_negative_int(initial_count, 'initial_count')
+
         self._clock = clock
         self._id_generator = OrderIdGenerator(
             id_tag_trader=id_tag_trader,
@@ -486,14 +493,15 @@ cdef class OrderFactory:
             Label label=None,
             OrderPurpose order_purpose=OrderPurpose.NONE):
         """
-        Return a market order with the given parameters.
+        Return a market order.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param label: The orders label (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=None).
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
+
         :return Order.
         """
         return Order(
@@ -520,20 +528,21 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Returns a limit order with the given parameters.
-
+        Returns a limit order.
         Note: If the time in force is GTD then a valid expire time must be given.
+        
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
-        :param label: The orders label (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=NONE).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return Order.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
+        :param time_in_force: The orders time in force (default=DAY).
+        :param expire_time: The optional order expire time (for GTD orders).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
+
+        :return Order.
         """
         return Order(
             self._id_generator.generate(),
@@ -559,20 +568,21 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Returns a stop-market order with the given parameters.
-
+        Returns a stop-market order.
         Note: If the time in force is GTD then a valid expire time must be given.
+        
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
-        :param label: The orders label (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=NONE).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return Order.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
+        :param time_in_force: The orders time in force (default=DAY).
+        :param expire_time: The optional order expire time (for GTD orders).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
+
+        :return Order.
         """
         return Order(
             self._id_generator.generate(),
@@ -598,20 +608,21 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Return a stop-limit order with the given parameters.
-
+        Return a stop-limit order.
         Note: If the time in force is GTD then a valid expire time must be given.
+    
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
-        :param label: The orders label (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=NONE).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return Order.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
+        :param time_in_force: The orders time in force (default=DAY).
+        :param expire_time: The optional order expire time (for GTD orders).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
+
+        :return Order.
         """
         return Order(
             self._id_generator.generate(),
@@ -637,20 +648,21 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Return a market-if-touched order with the given parameters.
-        
+        Return a market-if-touched order.
         Note: If the time in force is GTD then a valid expire time must be given.
+    
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
-        :param label: The orders label (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=NONE).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return Order.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
+        :param time_in_force: The orders time in force (default=DAY).
+        :param expire_time: The optional order expire time (for GTD orders).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
+
+        :return Order.
         """
         return Order(
             self._id_generator.generate(),
@@ -673,15 +685,16 @@ cdef class OrderFactory:
             Label label=None,
             OrderPurpose order_purpose=OrderPurpose.NONE):
         """
-        Return a fill-or-kill order with the given parameters.
+        Return a fill-or-kill order.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param label: The orders label (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=NONE).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
+
         :return Order.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
         return Order(
             self._id_generator.generate(),
@@ -704,15 +717,16 @@ cdef class OrderFactory:
             Label label=None,
             OrderPurpose order_purpose=OrderPurpose.NONE):
         """
-        Return a immediate-or-cancel order with the given parameters.
+        Return an immediate-or-cancel order.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param label: The orders label (optional can be None).
+        :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=NONE).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
+
         :return Order.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
         return Order(
             self._id_generator.generate(),
@@ -736,16 +750,17 @@ cdef class OrderFactory:
             Price price_take_profit=None,
             Label label=None):
         """
-        Return a market entry atomic order with the given parameters.
+        Return an atomic order with a market entry.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price_stop_loss: The stop-loss order price.
-        :param price_take_profit: The take-profit order price (optional can be None).
-        :param label: The orders label (optional can be None).
+        :param price_take_profit: The optional take-profit order price.
+        :param label: The optional order label / secondary identifier.
+        :raises ConditionFailed: If the quantity is not positive (> 0).
+
         :return AtomicOrder.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
         cdef Label entry_label = None
         if label is not None:
@@ -776,7 +791,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Return a limit entry atomic order with the given parameters.
+        Return an atomic order with a limit entry.
 
 
         :param symbol: The orders symbol.
@@ -784,13 +799,14 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price_entry: The parent orders entry price.
         :param price_stop_loss: The stop-loss order price.
-        :param price_take_profit: The take-profit order price (optional can be None).
-        :param label: The order label (optional can be None).
-        :param time_in_force: The order time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return AtomicOrder.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
+        :param price_take_profit: The optional take-profit order price.
+        :param label: The optional order label / secondary identifier.
+        :param time_in_force: The orders time in force (default=DAY).
+        :param expire_time: The optional order expire time (for GTD orders).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
+
+        :return AtomicOrder.
         """
         cdef Label entry_label = None
         if label is not None:
@@ -824,20 +840,21 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Return a stop-market entry atomic order with the given parameters.
+        Return an atomic order with a stop-market entry.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price_entry: The parent orders entry price.
         :param price_stop_loss: The stop-loss order price.
-        :param price_take_profit: The take-profit order price (optional can be None).
-        :param label: The orders label (optional can be None).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return AtomicOrder.
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
+        :param price_take_profit: The optional take-profit order price.
+        :param label: The orders The optional order label / secondary identifier.
+        :param time_in_force: The orders time in force (default=DAY).
+        :param expire_time: The optional order expire time (for GTD orders).
+        :raises ConditionFailed: If the quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
+
+        :return AtomicOrder.
         """
         cdef Label entry_label = None
         if label is not None:

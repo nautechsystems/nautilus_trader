@@ -106,7 +106,7 @@ cdef class Portfolio:
         """
         Return the open positions in the portfolio.
         
-        :param symbol: The symbol positions query filter (optional can be None).
+        :param symbol: The optional symbol query filter.
         :return: Dict[PositionId, Position].
         """
         cdef dict positions_open
@@ -125,7 +125,7 @@ cdef class Portfolio:
         """
         Return the closed positions in the portfolio.
         
-        :param symbol: The symbol positions query filter (optional can be None).
+        :param symbol: The optional symbol query filter.
         :return: Dict[PositionId, Position].
         """
         cdef dict positions_closed
@@ -144,7 +144,7 @@ cdef class Portfolio:
         """
         Return all positions in the portfolio.
         
-        :param symbol: The symbol positions query filter (optional can be None).
+        :param symbol: The optional symbol query filter.
         :return: Dict[PositionId, Position].
         """
         return {**self.positions_open(symbol), **self.positions_closed(symbol)}

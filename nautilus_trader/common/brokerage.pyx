@@ -35,7 +35,7 @@ cdef class CommissionCalculator:
 
         Note: Commission rates are expressed as basis points of notional transaction value.
         :param rates: The dictionary of commission rates Dict[Symbol, float].
-        :param default_rate_bp: The default rate if not found in dictionary (optional).
+        :param default_rate_bp: The default rate if not found in dictionary.
         :param minimum: The minimum commission charge per transaction.
         """
         if rates is None:
