@@ -434,6 +434,11 @@ cdef class BarBuilder:
         self._use_previous_close = use_previous_close
 
     cpdef void update(self, Tick tick):
+        """
+        Update the builder with the given tick.
+
+        :param tick: The tick to update with.
+        """
         cdef Price quote = self._get_price(tick)
 
         if self._open is None:
@@ -452,6 +457,13 @@ cdef class BarBuilder:
         self.last_update = tick.timestamp
 
     cpdef Bar build(self, datetime close_time=None):
+        """
+        Return a bar from the internal properties.
+
+        :param close_time: The optional closing time for the bar (if None will be last updated time).
+
+        :return: Bar.
+        """
         if close_time is None:
             close_time = self.last_update
 
@@ -494,7 +506,7 @@ cdef class BarBuilder:
 
     cdef int _get_volume(self, Tick tick):
         if self.bar_spec.price_type == PriceType.MID:
-            return tick.bid_size + tick.ask_size
+            return (tick.bid_size + tick.ask_size) // 2
         elif self.bar_spec.price_type == PriceType.BID:
             return tick.bid_size
         elif self.bar_spec.price_type == PriceType.ASK:

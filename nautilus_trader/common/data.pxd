@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.clock cimport Clock
