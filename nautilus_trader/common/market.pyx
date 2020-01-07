@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import math
 import inspect
 import numpy as np
 import pandas as pd
@@ -16,9 +17,9 @@ from typing import List, Callable
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
-from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarType, BarSpecification
+from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarType, BarSpecification, Instrument
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
-from nautilus_trader.model.identifiers cimport Symbol, Label
+from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -31,67 +32,151 @@ cdef class TickDataWrangler:
     of bid and ask data. Provided data can either be tick data or bar data.
     """
     def __init__(self,
-                 Symbol symbol,
-                 int precision,
-                 tick_data: pd.DataFrame=None,
-                 bid_data: pd.DataFrame=None,
-                 ask_data: pd.DataFrame=None):
+                 Instrument instrument,
+                 data_ticks: pd.DataFrame=None,
+                 dict data_bars_bid=None,
+                 dict data_bars_ask=None):
         """
         Initializes a new instance of the TickBuilder class.
 
-        :param precision: The decimal precision for the tick prices (>= 0).
-        :param tick_data: The DataFrame containing the tick data.
-        :param bid_data: The DataFrame containing the bid bars data.
-        :param ask_data: The DataFrame containing the ask bars data.
-        :raises: ConditionFailed: If the precision is negative (< 0).
+        :param instrument: The instrument for the data wrangler.
+        :param data_ticks: The optional pd.DataFrame containing the tick data.
+        :param data_bars_bid: The optional dictionary containing the bars bid data.
+        :param data_bars_ask: The optional dictionary containing the bars ask data.
         :raises: ConditionFailed: If the tick_data is a type other than None or DataFrame.
-        :raises: ConditionFailed: If the bid_data is a type other than None or DataFrame.
-        :raises: ConditionFailed: If the ask_data is a type other than None or DataFrame.
+        :raises: ConditionFailed: If the bid_data is a type other than None or Dict.
+        :raises: ConditionFailed: If the ask_data is a type other than None or Dict.
+        :raises: ConditionFailed: If the tick_data is None and the bars data is None.
         """
-        Condition.not_negative_int(precision, 'precision')
-        Condition.type_or_none(tick_data, pd.DataFrame, 'tick_data')
-        Condition.type_or_none(bid_data, pd.DataFrame, 'bid_data')
-        Condition.type_or_none(ask_data, pd.DataFrame, 'ask_data')
+        Condition.type_or_none(data_ticks, pd.DataFrame, 'tick_data')
+        Condition.type_or_none(data_bars_bid, dict, 'bid_data')
+        Condition.type_or_none(data_bars_ask, dict, 'ask_data')
 
-        self._symbol = symbol
-        self._precision = precision
-        self._tick_data = with_utc_index(tick_data)
-        self._bid_data = with_utc_index(bid_data)
-        self._ask_data = with_utc_index(ask_data)
+        if data_ticks is not None and len(data_ticks) > 0:
+            self._data_ticks = with_utc_index(data_ticks)
+        else:
+            Condition.true(data_bars_bid is not None, 'data_bars_bid is not None')
+            Condition.true(data_bars_ask is not None, 'data_bars_ask is not None')
+            self._data_bars_bid = data_bars_bid
+            self._data_bars_ask = data_bars_ask
 
-    cpdef list build_ticks_all(self):
+        self._symbol = instrument.symbol
+        self._precision = instrument.tick_precision
+
+        self.ticks = []
+        self.resolution = BarStructure.UNKNOWN
+
+    cpdef void build(self):
         """
         Return the built ticks from the held data.
 
         :return List[Tick].
         """
-        if self._tick_data is not None and len(self._tick_data) > 0:
-            return list(map(self._build_tick_from_values,
-                            self._tick_data.values,
-                            pd.to_datetime(self._tick_data.index)))
-        else:
-            assert(self._bid_data is not None, 'Insufficient data to build ticks.')
-            assert(self._ask_data is not None, 'Insufficient data to build ticks.')
+        if self._data_ticks is not None and len(self._data_ticks) > 0:
+            # Build ticks from tick data
+            self.ticks = list(map(self._build_tick_from_values,
+                                  self._data_ticks.values,
+                                  pd.to_datetime(self._data_ticks.index)))
+            self.resolution = BarStructure.TICK
+            return
 
-            return list(map(self._build_tick,
-                            self._bid_data['close'],
-                            self._ask_data['close'],
-                            pd.to_datetime(self._bid_data.index)))
+        # Build ticks from bar data
+        # Determine highest tick resolution
+        if BarStructure.SECOND in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarStructure.SECOND]
+            bars_ask = self._data_bars_ask[BarStructure.SECOND]
+            self.resolution = BarStructure.SECOND
+        elif BarStructure.MINUTE in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarStructure.MINUTE]
+            bars_ask = self._data_bars_ask[BarStructure.MINUTE]
+            self.resolution = BarStructure.MINUTE
+        elif BarStructure.HOUR in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarStructure.HOUR]
+            bars_ask = self._data_bars_ask[BarStructure.HOUR]
+            self.resolution = BarStructure.HOUR
+        elif BarStructure.DAY in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarStructure.DAY]
+            bars_ask = self._data_bars_ask[BarStructure.DAY]
+            self.resolution = BarStructure.DAY
 
-    cpdef Tick _build_tick(
+        Condition.not_none(bars_bid, 'bars_bid')
+        Condition.not_none(bars_ask, 'bars_ask')
+        Condition.true(len(bars_bid) > 0, 'len(bars_bid) > 0')
+        Condition.true(len(bars_ask) > 0, 'len(bars_ask) > 0')
+        Condition.true(all(bars_bid.index) == all(bars_ask.index), 'bars_bid.index == bars_bid.index')
+        Condition.true(bars_bid.shape == bars_ask.shape, 'bars_ask.shape == bars_ask.shape')
+
+        bars_bid = with_utc_index(bars_bid)
+        bars_ask = with_utc_index(bars_ask)
+
+        cdef timedelta one_millisecond = timedelta(milliseconds=1)
+        cdef datetime timestamp
+        cdef datetime timestamp_minus_1
+        cdef double[:] bid_values
+        cdef double[:] ask_values
+        cdef double[:] bid_values_previous = bars_bid.iloc[0].values
+        cdef double[:] ask_values_previous = bars_ask.iloc[0].values
+        cdef int bid_volume
+        cdef int ask_volume
+
+        cdef int i
+        for i in range(len(bars_bid)):
+            bid_values = bars_bid.iloc[i].values
+            ask_values = bars_ask.iloc[i].values
+            bid_volume = int(math.ceil(bid_values[4]))
+            ask_volume = int(math.ceil(ask_values[4]))
+
+            if bid_volume == 0:
+                bid_values = bid_values_previous
+            if ask_volume == 0:
+                ask_values = ask_values_previous
+            if bid_volume + ask_volume == 0:
+                continue
+
+            bid_values_previous = bid_values
+            ask_values_previous = ask_values
+            timestamp = pd.to_datetime(bars_bid.index[i])
+            timestamp_minus_1 = timestamp - one_millisecond
+
+            self.ticks.append(self._build_tick(
+                bid_values[1],
+                ask_values[1],
+                timestamp_minus_1))
+
+            self.ticks.append(self._build_tick(
+                bid_values[2],
+                ask_values[2],
+                timestamp_minus_1))
+
+            self.ticks.append(self._build_tick(
+                bid_values[3],
+                ask_values[3],
+                timestamp,
+                bid_volume,
+                ask_volume))
+
+    cdef Tick _build_tick(
             self,
             float bid,
             float ask,
-            datetime timestamp):
-        # Build a tick from the given values
+            datetime timestamp,
+            int bid_size=1,
+            int ask_size=1):
+        """
+        Build tick from the given values.
+        """
         return Tick(self._symbol,
                     Price(bid, self._precision),
                     Price(ask, self._precision),
-                    timestamp)
+                    timestamp,
+                    bid_size,
+                    ask_size)
 
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
-        # Build a tick from the given values. The function expects the values to
-        # be an ndarray with 2 elements [bid, ask] of type double.
+        """
+        Build a tick from the given values. The function expects the values to
+        be an ndarray with 2 elements [bid, ask] of type double.
+        """
         return Tick(self._symbol,
                     Price(values[0], self._precision),
                     Price(values[1], self._precision),

@@ -11,8 +11,9 @@ import unittest
 from pandas import Timestamp
 from datetime import datetime, timezone
 
+from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.objects import Price, Tick, Bar
-from nautilus_trader.data.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater, BarBuilder
+from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater, BarBuilder
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -36,40 +37,49 @@ class TickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(1000, len(ticks))
 
-    def test_build_ticks_all_with_tick_data(self):
+    def test_build_with_tick_data(self):
         # Arrange
         tick_data = TestDataProvider.usdjpy_test_ticks()
         bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
         ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
-        self.tick_builder = TickDataWrangler(symbol=TestStubs.instrument_usdjpy().symbol,
-                                             precision=5,
-                                             tick_data=tick_data,
-                                             bid_data=bid_data,
-                                             ask_data=ask_data)
+        self.tick_builder = TickDataWrangler(
+            instrument=TestStubs.instrument_usdjpy(),
+            data_ticks=tick_data,
+            data_bars_bid={BarStructure.MINUTE: bid_data},
+            data_bars_ask={BarStructure.MINUTE: ask_data})
 
         # Act
-        ticks = self.tick_builder.build_ticks_all()
+        self.tick_builder.build()
+        ticks = self.tick_builder.ticks
 
         # Assert
+        self.assertEqual(BarStructure.TICK, self.tick_builder.resolution)
         self.assertEqual(1000, len(ticks))
         self.assertEqual(Timestamp('2013-01-01 22:02:35.907000', tz='UTC'), ticks[1].timestamp)
 
-    def test_build_ticks_all_with_bar_data(self):
+    def test_build_ticks_with_bar_data(self):
         # Arrange
-        bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
-        ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
-        self.tick_builder = TickDataWrangler(symbol=TestStubs.instrument_usdjpy().symbol,
-                                             precision=5,
-                                             tick_data=None,
-                                             bid_data=bid_data,
-                                             ask_data=ask_data)
+        bid_data = TestDataProvider.usdjpy_1min_bid()[:10000]
+        ask_data = TestDataProvider.usdjpy_1min_ask()[:10000]
+        self.tick_builder = TickDataWrangler(
+            instrument=TestStubs.instrument_usdjpy(),
+            data_ticks=None,
+            data_bars_bid={BarStructure.MINUTE: bid_data},
+            data_bars_ask={BarStructure.MINUTE: ask_data})
 
         # Act
-        ticks = self.tick_builder.build_ticks_all()
+        self.tick_builder.build()
+        ticks = self.tick_builder.ticks
 
         # Assert
-        self.assertEqual(1000, len(ticks))
-        self.assertEqual(Timestamp('2013-01-01 00:01:00+0000', tz='UTC'), ticks[1].timestamp)
+        self.assertEqual(BarStructure.MINUTE, self.tick_builder.resolution)
+        self.assertEqual(26016, len(ticks))
+        self.assertEqual(Timestamp('2013-01-01T21:59:59.999000+00:00', tz='UTC'), ticks[0].timestamp)
+        self.assertEqual(Timestamp('2013-01-01T21:59:59.999000+00:00', tz='UTC'), ticks[1].timestamp)
+        self.assertEqual(Timestamp('2013-01-01T22:00:00.000000+00:00', tz='UTC'), ticks[2].timestamp)
+        self.assertEqual(1, ticks[999].bid_size)
+        self.assertEqual(1, ticks[1000].bid_size)
+        self.assertEqual(94, ticks[1001].bid_size)
 
 
 class BarDataWranglerTests(unittest.TestCase):

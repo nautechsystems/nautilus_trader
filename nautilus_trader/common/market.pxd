@@ -12,6 +12,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price, Tick, BarType, BarSpecification, Bar, DataBar
 from nautilus_trader.model.events cimport TimeEvent
@@ -20,12 +21,15 @@ from nautilus_trader.model.events cimport TimeEvent
 cdef class TickDataWrangler:
     cdef Symbol _symbol
     cdef int _precision
-    cdef object _tick_data
-    cdef object _bid_data
-    cdef object _ask_data
+    cdef object _data_ticks
+    cdef dict _data_bars_ask
+    cdef dict _data_bars_bid
 
-    cpdef list build_ticks_all(self)
-    cpdef Tick _build_tick(self, float bid, float ask, datetime timestamp)
+    cdef readonly ticks
+    cdef readonly BarStructure resolution
+
+    cpdef void build(self)
+    cdef Tick _build_tick(self, float bid, float ask, datetime timestamp, int bid_size=*, int ask_size=*)
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp)
 
 
