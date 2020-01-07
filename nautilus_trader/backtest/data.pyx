@@ -7,10 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pytz
 
 from cpython.datetime cimport datetime
-from typing import Set, List, Dict, Callable
+from typing import Set, Dict, Callable
 from pandas import DatetimeIndex
 
 from nautilus_trader.core.correctness cimport Condition
@@ -22,7 +21,8 @@ from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
-from nautilus_trader.common.market cimport TickDataWrangler, DataClient
+from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.market cimport TickDataWrangler
 
 
 cdef class BacktestDataContainer:
@@ -136,28 +136,27 @@ cdef class BacktestDataClient(DataClient):
             self._handle_instrument(instrument)
 
         # Prepare data
-        self.data_providers = {}  # type: Dict[Symbol, DataProvider]
         self._log.info("Preparing data...")
+
+        self.ticks = []
+        self.execution_resolutions = []
         for symbol, instrument in self._instruments.items():
             self._log.debug(f'Creating DataProvider for {symbol}...')
             start = datetime.utcnow()
             self._log.info(f"Building {symbol} ticks...")
-            self.data_providers[symbol] = DataProvider(
+            wrangler = TickDataWrangler(
                 instrument=instrument,
-                ticks=None if symbol not in data.ticks else data.ticks[symbol],
-                bars_bid=data.bars_bid[symbol],
-                bars_ask=data.bars_ask[symbol])
-            self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
+                data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
+                data_bars_bid=data.bars_bid[symbol],
+                data_bars_ask=data.bars_ask[symbol])
+            wrangler.build()
+            self.ticks += wrangler.ticks
+            self.ticks = sorted(self.ticks)
+            self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}')
+            self._log.info(f"Built {len(wrangler.ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
-        cdef list ticks = []
-        self.execution_resolutions = []
-        for symbol, provider in self.data_providers.items():
-            ticks += provider.ticks
-            self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(provider.execution_resolution)}')
-
-        self.ticks = sorted(ticks)
-        self.min_timestamp = ticks[0].timestamp
-        self.max_timestamp = ticks[-1].timestamp
+        self.min_timestamp = self.ticks[0].timestamp
+        self.max_timestamp = self.ticks[-1].timestamp
 
     cpdef void connect(self):
         """
@@ -270,7 +269,6 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         self._add_tick_handler(symbol, handler)
@@ -284,7 +282,6 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         self._self_generate_bars(bar_type, handler)
@@ -311,7 +308,6 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         self._remove_tick_handler(symbol, handler)
@@ -325,7 +321,6 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         self._remove_bar_handler(bar_type, handler)
@@ -349,68 +344,3 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.info(f"Simulated update all instruments for the {self.venue} venue "
                        f"(a backtest data client already has all instruments needed).")
-
-
-cdef class DataProvider:
-    """
-    Provides data for a particular instrument for the BacktestDataClient.
-    """
-
-    def __init__(self,
-                 Instrument instrument,
-                 ticks: pd.DataFrame,
-                 dict bars_bid: Dict[BarStructure, pd.DataFrame],
-                 dict bars_ask: Dict[BarStructure, pd.DataFrame]):
-        """
-        Initializes a new instance of the DataProvider class.
-
-        :param instrument: The instrument for the data provider.
-        :param ticks: The tick data for the data provider.
-        :param bars_bid: The bid bars data for the data provider.
-        :param bars_ask: The ask bars data for the data provider.
-        :raises ConditionFailed: If the data_ticks is a type other than None or DataFrame.
-        :raises ConditionFailed: If the data_bars_bid is None.
-        :raises ConditionFailed: If the data_bars_ask is None.
-        """
-        Condition.type_or_none(ticks, pd.DataFrame, 'data_ticks')
-        Condition.type_or_none(bars_bid, Dict, 'data_bars_bid')
-        Condition.type_or_none(bars_ask, Dict, 'data_bars_ask')
-
-        self.instrument = instrument
-
-        # Determine highest tick resolution
-        if ticks is not None and len(ticks) > 0:
-            self.execution_resolution = BarStructure.TICK
-            bid_data = None
-            ask_data = None
-        elif BarStructure.SECOND in bars_bid:
-            bid_data = bars_bid[BarStructure.SECOND]
-            ask_data = bars_ask[BarStructure.SECOND]
-            self.execution_resolution = BarStructure.SECOND
-        elif BarStructure.MINUTE in bars_bid:
-            bid_data = bars_bid[BarStructure.MINUTE]
-            ask_data = bars_ask[BarStructure.MINUTE]
-            self.execution_resolution = BarStructure.MINUTE
-        elif BarStructure.HOUR in bars_bid:
-            bid_data = bars_bid[BarStructure.HOUR]
-            ask_data = bars_ask[BarStructure.HOUR]
-            self.execution_resolution = BarStructure.HOUR
-        elif BarStructure.DAY in bars_bid:
-            bid_data = bars_bid[BarStructure.DAY]
-            ask_data = bars_ask[BarStructure.DAY]
-            self.execution_resolution = BarStructure.DAY
-        else:
-            bid_data = pd.DataFrame()
-            ask_data = pd.DataFrame()
-
-        cdef TickDataWrangler builder = TickDataWrangler(
-            symbol=self.instrument.symbol,
-            precision=self.instrument.tick_precision,
-            tick_data=ticks,
-            bid_data=bid_data,
-            ask_data=ask_data)
-
-        self.ticks = builder.build_ticks_all()  # type: List[Tick]
-
-        # Check tick data timestamp integrity (UTC timezone)
-        assert(self.ticks[0].timestamp.tz == pytz.UTC)

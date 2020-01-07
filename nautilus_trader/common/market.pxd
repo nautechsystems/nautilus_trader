@@ -30,6 +30,7 @@ cdef class TickDataWrangler:
 
     cpdef void build(self)
     cdef Tick _build_tick(self, float bid, float ask, datetime timestamp, int bid_size=*, int ask_size=*)
+    cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp)
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp)
 
 

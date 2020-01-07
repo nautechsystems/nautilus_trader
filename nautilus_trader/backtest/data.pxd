@@ -28,7 +28,6 @@ cdef class BacktestDataContainer:
 
 
 cdef class BacktestDataClient(DataClient):
-    cdef readonly dict data_providers
     cdef readonly list ticks
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
@@ -36,9 +35,3 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void process_tick(self, Tick tick)
     cpdef void reset(self)
-
-
-cdef class DataProvider:
-    cdef readonly Instrument instrument
-    cdef readonly list ticks
-    cdef readonly BarStructure execution_resolution
