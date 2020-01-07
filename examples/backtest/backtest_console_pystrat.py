@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     data = BacktestDataContainer()
     data.add_instrument(USDJPY)
-    data.add_ticks(USDJPY.symbol, TestDataProvider.usdjpy_test_ticks())
+    #data.add_ticks(USDJPY.symbol, TestDataProvider.usdjpy_test_ticks())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 

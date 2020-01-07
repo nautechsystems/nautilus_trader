@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import math
 import inspect
 import numpy as np
 import pandas as pd
@@ -73,15 +72,14 @@ cdef class TickDataWrangler:
         :return List[Tick].
         """
         if self._data_ticks is not None and len(self._data_ticks) > 0:
-            # Build ticks from tick data
+            # Build ticks from data
             self.ticks = list(map(self._build_tick_from_values,
                                   self._data_ticks.values,
                                   pd.to_datetime(self._data_ticks.index)))
             self.resolution = BarStructure.TICK
             return
 
-        # Build ticks from bar data
-        # Determine highest tick resolution
+        # Build ticks from highest resolution bar data
         if BarStructure.SECOND in self._data_bars_bid:
             bars_bid = self._data_bars_bid[BarStructure.SECOND]
             bars_ask = self._data_bars_ask[BarStructure.SECOND]
@@ -103,57 +101,57 @@ cdef class TickDataWrangler:
         Condition.not_none(bars_ask, 'bars_ask')
         Condition.true(len(bars_bid) > 0, 'len(bars_bid) > 0')
         Condition.true(len(bars_ask) > 0, 'len(bars_ask) > 0')
-        Condition.true(all(bars_bid.index) == all(bars_ask.index), 'bars_bid.index == bars_bid.index')
-        Condition.true(bars_bid.shape == bars_ask.shape, 'bars_ask.shape == bars_ask.shape')
+        Condition.true(all(bars_bid.index) == all(bars_ask.index), 'bars_bid.index == bars_ask.index')
+        Condition.true(bars_bid.shape == bars_ask.shape, 'bars_bid.shape == bars_ask.shape')
 
         bars_bid = with_utc_index(bars_bid)
         bars_ask = with_utc_index(bars_ask)
+        shifted_index = bars_bid.index.shift(periods=-100, freq='ms')
 
-        cdef timedelta one_millisecond = timedelta(milliseconds=1)
-        cdef datetime timestamp
-        cdef datetime timestamp_minus_1
-        cdef double[:] bid_values
-        cdef double[:] ask_values
-        cdef double[:] bid_values_previous = bars_bid.iloc[0].values
-        cdef double[:] ask_values_previous = bars_ask.iloc[0].values
-        cdef int bid_volume
-        cdef int ask_volume
+        cdef dict data_high = {
+            'bid': bars_bid['high'].values,
+            'ask': bars_ask['high'].values,
+            'bid_size': bars_bid['volume'].values,
+            'ask_size': bars_ask['volume'].values
+        }
 
-        cdef int i
-        for i in range(len(bars_bid)):
-            bid_values = bars_bid.iloc[i].values
-            ask_values = bars_ask.iloc[i].values
-            bid_volume = int(math.ceil(bid_values[4]))
-            ask_volume = int(math.ceil(ask_values[4]))
+        cdef dict data_low = {
+            'bid': bars_bid['low'].values,
+            'ask': bars_ask['low'].values,
+            'bid_size': bars_bid['volume'].values,
+            'ask_size': bars_ask['volume'].values
+        }
 
-            if bid_volume == 0:
-                bid_values = bid_values_previous
-            if ask_volume == 0:
-                ask_values = ask_values_previous
-            if bid_volume + ask_volume == 0:
-                continue
+        cdef dict data_close = {
+            'bid': bars_bid['close'],
+            'ask': bars_ask['close'],
+            'bid_size': bars_bid['volume'],
+            'ask_size': bars_ask['volume']
+        }
 
-            bid_values_previous = bid_values
-            ask_values_previous = ask_values
-            timestamp = pd.to_datetime(bars_bid.index[i])
-            timestamp_minus_1 = timestamp - one_millisecond
+        df_ticks_h = pd.DataFrame(data=data_high, index=shifted_index)
+        df_ticks_l = pd.DataFrame(data=data_low, index=shifted_index)
+        df_ticks_c = pd.DataFrame(data=data_close)
 
-            self.ticks.append(self._build_tick(
-                bid_values[1],
-                ask_values[1],
-                timestamp_minus_1))
+        # Drop rows with no volume
+        df_ticks_h = df_ticks_h[(df_ticks_h[['bid_size']] > 0).all(axis=1)]
+        df_ticks_l = df_ticks_l[(df_ticks_l[['bid_size']] > 0).all(axis=1)]
+        df_ticks_c = df_ticks_c[(df_ticks_c[['bid_size']] > 0).all(axis=1)]
 
-            self.ticks.append(self._build_tick(
-                bid_values[2],
-                ask_values[2],
-                timestamp_minus_1))
+        # Set high low tick volumes to zero
+        df_ticks_h['bid_size'] = 0
+        df_ticks_h['ask_size'] = 0
+        df_ticks_l['bid_size'] = 0
+        df_ticks_l['ask_size'] = 0
 
-            self.ticks.append(self._build_tick(
-                bid_values[3],
-                ask_values[3],
-                timestamp,
-                bid_volume,
-                ask_volume))
+        # Merge tick data
+        df_ticks_final = pd.concat([df_ticks_h, df_ticks_l, df_ticks_c])
+        df_ticks_final.sort_index(axis=0, inplace=True)
+
+        # Build ticks from data
+        self.ticks = list(map(self._build_tick_from_values_with_sizes,
+                              df_ticks_final.values,
+                              pd.to_datetime(df_ticks_final.index)))
 
     cdef Tick _build_tick(
             self,
@@ -172,6 +170,18 @@ cdef class TickDataWrangler:
                     bid_size,
                     ask_size)
 
+    cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
+        """
+        Build a tick from the given values. The function expects the values to
+        be an ndarray with 2 elements [bid, ask] of type double.
+        """
+        return Tick(self._symbol,
+                    Price(values[0], self._precision),
+                    Price(values[1], self._precision),
+                    timestamp,
+                    bid_size=values[2],
+                    ask_size=values[3])
+
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
@@ -181,44 +191,6 @@ cdef class TickDataWrangler:
                     Price(values[0], self._precision),
                     Price(values[1], self._precision),
                     timestamp)
-
-
-cdef class TickBarGenerator:
-    """
-    Provides generation of tick bars from given data.
-    """
-
-    @staticmethod
-    def generate(data:pd.DataFrame, int period):
-        """
-        Return the generated tick bars from the given data.
-        Data must have a DateTime index with 'price' and 'volume' columns.
-
-        :param data: The data to generate the tick bars from.
-        :param period: The period for each tick bar.
-
-        :return: pd.DataFrame.
-        """
-        if 'volume' not in data:
-            data['volume'] = 1
-
-        cdef int length = round(len(data) // period) * period
-        cdef int groups = int(length / period)
-
-        bar_groups = np.split(data[:length], groups, axis=0)
-        data = [[
-            group.index[-1],
-            group['price'][0],
-            group['price'].max(),
-            group['price'].min(),
-            group['price'][-1],
-            sum(group['volume'])
-        ] for group in bar_groups]
-
-        cdef list columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        tick_bars = pd.DataFrame(data, columns=columns).set_index('timestamp')
-
-        return tick_bars
 
 
 cdef class BarDataWrangler:
