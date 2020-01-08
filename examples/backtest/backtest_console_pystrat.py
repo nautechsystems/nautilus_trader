@@ -8,9 +8,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pytz
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, Currency, PriceType
@@ -29,7 +28,6 @@ if __name__ == "__main__":
 
     data = BacktestDataContainer()
     data.add_instrument(USDJPY)
-    #data.add_ticks(USDJPY.symbol, TestDataProvider.usdjpy_test_ticks())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
@@ -69,7 +67,10 @@ if __name__ == "__main__":
         config=config,
         fill_model=fill_model)
 
-    engine.run()
+    start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+    engine.run(start, stop)
 
     with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
         pass

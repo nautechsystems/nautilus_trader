@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.identifiers cimport Symbol, OrderIdBroker
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Instrument, Quantity
+from nautilus_trader.model.objects cimport Price, Tick, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.events cimport (
@@ -118,8 +118,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_rollover = Money.zero()
         self.fill_model = fill_model
 
-        self._market_bids = {}         # type: Dict[Symbol, Price]
-        self._market_asks = {}         # type: Dict[Symbol, Price]
+        self._market = {}               # type: Dict[Symbol, Tick]
         self._working_orders = {}       # type: Dict[OrderId, Order]
         self._atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
         self._oco_orders = {}           # type: Dict[OrderId, OrderId]
@@ -170,8 +169,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param tick: The tick data to process with.
         """
         self._clock.set_time(tick.timestamp)
-        self._market_bids[tick.symbol] = tick.bid
-        self._market_asks[tick.symbol] = tick.ask
+        self._market[tick.symbol] = tick
 
         cdef datetime time_now = self._clock.time_now()
 
@@ -391,15 +389,15 @@ cdef class BacktestExecClient(ExecutionClient):
 
         cdef Order order = self._working_orders[command.order_id]
         cdef Instrument instrument = self.instruments[order.symbol]
-        cdef Price current_ask
-        cdef Price current_bid
 
         if command.modified_quantity.value == 0:
             self._cancel_reject_order(order, 'modify order', f'modified quantity {command.modified_quantity} invalid')
             return  # Cannot modify order
 
+        cdef Price current_ask
+        cdef Price current_bid
         if order.side == OrderSide.BUY:
-            current_ask = self._market_asks[order.symbol]
+            current_ask = self._market[order.symbol].ask
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value < current_ask + (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
@@ -409,7 +407,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._cancel_reject_order(order, 'modify order', f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
         elif order.side == OrderSide.SELL:
-            current_bid = self._market_bids[order.symbol]
+            current_bid = self._market[order.symbol].bid
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value > current_bid - (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
@@ -519,11 +517,10 @@ cdef class BacktestExecClient(ExecutionClient):
             self._reject_order(order,  f'order quantity of {order.quantity} is less than the minimum trade size of {instrument.min_trade_size}')
             return  # Cannot accept order
 
-        cdef Price current_bid = self._market_bids.get(order.symbol, None)
-        cdef Price current_ask = self._market_asks.get(order.symbol, None)
+        cdef Tick current_market = self._market.get(order.symbol, None)
 
         # Check market exists
-        if not current_bid:  # Market not initialized
+        if not current_market:  # Market not initialized
             self._reject_order(order,  f'no market for {order.symbol}')
             return  # Cannot accept order
 
@@ -533,34 +530,34 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
-                    self._fill_order(order, Price(current_ask + self._slippage_index[order.symbol]))
+                    self._fill_order(order, Price(current_market.ask + self._slippage_index[order.symbol]))
                 else:
-                    self._fill_order(order, current_ask)
+                    self._fill_order(order, current_market.ask)
                 return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
-                if order.price.value < current_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
+                if order.price.value < current_market.ask + (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={current_market.ask}')
                     return  # Cannot accept order
             elif order.type == OrderType.LIMIT:
-                if order.price.value > current_ask + (instrument.min_limit_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
+                if order.price.value > current_market.ask + (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_market.ask}')
                     return  # Cannot accept order
         elif order.side == OrderSide.SELL:
             if order.type == OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
-                    self._fill_order(order, Price(current_bid - self._slippage_index[order.symbol]))
+                    self._fill_order(order, Price(current_market.bid - self._slippage_index[order.symbol]))
                 else:
-                    self._fill_order(order, current_bid)
+                    self._fill_order(order, current_market.bid)
                 return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
-                if order.price.value > current_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
+                if order.price.value > current_market.bid - (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={current_market.bid}')
                     return  # Cannot accept order
             elif order.type == OrderType.LIMIT:
-                if order.price.value < current_bid - (instrument.min_limit_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
+                if order.price.value < current_market.bid - (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_market.bid}')
                     return  # Cannot accept order
 
         # Order is valid and accepted
@@ -736,10 +733,17 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef float interest_rate
         cdef float exchange_rate
         cdef Money rollover_to_apply = Money.zero()
+        cdef float mid_price
+        cdef dict mid_prices = {}
+        cdef Tick market
         for position in open_positions.values():
             instrument = self.instruments[position.symbol]
             if instrument.security_type == SecurityType.FOREX:
-                mid_price = float((self._market_asks[instrument.symbol] + self._market_bids[instrument.symbol]) / 2)
+                mid_price = mid_prices.get(instrument.symbol, 0.)
+                if mid_price == 0.:
+                    market = self._market[instrument.symbol]
+                    mid_price = float((market.ask + market.bid) / 2)
+                    mid_prices[instrument.symbol] = mid_price
                 quote_currency = currency_from_string(position.symbol.code[3:])
                 interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)
                 exchange_rate = self.exchange_calculator.get_rate(
@@ -781,12 +785,12 @@ cdef class BacktestExecClient(ExecutionClient):
             self._exec_engine.handle_event(account_event)
 
     cdef dict _build_current_bid_rates(self):
-        # Return the current currency bid rates in the markets as Dict[str, float]
-        return {symbol.code: price.as_float() for symbol, price in self._market_bids.items()}
+        # Return the current currency bid rates in the markets as Dict[Symbol, Tick]
+        return {symbol.code: tick.bid.as_float() for symbol, tick in self._market.items()}
 
     cdef dict _build_current_ask_rates(self):
-        # Return the current currency ask rates in the markets as Dict[str, float]
-        return {symbol.code: price.as_float() for symbol, price in self._market_asks.items()}
+        # Return the current currency ask rates in the markets as Dict[Symbol, Tick]
+        return {symbol.code: tick.ask.as_float() for symbol, tick in self._market.items()}
 
     cdef Money _calculate_pnl(
             self,

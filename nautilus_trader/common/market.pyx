@@ -151,7 +151,7 @@ cdef class TickDataWrangler:
         # Build ticks from data
         self.ticks = list(map(self._build_tick_from_values_with_sizes,
                               df_ticks_final.values,
-                              pd.to_datetime(df_ticks_final.index)))
+                              pd.to_datetime(df_ticks_final.index, utc=True)))
 
     cdef Tick _build_tick(
             self,
@@ -606,7 +606,7 @@ cdef class BarAggregator:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void _handle_bar(self, Bar bar):
-        self._log.debug(f"Built {self.bar_type} {bar}")
+        self._log.debug(f"Built {self.bar_type} Bar({bar})")
         self._handler.handle(self.bar_type, bar)
 
 

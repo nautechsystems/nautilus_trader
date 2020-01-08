@@ -420,7 +420,7 @@ cdef class TestClock(Clock):
         """
         super().__init__()
         self._time = initial_time
-        self._pending_events = {}
+        self._pending_events = {}  # type: Dict[TimeEvent, Callable]
         self.is_test_clock = True
 
     cpdef datetime time_now(self):
@@ -442,12 +442,9 @@ cdef class TestClock(Clock):
     cpdef void advance_time(self, datetime to_time):
         """
         Iterates the clocks time to the given datetime.
-        
-        :param to_time: The datetime to iterate the test clock to.
-        :return Dict[TimeEvent].
-        """
-        assert to_time >= self.time_now()
 
+        :param to_time: The datetime to iterate the test clock to.
+        """
         self._pending_events = {}  # type: Dict[TimeEvent, Callable]
 
         if not self.has_timers or to_time < self.next_event_time:

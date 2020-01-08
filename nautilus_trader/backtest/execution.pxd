@@ -48,8 +48,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money total_rollover
     cdef readonly FillModel fill_model
 
-    cdef dict _market_bids
-    cdef dict _market_asks
+    cdef dict _market
     cdef dict _slippage_index
     cdef dict _working_orders
     cdef dict _atomic_child_orders

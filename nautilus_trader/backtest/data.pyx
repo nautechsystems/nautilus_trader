@@ -151,10 +151,10 @@ cdef class BacktestDataClient(DataClient):
                 data_bars_ask=data.bars_ask[symbol])
             wrangler.build()
             self.ticks += wrangler.ticks
-            self.ticks = sorted(self.ticks)
             self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}')
             self._log.info(f"Built {len(wrangler.ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
+        self.ticks = sorted(self.ticks)
         self.min_timestamp = self.ticks[0].timestamp
         self.max_timestamp = self.ticks[-1].timestamp
 
