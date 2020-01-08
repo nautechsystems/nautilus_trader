@@ -44,6 +44,9 @@ cdef class Trader:
         :param clock: The clock for the trader.
         :param guid_factory: The guid_factory for the trader.
         :param logger: The logger for the trader.
+        :raises ConditionFailed: If the strategies is None.
+        :raises ConditionFailed: If the strategies list is empty.
+        :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         :raises ConditionFailed: If the trader_id is not equal to the exec_engine.trader_id.
         :raises ConditionFailed: If the account_id is not equal to the exec_engine.account_id.
         """
@@ -61,11 +64,11 @@ cdef class Trader:
 
         self.portfolio = self._exec_engine.portfolio
         self.analyzer = PerformanceAnalyzer()
-        self.strategies = None
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
         self.is_running = False
 
+        self.strategies = []
         self.initialize_strategies(strategies)
 
     cpdef void initialize_strategies(self, list strategies: List[TradingStrategy]) except *:
@@ -73,14 +76,13 @@ cdef class Trader:
         Change strategies with the given list of trading strategies.
         
         :param strategies: The list of strategies to load into the trader.
+        :raises ConditionFailed: If the strategies is None.
         :raises ConditionFailed: If the strategies list is empty.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
-        if self.strategies is None:
-            self.strategies = []  # type: List[TradingStrategy]
-        else:
-            Condition.not_empty(strategies, 'strategies')
-            Condition.list_type(strategies, TradingStrategy, 'strategies')
+        Condition.not_none(strategies, 'strategies')
+        Condition.not_empty(strategies, 'strategies')
+        Condition.list_type(strategies, TradingStrategy, 'strategies')
 
         if self.is_running:
             self._log.error('Cannot re-initialize the strategies of a running trader.')
@@ -125,7 +127,7 @@ cdef class Trader:
             self._log.error(f"Cannot start trader (already running).")
             return
 
-        if len(self.strategies) == 0:
+        if not self.strategies:
             self._log.error(f"Cannot start trader (no strategies loaded).")
             return
 
