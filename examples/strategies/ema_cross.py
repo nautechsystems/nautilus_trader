@@ -6,6 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import numpy as np
+
+from collections import deque
 from datetime import timedelta
 from typing import Dict
 
@@ -19,8 +22,6 @@ from nautilus_trader.trade.sizing import FixedRiskSizer
 
 from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange
-from nautilus_indicators.spread_analyzer import SpreadAnalyzer
-from nautilus_indicators.liquidity_analyzer import LiquidityAnalyzer
 
 
 class EMACrossPy(TradingStrategy):
@@ -62,8 +63,9 @@ class EMACrossPy(TradingStrategy):
 
         self.instrument = None
         self.position_sizer = None
-        self.spread_analyzer = None
-        self.liquidity = LiquidityAnalyzer()
+
+        # Track spreads
+        self.spreads = deque(maxlen=100)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -84,7 +86,6 @@ class EMACrossPy(TradingStrategy):
         self.entry_buffer = self.instrument.tick_size
         self.SL_buffer = self.instrument.tick_size * 10
         self.position_sizer = FixedRiskSizer(self.instrument)
-        #self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
 
         self.request_bars(self.bar_type)
         self.subscribe_instrument(self.symbol)
@@ -100,7 +101,7 @@ class EMACrossPy(TradingStrategy):
         :param tick: The received tick.
         """
         #self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        #self.spread_analyzer.update(tick.bid.value, tick.ask.value)
+        self.spreads.append(float(tick.ask - tick.bid))
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -113,22 +114,29 @@ class EMACrossPy(TradingStrategy):
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
+        # Check indicators warm
         if not self.indicators_initialized():
             return  # Wait for indicators to warm up...
 
+        # Check has ticks
         if not self.has_ticks(self.symbol):
             return  # Wait for ticks...
 
-        #self.spread_analyzer.calculate_metrics()
-        #self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
+        average_spread = np.mean(self.spreads)
+
+        # Check market liquidity
+        if self.atr.value / average_spread < 2.:
+            return  # Market not liquid...
+
+        last_tick = self.tick(self.symbol, 0)
+        spread = last_tick.bid - last_tick.ask
 
         if self.count_orders_working() == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price( bar.high + self.entry_buffer)
-                #price_entry = Price(bar.high + self.entry_buffer + self.spread_analyzer.average_spread)
+                price_entry = Price(bar.high + self.entry_buffer + spread)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
@@ -164,8 +172,7 @@ class EMACrossPy(TradingStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer)
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple))
-                #price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 if self.instrument.security_type == SecurityType.FOREX:
@@ -212,8 +219,7 @@ class EMACrossPy(TradingStrategy):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(
-                        bar.high + (self.atr.value * self.SL_atr_multiple))
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + spread)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
@@ -257,8 +263,7 @@ class EMACrossPy(TradingStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        self.spread_analyzer.reset()
-        self.liquidity.reset()
+        pass
 
     def on_save(self) -> Dict:
         # Put custom state to be saved here (or return empty dictionary)
@@ -318,8 +323,9 @@ class EMACrossMarketEntryPy(TradingStrategy):
 
         self.instrument = None
         self.position_sizer = None
-        self.spread_analyzer = None
-        self.liquidity = LiquidityAnalyzer()
+
+        # Track spreads
+        self.spreads = deque(maxlen=100)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -340,7 +346,6 @@ class EMACrossMarketEntryPy(TradingStrategy):
         self.entry_buffer = self.instrument.tick_size
         self.SL_buffer = self.instrument.tick_size * 10
         self.position_sizer = FixedRiskSizer(self.instrument)
-        self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
 
         self.request_bars(self.bar_type)
         self.subscribe_instrument(self.symbol)
@@ -356,7 +361,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spread_analyzer.update(tick.bid.value, tick.ask.value)
+        self.spreads.append(float(tick.ask - tick.bid))
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -369,23 +374,31 @@ class EMACrossMarketEntryPy(TradingStrategy):
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
+        # Check indicators warm
         if not self.indicators_initialized():
             return  # Wait for indicators to warm up...
 
+        # Check has ticks
         if not self.has_ticks(self.symbol):
             return  # Wait for ticks...
 
-        self.spread_analyzer.calculate_metrics()
-        self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
+        average_spread = np.mean(self.spreads)
 
-        if self.liquidity.is_liquid and self.count_orders_working() == 0 and self.is_flat():
+        # Check market liquidity
+        if self.atr.value / average_spread < 2.:
+            return  # Market not liquid...
+
+        last_tick = self.tick(self.symbol, 0)
+        spread = last_tick.bid - last_tick.ask
+
+        if self.count_orders_working() == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = self.tick(self.symbol, 0).ask
+                price_entry = last_tick.ask
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
-                price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
+                price_take_profit = Price(price_entry + (price_entry - price_stop_loss) + spread)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
@@ -415,8 +428,8 @@ class EMACrossMarketEntryPy(TradingStrategy):
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                price_entry = self.tick(self.symbol, 0).bid
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
+                price_entry = last_tick.bid
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 if self.instrument.security_type == SecurityType.FOREX:
@@ -460,8 +473,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(
-                        bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + spread)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
@@ -505,8 +517,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        self.spread_analyzer.reset()
-        self.liquidity.reset()
+        pass
 
     def on_save(self) -> Dict:
         # Put custom state to be saved here (or return empty dictionary)

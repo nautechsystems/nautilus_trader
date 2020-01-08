@@ -6,7 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import inspect
+import numpy as np
+
+from collections import deque
 from datetime import timedelta
 
 from nautilus_trader.model.events cimport Event
@@ -26,8 +28,6 @@ from test_kit.mocks cimport ObjectStorer
 
 from nautilus_indicators.atr cimport AverageTrueRange
 from nautilus_indicators.average.ema cimport ExponentialMovingAverage
-from nautilus_indicators.spread_analyzer cimport SpreadAnalyzer
-from nautilus_indicators.liquidity_analyzer cimport LiquidityAnalyzer
 
 
 class PyStrategy(TradingStrategy):
@@ -281,11 +281,10 @@ cdef class EMACross(TradingStrategy):
     cdef readonly float SL_atr_multiple
     cdef readonly object entry_buffer
     cdef readonly object SL_buffer
+    cdef readonly object spreads
     cdef readonly ExponentialMovingAverage fast_ema
     cdef readonly ExponentialMovingAverage slow_ema
     cdef readonly AverageTrueRange atr
-    cdef readonly SpreadAnalyzer spread_analyzer
-    cdef readonly LiquidityAnalyzer liquidity
 
     def __init__(self,
                  Instrument instrument,
@@ -316,11 +315,12 @@ cdef class EMACross(TradingStrategy):
         self.bar_type = BarType(instrument.symbol, bar_spec)
         self.risk_bp = risk_bp
         self.position_sizer = FixedRiskSizer(self.instrument)
-        self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
-        self.liquidity = LiquidityAnalyzer()
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
+
+        # Track spreads
+        self.spreads = deque(maxlen=100)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -331,8 +331,6 @@ cdef class EMACross(TradingStrategy):
         self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
         self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
         self.register_indicator(self.bar_type, self.atr, self.atr.update)
-        # TODO: Indicator updating with ticks not working
-        # self.register_indicator(self.symbol, self.spread_analyzer, self.spread_analyzer.update)
 
     cpdef void on_start(self):
         """
@@ -354,7 +352,7 @@ cdef class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spread_analyzer.update(tick.bid.value, tick.ask.value)
+        self.spreads.append(float(tick.ask - tick.bid))
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
@@ -371,16 +369,21 @@ cdef class EMACross(TradingStrategy):
         if not self.has_ticks(self.symbol):
             return  # Wait for ticks...
 
-        self.spread_analyzer.calculate_metrics()
-        self.liquidity.update(float(self.spread_analyzer.average_spread), self.atr.value)
+        cdef Tick last_tick = self.tick(self.symbol, 0)
+
+        average_spread = np.mean(self.spreads)
+
+        # Check market liquidity
+        if self.atr.value / average_spread < 2.:
+            return
 
         cdef AtomicOrder atomic_order
         cdef float exchange_rate
 
-        if self.liquidity.is_liquid and self.count_orders_working() == 0 and self.is_flat():
+        if self.count_orders_working() == 0 and self.is_flat():
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(bar.high + self.entry_buffer + self.spread_analyzer.average_spread)
+                price_entry = Price(bar.high + self.entry_buffer)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
@@ -416,7 +419,7 @@ cdef class EMACross(TradingStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer)
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 if self.instrument.security_type == SecurityType.FOREX:
@@ -464,8 +467,7 @@ cdef class EMACross(TradingStrategy):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(
-                        bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple))
                     if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
@@ -509,8 +511,7 @@ cdef class EMACross(TradingStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        self.spread_analyzer.reset()
-        self.liquidity.reset()
+        pass
 
     cpdef dict on_save(self):
         return {}
