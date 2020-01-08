@@ -53,7 +53,6 @@ cdef class BacktestEngine:
         :param strategies: The initial strategies for the backtest engine.
         :param config: The configuration for the backtest engine.
         :param fill_model: The initial fill model for the backtest engine.
-        :raises ConditionFailed: If the instruments list contains a type other than Instrument.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
         Condition.list_type(strategies, TradingStrategy, 'strategies')
@@ -149,9 +148,7 @@ cdef class BacktestEngine:
         self.exec_engine.register_client(self.exec_client)
         self.exec_client.register_exec_db(self.exec_db)
 
-        for strategy in strategies:
-            # Replace strategies clocks with separate test clocks for independent iteration
-            strategy.change_clock(TestClock())
+        self._change_clocks_and_loggers(strategies)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -176,7 +173,7 @@ cdef class BacktestEngine:
             list strategies=None,
             bint print_log_store=True):
         """
-        Run the backtest with the given parameters.
+        Run a backtest.
 
         :param start: The optional start UTC datetime for the backtest run (if None will run from the start of the data).
         :param stop: The optional stop UTC datetime for the backtest run (if None will run to the end of the data).
@@ -184,15 +181,11 @@ cdef class BacktestEngine:
         :param strategies: The optional strategies change for the backtest run (if None will use previous).
         :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
 
-        :raises: ConditionFailed: If the start is not None and timezone is not UTC.
-        :raises: ConditionFailed: If the start is not < the stop datetime.
-        :raises: ConditionFailed: If the start is not >= the execution_data_index_min datetime.
-        :raises: ConditionFailed: If the stop is not None and timezone is not UTC.
-        :raises: ConditionFailed: If the stop is not <= the execution_data_index_max datetime.
-        :raises: ConditionFailed: If the time_step is not None and is > the max time step for the execution structure.
+        :raises: ConditionFailed: If the start timezone is not UTC.
+        :raises: ConditionFailed: If the stop timezone is not UTC.
+        :raises: ConditionFailed: If the stop is >= the start datetime.
         :raises: ConditionFailed: If the fill_model is a type other than FillModel or None.
-        :raises: ConditionFailed: If the strategies is a type other than list or None.
-        :raises: ConditionFailed: If the strategies list is not None and is empty, or contains a type other than TradingStrategy.
+        :raises: ConditionFailed: If the strategies contains a type other than TradingStrategy.
         """
         # Setup start datetime
         if start is None:
@@ -212,8 +205,7 @@ cdef class BacktestEngine:
         Condition.true(start <= self.data_client.max_timestamp, 'stop <= data_client.max_timestamp')
         Condition.true(start < stop, 'start < stop')
         Condition.type_or_none(fill_model, FillModel, 'fill_model')
-        Condition.type_or_none(strategies, list, 'strategies')
-        if strategies is not None:
+        if strategies:
             Condition.not_empty(strategies, 'strategies')
             Condition.list_type(strategies, TradingStrategy, 'strategies')
         # ---------------------------------------------------------------------#
@@ -236,41 +228,39 @@ cdef class BacktestEngine:
         self._backtest_header(run_started, start, stop)
         self.log.info(f"Setting up backtest...")
         self.log.debug("Setting initial iterations...")
-        # self.data_client.set_initial_iteration_indexes(start)  # Also sets clock to start time
 
         # Setup new fill model
-        if fill_model is not None:
+        if fill_model:
             self.exec_client.change_fill_model(fill_model)
 
         # Setup new strategies
-        if strategies is not None:
+        if strategies:
+            self._change_clocks_and_loggers(self.trader.strategies)
             self.trader.initialize_strategies(strategies)
-        self._change_clocks_and_loggers(self.trader.strategies)
 
         # Determine start-stop indexes
         cdef int index_start = -1
         cdef int index_stop = -1
         cdef int i
         for i in range(len(self.data_client.ticks)):
-            if index_start == -1 and start >= self.data_client.ticks[i].timestamp :
+            if index_start == -1 and start >= self.data_client.ticks[i].timestamp:
                 index_start = i
             if index_stop != -1:
                 break
             if stop <= self.data_client.ticks[i].timestamp:
                 index_stop = i
 
-        cdef Tick tick
-        cdef dict time_events
-        cdef TradingStrategy strategy
-        cdef TimeEvent event
-
         # Run the backtest
         self.log.info(f"Running backtest...")
         self.trader.start()
 
+        cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
+        cdef Tick tick
+        cdef TradingStrategy strategy
+        cdef TimeEvent event
+
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         for tick in self.data_client.ticks[index_start:index_stop]:
-            time_events = {}  # type: Dict[TimeEvent, Callable]
             for strategy in self.trader.strategies:
                 if strategy.clock.has_timers:
                     strategy.clock.advance_time(tick.timestamp)
@@ -281,6 +271,7 @@ cdef class BacktestEngine:
                 for event, handler in dict(sorted(time_events.items())).items():
                     self.test_clock.set_time(event.timestamp)
                     handler(event)
+                time_events.clear()
             self.test_clock.set_time(tick.timestamp)
             self.exec_client.process_tick(tick)
             self.data_client.process_tick(tick)
