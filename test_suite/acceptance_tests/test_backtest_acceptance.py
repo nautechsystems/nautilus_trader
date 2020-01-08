@@ -6,12 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 import unittest
 
 from datetime import datetime
 
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarStructure, PriceType
+from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -26,16 +26,14 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class BacktestAcceptanceTests(unittest.TestCase):
 
     def setUp(self):
-        instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {USDJPY_FXCM: pd.DataFrame()}
-        bid_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
-        ask_data = {USDJPY_FXCM: {BarStructure.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
+        self.usdjpy = TestStubs.instrument_usdjpy()
+        data = BacktestDataContainer()
+        data.add_instrument(self.usdjpy)
+        data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
+        data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
         self.engine = BacktestEngine(
-            instruments=instruments,
-            data_ticks=tick_data,
-            data_bars_bid=bid_data,
-            data_bars_ask=ask_data,
+            data=data,
             strategies=[EmptyStrategy('000')],
             config=BacktestConfig(),
             fill_model=FillModel())
@@ -52,7 +50,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(44641, self.engine.iteration)
+        self.assertEqual(2039, self.engine.iteration)
 
     def test_can_reset_engine(self):
         # Arrange
@@ -69,8 +67,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange
-        instrument = TestStubs.instrument_usdjpy()
-        strategies = [EMACross(instrument=instrument,
+        strategies = [EMACross(instrument=self.usdjpy,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
@@ -85,14 +82,12 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert
-        self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(1441, strategies[0].fast_ema.count)
+        self.assertEqual(558, strategies[0].fast_ema.count)
         self.assertEqual(-12085.9296875, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as float here
 
     def test_can_reset_and_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
-        instrument = TestStubs.instrument_usdjpy()
-        strategies = [EMACross(instrument=instrument,
+        strategies = [EMACross(instrument=self.usdjpy,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
@@ -118,8 +113,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
     def test_can_run_multiple_strategies(self):
         # Arrange
-        instrument = TestStubs.instrument_usdjpy()
-        strategies = [EMACross(instrument=instrument,
+        strategies = [EMACross(instrument=self.usdjpy,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
@@ -127,7 +121,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0,
                                extra_id_tag='001'),
-                      EMACross(instrument=instrument,
+                      EMACross(instrument=self.usdjpy,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
@@ -143,6 +137,5 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert
-        self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(1441, strategies[0].fast_ema.count)
-        self.assertEqual(1441, strategies[1].fast_ema.count)
+        self.assertEqual(558, strategies[0].fast_ema.count)
+        self.assertEqual(558, strategies[1].fast_ema.count)
