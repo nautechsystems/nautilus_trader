@@ -234,8 +234,8 @@ cdef class BacktestEngine:
             self.exec_client.change_fill_model(fill_model)
 
         # Setup new strategies
-        if strategies:
-            self._change_clocks_and_loggers(self.trader.strategies)
+        if strategies is not None:
+            self._change_clocks_and_loggers(strategies)
             self.trader.initialize_strategies(strategies)
 
         # Determine start-stop indexes
