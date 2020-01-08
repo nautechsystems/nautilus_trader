@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.common.data import TickBarAggregator, TimeBarAggregator
+from nautilus_trader.common.market import TickBarAggregator, TimeBarAggregator
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType
 

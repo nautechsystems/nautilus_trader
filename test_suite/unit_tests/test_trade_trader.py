@@ -15,12 +15,12 @@ from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Venue, IdTag, TraderId, StrategyId
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.data import BacktestDataClient
+from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
 from nautilus_trader.trade.trader import Trader
 
 from test_kit.strategies import EmptyStrategy
@@ -35,8 +35,11 @@ class TraderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        bid_data_1min = TestDataProvider.usdjpy_1min_bid().iloc[:2000]
-        ask_data_1min = TestDataProvider.usdjpy_1min_ask().iloc[:2000]
+        usdjpy = TestStubs.instrument_usdjpy()
+        data = BacktestDataContainer()
+        data.add_instrument(usdjpy)
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
         clock = TestClock()
         guid_factory = TestGuidFactory()
@@ -46,10 +49,7 @@ class TraderTests(unittest.TestCase):
 
         data_client = BacktestDataClient(
             venue=Venue('FXCM'),
-            instruments=[TestStubs.instrument_usdjpy()],
-            data_ticks={USDJPY_FXCM: pd.DataFrame()},
-            data_bars_bid={USDJPY_FXCM: {BarStructure.MINUTE: bid_data_1min}},
-            data_bars_ask={USDJPY_FXCM: {BarStructure.MINUTE: ask_data_1min}},
+            data=data,
             clock=clock,
             logger=logger)
 
@@ -74,7 +74,7 @@ class TraderTests(unittest.TestCase):
 
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
-            instruments=[TestStubs.instrument_usdjpy()],
+            instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=clock,

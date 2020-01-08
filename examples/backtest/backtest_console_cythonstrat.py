@@ -9,6 +9,8 @@
 
 import pandas as pd
 
+from datetime import datetime, timezone
+
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, Currency, PriceType
 from nautilus_trader.model.objects import BarSpecification
@@ -26,13 +28,12 @@ if __name__ == "__main__":
 
     data = BacktestDataContainer()
     data.add_instrument(USDJPY)
-    data.add_ticks(USDJPY.symbol, TestDataProvider.usdjpy_test_ticks())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
     strategies = [EMACross(
         instrument=USDJPY,
-        bar_spec=BarSpecification(1, BarStructure.MINUTE, PriceType.BID),
+        bar_spec=BarSpecification(10, BarStructure.SECOND, PriceType.BID),
         risk_bp=10,
         fast_ema=10,
         slow_ema=20,
@@ -68,7 +69,10 @@ if __name__ == "__main__":
 
     input("Press Enter to continue...")
 
-    engine.run()
+    start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+    engine.run(start, stop)
 
     with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
         pass

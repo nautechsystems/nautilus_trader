@@ -13,9 +13,10 @@ import unittest
 
 from datetime import datetime, timezone
 
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.backtest.config import BacktestConfig
+from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from test_kit.strategies import EmptyStrategy, EMACross
@@ -31,22 +32,17 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     def test_run_with_empty_strategy(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
-        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
-        instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {BarStructure.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {BarStructure.MINUTE: ask_data_1min}}
+        data = BacktestDataContainer()
+        data.add_instrument(usdjpy)
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EmptyStrategy('001')]
 
         config = BacktestConfig(exec_db_type='in-memory')
         engine = BacktestEngine(
-            instruments=instruments,
-            data_ticks=tick_data,
-            data_bars_bid=bid_data,
-            data_bars_ask=ask_data,
+            data=data,
             strategies=strategies,
             fill_model=FillModel(),
             config=config)
@@ -76,13 +72,11 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     def test_run_with_ema_cross_strategy(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
-        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
-        instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {BarStructure.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {BarStructure.MINUTE: ask_data_1min}}
+        data = BacktestDataContainer()
+        data.add_instrument(usdjpy)
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EMACross(
             instrument=usdjpy,
@@ -104,10 +98,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             console_prints=False)
 
         engine = BacktestEngine(
-            instruments=instruments,
-            data_ticks=tick_data,
-            data_bars_bid=bid_data,
-            data_bars_ask=ask_data,
+            data=data,
             strategies=strategies,
             fill_model=FillModel(),
             config=config)

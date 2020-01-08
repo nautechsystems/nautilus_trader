@@ -77,9 +77,12 @@ class TickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), ticks[0].timestamp)
         self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), ticks[1].timestamp)
         self.assertEqual(Timestamp('2013-01-01T22:00:00.000000+00:00', tz='UTC'), ticks[2].timestamp)
-        self.assertEqual(0, ticks[999].bid_size)
-        self.assertEqual(0, ticks[1000].bid_size)
-        self.assertEqual(87, ticks[1001].bid_size)
+        self.assertEqual(0, ticks[0].bid_size)
+        self.assertEqual(0, ticks[0].ask_size)
+        self.assertEqual(0, ticks[1].bid_size)
+        self.assertEqual(0, ticks[1].ask_size)
+        self.assertEqual(1, ticks[2].bid_size)
+        self.assertEqual(2, ticks[2].ask_size)
 
 
 class BarDataWranglerTests(unittest.TestCase):
