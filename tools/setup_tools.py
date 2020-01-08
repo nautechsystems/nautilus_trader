@@ -9,6 +9,7 @@
 import os
 
 from typing import List
+from setuptools import Extension
 
 
 def scan_directories(directories: List[str]) -> List[str]:
@@ -50,6 +51,17 @@ def get_directories(root_path: str):
             if not directory.startswith('__'):
                 dir_names.append(directory)
     return dir_names
+
+
+def make_extensions(directories: List[str]) -> [Extension]:
+    # Generate a a list of Extension objects from the given directories list
+    extensions = []
+    for file in find_files('.pyx', directories):
+        extensions.append(Extension(
+            name=file.replace(os.path.sep, ".")[:-4],
+            sources=[file],
+            include_dirs=['.']))
+    return extensions
 
 
 def parse_requirements(requirements_txt_path):
