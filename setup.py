@@ -7,16 +7,14 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import os
 import setuptools
 
-from typing import List
-from setuptools import setup, Extension
+from setuptools import setup
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
 from nautilus_trader.__info__ import __version__
-from tools.setup_tools import find_files, parse_requirements
+from tools.setup_tools import parse_requirements, make_extensions
 from tools.linter import check_file_headers
 
 
@@ -56,20 +54,8 @@ compiler_directives = {'language_level': 3, 'embedsignature': True, 'profile': P
 # -------------------------------------
 
 
-# Lint source code (throws exception on failure)
+# Linting source code (throws exceptions on failures)
 check_file_headers(directories=DIRECTORIES_ALL, to_lint=['.py', '.pyx', '.pxd'], company_name=AUTHOR)
-
-
-def make_extensions(directories: List[str]) -> [Extension]:
-    # Generate a a list of Extension objects from the given directories list
-    extensions = []
-    for file in find_files('.pyx', directories):
-        extensions.append(Extension(
-            name=file.replace(os.path.sep, ".")[:-4],
-            sources=[file],
-            include_dirs=['.']))
-    return extensions
-
 
 packages = [module for module in setuptools.find_packages(exclude=PACKAGE_EXCLUSIONS)]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
