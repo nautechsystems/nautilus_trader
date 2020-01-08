@@ -16,7 +16,7 @@ from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
 from nautilus_trader.__info__ import __version__
-from tools.setup_tools import find_files
+from tools.setup_tools import find_files, parse_requirements
 from tools.linter import check_file_headers
 
 
@@ -24,23 +24,10 @@ PACKAGE_NAME = 'nautilus_trader'
 AUTHOR = 'Nautech Systems Pty Ltd'
 MAINTAINER = 'Nautech Systems Pty Ltd'
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
-DESCRIPTION = 'An algorithmic trading framework written in Cython.'
+DESCRIPTION = 'An algorithmic trading framework utilizing Cython.'
 LICENSE = 'Nautech Systems Software License, April 2018'
 URL = 'https://nautechsystems.io/nautilus'
-PYTHON_REQUIRES = '>=3.7'
-REQUIREMENTS = ['cython',
-                'numpy',
-                'scipy',
-                'pandas',
-                'iso8601',
-                'pytz',
-                'pyzmq',
-                'pymongo',
-                'msgpack',
-                'redis',
-                'psutil',
-                'empyrical']
-
+PYTHON_REQUIRES = '>=3.7.5'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
 DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'test_suite']
 PACKAGE_EXCLUSIONS = ['test_kit']
@@ -98,7 +85,7 @@ setup(
     license=LICENSE,
     url=URL,
     python_requires=PYTHON_REQUIRES,
-    requires=REQUIREMENTS,
+    install_requires=parse_requirements('requirements.txt'),
     packages=packages,
     package_data=package_data,
     include_package_data=True,

@@ -50,3 +50,8 @@ def get_directories(root_path: str):
             if not directory.startswith('__'):
                 dir_names.append(directory)
     return dir_names
+
+
+def parse_requirements(requirements_txt_path):
+    with open(requirements_txt_path) as fp:
+        return fp.read().splitlines()
