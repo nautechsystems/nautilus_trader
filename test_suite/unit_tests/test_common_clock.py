@@ -319,7 +319,7 @@ class TestClockTests(unittest.TestCase):
         # Act
         self.clock.set_time_alert(label, alert_time)
         self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=200))
-        events = self.clock.get_pending_events()
+        events = self.clock.pop_events()
 
         # Assert
         self.assertEqual([], self.clock.get_timer_labels())
@@ -350,7 +350,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_time_alert(Label('TEST_ALERT1'), alert_time1)
         self.clock.set_time_alert(Label('TEST_ALERT2'), alert_time2)
         self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
-        events = self.clock.get_pending_events()
+        events = self.clock.pop_events()
 
         # Assert
         self.assertEqual([], self.clock.get_timer_labels())
@@ -367,7 +367,7 @@ class TestClockTests(unittest.TestCase):
             start_time=None,
             stop_time=None)
         self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
-        events = self.clock.get_pending_events()
+        events = self.clock.pop_events()
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
@@ -386,8 +386,7 @@ class TestClockTests(unittest.TestCase):
             start_time=None,
             stop_time=None)
         self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
-        self.clock.get_pending_events()
-        events = self.clock.get_pending_events()
+        events = self.clock.pop_events()
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
@@ -404,7 +403,7 @@ class TestClockTests(unittest.TestCase):
             interval=interval,
             stop_time=self.clock.time_now() + timedelta(milliseconds=300))
         self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
-        events = self.clock.get_pending_events()
+        events = self.clock.pop_events()
 
         # Assert
         self.assertEqual([], self.clock.get_timer_labels())
@@ -440,7 +439,7 @@ class TestClockTests(unittest.TestCase):
             stop_time=None)
 
         self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
-        events = self.clock.get_pending_events()
+        events = self.clock.pop_events()
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
@@ -484,7 +483,7 @@ class TestClockTests(unittest.TestCase):
             stop_time=None)
 
         self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=500))
-        events = self.clock.get_pending_events()
+        events = self.clock.pop_events()
 
         # Assert
         self.assertEqual(10, len(events))

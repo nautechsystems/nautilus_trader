@@ -198,7 +198,7 @@ cdef class BacktestDataClient(DataClient):
         self._clock.advance_time(tick.timestamp)
 
         cdef TimeEvent event
-        for event, handler in self._clock.get_pending_events().items():
+        for event, handler in self._clock.pop_events().items():
             handler(event)
 
     cpdef void request_ticks(

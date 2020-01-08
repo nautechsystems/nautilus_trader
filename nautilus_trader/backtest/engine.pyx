@@ -264,7 +264,7 @@ cdef class BacktestEngine:
             for strategy in self.trader.strategies:
                 if strategy.clock.has_timers:
                     strategy.clock.advance_time(tick.timestamp)
-                    time_events.update(strategy.clock.get_pending_events())
+                    time_events.update(strategy.clock.pop_events())
                 else:
                     strategy.clock.set_time(tick.timestamp)
             if time_events:

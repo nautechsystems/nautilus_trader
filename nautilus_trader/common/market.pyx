@@ -153,23 +153,6 @@ cdef class TickDataWrangler:
                               df_ticks_final.values,
                               pd.to_datetime(df_ticks_final.index, utc=True)))
 
-    cdef Tick _build_tick(
-            self,
-            float bid,
-            float ask,
-            datetime timestamp,
-            int bid_size=1,
-            int ask_size=1):
-        """
-        Build tick from the given values.
-        """
-        return Tick(self._symbol,
-                    Price(bid, self._precision),
-                    Price(ask, self._precision),
-                    timestamp,
-                    bid_size,
-                    ask_size)
-
     cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
@@ -500,19 +483,19 @@ cdef class BarBuilder:
 
         :param tick: The tick to update with.
         """
-        cdef Price quote = self._get_price(tick)
+        cdef Price price = self._get_price(tick)
 
         if self._open is None:
             # Initialize builder
-            self._open = quote
-            self._high = quote
-            self._low = quote
-        elif quote.value > self._high.value:
-            self._high = quote
-        elif quote.value < self._low.value:
-            self._low = quote
+            self._open = price
+            self._high = price
+            self._low = price
+        elif price.value > self._high.value:
+            self._high = price
+        elif price.value < self._low.value:
+            self._low = price
 
-        self._close = quote
+        self._close = price
         self._volume += self._get_volume(tick)
         self.count += 1
         self.last_update = tick.timestamp
@@ -684,7 +667,7 @@ cdef class TimeBarAggregator(BarAggregator):
         if self._clock.is_test_clock:
             if self._clock.next_event_time <= tick.timestamp:
                 self._clock.advance_time(tick.timestamp)
-                for event, handler in self._clock.get_pending_events().items():
+                for event, handler in self._clock.pop_events().items():
                     handler(event)
                 self.next_close = self._clock.next_event_time
 

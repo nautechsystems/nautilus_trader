@@ -55,7 +55,11 @@ cdef class Timer:
 
     cpdef TimeEvent iterate_event(self, datetime now):
         """
-        Sets the next time and checks if expired.
+        Returns the next iterated time event and checks if the timer is now expired.
+        
+        :param now: The datetime now (UTC).
+        
+        :return TimeEvent.
         """
         cdef TimeEvent event = TimeEvent(self.label, GUID(uuid.uuid4()), self.next_time)
 
@@ -170,6 +174,7 @@ cdef class LiveTimer(Timer):
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
+        Condition.type(function, Callable, 'function')
         # Condition: interval checked in base class
         # Condition: stop_time checked in base class
 
@@ -399,12 +404,13 @@ cdef class Clock:
         self._update_timing()
 
     cdef void _update_timing(self) except *:
-        if len(self._timers) == 0:
-            self.has_timers = False
-            self.next_event_time = None
-        else:
-            self.has_timers = True
+        cdef Timer timer
+        if self._timers:
             self.next_event_time = sorted(timer.next_time for timer in self._timers.values())[0]
+            self.has_timers = True
+        else:
+            self.next_event_time = None
+            self.has_timers = False
 
 
 cdef class TestClock(Clock):
@@ -445,8 +451,6 @@ cdef class TestClock(Clock):
 
         :param to_time: The datetime to iterate the test clock to.
         """
-        self._pending_events = {}  # type: Dict[TimeEvent, Callable]
-
         if not self.has_timers or to_time < self.next_event_time:
             return # No timer events to iterate
 
@@ -461,10 +465,17 @@ cdef class TestClock(Clock):
 
         self._update_timing()
         self._time = to_time
-        self._pending_events = dict(sorted(self._pending_events.items()))
 
-    cpdef dict get_pending_events(self):
-        return self._pending_events
+    cpdef dict pop_events(self):
+        """
+        Return a sorted dictionary of pending time events and their handlers.
+
+        :return: Dict[TimeEvent, Handler].
+        """
+        cdef dict events = dict(sorted(self._pending_events.items()))
+        self._pending_events = {}  # type: Dict[TimeEvent, Callable]
+
+        return events
 
     cdef object _get_timer(
             self,
