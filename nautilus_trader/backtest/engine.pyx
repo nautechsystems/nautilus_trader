@@ -247,15 +247,7 @@ cdef class BacktestEngine:
             self.trader.initialize_strategies(strategies)
         self._change_clocks_and_loggers(self.trader.strategies)
 
-        # Run the backtest
-        self.log.info(f"Running backtest...")
-        self.trader.start()
-
-        cdef Tick tick
-        cdef dict time_events
-        cdef TradingStrategy strategy
-        cdef TimeEvent event
-
+        # Determine start-stop indexes
         cdef int index_start = -1
         cdef int index_stop = -1
         cdef int i
@@ -267,6 +259,15 @@ cdef class BacktestEngine:
             if stop <= self.data_client.ticks[i].timestamp:
                 index_stop = i
 
+        cdef Tick tick
+        cdef dict time_events
+        cdef TradingStrategy strategy
+        cdef TimeEvent event
+
+        # Run the backtest
+        self.log.info(f"Running backtest...")
+        self.trader.start()
+
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         for tick in self.data_client.ticks[index_start:index_stop]:
             time_events = {}  # type: Dict[TimeEvent, Callable]
@@ -274,6 +275,8 @@ cdef class BacktestEngine:
                 if strategy.clock.has_timers:
                     strategy.clock.advance_time(tick.timestamp)
                     time_events.update(strategy.clock.get_pending_events())
+                else:
+                    strategy.clock.set_time(tick.timestamp)
             for event, handler in dict(sorted(time_events.items())).items():
                 self.test_clock.set_time(event.timestamp)
                 handler(event)
