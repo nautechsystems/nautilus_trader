@@ -270,8 +270,6 @@ cdef class Clock:
 
         self._default_handler = handler
         self.is_default_handler_registered = True
-        if self.is_logger_registered:
-            self._log.debug(f"Registered default handler {handler}.")
 
     cpdef void set_time_alert(
             self,
