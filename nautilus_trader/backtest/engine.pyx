@@ -277,13 +277,15 @@ cdef class BacktestEngine:
                     time_events.update(strategy.clock.get_pending_events())
                 else:
                     strategy.clock.set_time(tick.timestamp)
-            for event, handler in dict(sorted(time_events.items())).items():
-                self.test_clock.set_time(event.timestamp)
-                handler(event)
+            if time_events:
+                for event, handler in dict(sorted(time_events.items())).items():
+                    self.test_clock.set_time(event.timestamp)
+                    handler(event)
             self.test_clock.set_time(tick.timestamp)
             self.exec_client.process_tick(tick)
             self.data_client.process_tick(tick)
             self.iteration += 1
+        # ---------------------------------------------------------------------#
 
         self.log.info("Stopping...")
         self.trader.stop()
