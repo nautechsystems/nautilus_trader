@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.core.types import GUID
-from nautilus_trader.common.clock import LiveClock, TestClock, TestTimer
+from nautilus_trader.common.clock import LiveClock, TestClock
 from nautilus_trader.common.logger import LoggerAdapter, TestLogger
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.model.events import TimeEvent
