@@ -21,7 +21,6 @@ cdef class QuerySerializer:
         Serialize the given data query to bytes.
 
         :param query: The data query to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -32,7 +31,6 @@ cdef class QuerySerializer:
         Deserialize the given bytes to a data query.
 
         :param query_bytes: The data query bytes to deserialize.
-        
         :return Dict.
         """
         # Raise exception if not overridden in implementation
@@ -49,7 +47,6 @@ cdef class DataSerializer:
         Serialize the given data mapping to bytes.
 
         :param data: The data to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -60,7 +57,6 @@ cdef class DataSerializer:
         Deserialize the given bytes to a mapping of data.
 
         :param data_bytes: The data bytes to deserialize.
-        
         :return Dict.
         """
         # Raise exception if not overridden in implementation
@@ -77,7 +73,6 @@ cdef class InstrumentSerializer:
         Serialize the given event to bytes.
 
         :param instrument: The instrument to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -88,7 +83,6 @@ cdef class InstrumentSerializer:
         Deserialize the given instrument bytes to an instrument.
 
         :param instrument_bytes: The bytes to deserialize.
-        
         :return Instrument.
         """
         # Raise exception if not overridden in implementation.
@@ -105,7 +99,6 @@ cdef class OrderSerializer:
         Serialize the given order to bytes.
 
         :param order: The order to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -116,7 +109,6 @@ cdef class OrderSerializer:
         Deserialize the given bytes to an order.
 
         :param order_bytes: The bytes to deserialize.
-        
         :return Order.
         """
         # Raise exception if not overridden in implementation
@@ -133,7 +125,6 @@ cdef class CommandSerializer:
         Serialize the given command to bytes.
 
         :param command: The command to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -144,7 +135,6 @@ cdef class CommandSerializer:
         Deserialize the given bytes to a command.
 
         :param command_bytes: The command bytes to deserialize.
-        
         :return Command.
         """
         # Raise exception if not overridden in implementation
@@ -161,7 +151,6 @@ cdef class EventSerializer:
         Serialize the given event to bytes.
 
         :param event: The event to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -172,7 +161,6 @@ cdef class EventSerializer:
         Deserialize the given bytes to an event.
 
         :param event_bytes: The bytes to deserialize.
-        
         :return Event.
         """
         # Raise exception if not overridden in implementation
@@ -189,7 +177,6 @@ cdef class RequestSerializer:
         Serialize the given request to bytes.
 
         :param request: The request to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -200,7 +187,6 @@ cdef class RequestSerializer:
         Deserialize the given bytes to a request.
 
         :param request_bytes: The bytes to deserialize.
-        
         :return Request.
         """
         # Raise exception if not overridden in implementation
@@ -217,7 +203,6 @@ cdef class ResponseSerializer:
         Serialize the given response to bytes.
 
         :param response: The response to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -228,7 +213,6 @@ cdef class ResponseSerializer:
         Deserialize the given bytes to a response.
 
         :param response_bytes: The bytes to deserialize.
-        
         :return Response.
         """
         # Raise exception if not overridden in implementation
@@ -245,7 +229,6 @@ cdef class LogSerializer:
         Serialize the given message to bytes.
 
         :param message: The message to serialize.
-        
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -256,7 +239,6 @@ cdef class LogSerializer:
         Deserialize the given bytes to a response.
 
         :param message_bytes: The bytes to deserialize.
-        
         :return LogMessage.
         """
         # Raise exception if not overridden in implementation

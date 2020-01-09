@@ -43,7 +43,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly RolloverInterestCalculator rollover_calculator
-    cdef readonly object rollover_spread
+    cdef readonly float rollover_spread
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover
     cdef readonly FillModel fill_model
@@ -55,28 +55,28 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef dict _oco_orders
 
     cpdef datetime time_now(self)
-    cpdef void register_exec_db(self, ExecutionDatabase exec_db)
-    cpdef void change_fill_model(self, FillModel fill_model)
-    cpdef void process_tick(self, Tick tick)
-    cpdef void check_residuals(self)
-    cpdef void reset(self)
+    cpdef void register_exec_db(self, ExecutionDatabase exec_db) except *
+    cpdef void change_fill_model(self, FillModel fill_model) except *
+    cpdef void process_tick(self, Tick tick) except *
+    cpdef void check_residuals(self) except *
+    cpdef void reset(self) except *
 
     cdef AccountStateEvent reset_account_event(self)
-    cdef void _set_slippage_index(self)
+    cdef void _set_slippage_index(self) except *
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
-    cdef void _accept_order(self, Order order)
-    cdef void _reject_order(self, Order order, str reason)
-    cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason)
-    cdef void _expire_order(self, Order order)
-    cdef void _process_order(self, Order order)
-    cdef void _fill_order(self, Order order, Price fill_price)
-    cdef void _clean_up_child_orders(self, OrderId order_id)
-    cdef void _check_oco_order(self, OrderId order_id)
-    cdef void _reject_oco_order(self, Order order, OrderId oco_order_id)
-    cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id)
-    cdef void _adjust_account(self, OrderFillEvent event, Position position)
-    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day)
+    cdef void _accept_order(self, Order order) except *
+    cdef void _reject_order(self, Order order, str reason) except *
+    cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason) except *
+    cdef void _expire_order(self, Order order) except *
+    cdef void _process_order(self, Order order) except *
+    cdef void _fill_order(self, Order order, Price fill_price) except *
+    cdef void _clean_up_child_orders(self, OrderId order_id) except *
+    cdef void _check_oco_order(self, OrderId order_id) except *
+    cdef void _reject_oco_order(self, Order order, OrderId oco_order_id) except *
+    cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id) except *
+    cdef void _adjust_account(self, OrderFillEvent event, Position position) except *
+    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
     cdef Money _calculate_pnl(self, MarketPosition direction, float open_price, float close_price, Quantity quantity, float exchange_rate)

@@ -49,7 +49,7 @@ cdef class PerformanceAnalyzer:
         self._transactions = pd.DataFrame(columns=['amount'])
         self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
 
-    cpdef void calculate_statistics(self, Account account, dict positions):
+    cpdef void calculate_statistics(self, Account account, dict positions)  except *:
         """
         Calculate performance metrics from the given data.
         """
@@ -62,7 +62,7 @@ cdef class PerformanceAnalyzer:
             if position.is_closed:
                 self.add_return(position.closed_time, position.realized_return)
 
-    cpdef void handle_transaction(self, AccountStateEvent event):
+    cpdef void handle_transaction(self, AccountStateEvent event)  except *:
         """
         Handle the transaction associated with the given account event.
 
@@ -78,7 +78,7 @@ cdef class PerformanceAnalyzer:
             return  # No transaction to handle
 
         # Calculate transaction data
-        cdef Money pnl = event.cash_balance - self._account_capital
+        cdef Money pnl = event.cash_balance.subtract(self._account_capital)
         self._account_capital = event.cash_balance
 
         # Set index if it does not exist
@@ -88,7 +88,7 @@ cdef class PerformanceAnalyzer:
         self._equity_curve.loc[event.timestamp]['capital'] = self._account_capital.value
         self._equity_curve.loc[event.timestamp]['pnl'] = pnl.value
 
-    cpdef void add_return(self, datetime time, float value):
+    cpdef void add_return(self, datetime time, float value)  except *:
         """
         Add return data to the analyzer.
         
@@ -105,7 +105,7 @@ cdef class PerformanceAnalyzer:
             self,
             datetime time,
             list positions,
-            Money cash_balance):
+            Money cash_balance)  except *:
         """
         Add end of day positions data to the analyzer.
 
@@ -126,7 +126,7 @@ cdef class PerformanceAnalyzer:
                 self._positions[symbol] = 0
             self._positions.loc[index_date][symbol] += position.relative_quantity
 
-    cpdef void reset(self):
+    cpdef void reset(self)  except *:
         """
         Reset the analyzer by returning all stateful values to their initial value.
         """
@@ -170,10 +170,10 @@ cdef class PerformanceAnalyzer:
     cpdef Money total_pnl(self):
         """
         Return the total PNL for the portfolio.
-
+        
         :return Money. 
         """
-        return self._account_capital - self._account_starting_capital
+        return self._account_capital.subtract(self._account_starting_capital)
 
     cpdef float total_pnl_percentage(self):
         """
@@ -181,10 +181,7 @@ cdef class PerformanceAnalyzer:
         
         :return float. 
         """
-        if self._account_capital == self._account_starting_capital:
-            return 0.0
-
-        return ((self._account_capital.as_float() - self._account_starting_capital.as_float()) / self._account_starting_capital.as_float()) * 100
+        return ((self._account_capital.value - self._account_starting_capital.value) / self._account_starting_capital.value) * 100
 
     cpdef Money max_winner(self):
         """
@@ -254,7 +251,7 @@ cdef class PerformanceAnalyzer:
         cdef float win_rate = self.win_rate()
         cdef float loss_rate = 1.0 - win_rate
 
-        return Money((float(self.avg_winner().value) * win_rate) - (-float(self.avg_loser().value) * loss_rate))
+        return Money((self.avg_winner().value * win_rate) - (-self.avg_loser().value * loss_rate))
 
     cpdef float annual_return(self):
         """
@@ -424,12 +421,12 @@ cdef class PerformanceAnalyzer:
         return {
             'PNL': self.total_pnl().as_float(),
             'PNL%': self.total_pnl_percentage(),
-            'MaxWinner': self.max_winner().as_float(),
-            'AvgWinner': self.avg_winner().as_float(),
-            'MinWinner': self.min_winner().as_float(),
-            'MinLoser': self.min_loser().as_float(),
-            'AvgLoser': self.avg_loser().as_float(),
-            'MaxLoser': self.max_loser().as_float(),
+            'MaxWinner': self.max_winner().value,
+            'AvgWinner': self.avg_winner().value,
+            'MinWinner': self.min_winner().value,
+            'MinLoser': self.min_loser().value,
+            'AvgLoser': self.avg_loser().value,
+            'MaxLoser': self.max_loser().value,
             'WinRate': self.win_rate(),
             'Expectancy': self.expectancy(),
             'AnnualReturn': self.annual_return(),

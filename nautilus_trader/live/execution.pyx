@@ -36,7 +36,6 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
@@ -1071,7 +1070,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         self.events_topic = events_topic
 
-    cpdef void connect(self):
+    cpdef void connect(self) except *:
         """
         Connect to the execution service.
         """
@@ -1079,7 +1078,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.connect()
         self._events_worker.subscribe(self.events_topic)
 
-    cpdef void disconnect(self):
+    cpdef void disconnect(self) except *:
         """
         Disconnect from the execution service.
         """
@@ -1087,32 +1086,32 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.disconnect()
         self._events_worker.disconnect()
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         """
         Disposes of the execution client.
         """
         self._commands_worker.dispose()
         self._events_worker.dispose()
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the execution client.
         """
         self._reset()
 
-    cpdef void account_inquiry(self, AccountInquiry command):
+    cpdef void account_inquiry(self, AccountInquiry command) except *:
         self._command_handler(command)
 
-    cpdef void submit_order(self, SubmitOrder command):
+    cpdef void submit_order(self, SubmitOrder command) except *:
         self._command_handler(command)
 
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command):
+    cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *:
         self._command_handler(command)
 
-    cpdef void modify_order(self, ModifyOrder command):
+    cpdef void modify_order(self, ModifyOrder command) except *:
         self._command_handler(command)
 
-    cpdef void cancel_order(self, CancelOrder command):
+    cpdef void cancel_order(self, CancelOrder command) except *:
         self._command_handler(command)
 
     cpdef void _command_handler(self, Command command) except *:

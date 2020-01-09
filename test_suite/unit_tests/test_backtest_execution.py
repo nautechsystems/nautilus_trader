@@ -118,7 +118,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price('90.003'), strategy.order(order.id).average_price)
+        self.assertEqual(Price(90.003, 3), strategy.order(order.id).average_price)
 
     def test_can_submit_limit_order(self):
         # Arrange
@@ -132,7 +132,7 @@ class BacktestExecClientTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('80.000'))
+            Price(80.000, 3))
 
         # Act
         strategy.submit_order(order, strategy.position_id_generator.generate())
@@ -140,7 +140,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
-        self.assertEqual(Price('80.000'), order.price)
+        self.assertEqual(Price(80.000, 3), order.price)
 
     def test_can_submit_atomic_market_order(self):
         # Arrange
@@ -154,7 +154,7 @@ class BacktestExecClientTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('80.000'))
+            Price(80.000, 3))
 
         # Act
         strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
@@ -162,7 +162,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(7, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price('80.000'), atomic_order.stop_loss.price)
+        self.assertEqual(Price(80.000, 3), atomic_order.stop_loss.price)
 
     def test_can_submit_atomic_stop_order(self):
         # Arrange
@@ -176,9 +176,9 @@ class BacktestExecClientTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('97.000'),
-            Price('96.710'),
-            Price('86.000'))
+            Price(97.000, 3),
+            Price(96.710, 3),
+            Price(86.000, 3))
 
         # Act
         strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
@@ -199,15 +199,15 @@ class BacktestExecClientTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('96.711'))
+            Price(96.711, 3))
 
         strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Act
-        strategy.modify_order(order, order.quantity, Price('96.714'))
+        strategy.modify_order(order, order.quantity, Price(96.714, 3))
 
         # Assert
-        self.assertEqual(Price('96.714'), strategy.order(order.id).price)
+        self.assertEqual(Price(96.714, 3), strategy.order(order.id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
@@ -223,15 +223,15 @@ class BacktestExecClientTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('85.000'))
+            Price(85.000, 3))
 
         strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Act
-        strategy.modify_order(atomic_order.stop_loss, atomic_order.entry.quantity, Price('85.100'))
+        strategy.modify_order(atomic_order.stop_loss, atomic_order.entry.quantity, Price(85.100, 3))
 
         # Assert
-        self.assertEqual(Price('85.100'), strategy.order(atomic_order.stop_loss.id).price)
+        self.assertEqual(Price(85.100, 3), strategy.order(atomic_order.stop_loss.id).price)
         self.assertEqual(8, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderModified))
 
@@ -271,7 +271,7 @@ class BacktestExecClientTests(unittest.TestCase):
     #     # Assert
     #     self.assertEqual(5, strategy.object_storer.count)
     #     self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-    #     self.assertEqual(Price('90.004'), strategy.order(order.id).average_price)
+    #     self.assertEqual(Price(90.004, 3), strategy.order(order.id).average_price)
 
     def test_submit_order_with_no_market_rejects_order(self):
         # Arrange
@@ -284,7 +284,7 @@ class BacktestExecClientTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('80.000'))
+            Price(80.000, 3))
 
         # Act
         strategy.submit_order(order, strategy.position_id_generator.generate())
@@ -305,7 +305,7 @@ class BacktestExecClientTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('80.000'))
+            Price(80.000, 3))
 
         # Act
         strategy.submit_order(order, strategy.position_id_generator.generate())

@@ -56,13 +56,14 @@ class EMACrossPy(TradingStrategy):
         # Custom strategy variables
         self.symbol = symbol
         self.bar_type = BarType(symbol, bar_spec)
+        self.precision = 5          # dummy initial value for FX
         self.risk_bp = risk_bp
-        self.entry_buffer = 0  # instrument.tick_size
-        self.SL_buffer = 0  # instrument.tick_size * 10
+        self.entry_buffer = 0.0     # instrument.tick_size
+        self.SL_buffer = 0.0        # instrument.tick_size * 10
         self.SL_atr_multiple = sl_atr_multiple
 
-        self.instrument = None
-        self.position_sizer = None
+        self.instrument = None      # initialized in on_start()
+        self.position_sizer = None  # initialized in on_start()
 
         # Track spreads
         self.spreads = deque(maxlen=100)
@@ -83,8 +84,9 @@ class EMACrossPy(TradingStrategy):
         """
         # Put custom code to be run on strategy start here (or pass)
         self.instrument = self.get_instrument(self.symbol)
-        self.entry_buffer = self.instrument.tick_size
-        self.SL_buffer = self.instrument.tick_size * 10
+        self.precision = self.instrument.tick_precision
+        self.entry_buffer = self.instrument.tick_size.value
+        self.SL_buffer = self.instrument.tick_size.value * 10.0
         self.position_sizer = FixedRiskSizer(self.instrument)
 
         self.request_bars(self.bar_type)
@@ -114,29 +116,29 @@ class EMACrossPy(TradingStrategy):
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
-        # Check indicators warm
+        # Check if indicators ready
         if not self.indicators_initialized():
             return  # Wait for indicators to warm up...
 
-        # Check has ticks
+        # Check if tick data available
         if not self.has_ticks(self.symbol):
             return  # Wait for ticks...
 
+        # Calculate average spread
         average_spread = np.mean(self.spreads)
 
         # Check market liquidity
-        if self.atr.value / average_spread < 2.:
-            return  # Market not liquid...
-
-        last_tick = self.tick(self.symbol, 0)
-        spread = last_tick.bid - last_tick.ask
+        if average_spread == 0.0:
+            return # No market...
+        if self.atr.value / average_spread < 2.0:
+            return # Not liquid enough...
 
         if self.count_orders_working() == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(bar.high + self.entry_buffer + spread)
+                price_entry = Price(bar.high + self.entry_buffer + average_spread)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
@@ -172,7 +174,7 @@ class EMACrossPy(TradingStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer)
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + spread)
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 if self.instrument.security_type == SecurityType.FOREX:
@@ -219,7 +221,7 @@ class EMACrossPy(TradingStrategy):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + spread)
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + average_spread)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 

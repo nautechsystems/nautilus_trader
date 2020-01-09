@@ -50,7 +50,7 @@ cpdef Price convert_string_to_price(str price_string):
     :param price_string: The price string to convert.
     :return Price or None.
     """
-    return None if price_string == NONE else Price.from_string_price(price_string)
+    return None if price_string == NONE else Price.from_string(price_string)
 
 cpdef Label convert_string_to_label(str label_string):
     """

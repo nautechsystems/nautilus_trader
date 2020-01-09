@@ -32,9 +32,8 @@ from nautilus_trader.model.events cimport (
     OrderWorking,
     OrderExpired,
     OrderModified,
-    OrderCancelled,
-    OrderCancelReject)
-from nautilus_trader.model.identifiers cimport Label, Symbol, IdTag, OrderId, ExecutionId, PositionIdBroker
+    OrderCancelled)
+from nautilus_trader.model.identifiers cimport Label, Symbol, IdTag, OrderId, ExecutionId
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
 
@@ -152,7 +151,6 @@ cdef class Order:
         Return an order from the given initialized event.
         
         :param event: The event to initialize with.
-        
         :return Order.
         """
         return Order(
@@ -174,7 +172,6 @@ cdef class Order:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
-        
         :return bool.
         """
         return self.id.equals(other.id)
@@ -184,7 +181,6 @@ cdef class Order:
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
-
         :return bool.
         """
         return self.equals(other)
@@ -194,7 +190,6 @@ cdef class Order:
         Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
-
         :return bool.
         """
         return not self.equals(other)
@@ -274,7 +269,7 @@ cdef class Order:
         :raises ConditionFailed: If the order account_id is not None and is not equal to the event.account_id.
         """
         Condition.equals(self.id, event.order_id, 'id', 'event.order_id')
-        if self.account_id is not None:
+        if self.account_id:
             Condition.equals(self.account_id, event.account_id, 'account_id', 'event.account_id')
 
         # Update events
@@ -345,9 +340,9 @@ cdef class Order:
             return
 
         if self.side == OrderSide.BUY:
-            self.slippage = self.average_price.subtract(self.price)
+            self.slippage = Decimal(self.average_price - self.price, self.average_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = self.price.subtract(self.average_price)
+            self.slippage = Decimal(self.price - self.average_price, self.average_price.precision)
 
 
 cdef class AtomicOrder:

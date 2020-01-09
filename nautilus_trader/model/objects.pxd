@@ -25,38 +25,41 @@ cdef class Quantity:
     cdef str to_string_formatted(self)
 
 
-cdef class Decimal:
+cdef class RoundedFloat:
     cdef readonly float value
     cdef readonly int precision
 
     @staticmethod
+    cdef int precision_from_string(str value)
+    cdef bint equals(self, RoundedFloat other)
+    cdef str to_string(self)
+
+
+cdef class Decimal(RoundedFloat):
+    @staticmethod
     cdef Decimal zero()
     @staticmethod
     cdef Decimal from_string(str value)
-    @staticmethod
-    cdef int precision_from_string(str value)
-    cdef bint equals(self, Decimal other)
-    cdef str to_string(self)
     cpdef Decimal add(self, Decimal other)
     cpdef Decimal subtract(self, Decimal other)
     cpdef Decimal divide(self, Decimal other)
     cpdef Decimal multiply(self, Decimal other)
 
 
-cdef class Price(Decimal):
+cdef class Price(RoundedFloat):
     @staticmethod
-    cdef Price from_string_price(str value)
-    cpdef Price add_price(self, Price price)
-    cpdef Price subtract_price(self, Price price)
+    cdef Price from_string(str value)
+    cpdef Price add(self, Price price)
+    cpdef Price subtract(self, Price price)
 
 
-cdef class Money(Decimal):
+cdef class Money(RoundedFloat):
     @staticmethod
     cdef Money zero()
     @staticmethod
-    cdef Money from_string_money(str value)
-    cpdef Money add_money(self, Money other)
-    cpdef Money subtract_money(self, Money other)
+    cdef Money from_string(str value)
+    cpdef Money add(self, Money other)
+    cpdef Money subtract(self, Money other)
 
 
 cdef class Tick:

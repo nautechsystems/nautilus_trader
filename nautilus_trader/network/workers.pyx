@@ -72,7 +72,6 @@ cdef class MQWorker:
     cpdef void disconnect(self) except *:
         """
         Disconnect from the service.
-        :return 
         """
         self._zmq_socket.disconnect(self._service_address)
         self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")
