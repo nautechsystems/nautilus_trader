@@ -8,8 +8,6 @@
 
 import unittest
 
-from decimal import Decimal
-
 from nautilus_trader.core.correctness import ConditionFailed, PyCondition
 from nautilus_trader.model.identifiers import OrderId, PositionId
 

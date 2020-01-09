@@ -11,7 +11,6 @@
 import iso8601
 import re
 
-from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -22,8 +21,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Venue
 
 
-cdef Quantity ZERO_QUANTITY = Quantity(0)
-
+cdef Quantity _ZERO_QUANTITY = Quantity(0)
 
 cdef class Quantity:
     """
@@ -42,13 +40,13 @@ cdef class Quantity:
         self.value = value
 
     @staticmethod
-    def zero() -> Quantity:
+    cdef Quantity zero():
         """
         Return a quantity of zero.
         
         :return Quantity.
         """
-        return ZERO_QUANTITY
+        return _ZERO_QUANTITY
 
     cdef bint equals(self, Quantity other):
         """
@@ -175,55 +173,59 @@ cdef class Quantity:
         return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
 
 
-cdef inline str _get_decimal_str(float value, int precision):
-    return f'{value:.{precision}f}'
+cdef Decimal _ZERO_DECIMAL = Decimal(0, 0)
 
-
-cdef inline int _get_precision(str value):
-    cdef tuple partitioned
-    if value.__contains__('.'):
-        partitioned = value.rpartition('.')
-        return len(partitioned[2])
-    else:
-        return 0
-
-
-cdef class Price:
+cdef class Decimal:
     """
-    Represents a financial market price.
+    Represents a number with a specified decimal precision.
     """
 
-    def __init__(self, object value, int precision=0):
+    def __init__(self, float value, int precision):
         """
-        Initializes a new instance of the Price class.
+        Initializes a new instance of the Decimal class.
 
-        :param value: The value of the price (> 0).
-        Note: Can be str, float, int or Decimal only.
-        :raises TypeError: If the value is not a str, float, int or Decimal.
-        :raises InvalidOperation: If the value str is malformed.
-        :raises ConditionFailed: If the value is not positive (> 0).
-        :raises ConditionFailed: If the value is int or float and the precision is not positive (> 0).
+        :param value: The value of the price (>= 0).
+        :raises ConditionFailed: If the value is negative (< 0).
+        :raises ConditionFailed: If the precision is negative (< 0).
         """
-        if isinstance(value, str):
-            self.value = Decimal(value)
-            self.precision = _get_precision(value)
-        elif isinstance(value, float):
-            Condition.positive_int(precision, 'precision')
-            self.value = Decimal(_get_decimal_str(value, precision))
-            self.precision = precision
-        elif isinstance(value, int):
-            Condition.positive_int(precision, 'precision')
-            self.value = Decimal(_get_decimal_str(float(value), precision))
-            self.precision = precision
-        elif isinstance(value, Decimal):
-            self.value = value
-            self.precision = _get_precision(str(value))
-        else:
-            raise TypeError(f'Cannot initialize a Price with a {type(value)}.')
+        Condition.not_negative_int(precision, 'precision')
 
-        Condition.positive(self.value, 'value')
+        self.value = round(value, precision)
+        self.precision = precision
 
-    cdef bint equals(self, Price other):
+    @staticmethod
+    cdef Decimal zero():
+        """
+        Return a zero valued decimal.
+        
+        :return Money.
+        """
+        return _ZERO_DECIMAL
+
+    @staticmethod
+    cdef Decimal from_string(str value):
+        """
+        Return a decimal from the given string. Precision will be inferred from the
+        number of digits after the decimal place.
+
+        :param value: The string value to parse.
+
+        :return: Decimal.
+        """
+        return Decimal(float(value), Decimal.precision_from_string(value))
+
+    @staticmethod
+    cdef int precision_from_string(str value):
+        """
+        Return the decimal precision inferred from the number of digits after the decimal place.
+
+        :param value: The string value to parse.
+
+        :return: Price.
+        """
+        return len(value.rpartition('.')[2])
+
+    cdef bint equals(self, Decimal other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -232,133 +234,7 @@ cdef class Price:
         """
         return self.value == other.value
 
-    def __eq__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.equals(other)
-
-    def __ne__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return not self.equals(other)
-
-    def __lt__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value < other.value
-
-    def __le__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value <= other.value
-
-    def __gt__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value > other.value
-
-    def __ge__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value >= other.value
-
-    def __add__(self, other) -> Decimal:
-        """
-        Return the result of adding the given object to this object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) + other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) + float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) + other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot add {type(other)} to a price.")
-
-    def __sub__(self, other) -> Decimal:
-        """
-        Return the result of subtracting the given object from this object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) - other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) - float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) - other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot subtract {type(other)} from a price.")
-
-    def __truediv__(self, other) -> Decimal:
-        """
-        Return the result of dividing this object by the given object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) / other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) / float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) / other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot divide price by {type(other)}.")
-
-    def __mul__(self, other) -> Decimal:
-        """
-        Return the result of multiplying this object by the given object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) * other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) * float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) * other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot multiply price with {type(other)}.")
-
-    def __hash__(self) -> int:
-        """"
-         Return a hash representation of this object.
-
-        :return int.
-        """
-        return hash(self.value)
-
-    def __str__(self) -> str:
+    cdef str to_string(self):
         """
         Return a string representation of this object.
 
@@ -366,89 +242,43 @@ cdef class Price:
         """
         return f'{self.value:,.{self.precision}f}'
 
-    def __repr__(self) -> str:
+    cpdef Decimal add(self, Decimal other):
         """
-        Return a string representation of this object which includes the objects
-        location in memory.
+        Return a new decimal by adding the given decimal to this decimal.
 
-        :return str.
+        :param other: The other decimal to add.
+        :return Decimal.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        return Decimal(self.value + other.value, max(self.precision, other.precision))
 
-    cpdef Price add(self, Price price):
+    cpdef Decimal subtract(self, Decimal other):
         """
-        Return a new price by adding the given price to this price.
+        Return a new decimal by subtracting the given decimal from this decimal.
 
-        :param price: The other price to add.
-        :return Price.
-        :raises ConditionFailed: If the precision of the prices are not equal.
+        :param other: The other decimal to subtract.
+        :return Decimal.
         """
-        Condition.true(self.precision == price.precision, 'self.precision == price.precision')
+        return Decimal(self.value - other.value, max(self.precision, other.precision))
 
-        return Price(self.value + price.value)
-
-    cpdef Price subtract(self, Price price):
+    cpdef Decimal divide(self, Decimal other):
         """
-        Return a new price by subtracting the given price from this price.
+        Return a new decimal by dividing this decimal by the given decimal.
 
-        :param price: The other price to subtract.
-        :return Price.
-        :raises ConditionFailed: If the precision of the prices are not equal.
+        :param other: The denominator decimal.
+        :return Decimal.
         """
-        Condition.true(self.precision == price.precision, 'self.precision == price.precision')
+        return Decimal(self.value / other.value, max(self.precision, other.precision))
 
-        return Price(self.value - price.value)
-
-    cpdef float as_float(self):
+    cpdef Decimal multiply(self, Decimal other):
         """
-        Return a float representation of the price.
-        
-        :return float.
+        Return a new decimal by multiplying this decimal by the given decimal.
+
+        :param other: The other decimal to multiply.
+        :return Decimal.
         """
-        return float(self.value)
+        return Decimal(self.value * other.value, max(self.precision, other.precision))
 
-
-cdef Money ZERO_MONEY = Money(Decimal('0.00'))
-
-
-cdef class Money:
-    """
-    Represents money.
-    """
-
-    def __init__(self, object value):
-        """
-        Initializes a new instance of the Money class.
-
-        :param value: The value of the money.
-        Note: Value is rounded to 2 decimal places of precision.
-        """
-        cdef str value_str
-        if isinstance(value, str):
-            value_str = value.replace(',', '')
-            self.value = Decimal(f'{float(value_str):.2f}')
-        else:
-            self.value = Decimal(f'{value:.2f}')
-
-    @staticmethod
-    def zero() -> Money:
-        """
-        Return money with a zero amount.
-        
-        :return Money.
-        """
-        return ZERO_MONEY
-
-    cdef bint equals(self, Money other):
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value == other.value
-
-    def __eq__(self, Money other) -> bool:
+    def __eq__(self, Decimal other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -457,7 +287,7 @@ cdef class Money:
         """
         return self.equals(other)
 
-    def __ne__(self, Money other) -> bool:
+    def __ne__(self, Decimal other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
@@ -466,7 +296,7 @@ cdef class Money:
         """
         return not self.equals(other)
 
-    def __lt__(self, Money other) -> bool:
+    def __lt__(self, Decimal other) -> bool:
         """
         Return a value indicating whether this object is less than (<) the given object.
 
@@ -475,7 +305,7 @@ cdef class Money:
         """
         return self.value < other.value
 
-    def __le__(self, Money other) -> bool:
+    def __le__(self, Decimal other) -> bool:
         """
         Return a value indicating whether this object is less than or equal to (<=) the given object.
 
@@ -484,7 +314,7 @@ cdef class Money:
         """
         return self.value <= other.value
 
-    def __gt__(self, Money other) -> bool:
+    def __gt__(self, Decimal other) -> bool:
         """
         Return a value indicating whether this object is greater than (>) the given object.
 
@@ -493,7 +323,7 @@ cdef class Money:
         """
         return self.value > other.value
 
-    def __ge__(self, Money other) -> bool:
+    def __ge__(self, Decimal other) -> bool:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
@@ -502,69 +332,53 @@ cdef class Money:
         """
         return self.value >= other.value
 
-    def __add__(self, other) -> Money:
+    def __add__(self, other) -> float:
         """
         Return the result of adding the given object to this object.
 
         :param other: The other object.
-        :return Money.
+        :return Decimal.
         """
-        if isinstance(other, Money):
-            return Money(self.value + other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value + other)
-        elif isinstance(other, int):
-            return self + Money(other)
+        if isinstance(other, Decimal):
+            return round(self.value + other.value, max(self.precision, other.precision))
         else:
-            raise NotImplementedError(f"Cannot add {type(other)} to money.")
+            return round(self.value + other, self.precision)
 
-    def __sub__(self, other) -> Money:
+    def __sub__(self, other) -> float:
         """
         Return the result of subtracting the given object from this object.
 
         :param other: The other object.
-        :return Money.
+        :return Decimal.
         """
-        if isinstance(other, Money):
-            return Money(self.value - other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value - other)
-        elif isinstance(other, int):
-            return self - Money(other)
+        if isinstance(other, Decimal):
+            return round(self.value - other.value, max(self.precision, other.precision))
         else:
-            raise NotImplementedError(f"Cannot subtract {type(other)} from money.")
+            return round(self.value - other, self.precision)
 
-    def __truediv__(self, other) -> Money:
+    def __truediv__(self, other) -> float:
         """
         Return the result of dividing this object by the given object.
 
         :param other: The other object.
-        :return Money.
+        :return Decimal.
         """
-        if isinstance(other, Money):
-            return Money(self.value / other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value / other)
-        elif isinstance(other, int):
-            return self / Money(other)
+        if isinstance(other, Decimal):
+            return round(self.value / other.value, max(self.precision, other.precision))
         else:
-            raise NotImplementedError(f"Cannot divide money by {type(other)}.")
+            return round(self.value / other, self.precision)
 
-    def __mul__(self, other) -> Money:
+    def __mul__(self, other) -> float:
         """
-        Return the result of multiplying the given object by this object.
+        Return the result of multiplying this object by the given object.
 
         :param other: The other object.
-        :return Money.
+        :return Decimal.
         """
-        if isinstance(other, Money):
-            return Money(self.value * other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value * other)
-        elif isinstance(other, int):
-            return self * Money(other)
+        if isinstance(other, Decimal):
+            return round(self.value * other.value, max(self.precision, other.precision))
         else:
-            raise NotImplementedError(f"Cannot multiply money with {type(other)}.")
+            return round(self.value * other, self.precision)
 
     def __hash__(self) -> int:
         """"
@@ -580,7 +394,7 @@ cdef class Money:
 
         :return str.
         """
-        return f'{self.value:,.2f}'
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -589,15 +403,116 @@ cdef class Money:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({str(self)}, precision={self.precision}) object at {id(self)}>"
 
-    cpdef float as_float(self):
+
+cdef class Price(Decimal):
+    """
+    Represents a price of a financial market instrument.
+    """
+
+    def __init__(self, float value, int precision):
         """
-        Return a float representation of this object.
+        Initializes a new instance of the Price class.
+
+        :param value: The value of the price (>= 0).
+        :raises ConditionFailed: If the value is negative (< 0).
+        :raises ConditionFailed: If the precision is negative (< 0).
+        """
+        Condition.not_negative(value, 'value')
+        # Condition: precision checked in base class
+        super().__init__(value, precision)
+
+    @staticmethod
+    cdef Price from_string_price(str value):
+        """
+        Return a price from the given string. Precision will be inferred from the
+        number of digits after the decimal place.
+
+        :param value: The string value to parse.
+
+        :return: Price.
+        """
+        return Price(float(value), precision=Decimal.precision_from_string(value))
+
+    cpdef Price add_price(self, Price other):
+        """
+        Return a new price by adding the given price to this price.
+
+        :param other: The other price to add.
+        :return Price.
+        :raises ConditionFailed: If the precision of the prices are not equal.
+        """
+        Condition.true(self.precision == other.precision, 'self.precision == other.precision')
+
+        return Price(self.value + other.value, self.precision)
+
+    cpdef Price subtract_price(self, Price other):
+        """
+        Return a new price by subtracting the given price from this price.
+
+        :param other: The other price to subtract.
+        :return Price.
+        :raises ConditionFailed: If the precision of the prices are not equal.
+        """
+        Condition.true(self.precision == other.precision, 'self.precision == other.precision')
+
+        return Price(self.value - other.value, self.precision)
+
+
+cdef Money _ZERO_MONEY = Money(0)
+
+cdef class Money(Decimal):
+    """
+    Represents the 'concept' of money.
+    """
+
+    def __init__(self, float value):
+        """
+        Initializes a new instance of the Money class.
+
+        :param value: The value of the money.
+        Note: Value is rounded to 2 decimal places of precision.
+        """
+        super().__init__(value, precision=2)
+
+    @staticmethod
+    cdef Money zero():
+        """
+        Return money with a zero amount.
         
-        :return float.
+        :return Money.
         """
-        return float(self.value)
+        return _ZERO_MONEY
+
+    @staticmethod
+    cdef Money from_string_money(str value):
+        """
+        Return money with a zero amount.
+        
+        :param value: The string value to parse.
+
+        :return Money.
+        """
+        return Money(float(value), precision=2)
+
+    cpdef Money add_money(self, Money other):
+        """
+        Return new money by adding the given money to this money.
+
+        :param other: The other money to add.
+        :return Money.
+        """
+        return Money(self.value + other.value)
+
+    cpdef Money subtract_money(self, Money other):
+        """
+        Return new money by subtracting the given money from this money.
+
+        :param other: The other money to subtract.
+        :return Money.
+        """
+        return Money(self.value - other.value)
 
 
 cdef class Tick:
@@ -622,8 +537,8 @@ cdef class Tick:
         :param timestamp: The tick timestamp (UTC).
         :param tick_type: The optional tick type (default=TRADE).
         :param tick_type: The optional tick type (default=TRADE).
-        :raises ConditionFailed: If the bid_size price is negative (< 0).
-        :raises ConditionFailed: If the ask_size price is negative (< 0).
+        :raises ConditionFailed: If the bid_size is negative (< 0).
+        :raises ConditionFailed: If the ask_size is negative (< 0).
         """
         Condition.not_negative_int(bid_size, 'bid_size')
         Condition.not_negative_int(ask_size, 'ask_size')
@@ -734,8 +649,8 @@ cdef class Tick:
 
         return Tick(
             symbol,
-            Price(split_values[0]),
-            Price(split_values[1]),
+            Price.from_string_price(split_values[0]),
+            Price.from_string_price(split_values[1]),
             iso8601.parse_date(split_values[2]))
 
     @staticmethod
@@ -750,8 +665,8 @@ cdef class Tick:
 
         return Tick(
             Symbol.from_string(split_values[0]),
-            Price(split_values[1]),
-            Price(split_values[2]),
+            Price.from_string_price(split_values[1]),
+            Price.from_string_price(split_values[2]),
             iso8601.parse_date(split_values[3]))
 
     @staticmethod
@@ -1125,10 +1040,10 @@ cdef class Bar:
         """
         cdef list split_bar = value.split(',', maxsplit=5)
 
-        return Bar(Price(split_bar[0]),
-                   Price(split_bar[1]),
-                   Price(split_bar[2]),
-                   Price(split_bar[3]),
+        return Bar(Price.from_string_price(split_bar[0]),
+                   Price.from_string_price(split_bar[1]),
+                   Price.from_string_price(split_bar[2]),
+                   Price.from_string_price(split_bar[3]),
                    long(split_bar[4]),
                    iso8601.parse_date(split_bar[5]))
 
@@ -1230,7 +1145,7 @@ cdef class Instrument:
                  Currency base_currency,
                  SecurityType security_type,
                  int tick_precision,
-                 object tick_size,
+                 Decimal tick_size,
                  Quantity round_lot_size,
                  int min_stop_distance_entry,
                  int min_stop_distance,
@@ -1263,7 +1178,7 @@ cdef class Instrument:
         """
         Condition.valid_string(broker_symbol, 'broker_symbol')
         Condition.not_negative_int(tick_precision, 'tick_precision')
-        Condition.positive(tick_size, 'tick_size')
+        Condition.positive(tick_size.value, 'tick_size.value')
         Condition.not_negative_int(min_stop_distance_entry, 'min_stop_distance_entry')
         Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
         Condition.not_negative_int(min_stop_distance, 'min_stop_distance')

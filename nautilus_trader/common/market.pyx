@@ -540,7 +540,7 @@ cdef class BarBuilder:
 
     cdef Price _get_price(self, Tick tick):
         if self.bar_spec.price_type == PriceType.MID:
-            return Price((tick.bid.value + tick.ask.value) / 2)
+            return Price((tick.bid.value + tick.ask.value) / 2, tick.bid.precision + 1)
         elif self.bar_spec.price_type == PriceType.BID:
             return tick.bid
         elif self.bar_spec.price_type == PriceType.ASK:

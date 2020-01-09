@@ -79,4 +79,4 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
-    cdef Money _calculate_pnl(self, MarketPosition direction, open_price, close_price, Quantity quantity, float exchange_rate)
+    cdef Money _calculate_pnl(self, MarketPosition direction, float open_price, float close_price, Quantity quantity, float exchange_rate)

@@ -9,7 +9,6 @@
 import unittest
 import timeit
 
-from decimal import Decimal
 from time import time
 
 from nautilus_trader.model.objects import Price

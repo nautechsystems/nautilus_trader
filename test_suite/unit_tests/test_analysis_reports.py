@@ -9,7 +9,6 @@
 import unittest
 import uuid
 
-from decimal import Decimal
 from datetime import timedelta
 
 from nautilus_trader.core.types import GUID

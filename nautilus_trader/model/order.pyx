@@ -9,7 +9,6 @@
 import uuid
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 from typing import Set, List
 
 from nautilus_trader.core.correctness cimport Condition
@@ -20,7 +19,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_s
 from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose, order_purpose_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
-from nautilus_trader.model.objects cimport Quantity, Symbol, Price
+from nautilus_trader.model.objects cimport Quantity, Decimal, Price
 from nautilus_trader.model.events cimport (
     OrderEvent,
     OrderFillEvent,
@@ -35,7 +34,7 @@ from nautilus_trader.model.events cimport (
     OrderModified,
     OrderCancelled,
     OrderCancelReject)
-from nautilus_trader.model.identifiers cimport Label, IdTag, OrderId, ExecutionId, PositionIdBroker
+from nautilus_trader.model.identifiers cimport Label, Symbol, IdTag, OrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
 
@@ -117,10 +116,10 @@ cdef class Order:
         self.purpose = order_purpose
         self.time_in_force = time_in_force
         self.expire_time = expire_time      # Can be None
-        self.filled_quantity = Quantity(0)
+        self.filled_quantity = Quantity.zero()
         self.filled_timestamp = None        # Can be None
         self.average_price = None           # Can be None
-        self.slippage = Decimal(0.0)
+        self.slippage = Decimal.zero()
         self.state = OrderState.INITIALIZED
         self.init_id = GUID(uuid.uuid4()) if init_id is None else init_id
         self.is_buy = self.side == OrderSide.BUY
@@ -346,13 +345,9 @@ cdef class Order:
             return
 
         if self.side == OrderSide.BUY:
-            self.slippage = self.average_price - self.price
+            self.slippage = self.average_price.subtract(self.price)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = self.price - self.average_price
-
-        # Avoids negative zero (-0.00000)
-        if self.slippage == 0:
-            self.slippage = Decimal(0)
+            self.slippage = self.price.subtract(self.average_price)
 
 
 cdef class AtomicOrder:

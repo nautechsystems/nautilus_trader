@@ -10,11 +10,10 @@ import iso8601
 
 from bson import BSON
 from bson.raw_bson import RawBSONDocument
-from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Quantity, Price, Tick, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Decimal, Price, Tick, Bar, Instrument
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport security_type_to_string, security_type_from_string
 from nautilus_trader.serialization.constants cimport *
@@ -215,7 +214,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             base_currency=currency_from_string(deserialized[BASE_CURRENCY]),
             security_type=security_type_from_string(deserialized[SECURITY_TYPE]),
             tick_precision=deserialized[TICK_PRECISION],
-            tick_size=Decimal(str(deserialized[TICK_SIZE])),
+            tick_size=Decimal.from_string(deserialized[TICK_SIZE]),
             round_lot_size=Quantity(deserialized[ROUND_LOT_SIZE]),
             min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
             min_stop_distance=deserialized[MIN_STOP_DISTANCE],
@@ -223,8 +222,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
             min_trade_size=Quantity(deserialized[MIN_TRADE_SIZE]),
             max_trade_size=Quantity(deserialized[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal(str(deserialized[ROLL_OVER_INTEREST_BUY])),
-            rollover_interest_sell=Decimal(str(deserialized[ROLL_OVER_INTEREST_SELL])),
+            rollover_interest_buy=Decimal.from_string(deserialized[ROLL_OVER_INTEREST_BUY]),
+            rollover_interest_sell=Decimal.from_string(deserialized[ROLL_OVER_INTEREST_SELL]),
             timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
 

@@ -8,7 +8,6 @@
 
 import uuid
 
-from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.core.types import GUID, ValidString
@@ -22,6 +21,7 @@ from nautilus_trader.model.enums import (
     OrderSide)
 from nautilus_trader.model.objects import (
     Quantity,
+    Decimal,
     Money,
     Price,
     Tick,
@@ -103,7 +103,7 @@ class TestStubs:
             Currency.USD,
             SecurityType.FOREX,
             tick_precision=5,
-            tick_size=Decimal('0.00001'),
+            tick_size=Decimal(0.00001, 5),
             round_lot_size=Quantity(1000),
             min_stop_distance_entry=0,
             min_limit_distance_entry=0,
@@ -111,8 +111,8 @@ class TestStubs:
             min_limit_distance=0,
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
+            rollover_interest_buy=Decimal(0, 0),
+            rollover_interest_sell=Decimal(0, 0),
             timestamp=UNIX_EPOCH)
 
     @staticmethod
@@ -123,16 +123,16 @@ class TestStubs:
             Currency.JPY,
             SecurityType.FOREX,
             tick_precision=3,
-            tick_size=Decimal('0.001'),
+            tick_size=Decimal(0.001, 3),
             round_lot_size=Quantity(1000),
-            min_stop_distance_entry=Decimal(),
-            min_limit_distance_entry=Decimal(),
-            min_stop_distance=Decimal(),
-            min_limit_distance=Decimal(),
+            min_stop_distance_entry=0,
+            min_limit_distance_entry=0,
+            min_stop_distance=0,
+            min_limit_distance=0,
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
+            rollover_interest_buy=Decimal(0, 0),
+            rollover_interest_sell=Decimal(0, 0),
             timestamp=UNIX_EPOCH)
 
     @staticmethod
@@ -181,27 +181,27 @@ class TestStubs:
 
     @staticmethod
     def bar_5decimal() -> Bar:
-        return Bar(Price('1.00002'),
-                   Price('1.00004'),
-                   Price('1.00001'),
-                   Price('1.00003'),
+        return Bar(Price(1.00002, 5),
+                   Price(1.00004, 5),
+                   Price(1.00001, 5),
+                   Price(1.00003, 5),
                    100000,
                    UNIX_EPOCH)
 
     @staticmethod
     def bar_3decimal() -> Bar:
-        return Bar(Price('90.002'),
-                   Price('90.004'),
-                   Price('90.001'),
-                   Price('90.003'),
+        return Bar(Price(90.002, 3),
+                   Price(90.004, 3),
+                   Price(90.001, 3),
+                   Price(90.003, 3),
                    100000,
                    UNIX_EPOCH)
 
     @staticmethod
     def tick_3decimal(symbol) -> Tick:
         return Tick(symbol,
-                    Price('90.002'),
-                    Price('90.003'),
+                    Price(90.002, 3),
+                    Price(90.003, 3),
                     UNIX_EPOCH)
 
     @staticmethod
@@ -221,16 +221,16 @@ class TestStubs:
             Currency.USD,
             Money(1000000),
             Money(1000000),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal(0),
+            Money(0),
+            Money(0),
+            Money(0),
+            Decimal(0, 0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_filled(order, fill_price=Price('1.00000')) -> OrderFilled:
+    def event_order_filled(order, fill_price=Price(1.00000, 5)) -> OrderFilled:
         return OrderFilled(
             TestStubs.account_id(),
             order.id,
@@ -246,7 +246,7 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_working(order, working_price=Price('1.00000')) -> OrderWorking:
+    def event_order_working(order, working_price=Price(1.00000, 5)) -> OrderWorking:
         return OrderWorking(
             TestStubs.account_id(),
             order.id,
@@ -291,7 +291,7 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def position(number=1, entry_price=Price('1.00000')) -> Position:
+    def position(number=1, entry_price=Price(1.00000, 5)) -> Position:
         clock = TestClock()
 
         generator = PositionIdGenerator(
@@ -320,7 +320,7 @@ class TestStubs:
         return position
 
     @staticmethod
-    def position_which_is_closed(number=1, close_price=Price('1.00010')) -> Position:
+    def position_which_is_closed(number=1, close_price=Price(1.00010, 5)) -> Position:
         clock = TestClock()
 
         position = TestStubs.position(number=number)

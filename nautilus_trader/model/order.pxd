@@ -15,10 +15,11 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.model.objects cimport Quantity, Symbol, Price
+from nautilus_trader.model.objects cimport Quantity, Decimal, Price
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized
 from nautilus_trader.model.identifiers cimport (
     Label,
+    Symbol,
     OrderId,
     OrderIdBroker,
     AtomicOrderId,
@@ -51,7 +52,7 @@ cdef class Order:
     cdef readonly Quantity filled_quantity
     cdef readonly datetime filled_timestamp
     cdef readonly Price average_price
-    cdef readonly object slippage
+    cdef readonly Decimal slippage
     cdef readonly GUID init_id
     cdef readonly OrderEvent last_event
     cdef readonly int event_count

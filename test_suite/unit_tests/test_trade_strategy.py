@@ -182,10 +182,10 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -210,10 +210,10 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -226,10 +226,10 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_bar(self):
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -244,10 +244,10 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_last_bar(self):
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -270,8 +270,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag='001')
 
         tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
-                    Price('1.00000'),
-                    Price('1.00001'),
+                    Price(1.00000, 5),
+                    Price(1.00001, 5),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy.handle_tick(tick)
@@ -378,10 +378,10 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1(bar_type)
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -423,8 +423,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         tick = Tick(Symbol('USDJPY', Venue('FXCM')),
-                    Price('110.80000'),
-                    Price('110.80010'),
+                    Price(110.80000, 5),
+                    Price(110.80010, 5),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy.handle_tick(tick)
@@ -441,8 +441,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
-                    Price('0.80000'),
-                    Price('0.80010'),
+                    Price(0.80000, 5),
+                    Price(0.80010, 5),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy.handle_tick(tick)
@@ -707,10 +707,10 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TestStrategy1(bar_type)
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 

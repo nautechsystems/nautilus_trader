@@ -9,8 +9,6 @@
 import unittest
 import uuid
 
-from decimal import Decimal
-
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled

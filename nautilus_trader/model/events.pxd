@@ -15,7 +15,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.objects cimport Quantity, Price, Money
+from nautilus_trader.model.objects cimport Quantity, Decimal, Price, Money
 from nautilus_trader.model.identifiers cimport (
     Symbol,
     Label,
@@ -41,7 +41,7 @@ cdef class AccountStateEvent(Event):
     cdef readonly Money cash_activity_day
     cdef readonly Money margin_used_liquidation
     cdef readonly Money margin_used_maintenance
-    cdef readonly object margin_ratio
+    cdef readonly Decimal margin_ratio
     cdef readonly ValidString margin_call_status
 
 
