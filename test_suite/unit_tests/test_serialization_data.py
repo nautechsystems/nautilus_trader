@@ -52,8 +52,8 @@ class DataSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_ticks(self):
         # Arrange
         tick = Tick(AUDUSD_FXCM,
-                    Price('1.00000'),
-                    Price('1.00001'),
+                    Price(1.00000, 5),
+                    Price(1.00001, 5),
                     UNIX_EPOCH)
 
         data = self.mapper.map_ticks([tick])
@@ -74,10 +74,10 @@ class DataSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_bars(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        bar1 = Bar(Price('1.00001'),
-                   Price('1.00004'),
-                   Price('1.00002'),
-                   Price('1.00003'),
+        bar1 = Bar(Price(1.00001, 5),
+                   Price(1.00004, 5),
+                   Price(1.00002, 5),
+                   Price(1.00003, 5),
                    100000,
                    UNIX_EPOCH)
 
@@ -113,10 +113,10 @@ class DataSerializerTests(unittest.TestCase):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        bar1 = Bar(Price('1.00001'),
-                   Price('1.00004'),
-                   Price('1.00002'),
-                   Price('1.00003'),
+        bar1 = Bar(Price(1.00001, 5),
+                   Price(1.00004, 5),
+                   Price(1.00002, 5),
+                   Price(1.00003, 5),
                    100000,
                    UNIX_EPOCH)
 

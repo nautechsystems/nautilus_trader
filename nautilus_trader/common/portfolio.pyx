@@ -178,8 +178,8 @@ cdef class Portfolio:
 
         if position.entry_direction != fill_event.order_side:
             # Increment PNL
-            self.daily_pnl_realized += position.realized_pnl_last
-            self.total_pnl_realized += position.realized_pnl_last
+            self.daily_pnl_realized.add_money(position.realized_pnl_last)
+            self.total_pnl_realized.add_money(position.realized_pnl_last)
 
     cdef void _handle_position_closed(self, PositionClosed event):
         cdef Position position = event.position
@@ -208,5 +208,5 @@ cdef class Portfolio:
             positions_closed[position.id] = position
 
         # Increment PNL
-        self.daily_pnl_realized += position.realized_pnl
-        self.total_pnl_realized += position.realized_pnl
+        self.daily_pnl_realized.add_money(position.realized_pnl)
+        self.total_pnl_realized.add_money(position.realized_pnl)

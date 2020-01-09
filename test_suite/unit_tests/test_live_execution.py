@@ -122,7 +122,7 @@ class LiveExecutionTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('0.99900'))
+            Price(0.99900, 5))
 
         # Act
         self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
@@ -140,9 +140,9 @@ class LiveExecutionTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00010'),
-            Price('1.00000'),
-            Price('0.99900'))
+            Price(1.00010, 5),
+            Price(1.00000, 5),
+            Price(0.99900, 5))
 
         # Act
         self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
@@ -179,11 +179,11 @@ class LiveExecutionTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         # Act
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
-        self.strategy.modify_order(order, Quantity(110000), Price('1.00001'))
+        self.strategy.modify_order(order, Quantity(110000), Price(1.00001, 5))
 
         # Assert
         time.sleep(0.3)

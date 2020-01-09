@@ -29,7 +29,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_can_convert_price_to_string_from_decimal(self):
         # Arrange
         # Act
-        result = convert_price_to_string(Price('1.00000'))
+        result = convert_price_to_string(Price(1.00000, 5))
 
         # Assert
         self.assertEqual('1.00000', result)
@@ -48,7 +48,7 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_string_to_price('1.00000')
 
         # Assert
-        self.assertEqual(Price('1.00000'), result)
+        self.assertEqual(Price(1.00000, 5), result)
 
     def test_can_convert_datetime_to_string_from_none(self):
         # Arrange

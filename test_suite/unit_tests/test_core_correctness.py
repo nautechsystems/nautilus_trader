@@ -255,14 +255,12 @@ class ConditionTests(unittest.TestCase):
         # Assert
         self.assertRaises(ConditionFailed, PyCondition.not_negative, -float("inf"), "param")
         self.assertRaises(ConditionFailed, PyCondition.not_negative, -0.00000000000000001, "param")
-        self.assertRaises(ConditionFailed, PyCondition.not_negative, Decimal('-0.1'), "param")
 
     def test_condition_not_negative_when_args_zero_or_positive_does_nothing(self):
         # Arrange
         # Act
         # Assert
         PyCondition.not_negative(-0.0, "param")
-        PyCondition.not_negative(Decimal('0'), "param")
         PyCondition.not_negative(float("inf"), "param")
         self.assertTrue(True)  # ConditionFailed not raised
 
@@ -288,7 +286,6 @@ class ConditionTests(unittest.TestCase):
         self.assertRaises(ConditionFailed, PyCondition.positive, -0.0000000001, "param")
         self.assertRaises(ConditionFailed, PyCondition.positive, 0, "param")
         self.assertRaises(ConditionFailed, PyCondition.positive, 0., "param")
-        self.assertRaises(ConditionFailed, PyCondition.positive, Decimal('0'), "param")
 
     def test_condition_positive_when_args_positive_does_nothing(self):
         # Arrange
@@ -298,7 +295,6 @@ class ConditionTests(unittest.TestCase):
         PyCondition.positive(0.000000000000000000000000000000000001, "param")
         PyCondition.positive(1, "param")
         PyCondition.positive(1.0, "param")
-        PyCondition.positive(Decimal('1.0'), "param")
         self.assertTrue(True)  # AssertionError not raised
 
     def test_condition_positive_int_when_args_negative_or_zero_raises_condition_failed(self):
@@ -320,7 +316,6 @@ class ConditionTests(unittest.TestCase):
         # Act
         self.assertRaises(ConditionFailed, PyCondition.in_range, -0.000001, 0., 1., "param")
         self.assertRaises(ConditionFailed, PyCondition.in_range, 1.0000001, 0., 1., "param")
-        self.assertRaises(ConditionFailed, PyCondition.in_range, Decimal('-1.0'), 0, 1, "param")
 
     def test_condition_in_range_when_args_in_range_does_nothing(self):
         # Arrange

@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
-from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Decimal, Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.trade.strategy cimport TradingStrategy
@@ -279,8 +279,8 @@ cdef class EMACross(TradingStrategy):
     cdef readonly PositionSizer position_sizer
     cdef readonly float risk_bp
     cdef readonly float SL_atr_multiple
-    cdef readonly object entry_buffer
-    cdef readonly object SL_buffer
+    cdef readonly Decimal entry_buffer
+    cdef readonly Decimal SL_buffer
     cdef readonly object spreads
     cdef readonly ExponentialMovingAverage fast_ema
     cdef readonly ExponentialMovingAverage slow_ema
@@ -383,7 +383,7 @@ cdef class EMACross(TradingStrategy):
         if self.count_orders_working() == 0 and self.is_flat():
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(bar.high + self.entry_buffer)
+                price_entry = Price(bar.high.add_price(self.entry_buffer))
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 

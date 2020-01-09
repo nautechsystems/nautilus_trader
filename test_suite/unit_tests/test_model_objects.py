@@ -141,7 +141,7 @@ class ObjectTests(unittest.TestCase):
         result = repr(price)
 
         # Assert
-        self.assertTrue(result.startswith('<Price(1.00000) object at'))
+        self.assertTrue(result.startswith('<Price(1.00000, precision=5) object at'))
 
     def test_price_equality(self):
         # Arrange
@@ -310,7 +310,7 @@ class ObjectTests(unittest.TestCase):
         result = repr(money)
 
         # Assert
-        self.assertTrue(result.startswith('<Money(1.00) object at'))
+        self.assertTrue(result.startswith('<Money(1.00, precision=2) object at'))
 
     def test_money_equality(self):
         # Arrange
