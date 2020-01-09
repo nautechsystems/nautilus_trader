@@ -19,25 +19,44 @@ from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 cdef class Quantity:
     cdef readonly long value
 
+    @staticmethod
+    cdef Quantity zero()
     cdef bint equals(self, Quantity other)
     cdef str to_string_formatted(self)
 
 
-cdef class Price:
-    cdef readonly object value
+cdef class Decimal:
+    cdef readonly float value
     cdef readonly int precision
 
-    cdef bint equals(self, Price other)
-    cpdef Price add(self, Price price)
-    cpdef Price subtract(self, Price price)
-    cpdef float as_float(self)
+    @staticmethod
+    cdef Decimal zero()
+    @staticmethod
+    cdef Decimal from_string(str value)
+    @staticmethod
+    cdef int precision_from_string(str value)
+    cdef bint equals(self, Decimal other)
+    cdef str to_string(self)
+    cpdef Decimal add(self, Decimal other)
+    cpdef Decimal subtract(self, Decimal other)
+    cpdef Decimal divide(self, Decimal other)
+    cpdef Decimal multiply(self, Decimal other)
 
 
-cdef class Money:
-    cdef readonly object value
+cdef class Price(Decimal):
+    @staticmethod
+    cdef Price from_string_price(str value)
+    cpdef Price add_price(self, Price price)
+    cpdef Price subtract_price(self, Price price)
 
-    cdef bint equals(self, Money other)
-    cpdef float as_float(self)
+
+cdef class Money(Decimal):
+    @staticmethod
+    cdef Money zero()
+    @staticmethod
+    cdef Money from_string_money(str value)
+    cpdef Money add_money(self, Money other)
+    cpdef Money subtract_money(self, Money other)
 
 
 cdef class Tick:
@@ -108,7 +127,7 @@ cdef class Instrument:
     cdef readonly Currency base_currency
     cdef readonly SecurityType security_type
     cdef readonly int tick_precision
-    cdef readonly object tick_size
+    cdef readonly Decimal tick_size
     cdef readonly Quantity round_lot_size
     cdef readonly int min_stop_distance_entry
     cdef readonly int min_stop_distance

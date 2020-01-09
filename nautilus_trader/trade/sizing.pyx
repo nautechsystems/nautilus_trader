@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.objects cimport Quantity, Price, Money, Instrument
@@ -78,7 +76,7 @@ cdef class PositionSizer:
         
         :return int.
         """
-        return int(abs(entry - stop_loss) / self.instrument.tick_size)
+        return int(abs(entry - stop_loss) / self.instrument.tick_size.value)
 
     cdef Money _calculate_riskable_money(
             self,
@@ -93,10 +91,10 @@ cdef class PositionSizer:
         """
         if equity.value <= 0:
             return Money.zero()
-        cdef Money risk_money = Money(equity.value * Decimal(basis_points_as_percentage(risk_bp)))
-        cdef Money commission = Money(risk_money.value * Decimal(basis_points_as_percentage(commission_rate_bp)))
+        cdef Money risk_money = Money(equity.value * basis_points_as_percentage(risk_bp))
+        cdef Money commission = Money(risk_money.value * basis_points_as_percentage(commission_rate_bp))
 
-        return risk_money - commission
+        return risk_money.subtract_money(commission)
 
 
 cdef class FixedRiskSizer(PositionSizer):
@@ -157,7 +155,7 @@ cdef class FixedRiskSizer(PositionSizer):
         if risk_points <= 0:
             return Quantity(0)
 
-        cdef long position_size = long(long((((risk_money.value / Decimal(exchange_rate)) / risk_points) / self.instrument.tick_size)))
+        cdef long position_size = long(long((((risk_money.value / exchange_rate) / risk_points) / self.instrument.tick_size.value)))
 
         # Limit size
         if hard_limit > 0:

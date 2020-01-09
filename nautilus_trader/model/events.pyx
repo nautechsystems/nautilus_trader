@@ -42,7 +42,7 @@ cdef class AccountStateEvent(Event):
                  Money cash_activity_day,
                  Money margin_used_liquidation,
                  Money margin_used_maintenance,
-                 object margin_ratio,
+                 Decimal margin_ratio,
                  ValidString margin_call_status,
                  GUID event_id,
                  datetime event_timestamp):
@@ -61,7 +61,7 @@ cdef class AccountStateEvent(Event):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        Condition.not_negative_int(margin_ratio, 'margin_ratio')
+        Condition.not_negative(margin_ratio.value, 'margin_ratio')
 
         super().__init__(event_id, event_timestamp)
         self.account_id = account_id

@@ -86,7 +86,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderType.LIMIT,
             Quantity(100000),
             UNIX_EPOCH,
-            Price('1.00000'),
+            Price(1.00000, 5),
             label=None,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
@@ -109,7 +109,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderType.STOP_LIMIT,
             Quantity(100000),
             UNIX_EPOCH,
-            Price('1.00000'),
+            Price(1.00000, 5),
             Label('S1_SL'))
 
         # Act
@@ -130,7 +130,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderType.STOP_LIMIT,
             Quantity(100000),
             UNIX_EPOCH,
-            Price('1.00000'),
+            Price(1.00000, 5),
             label=None,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
@@ -207,7 +207,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('0.99900'))
+            Price(0.99900, 5))
 
         command = SubmitAtomicOrder(
             self.trader_id,
@@ -234,9 +234,9 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('0.99900'),
-            Price('1.00000'),
-            Price('1.00010'))
+            Price(0.99900, 5),
+            Price(1.00000, 5),
+            Price(1.00010, 5))
 
         command = SubmitAtomicOrder(
             self.trader_id,
@@ -264,7 +264,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.account_id,
             OrderId('O-123456'),
             Quantity(100000),
-            Price('1.00001'),
+            Price(1.00001, 5),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 

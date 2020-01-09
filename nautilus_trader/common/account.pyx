@@ -8,13 +8,11 @@
 
 import uuid
 
-from decimal import Decimal
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountStateEvent
-from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Decimal, Money
 
 
 cdef class Account:
@@ -143,7 +141,7 @@ cdef class NullAccount(Account):
             Money.zero(),
             Money.zero(),
             Money.zero(),
-            Decimal(0),
+            Decimal.zero(),
             ValidString('N'),
             GUID(uuid.uuid4()),
             time_now)

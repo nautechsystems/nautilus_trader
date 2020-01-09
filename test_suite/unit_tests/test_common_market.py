@@ -40,8 +40,8 @@ class TickDataWranglerTests(unittest.TestCase):
     def test_build_with_tick_data(self):
         # Arrange
         tick_data = TestDataProvider.usdjpy_test_ticks()
-        bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
-        ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
+        bid_data = TestDataProvider.usdjpy_1min_bid()
+        ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = TickDataWrangler(
             instrument=TestStubs.instrument_usdjpy(),
             data_ticks=tick_data,
@@ -244,10 +244,10 @@ class IndicatorUpdaterTests(unittest.TestCase):
         updater = IndicatorUpdater(ema)
 
         bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
+            Price(1.00001, 5),
+            Price(1.00004, 5),
+            Price(1.00002, 5),
+            Price(1.00003, 5),
             1000,
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
@@ -264,10 +264,10 @@ class IndicatorUpdaterTests(unittest.TestCase):
         updater = IndicatorUpdater(atr, input_method=atr.update)
 
         bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
+            Price(1.00001, 5),
+            Price(1.00004, 5),
+            Price(1.00002, 5),
+            Price(1.00003, 5),
             1000,
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
@@ -307,20 +307,20 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00001'),
-            ask=Price('1.00004'),
+            bid=Price(1.00001, 5),
+            ask=Price(1.00004, 5),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00002'),
-            ask=Price('1.00005'),
+            bid=Price(1.00002, 5),
+            ask=Price(1.00005, 5),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00000'),
-            ask=Price('1.00003'),
+            bid=Price(1.00000, 5),
+            ask=Price(1.00003, 5),
             timestamp=UNIX_EPOCH)
 
         # Act
@@ -340,20 +340,20 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00001'),
-            ask=Price('1.00004'),
+            bid=Price(1.00001, 5),
+            ask=Price(1.00004, 5),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00002'),
-            ask=Price('1.00005'),
+            bid=Price(1.00002, 5),
+            ask=Price(1.00005, 5),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00000'),
-            ask=Price('1.00003'),
+            bid=Price(1.00000, 5),
+            ask=Price(1.00003, 5),
             timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
@@ -364,10 +364,10 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build()  # Also resets builder
 
         # Assert
-        self.assertEqual(Price('1.00001'), bar.open)
-        self.assertEqual(Price('1.00002'), bar.high)
-        self.assertEqual(Price('1.00000'), bar.low)
-        self.assertEqual(Price('1.00000'), bar.close)
+        self.assertEqual(Price(1.00001, 5), bar.open)
+        self.assertEqual(Price(1.00002, 5), bar.high)
+        self.assertEqual(Price(1.00000, 5), bar.low)
+        self.assertEqual(Price(1.00000, 5), bar.close)
         self.assertEqual(3, bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
@@ -380,20 +380,20 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00001'),
-            ask=Price('1.00004'),
+            bid=Price(1.00001, 5),
+            ask=Price(1.00004, 5),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00002'),
-            ask=Price('1.00005'),
+            bid=Price(1.00002, 5),
+            ask=Price(1.00005, 5),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00000'),
-            ask=Price('1.00003'),
+            bid=Price(1.00000, 5),
+            ask=Price(1.00003, 5),
             timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
@@ -404,10 +404,10 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build()  # Also resets builder
 
         # Assert
-        self.assertEqual(Price('1.000025'), bar.open)
-        self.assertEqual(Price('1.000035'), bar.high)
-        self.assertEqual(Price('1.000015'), bar.low)
-        self.assertEqual(Price('1.000015'), bar.close)
+        self.assertEqual(Price(1.000025, 6), bar.open)
+        self.assertEqual(Price(1.000035, 6), bar.high)
+        self.assertEqual(Price(1.000015, 6), bar.low)
+        self.assertEqual(Price(1.000015, 6), bar.close)
         self.assertEqual(3, bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
@@ -420,20 +420,20 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00001'),
-            ask=Price('1.00004'),
+            bid=Price(1.00001, 5),
+            ask=Price(1.00004, 5),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00002'),
-            ask=Price('1.00005'),
+            bid=Price(1.00002, 5),
+            ask=Price(1.00005, 5),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
-            bid=Price('1.00000'),
-            ask=Price('1.00003'),
+            bid=Price(1.00000, 5),
+            ask=Price(1.00003, 5),
             timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
@@ -445,10 +445,10 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build()  # Also resets builder
 
         # Assert
-        self.assertEqual(Price('1.000015'), bar.open)
-        self.assertEqual(Price('1.000015'), bar.high)
-        self.assertEqual(Price('1.000015'), bar.low)
-        self.assertEqual(Price('1.000015'), bar.close)
+        self.assertEqual(Price(1.000015, 6), bar.open)
+        self.assertEqual(Price(1.000015, 6), bar.high)
+        self.assertEqual(Price(1.000015, 6), bar.low)
+        self.assertEqual(Price(1.000015, 6), bar.close)
         self.assertEqual(0, bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)

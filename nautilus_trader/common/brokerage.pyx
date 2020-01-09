@@ -10,13 +10,12 @@ import os
 import pandas as pd
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.objects cimport Money, Quantity, Price
+from nautilus_trader.model.objects cimport Decimal, Money, Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.__info__ import PACKAGE_ROOT
 
@@ -61,8 +60,8 @@ cdef class CommissionCalculator:
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
         :return Money.
         """
-        commission_rate_percent = Decimal(basis_points_as_percentage(self._get_commission_rate(symbol)))
-        return max(self.minimum, Money(filled_quantity.value * filled_price.value * Decimal(exchange_rate) * commission_rate_percent))
+        commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
+        return max(self.minimum, Money(filled_quantity.value * filled_price.value * exchange_rate * commission_rate_percent))
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """
@@ -72,7 +71,7 @@ cdef class CommissionCalculator:
         :param notional_value: The notional value for the transaction.
         :return Money.
         """
-        commission_rate_percent = Decimal(basis_points_as_percentage(self._get_commission_rate(symbol)))
+        commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
         return max(self.minimum, notional_value * commission_rate_percent)
 
     cdef float _get_commission_rate(self, Symbol symbol):

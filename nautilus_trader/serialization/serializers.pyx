@@ -9,7 +9,6 @@
 import msgpack
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 from uuid import UUID
 
 from nautilus_trader.core.correctness cimport Condition
@@ -28,7 +27,7 @@ from nautilus_trader.model.identifiers cimport (
     PositionId,
     ExecutionId,
     PositionIdBroker)
-from nautilus_trader.model.objects cimport Quantity, Money, Price
+from nautilus_trader.model.objects cimport Quantity, Decimal, Money, Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.common.logger cimport LogMessage, log_level_from_string
@@ -328,7 +327,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 Quantity(unpacked[MODIFIED_QUANTITY]),
-                Price(unpacked[MODIFIED_PRICE]),
+                convert_string_to_price(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
         if command_type == CancelOrder.__name__:
@@ -493,12 +492,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return AccountStateEvent(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 currency_from_string(unpacked[CURRENCY]),
-                Money(unpacked[CASH_BALANCE]),
-                Money(unpacked[CASH_START_DAY]),
-                Money(unpacked[CASH_ACTIVITY_DAY]),
-                Money(unpacked[MARGIN_USED_LIQUIDATION]),
-                Money(unpacked[MARGIN_USED_MAINTENANCE]),
-                Decimal(unpacked[MARGIN_RATIO]),
+                Money.from_string_money(unpacked[CASH_BALANCE]),
+                Money.from_string_money(unpacked[CASH_START_DAY]),
+                Money.from_string_money(unpacked[CASH_ACTIVITY_DAY]),
+                Money.from_string_money(unpacked[MARGIN_USED_LIQUIDATION]),
+                Money.from_string_money(unpacked[MARGIN_USED_MAINTENANCE]),
+                Decimal.from_string(unpacked[MARGIN_RATIO]),
                 ValidString(unpacked[MARGIN_CALL_STATUS]),
                 event_id,
                 event_timestamp)

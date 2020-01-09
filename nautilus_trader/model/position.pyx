@@ -6,13 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-from typing import Set, List, Dict
+from typing import Set, Tuple, List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Quantity, Tick
+from nautilus_trader.model.objects cimport Quantity, Decimal, Price, Tick
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport PositionId, ExecutionId
 
@@ -34,7 +33,7 @@ cdef class Position:
         self._events = [event]                      # type: List[OrderFillEvent]
         self._buy_quantities = {}                   # type: Dict[OrderId, int]
         self._sell_quantities = {}                  # type: Dict[OrderId, int]
-        self._fill_prices = {}                      # type: Dict[OrderId, Decimal]
+        self._fill_prices = {}                      # type: Dict[OrderId, Price]
         self.last_event = event
         self.event_count = 1
 
@@ -52,15 +51,15 @@ cdef class Position:
         self.closed_time = None  # Can be none
         self.open_duration = None  # Can be none
         self.average_open_price = event.average_price.value
-        self.average_close_price = None  # Can be none
-        self.realized_points = Decimal(0)
-        self.realized_return = 0
+        self.average_close_price = 0.
+        self.realized_points = 0.
+        self.realized_return = 0.
         self.realized_pnl = Money.zero()
         self.realized_pnl_last = Money.zero()
 
         self.relative_quantity = 0                  # Initialized in _update()
-        self.quantity = Quantity(0)                 # Initialized in _update()
-        self.peak_quantity = Quantity(0)            # Initialized in _update()
+        self.quantity = Quantity.zero()             # Initialized in _update()
+        self.peak_quantity = Quantity.zero()        # Initialized in _update()
         self.market_position = MarketPosition.FLAT  # Initialized in _update()
 
         self._update(event)
@@ -74,6 +73,14 @@ cdef class Position:
         :return bool.
         """
         return self.id.equals(other.id)
+
+    cdef str to_string(self):
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return f"Position(id={self.id.value}) {self.status_string()}"
 
     def __eq__(self, Position other) -> bool:
         """
@@ -101,7 +108,7 @@ cdef class Position:
 
         :return str.
         """
-        return f"Position(id={self.id.value}) {self.status_string()}"
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -165,7 +172,7 @@ cdef class Position:
         # Apply event
         self._update(event)
 
-    cpdef object unrealized_points(self, Tick last):
+    cpdef float unrealized_points(self, Tick last):
         """
         Return the calculated unrealized points for the position from the given current price.
          
@@ -180,9 +187,21 @@ cdef class Position:
         elif self.market_position == MarketPosition.SHORT:
             return self._calculate_points(self.average_open_price, last.ask.value)
         else:
-            return Decimal(0)
+            return 0.0
 
-    cpdef float unrealized_return(self, Tick last) except *:
+    cpdef float total_points(self, Tick last):
+        """
+        Return the calculated unrealized points for the position from the given current price.
+         
+        :param last: The position symbols last tick.
+        
+        :return Decimal.
+        """
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
+
+        return self.realized_points + self.unrealized_points(last)
+
+    cpdef float unrealized_return(self, Tick last):
         """
         Return the calculated unrealized return for the position from the given current price.
          
@@ -197,7 +216,18 @@ cdef class Position:
         elif self.market_position == MarketPosition.SHORT:
             return self._calculate_return(self.average_open_price, last.ask.value)
         else:
-            return 0
+            return 0.0
+
+    cpdef float total_return(self, Tick last):
+        """
+        Return the calculated unrealized return for the position from the given current price.
+         
+        :param last: The position symbols last tick.
+        :return float.
+        """
+        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
+
+        return self.realized_return + self.unrealized_return(last)
 
     cpdef Money unrealized_pnl(self, Tick last):
         """
@@ -214,30 +244,7 @@ cdef class Position:
         elif self.market_position == MarketPosition.SHORT:
             return self._calculate_pnl(self.average_open_price, last.ask.value, self.quantity.value)
         else:
-            return Money(0)
-
-    cpdef object total_points(self, Tick last):
-        """
-        Return the calculated unrealized points for the position from the given current price.
-         
-        :param last: The position symbols last tick.
-        
-        :return Decimal.
-        """
-        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
-
-        return self.realized_points + self.unrealized_points(last)
-
-    cpdef float total_return(self, Tick last) except *:
-        """
-        Return the calculated unrealized return for the position from the given current price.
-         
-        :param last: The position symbols last tick.
-        :return float.
-        """
-        Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
-
-        return self.realized_return + self.unrealized_return(last)
+            return Money.zero()
 
     cpdef Money total_pnl(self, Tick last):
         """
@@ -248,10 +255,10 @@ cdef class Position:
         """
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
-        return self.realized_pnl + self.unrealized_pnl(last)
+        return self.realized_pnl.add_money(self.unrealized_pnl(last))
 
     cdef void _update(self, OrderFillEvent event) except *:
-        self._fill_prices[event.order_id] = event.average_price.value
+        self._fill_prices[event.order_id] = event.average_price
 
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
@@ -316,27 +323,29 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.average_open_price, self.average_close_price)
             self.realized_pnl = self._calculate_pnl(self.average_open_price, self.average_close_price, self._sell_quantity)
 
-    cdef object _calculate_average_price(self, dict fills, long total_quantity):
-        cdef object cumulative_price = Decimal(0)
+    cdef float _calculate_average_price(self, dict fills, long total_quantity):
+        cdef float cumulative_price = 0.0
+        cdef OrderId order_id
+        cdef int quantity
         for order_id, quantity in fills.items():
-            cumulative_price += self._fill_prices[order_id] * quantity
-        return cumulative_price / total_quantity
+            cumulative_price += self._fill_prices[order_id].value * quantity
+        return cumulative_price / float(total_quantity)
 
-    cdef object _calculate_points(self, opened_price, closed_price):
+    cdef float _calculate_points(self, float opened_price, float closed_price):
         if self.market_position == MarketPosition.LONG:
             return closed_price - opened_price
         elif self.market_position == MarketPosition.SHORT:
             return opened_price - closed_price
         elif self.market_position == MarketPosition.FLAT:
-            return Decimal(0)
+            return Decimal.zero()
 
-    cdef float _calculate_return(self, opened_price, closed_price):
+    cdef float _calculate_return(self, float opened_price, float closed_price):
         if self.market_position == MarketPosition.LONG:
-            return (float(closed_price) - float(opened_price)) / float(opened_price)
+            return (closed_price - opened_price) / opened_price
         elif self.market_position == MarketPosition.SHORT:
-            return (float(opened_price) - float(closed_price)) / float(opened_price)
+            return (opened_price - closed_price) / opened_price
         else:
-            return 0
+            return 0.0
 
-    cdef Money _calculate_pnl(self, opened_price, closed_price, long filled_quantity):
+    cdef Money _calculate_pnl(self, float opened_price, float closed_price, long filled_quantity):
         return Money(self._calculate_points(opened_price, closed_price) * filled_quantity)
