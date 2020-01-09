@@ -62,7 +62,7 @@ cdef class BacktestDataContainer:
                 self.bars_ask[symbol] = {}
                 self.bars_ask = dict(sorted(self.bars_ask.items()))
             self.bars_ask[symbol][structure] = data
-            self.bars_bid[symbol] = dict(sorted(self.bars_ask[symbol].items()))
+            self.bars_ask[symbol] = dict(sorted(self.bars_ask[symbol].items()))
 
     cpdef void check_integrity(self):
         """

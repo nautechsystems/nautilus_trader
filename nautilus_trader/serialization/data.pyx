@@ -48,8 +48,8 @@ cdef class Utf8TickSerializer:
 
         return Tick(
             symbol,
-            Price.from_string_price(values[0]),
-            Price.from_string_price(values[1]),
+            Price.from_string(values[0]),
+            Price.from_string(values[1]),
             iso8601.parse_date(values[2]))
 
     @staticmethod
@@ -85,10 +85,10 @@ cdef class Utf8BarSerializer:
         """
         cdef list values = bar_bytes.decode(UTF8).split(',', maxsplit=5)
 
-        return Bar(Price.from_string_price(values[0]),
-                   Price.from_string_price(values[1]),
-                   Price.from_string_price(values[2]),
-                   Price.from_string_price(values[3]),
+        return Bar(Price.from_string(values[0]),
+                   Price.from_string(values[1]),
+                   Price.from_string(values[2]),
+                   Price.from_string(values[3]),
                    long(values[4]),
                    iso8601.parse_date(values[5]))
 

@@ -1279,39 +1279,39 @@ cdef class ExecutionClient:
 
 # -- ABSTRACT METHODS ---------------------------------------------------------#
 
-    cpdef void connect(self):
+    cpdef void connect(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void disconnect(self):
+    cpdef void disconnect(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void account_inquiry(self, AccountInquiry command):
+    cpdef void account_inquiry(self, AccountInquiry command) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void submit_order(self, SubmitOrder command):
+    cpdef void submit_order(self, SubmitOrder command) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command):
+    cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void modify_order(self, ModifyOrder command):
+    cpdef void modify_order(self, ModifyOrder command) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void cancel_order(self, CancelOrder command):
+    cpdef void cancel_order(self, CancelOrder command) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 # -----------------------------------------------------------------------------#

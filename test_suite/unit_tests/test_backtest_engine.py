@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 import unittest
 
 from datetime import datetime
@@ -23,8 +22,6 @@ from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
-
-# TODO: Speed these tests up
 
 
 class BacktestEngineTests(unittest.TestCase):

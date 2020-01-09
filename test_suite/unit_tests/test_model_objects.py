@@ -213,7 +213,7 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, price1.add_price, price2)
+        self.assertRaises(ConditionFailed, price1.add, price2)
 
     def test_price_add_returns_expected_price(self):
         # Arrange
@@ -233,7 +233,7 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, price2.subtract_price, price1)
+        self.assertRaises(ConditionFailed, price2.subtract, price1)
 
     def test_price_subtract_returns_expected_price(self):
         # Arrange

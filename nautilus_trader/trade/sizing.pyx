@@ -94,7 +94,7 @@ cdef class PositionSizer:
         cdef Money risk_money = Money(equity.value * basis_points_as_percentage(risk_bp))
         cdef Money commission = Money(risk_money.value * basis_points_as_percentage(commission_rate_bp))
 
-        return risk_money.subtract_money(commission)
+        return risk_money.subtract(commission)
 
 
 cdef class FixedRiskSizer(PositionSizer):

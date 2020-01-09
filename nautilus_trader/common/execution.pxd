@@ -173,14 +173,14 @@ cdef class ExecutionClient:
     cdef readonly int event_count
 
 #-- ABSTRACT METHODS ----------------------------------------------------------#
-    cpdef void connect(self)
-    cpdef void disconnect(self)
-    cpdef void dispose(self)
-    cpdef void account_inquiry(self, AccountInquiry command)
-    cpdef void submit_order(self, SubmitOrder command)
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command)
-    cpdef void modify_order(self, ModifyOrder command)
-    cpdef void cancel_order(self, CancelOrder command)
-    cpdef void reset(self)
+    cpdef void connect(self) except *
+    cpdef void disconnect(self) except *
+    cpdef void dispose(self) except *
+    cpdef void account_inquiry(self, AccountInquiry command) except *
+    cpdef void submit_order(self, SubmitOrder command) except *
+    cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *
+    cpdef void modify_order(self, ModifyOrder command) except *
+    cpdef void cancel_order(self, CancelOrder command) except *
+    cpdef void reset(self) except *
 #------------------------------------------------------------------------------#
     cdef void _reset(self)
