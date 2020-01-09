@@ -48,8 +48,8 @@ cdef class Utf8TickSerializer:
 
         return Tick(
             symbol,
-            Price(values[0]),
-            Price(values[1]),
+            Price.from_string_price(values[0]),
+            Price.from_string_price(values[1]),
             iso8601.parse_date(values[2]))
 
     @staticmethod
@@ -85,10 +85,10 @@ cdef class Utf8BarSerializer:
         """
         cdef list values = bar_bytes.decode(UTF8).split(',', maxsplit=5)
 
-        return Bar(Price(values[0]),
-                   Price(values[1]),
-                   Price(values[2]),
-                   Price(values[3]),
+        return Bar(Price.from_string_price(values[0]),
+                   Price.from_string_price(values[1]),
+                   Price.from_string_price(values[2]),
+                   Price.from_string_price(values[3]),
                    long(values[4]),
                    iso8601.parse_date(values[5]))
 
@@ -214,7 +214,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             base_currency=currency_from_string(deserialized[BASE_CURRENCY]),
             security_type=security_type_from_string(deserialized[SECURITY_TYPE]),
             tick_precision=deserialized[TICK_PRECISION],
-            tick_size=Decimal.from_string(deserialized[TICK_SIZE]),
+            tick_size=Decimal.from_string(str(deserialized[TICK_SIZE])),
             round_lot_size=Quantity(deserialized[ROUND_LOT_SIZE]),
             min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
             min_stop_distance=deserialized[MIN_STOP_DISTANCE],
@@ -222,8 +222,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
             min_trade_size=Quantity(deserialized[MIN_TRADE_SIZE]),
             max_trade_size=Quantity(deserialized[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal.from_string(deserialized[ROLL_OVER_INTEREST_BUY]),
-            rollover_interest_sell=Decimal.from_string(deserialized[ROLL_OVER_INTEREST_SELL]),
+            rollover_interest_buy=Decimal.from_string(str(deserialized[ROLL_OVER_INTEREST_BUY])),
+            rollover_interest_sell=Decimal.from_string(str(deserialized[ROLL_OVER_INTEREST_SELL])),
             timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
 

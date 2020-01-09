@@ -313,7 +313,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
-            Price('1.50000'),
+            Price(1.50000, 5),
             OrderPurpose.NONE,
             TimeInForce.DAY,
             None,
@@ -419,7 +419,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
-            Price('1.50000'),
+            Price(1.50000, 5),
             TimeInForce.DAY,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -444,7 +444,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
-            Price('1.50000'),
+            Price(1.50000, 5),
             TimeInForce.DAY,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -499,7 +499,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId('O-123456'),
             OrderIdBroker('BO-123456'),
             Quantity(100000),
-            Price('0.80010'),
+            Price(0.80010, 5),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -538,7 +538,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(50000),
             Quantity(50000),
-            Price('1.00000'),
+            Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -561,7 +561,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
-            Price('1.00000'),
+            Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -691,7 +691,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Label('E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
-        self.assertEqual(Price('1'), result.price)
+        self.assertEqual(Price(1, 0), result.price)
         self.assertEqual(TimeInForce.DAY, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.working_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -717,7 +717,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
-        self.assertEqual(Price('1'), result.price)
+        self.assertEqual(Price(1, 0), result.price)
         self.assertEqual(TimeInForce.GTD, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.working_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -774,7 +774,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
         self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
-        self.assertEqual(Price('2'), result.modified_price)
+        self.assertEqual(Price(2, 1), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -816,7 +816,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(50000), result.filled_quantity)
         self.assertEqual(Quantity(50000), result.leaves_quantity)
-        self.assertEqual(Price('2'), result.average_price)
+        self.assertEqual(Price(2, 1), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -840,7 +840,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(840, result.transaction_currency)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)
-        self.assertEqual(Price('2'), result.average_price)
+        self.assertEqual(Price(2, 0), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 
@@ -857,7 +857,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
             base_currency=Currency.USD,
             security_type=SecurityType.FOREX,
             tick_precision=5,
-            tick_size=Decimal('0.00001'),
+            tick_size=Decimal(0.00001, 5),
             round_lot_size=Quantity(1000),
             min_stop_distance_entry=0,
             min_stop_distance=0,
@@ -865,8 +865,8 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
             min_limit_distance=1,
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal('1.1'),
-            rollover_interest_sell=Decimal('-1.1'),
+            rollover_interest_buy=Decimal(1.1, 1),
+            rollover_interest_sell=Decimal(-1.1, 1),
             timestamp=UNIX_EPOCH)
 
         # Act

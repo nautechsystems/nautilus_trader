@@ -494,7 +494,7 @@ cdef class Money(Decimal):
 
         :return Money.
         """
-        return Money(float(value), precision=2)
+        return Money(float(value))
 
     cpdef Money add_money(self, Money other):
         """

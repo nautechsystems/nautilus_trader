@@ -92,8 +92,8 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         tick = Tick(AUDUSD_FXCM,
-                    Price('1.00000'),
-                    Price('1.00001'),
+                    Price(1.00000, 5),
+                    Price(1.00001, 5),
                     UNIX_EPOCH)
 
         # Act
@@ -137,10 +137,10 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   UNIX_EPOCH)
 
@@ -200,8 +200,8 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_request_tick_data(self):
         # Arrange
         tick = Tick(AUDUSD_FXCM,
-                    Price('1.00000'),
-                    Price('1.00001'),
+                    Price(1.00000, 5),
+                    Price(1.00001, 5),
                     UNIX_EPOCH)
         ticks = [tick, tick, tick, tick, tick]
         tick_data = self.data_mapper.map_ticks(ticks)
@@ -232,10 +232,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_request_bar_data(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        bar = Bar(Price('1.00001'),
-                  Price('1.00004'),
-                  Price('1.00002'),
-                  Price('1.00003'),
+        bar = Bar(Price(1.00001, 5),
+                  Price(1.00004, 5),
+                  Price(1.00002, 5),
+                  Price(1.00003, 5),
                   100000,
                   UNIX_EPOCH)
         bars = [bar, bar, bar, bar, bar]
