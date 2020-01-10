@@ -181,7 +181,7 @@ cdef class PerformanceAnalyzer:
         
         :return float. 
         """
-        return ((self._account_capital.value - self._account_starting_capital.value) / self._account_starting_capital.value) * 100
+        return ((self._account_capital.as_float() - self._account_starting_capital.as_float()) / self._account_starting_capital.as_float()) * 100
 
     cpdef Money max_winner(self):
         """
@@ -251,7 +251,7 @@ cdef class PerformanceAnalyzer:
         cdef float win_rate = self.win_rate()
         cdef float loss_rate = 1.0 - win_rate
 
-        return Money((self.avg_winner().value * win_rate) - (-self.avg_loser().value * loss_rate))
+        return Money((self.avg_winner().as_float() * win_rate) - (-self.avg_loser().as_float() * loss_rate))
 
     cpdef float annual_return(self):
         """
