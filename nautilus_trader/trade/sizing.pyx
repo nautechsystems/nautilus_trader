@@ -76,7 +76,7 @@ cdef class PositionSizer:
         
         :return int.
         """
-        return int(abs(entry - stop_loss) / self.instrument.tick_size.value)
+        return int(abs(entry.as_float() - stop_loss.as_float()) / self.instrument.tick_size.as_float())
 
     cdef Money _calculate_riskable_money(
             self,
@@ -89,10 +89,10 @@ cdef class PositionSizer:
         
         :return Money.
         """
-        if equity.value <= 0:
+        if equity <= 0.0:
             return Money.zero()
-        cdef Money risk_money = Money(equity.value * basis_points_as_percentage(risk_bp))
-        cdef Money commission = Money(risk_money.value * basis_points_as_percentage(commission_rate_bp))
+        cdef Money risk_money = Money(equity * basis_points_as_percentage(risk_bp))
+        cdef Money commission = Money(risk_money * basis_points_as_percentage(commission_rate_bp))
 
         return risk_money.subtract(commission)
 
@@ -155,7 +155,7 @@ cdef class FixedRiskSizer(PositionSizer):
         if risk_points <= 0:
             return Quantity(0)
 
-        cdef long position_size = long(long((((risk_money.value / exchange_rate) / risk_points) / self.instrument.tick_size.value)))
+        cdef long position_size = long(long((((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_float())))
 
         # Limit size
         if hard_limit > 0:

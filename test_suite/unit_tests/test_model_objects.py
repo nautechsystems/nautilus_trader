@@ -7,11 +7,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import decimal
 
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
+from nautilus_trader.model.objects import Quantity, Decimal, Price, Money, Tick, BarSpecification, BarType, Bar
 from test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -117,11 +118,11 @@ class ObjectTests(unittest.TestCase):
     def test_price_from_string_with_no_decimal(self):
         # Arrange
         # Act
-        price = Price(1, 0)
+        price = Price(1, 1)
 
         # Assert
         self.assertEqual(1.0, price.value)
-        self.assertEqual(0, price.precision)
+        self.assertEqual(1, price.precision)
 
     def test_price_str(self):
         # Arrange
@@ -174,40 +175,33 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         result1 = Price(1.0000, 5) + 1.0000
-        result2 = Price(1.0000, 5) + Price(1.0000, 5)
+        result2 = Price(1.0000, 5).add(Price(1.0000, 5))
 
         result3 = Price(3.0000, 5) - 1.0000
-        result4 = Price(3.0000, 5) - Price(1.0000, 5)
+        result4 = Price(3.0000, 5).subtract(Price(1.0000, 5))
 
         result5 = Price(1.0000, 5) / 1.0000
-        result6 = Price(1.0000, 5) / Price(1.0000, 5)
-
-        result7 = Price(3.0000, 5) * 1.0000
-        result8 = Price(3.0000, 5) * Price(1.0000, 5)
+        result6 = Price(3.0000, 5) * 1.0000
 
         # Assert
         self.assertEqual(float, type(result1))
         self.assertEqual(2.0000, result1)
-        self.assertEqual(float, type(result2))
+        self.assertEqual(Price, type(result2))
         self.assertEqual(2.0000, result2)
 
         self.assertEqual(float, type(result3))
         self.assertEqual(2.0000, result3)
-        self.assertEqual(float, type(result4))
+        self.assertEqual(Price, type(result4))
         self.assertEqual(2.0000, result4)
 
         self.assertEqual(float, type(result5))
         self.assertEqual(1.0000, result5)
         self.assertEqual(float, type(result6))
-        self.assertEqual(1.0000, result6)
-
-        self.assertEqual(float, type(result7))
-        self.assertEqual(3.0000, result7)
-        self.assertEqual(float, type(result8))
-        self.assertEqual(3.0000, result8)
+        self.assertEqual(3.0000, result6)
 
     def test_price_add_with_different_precisions_raises_exception(self):
         # Arrange
+        x = decimal.Decimal(1.0)
         price1 = Price(1.00000, 5)
         price2 = Price(1.01, 2)
 
@@ -274,8 +268,6 @@ class ObjectTests(unittest.TestCase):
         result2 = Money(5005.556666)
 
         # Assert
-        self.assertEqual(1000.3300170898438, result1.value)
-        self.assertEqual(5005.56005859375, result2.value)
         self.assertEqual('1,000.33', str(result1))
         self.assertEqual('5,005.56', str(result2))
 
@@ -310,7 +302,7 @@ class ObjectTests(unittest.TestCase):
         result = repr(money)
 
         # Assert
-        self.assertTrue(result.startswith('<Money(1.00, precision=2) object at'))
+        self.assertTrue(result.startswith('<Money(1.00) object at'))
 
     def test_money_equality(self):
         # Arrange
@@ -343,33 +335,31 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         result1 = Money(1.00) + 1.00
-        result2 = Money(1.00) + Money(1.00)
+        result2 = Money(1.00).add(Money(1.00))
         result3 = Money(1.00) + 1
 
         result4 = Money(3.00) - 1.00
-        result5 = Money(3.00) - Money(1.00)
+        result5 = Money(3.00).subtract(Money(1.00))
         result6 = Money(3.00) - 1
 
-        result7 = Money(1.00) / 2.00
-        result8 = Money(1.00) / Money(2.00)
-        result9 = Money(1.00) / 2
+        result7 = Money(1.00) / 2.0
+        result8 = Money(1.00) / 2
 
-        result10 = Money(1.00) * 2.00
-        result11 = Money(1.00) * Money(2.00)
-        result12 = Money(1.00) * 2
+        result9 = Money(1.00) * 2.00
+        result10 = Money(1.00) * 2
 
         # Assert
         self.assertEqual(float, type(result1))
         self.assertEqual(float(2.00), result1)
-        self.assertEqual(float, type(result2))
+        self.assertEqual(Money, type(result2))
         self.assertEqual(float(2.00), result2)
         self.assertEqual(float, type(result3))
         self.assertEqual(float(2.00), result3)
 
         self.assertEqual(float, type(result4))
         self.assertEqual(float(2.00), result4)
-        self.assertEqual(float, type(result5))
-        self.assertEqual(float(2.00), result5)
+        self.assertEqual(Money, type(result5))
+        self.assertEqual(Money(2.00), result5)
         self.assertEqual(float, type(result6))
         self.assertEqual(float(2.00), result6)
 
@@ -378,14 +368,10 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(float, type(result8))
         self.assertEqual(float(0.50), result8)
         self.assertEqual(float, type(result9))
-        self.assertEqual(float(0.50), result9)
+        self.assertEqual(float(2.00), result9)
 
         self.assertEqual(float, type(result10))
         self.assertEqual(float(2), result10)
-        self.assertEqual(float, type(result11))
-        self.assertEqual(float(2), result11)
-        self.assertEqual(float, type(result12))
-        self.assertEqual(float(2), result12)
 
     def test_bar_spec_equality(self):
         # Arrange

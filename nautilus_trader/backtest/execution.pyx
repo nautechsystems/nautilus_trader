@@ -794,7 +794,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         cdef Symbol symbol
         cdef Tick tick
-        return {symbol.code: tick.bid.value for symbol, tick in self._market.items()}
+        return {symbol.code: tick.bid.as_float() for symbol, tick in self._market.items()}
 
     cdef dict _build_current_ask_rates(self):
         """
@@ -804,7 +804,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         cdef Symbol symbol
         cdef Tick tick
-        return {symbol.code: tick.ask.value for symbol, tick in self._market.items()}
+        return {symbol.code: tick.ask.as_float() for symbol, tick in self._market.items()}
 
     cdef Money _calculate_pnl(
             self,

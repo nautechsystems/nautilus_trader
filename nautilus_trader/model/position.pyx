@@ -321,7 +321,7 @@ cdef class Position:
         cdef OrderId order_id
         cdef int quantity
         for order_id, quantity in fills.items():
-            cumulative_price += self._fill_prices[order_id].value * quantity
+            cumulative_price += self._fill_prices[order_id].as_float() * quantity
         return cumulative_price / float(total_quantity)
 
     cdef float _calculate_points(self, float opened_price, float closed_price):

@@ -111,8 +111,8 @@ class TestStubs:
             min_limit_distance=0,
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(0, 0),
-            rollover_interest_sell=Decimal(0, 0),
+            rollover_interest_buy=Decimal(0),
+            rollover_interest_sell=Decimal(0),
             timestamp=UNIX_EPOCH)
 
     @staticmethod
@@ -131,8 +131,8 @@ class TestStubs:
             min_limit_distance=0,
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(0, 0),
-            rollover_interest_sell=Decimal(0, 0),
+            rollover_interest_buy=Decimal(0),
+            rollover_interest_sell=Decimal(0),
             timestamp=UNIX_EPOCH)
 
     @staticmethod
@@ -224,7 +224,7 @@ class TestStubs:
             Money(0),
             Money(0),
             Money(0),
-            Decimal(0, 0),
+            Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)

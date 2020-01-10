@@ -116,7 +116,7 @@ cdef class ReportProvider:
                 'avg_close_price': position.average_close_price,
                 'realized_points': position.realized_points,
                 'realized_return': position.realized_return,
-                'realized_pnl': position.realized_pnl.to_string(),
+                'realized_pnl': str(position.realized_pnl),
                 'currency': currency_to_string(position.base_currency)}
 
     cdef dict _account_state_to_dict(self, AccountStateEvent event):
