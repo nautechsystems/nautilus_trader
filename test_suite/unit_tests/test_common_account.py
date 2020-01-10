@@ -32,7 +32,7 @@ class AccountTests(unittest.TestCase):
             Money(0),
             Money(0),
             Money(0),
-            Decimal(0, 0),
+            Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -48,7 +48,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(0), account.cash_activity_day)
         self.assertEqual(Money(0), account.margin_used_liquidation)
         self.assertEqual(Money(0), account.margin_used_maintenance)
-        self.assertEqual(Decimal(0, 0), account.margin_ratio)
+        self.assertEqual(Decimal(0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
@@ -62,7 +62,7 @@ class AccountTests(unittest.TestCase):
             Money(0),
             Money(1000),
             Money(2000),
-            Decimal(0, 0),
+            Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -80,7 +80,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(0), account.cash_activity_day)
         self.assertEqual(Money(1000), account.margin_used_liquidation)
         self.assertEqual(Money(2000), account.margin_used_maintenance)
-        self.assertEqual(Decimal(0, 0), account.margin_ratio)
+        self.assertEqual(Decimal(0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
@@ -94,7 +94,7 @@ class AccountTests(unittest.TestCase):
             Money(0),
             Money(0),
             Money(20000),
-            Decimal(0, 0),
+            Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -112,7 +112,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(0), account.cash_activity_day)
         self.assertEqual(Money(0), account.margin_used_liquidation)
         self.assertEqual(Money(20000), account.margin_used_maintenance)
-        self.assertEqual(Decimal(0, 0), account.margin_ratio)
+        self.assertEqual(Decimal(0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
@@ -126,7 +126,7 @@ class AccountTests(unittest.TestCase):
             Money(0),
             Money(10000),
             Money(20000),
-            Decimal(0, 0),
+            Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -144,6 +144,6 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(0), account.cash_activity_day)
         self.assertEqual(Money(10000), account.margin_used_liquidation)
         self.assertEqual(Money(20000), account.margin_used_maintenance)
-        self.assertEqual(Decimal(0, 0), account.margin_ratio)
+        self.assertEqual(Decimal(0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)

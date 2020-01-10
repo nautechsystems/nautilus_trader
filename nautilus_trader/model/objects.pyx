@@ -8,6 +8,7 @@
 
 """Define common trading model value objects."""
 
+import decimal
 import iso8601
 import re
 
@@ -25,7 +26,7 @@ cdef Quantity _ZERO_QUANTITY = Quantity(0)
 
 cdef class Quantity:
     """
-    Represents a non-negative integer quantity.
+    Represents a quantity with non-negative integer value.
     """
 
     def __init__(self, long value):
@@ -173,196 +174,32 @@ cdef class Quantity:
         return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
 
 
-cdef class RoundedFloat:
-    """
-    Represents a number with a specified decimal precision. The float value is
-    rounded by the specified precision.
-    """
 
-    def __init__(self, float value, int precision):
-        """
-        Initializes a new instance of the RoundedFloat class.
+cdef Decimal _ZERO_DECIMAL = Decimal(0)
 
-        :param value: The value of the number (>= 0).
-        :raises ConditionFailed: If the precision is negative (< 0).
-        """
-        Condition.not_negative_int(precision, 'precision')
+cdef class Decimal:
 
-        self.value = round(value, precision)
-        self.precision = precision
-
-    @staticmethod
-    cdef int precision_from_string(str value):
-        """
-        Return the decimal precision inferred from the number of digits after the decimal place.
-
-        :param value: The string value to parse.
-
-        :return: int.
-        """
-        return len(value.rpartition('.')[2])
-
-    cdef bint equals(self, RoundedFloat other):
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value == other.value
-
-    cdef str to_string(self):
-        """
-        Return a string representation of this object.
-
-        :return str.
-        """
-        return f'{self.value:,.{self.precision}f}'
-
-    def __eq__(self, RoundedFloat other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.equals(other)
-
-    def __ne__(self, RoundedFloat other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return not self.equals(other)
-
-    def __lt__(self, RoundedFloat other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value < other.value
-
-    def __le__(self, RoundedFloat other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value <= other.value
-
-    def __gt__(self, RoundedFloat other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value > other.value
-
-    def __ge__(self, RoundedFloat other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value >= other.value
-
-    def __add__(self, other) -> float:
-        """
-        Return the result of adding the given object to this object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, RoundedFloat):
-            return round(self.value + other.value, max(self.precision, other.precision))
-        else:
-            return round(self.value + other, self.precision)
-
-    def __sub__(self, other) -> float:
-        """
-        Return the result of subtracting the given object from this object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, RoundedFloat):
-            return round(self.value - other.value, max(self.precision, other.precision))
-        else:
-            return round(self.value - other, self.precision)
-
-    def __truediv__(self, other) -> float:
-        """
-        Return the result of dividing this object by the given object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, RoundedFloat):
-            return round(self.value / other.value, max(self.precision, other.precision))
-        else:
-            return round(self.value / other, self.precision)
-
-    def __mul__(self, other) -> float:
-        """
-        Return the result of multiplying this object by the given object.
-
-        :param other: The other object.
-        :return Decimal.
-        """
-        if isinstance(other, RoundedFloat):
-            return round(self.value * other.value, max(self.precision, other.precision))
-        else:
-            return round(self.value * other, self.precision)
-
-    def __hash__(self) -> int:
-        """"
-         Return a hash representation of this object.
-
-        :return int.
-        """
-        return hash(self.value)
-
-    def __str__(self) -> str:
-        """
-        Return a string representation of this object.
-
-        :return str.
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return a string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{self.__class__.__name__}({str(self)}, precision={self.precision}) object at {id(self)}>"
-
-
-cdef Decimal _ZERO_DECIMAL = Decimal(0, 0)
-
-cdef class Decimal(RoundedFloat):
-    """
-    Represents a number with a specified decimal precision.
-    """
-
-    def __init__(self, float value, int precision):
+    """ Experimental"""
+    def __init__(self, float value, int precision=1):
         """
         Initializes a new instance of the Decimal class.
 
-        :param value: The value of the decimal (>= 0).
-        :raises ConditionFailed: If the precision is negative (< 0).
+        :param value: The value of the decimal.
+        :param precision: The precision of the decimal (> 0).
+        :raises ConditionFailed: If the precision is not positive (> 0).
         """
-        # Condition: precision checked in base class
-        super().__init__(value, precision)
+        Condition.positive_int(precision, 'precision')
+
+        self.value = decimal.Decimal(f'{value:.{precision}f}')
+        self.precision = precision
+
+    cpdef float as_float(self):
+        """
+        Return the internal decimal value as a floating point number.
+
+        :return float.
+        """
+        return float(self.value)
 
     @staticmethod
     cdef Decimal zero():
@@ -380,57 +217,164 @@ cdef class Decimal(RoundedFloat):
         number of digits after the decimal place.
 
         :param value: The string value to parse.
-
         :return: Decimal.
         """
-        return Decimal(float(value), RoundedFloat.precision_from_string(value))
+        return Decimal(float(value), Decimal.precision_from_string(value))
 
-    cpdef Decimal add(self, Decimal other):
+    @staticmethod
+    cdef int precision_from_string(str value):
         """
-        Return a new decimal by adding the given decimal to this decimal.
-        Note: The precision of the new decimal will be the maximum of the two
-        decimals.
+        Return the decimal precision inferred from the number of digits after the decimal place.
 
-        :param other: The other decimal to add.
+        :param value: The string value to parse.
+        :return: int.
+        """
+        return len(value.rpartition('.')[2])
+
+    cdef bint equals(self, Decimal other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value == other.value
+
+    cdef bint eq(self, Decimal other):
+        return self.value == other.value
+
+    cdef bint ne(self, Decimal other):
+        return self.value != other.value
+
+    cdef bint lt(self, Decimal other):
+        return self.value < other.value
+
+    cdef bint le(self, Decimal other):
+        return self.value <= other.value
+
+    cdef bint gt(self, Decimal other):
+        return self.value > other.value
+
+    cdef bint ge(self, Decimal other):
+        return self.value >= other.value
+
+    def __eq__(self, other) -> bool:
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value == other
+
+    def __ne__(self, other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to (!=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value != other
+
+    def __lt__(self, other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value < other
+
+    def __le__(self, other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value <= other
+
+    def __gt__(self, other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value > other
+
+    def __ge__(self, other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value >= other
+
+    def __add__(self, float other) -> float:
+        """
+        Return the result of adding the given object to this object.
+
+        :param other: The other object.
         :return Decimal.
         """
-        return Decimal(self.value + other.value, max(self.precision, other.precision))
+        return float(self.value) + other
 
-    cpdef Decimal subtract(self, Decimal other):
+    def __sub__(self, float other) -> float:
         """
-        Return a new decimal by subtracting the given decimal from this decimal.
-        Note: The precision of the new decimal will be the maximum of the two
-        decimals.
+        Return the result of subtracting the given object from this object.
 
-        :param other: The other decimal to subtract.
+        :param other: The other object.
         :return Decimal.
         """
-        return Decimal(self.value - other.value, max(self.precision, other.precision))
+        return float(self.value) - other
 
-    cpdef Decimal divide(self, Decimal other):
+    def __truediv__(self, float other) -> float:
         """
-        Return a new decimal by dividing this decimal by the given decimal.
-        Note: The precision of the new decimal will be the maximum of the two
-        decimals.
+        Return the result of dividing this object by the given object.
 
-        :param other: The other decimal to divide by.
+        :param other: The other object.
         :return Decimal.
         """
-        return Decimal(self.value / other.value, max(self.precision, other.precision))
+        return float(self.value) / other
 
-    cpdef Decimal multiply(self, Decimal other):
+    def __mul__(self, float other) -> float:
         """
-        Return a new decimal by multiplying this decimal by the given decimal.
-        Note: The precision of the new decimal will be the maximum of the two
-        decimals.
+        Return the result of multiplying this object by the given object.
 
-        :param other: The other decimal to multiply with.
+        :param other: The other object.
         :return Decimal.
         """
-        return Decimal(self.value * other.value, max(self.precision, other.precision))
+        return float(self.value) * other
+
+    def __hash__(self) -> int:
+        """"
+         Return a hash representation of this object.
+
+        :return int.
+        """
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return str(self.value)
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{self.__class__.__name__}({str(self)}, precision={self.precision}) object at {id(self)}>"
 
 
-cdef class Price(RoundedFloat):
+cdef class Price(Decimal):
     """
     Represents a price of a financial market instrument.
     """
@@ -440,8 +384,9 @@ cdef class Price(RoundedFloat):
         Initializes a new instance of the Price class.
 
         :param value: The value of the price (>= 0).
+        :param precision: The decimal precision of the price (> 0).
         :raises ConditionFailed: If the value is negative (< 0).
-        :raises ConditionFailed: If the precision is negative (< 0).
+        :raises ConditionFailed: If the precision is not positive (> 0).
         """
         Condition.not_negative(value, 'value')
         # Condition: precision checked in base class
@@ -456,9 +401,9 @@ cdef class Price(RoundedFloat):
         :param value: The string value to parse.
         :return: Price.
         """
-        return Price(float(value), precision=RoundedFloat.precision_from_string(value))
+        return Price(float(value), precision=Decimal.precision_from_string(value))
 
-    cpdef Price add(self, Price other):
+    cpdef Price add(self, Decimal other):
         """
         Return a new price by adding the given price to this price.
 
@@ -470,7 +415,7 @@ cdef class Price(RoundedFloat):
 
         return Price(self.value + other.value, self.precision)
 
-    cpdef Price subtract(self, Price other):
+    cpdef Price subtract(self, Decimal other):
         """
         Return a new price by subtracting the given price from this price.
 
@@ -482,10 +427,27 @@ cdef class Price(RoundedFloat):
 
         return Price(self.value - other.value, self.precision)
 
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return f'{self.value:,.{self.precision}f}'
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{self.__class__.__name__}({str(self)}, precision={self.precision}) object at {id(self)}>"
+
 
 cdef Money _ZERO_MONEY = Money(0)
 
-cdef class Money(RoundedFloat):
+cdef class Money(Decimal):
     """
     Represents the 'concept' of money.
     """
@@ -495,9 +457,9 @@ cdef class Money(RoundedFloat):
         Initializes a new instance of the Money class.
 
         :param value: The value of the money.
-        Note: Value is rounded to 2 decimal places of precision.
+        Note: The value is rounded to 2 decimal places of precision.
         """
-        super().__init__(value, precision=2)
+        super().__init__(round(value, 2), precision=2)
 
     @staticmethod
     cdef Money zero():
@@ -535,6 +497,23 @@ cdef class Money(RoundedFloat):
         :return Money.
         """
         return Money(self.value - other.value)
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return f'{self.value:,.{self.precision}f}'
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
 
 cdef class Tick:

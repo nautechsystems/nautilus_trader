@@ -131,4 +131,4 @@ class FixedRiskSizerTests(unittest.TestCase):
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(359000), result)
+        self.assertEqual(Quantity(358000), result)

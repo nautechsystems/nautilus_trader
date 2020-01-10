@@ -61,7 +61,7 @@ cdef class CommissionCalculator:
         :return Money.
         """
         cdef float commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        return Money(max(self.minimum.value, filled_quantity.value * filled_price.value * exchange_rate * commission_rate_percent))
+        return Money(max(self.minimum.as_float(), filled_quantity.value * filled_price.as_float() * exchange_rate * commission_rate_percent))
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """
@@ -72,7 +72,7 @@ cdef class CommissionCalculator:
         :return Money.
         """
         cdef float commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        return Money(max(self.minimum.value, notional_value.value * commission_rate_percent))
+        return Money(max(self.minimum.as_float(), notional_value.as_float() * commission_rate_percent))
 
     cdef float _get_commission_rate(self, Symbol symbol):
         cdef float rate = self.rates.get(symbol, -1.0)

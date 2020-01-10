@@ -82,7 +82,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order, self.strategy.id, position_id)
 
-        order_filled = TestStubs.event_order_filled(order, fill_price=Price('1.00000'))
+        order_filled = TestStubs.event_order_filled(order, fill_price=Price(1.00000, 5))
         position = Position(position_id, order_filled)
 
         # Act
@@ -131,7 +131,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order, self.strategy.id, position_id)
 
-        order_filled = TestStubs.event_order_filled(order, fill_price=Price('1.00001'))
+        order_filled = TestStubs.event_order_filled(order, fill_price=Price(1.00001, 5))
         order.apply(order_filled)
 
         # Act
@@ -190,7 +190,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0),
             Money(0),
             Money(0),
-            Decimal(0, 0),
+            Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -213,7 +213,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0),
             Money(0),
             Money(0),
-            Decimal(0, 0),
+            Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)

@@ -340,9 +340,9 @@ cdef class Order:
             return
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal(self.average_price - self.price, self.average_price.precision)
+            self.slippage = Decimal(self.average_price.as_float() - self.price.as_float(), self.average_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal(self.price - self.average_price, self.average_price.precision)
+            self.slippage = Decimal(self.price.as_float() - self.average_price.as_float(), self.average_price.precision)
 
 
 cdef class AtomicOrder:

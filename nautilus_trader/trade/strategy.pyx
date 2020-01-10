@@ -752,8 +752,8 @@ cdef class TradingStrategy:
         cdef dict ask_rates = {}
         cdef Symbol symbol
         for symbol, ticks in self._ticks.items():
-            bid_rates[symbol.code] = ticks[0].bid.value
-            ask_rates[symbol.code] = ticks[0].ask.value
+            bid_rates[symbol.code] = ticks[0].bid.as_float()
+            ask_rates[symbol.code] = ticks[0].ask.as_float()
 
         return self._exchange_calculator.get_rate(
             from_currency=quote_currency,
