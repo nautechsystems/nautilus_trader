@@ -318,9 +318,9 @@ cdef class EMACross(TradingStrategy):
         self.precision = instrument.tick_precision
 
         self.risk_bp = risk_bp
-        self.entry_buffer = instrument.tick_size.value
+        self.entry_buffer = instrument.tick_size.as_float()
         self.SL_atr_multiple = sl_atr_multiple
-        self.SL_buffer = instrument.tick_size.value * 10.0
+        self.SL_buffer = instrument.tick_size * 10.0
 
         # Track spreads for calculating average
         self.spreads = deque(maxlen=100)  # type: Deque[float]
@@ -357,7 +357,7 @@ cdef class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         #self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spreads.append(tick.ask - tick.bid)
+        self.spreads.append(tick.ask.as_float() - tick.bid.as_float())
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """

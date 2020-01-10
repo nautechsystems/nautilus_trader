@@ -744,7 +744,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 mid_price = mid_prices.get(instrument.symbol, 0.0)
                 if mid_price == 0.0:
                     market = self._market[instrument.symbol]
-                    mid_price = (market.ask.value + market.bid.value) / 2.0
+                    mid_price = (market.ask.as_float() + market.bid.as_float()) / 2.0
                     mid_prices[instrument.symbol] = mid_price
                 quote_currency = currency_from_string(position.symbol.code[3:])
                 interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)

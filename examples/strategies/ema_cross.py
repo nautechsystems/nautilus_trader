@@ -85,8 +85,8 @@ class EMACrossPy(TradingStrategy):
         # Put custom code to be run on strategy start here (or pass)
         self.instrument = self.get_instrument(self.symbol)
         self.precision = self.instrument.tick_precision
-        self.entry_buffer = self.instrument.tick_size.value
-        self.SL_buffer = self.instrument.tick_size.value * 10.0
+        self.entry_buffer = self.instrument.tick_size.as_float()
+        self.SL_buffer = self.instrument.tick_size * 10.0
         self.position_sizer = FixedRiskSizer(self.instrument)
 
         self.request_bars(self.bar_type)
@@ -103,7 +103,7 @@ class EMACrossPy(TradingStrategy):
         :param tick: The received tick.
         """
         #self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spreads.append(float(tick.ask - tick.bid))
+        self.spreads.append(tick.ask.as_float() - tick.bid.as_float())
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
