@@ -80,8 +80,8 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
-        self.assertEqual(0.8001099824905396, report.iloc[0]['avg_price'])
-        self.assertEqual(round(0.00001, 5), report.iloc[0]['slippage'])
+        self.assertEqual(0.8001099824905396, report.iloc[0]['avg_price'].value)
+        self.assertEqual(Decimal(0.00001, 5), report.iloc[0]['slippage'])
 
     def test_can_produce_order_fills_report(self):
         # Arrange
