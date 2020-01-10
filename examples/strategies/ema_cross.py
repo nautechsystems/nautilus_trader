@@ -129,18 +129,21 @@ class EMACrossPy(TradingStrategy):
 
         # Check market liquidity
         if average_spread == 0.0:
-            return # No market...
-        if self.atr.value / average_spread < 2.0:
-            return # Not liquid enough...
+            return  # Protect divide by zero
+        else:
+            liquidity_ratio = self.atr.value / average_spread
+            if liquidity_ratio < 2.0:
+                self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
+                return
 
-        if self.count_orders_working() == 0 and self.is_flat():
+        if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
             atomic_order = None
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(bar.high + self.entry_buffer + average_spread)
-                price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
-                price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
+                price_entry = Price(bar.high + self.entry_buffer + self.spreads[-1], self.precision)
+                price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
+                price_take_profit = (price_entry.add(price_entry.subtract(price_stop_loss)))
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
@@ -173,9 +176,9 @@ class EMACrossPy(TradingStrategy):
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                price_entry = Price(bar.low - self.entry_buffer)
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + average_spread)
-                price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
+                price_entry = Price(bar.low - self.entry_buffer, self.precision)
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
+                price_take_profit = price_entry.subtract(price_stop_loss.subtract(price_entry))
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
@@ -216,12 +219,12 @@ class EMACrossPy(TradingStrategy):
             if working_order.purpose == OrderPurpose.STOP_LOSS:
                 # SELL SIDE ORDERS
                 if working_order.is_sell:
-                    temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
+                    temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
                     if temp_price > working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + average_spread)
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 

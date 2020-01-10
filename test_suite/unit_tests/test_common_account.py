@@ -11,7 +11,7 @@ import uuid
 
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Decimal, Money
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.identifiers import Brokerage, AccountNumber, AccountId
 from nautilus_trader.common.account import Account
@@ -29,10 +29,10 @@ class AccountTests(unittest.TestCase):
             Currency.AUD,
             Money(1000000),
             Money(1000000),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal('0'),
+            Money(0),
+            Money(0),
+            Money(0),
+            Decimal(0, 0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -45,10 +45,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(1000000), account.free_equity)
         self.assertEqual(Money(1000000), account.cash_start_day)
-        self.assertEqual(Money.zero(), account.cash_activity_day)
-        self.assertEqual(Money.zero(), account.margin_used_liquidation)
-        self.assertEqual(Money.zero(), account.margin_used_maintenance)
-        self.assertEqual(Decimal('0'), account.margin_ratio)
+        self.assertEqual(Money(0), account.cash_activity_day)
+        self.assertEqual(Money(0), account.margin_used_liquidation)
+        self.assertEqual(Money(0), account.margin_used_maintenance)
+        self.assertEqual(Decimal(0, 0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
@@ -59,10 +59,10 @@ class AccountTests(unittest.TestCase):
             Currency.AUD,
             Money(100000),
             Money(100000),
-            Money.zero(),
+            Money(0),
             Money(1000),
             Money(2000),
-            Decimal('0'),
+            Decimal(0, 0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -77,10 +77,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(97000), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
-        self.assertEqual(Money.zero(), account.cash_activity_day)
+        self.assertEqual(Money(0), account.cash_activity_day)
         self.assertEqual(Money(1000), account.margin_used_liquidation)
         self.assertEqual(Money(2000), account.margin_used_maintenance)
-        self.assertEqual(Decimal('0'), account.margin_ratio)
+        self.assertEqual(Decimal(0, 0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
@@ -91,10 +91,10 @@ class AccountTests(unittest.TestCase):
             Currency.AUD,
             Money(20000),
             Money(100000),
-            Money.zero(),
-            Money.zero(),
+            Money(0),
+            Money(0),
             Money(20000),
-            Decimal('0'),
+            Decimal(0, 0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -107,12 +107,12 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Brokerage('FXCM'), account.broker)
         self.assertEqual(AccountNumber('123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
-        self.assertEqual(Money.zero(), account.free_equity)
+        self.assertEqual(Money(0), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
-        self.assertEqual(Money.zero(), account.cash_activity_day)
-        self.assertEqual(Money.zero(), account.margin_used_liquidation)
+        self.assertEqual(Money(0), account.cash_activity_day)
+        self.assertEqual(Money(0), account.margin_used_liquidation)
         self.assertEqual(Money(20000), account.margin_used_maintenance)
-        self.assertEqual(Decimal('0'), account.margin_ratio)
+        self.assertEqual(Decimal(0, 0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
@@ -123,10 +123,10 @@ class AccountTests(unittest.TestCase):
             Currency.AUD,
             Money(20000),
             Money(100000),
-            Money.zero(),
+            Money(0),
             Money(10000),
             Money(20000),
-            Decimal('0'),
+            Decimal(0, 0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -139,11 +139,11 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Brokerage('FXCM'), account.broker)
         self.assertEqual(AccountNumber('123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
-        self.assertEqual(Money.zero(), account.free_equity)
+        self.assertEqual(Money(0), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
-        self.assertEqual(Money.zero(), account.cash_activity_day)
+        self.assertEqual(Money(0), account.cash_activity_day)
         self.assertEqual(Money(10000), account.margin_used_liquidation)
         self.assertEqual(Money(20000), account.margin_used_maintenance)
-        self.assertEqual(Decimal('0'), account.margin_ratio)
+        self.assertEqual(Decimal(0, 0), account.margin_ratio)
         self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
