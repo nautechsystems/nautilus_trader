@@ -60,8 +60,8 @@ cdef class CommissionCalculator:
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
         :return Money.
         """
-        commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        return max(self.minimum, Money(filled_quantity.value * filled_price.value * exchange_rate * commission_rate_percent))
+        cdef float commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
+        return Money(max(self.minimum.value, filled_quantity.value * filled_price.value * exchange_rate * commission_rate_percent))
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """
@@ -71,14 +71,16 @@ cdef class CommissionCalculator:
         :param notional_value: The notional value for the transaction.
         :return Money.
         """
-        commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        return max(self.minimum, notional_value * commission_rate_percent)
+        cdef float commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
+        return Money(max(self.minimum.value, notional_value.value * commission_rate_percent))
 
     cdef float _get_commission_rate(self, Symbol symbol):
-        if symbol in self.rates:
-            return float(self.rates[symbol])
+        cdef float rate = self.rates.get(symbol, -1.0)
+        if rate != -1.0:
+            print("***** rate found")
+            return rate
         else:
-            return float(self.default_rate_bp)
+            return self.default_rate_bp
 
 
 cdef class RolloverInterestCalculator:

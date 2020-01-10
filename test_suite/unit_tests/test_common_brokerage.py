@@ -29,7 +29,7 @@ class CommissionCalculatorTests(unittest.TestCase):
         result = calculator.calculate(
             GBPUSD_FXCM,
             Quantity(1000000),
-            filled_price=Price('1.63000'),
+            filled_price=Price(1.63000, 5),
             exchange_rate=1.00)
 
         # Assert
@@ -67,7 +67,7 @@ class CommissionCalculatorTests(unittest.TestCase):
         result = calculator.calculate(
             USDJPY_FXCM,
             Quantity(1000000),
-            filled_price=Price('95.000'),
+            filled_price=Price(95.000, 3),
             exchange_rate=0.01052632)
 
         # Assert

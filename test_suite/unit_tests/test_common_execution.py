@@ -20,7 +20,7 @@ from nautilus_trader.model.identifiers import (
     PositionId,
     ExecutionId,
     PositionIdBroker)
-from nautilus_trader.model.objects import Quantity, Price, Money
+from nautilus_trader.model.objects import Quantity, Decimal, Price, Money
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.commands import SubmitOrder
@@ -155,7 +155,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position_id)
 
-        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price('1.00001'))
+        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00001, 5))
         order1.apply(order1_filled)
         position = Position(position_id, order1.last_event)
         self.database.add_position(position, self.strategy.id)
@@ -164,7 +164,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
-        order2_filled = TestStubs.event_order_filled(order2, fill_price=Price('1.00001'))
+        order2_filled = TestStubs.event_order_filled(order2, fill_price=Price(1.00001, 5))
         position.apply(order2_filled)
 
         # Act
@@ -187,10 +187,10 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Currency.USD,
             Money(1000000),
             Money(1000000),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal(0),
+            Money(0),
+            Money(0),
+            Money(0),
+            Decimal(0, 0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -210,10 +210,10 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Currency.USD,
             Money(1000000),
             Money(1000000),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal(0),
+            Money(0),
+            Money(0),
+            Money(0),
+            Decimal(0, 0),
             ValidString('N'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -246,7 +246,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position1_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position1_id)
 
-        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price('1.00000'))
+        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00000, 5))
         position1 = Position(position1_id, order1_filled)
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
@@ -276,7 +276,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position1_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position1_id)
 
-        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price('1.00000'))
+        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00000, 5))
         position1 = Position(position1_id, order1_filled)
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
@@ -309,7 +309,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position1_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position1_id)
 
-        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price('1.00000'))
+        order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00000, 5))
         position1 = Position(position1_id, order1_filled)
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
@@ -632,13 +632,13 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         order2 = strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         submit_order1 = SubmitOrder(
             self.trader_id,
@@ -701,13 +701,13 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         order2 = strategy2.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         submit_order1 = SubmitOrder(
             self.trader_id,
@@ -783,19 +783,19 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         order2 = strategy1.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         order3 = strategy2.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00000'))
+            Price(1.00000, 5))
 
         submit_order1 = SubmitOrder(
             self.trader_id,
@@ -835,7 +835,7 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('1.00000'),
+            Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
