@@ -234,7 +234,7 @@ class PositionTests(unittest.TestCase):
             order.symbol,
             order.side,
             Quantity(100000),
-            Quantity(0),
+            Quantity(),
             Price(1.00002, 5),
             Currency.USD,
             UNIX_EPOCH,
@@ -318,7 +318,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled2)
 
         # Assert
-        self.assertEqual(Quantity(0), position.quantity)
+        self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(timedelta(minutes=1), position.open_duration)
@@ -333,13 +333,13 @@ class PositionTests(unittest.TestCase):
         self.assertTrue(position.is_closed)
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
-        self.assertEqual(Money(0), position.realized_pnl)
+        self.assertEqual(Money(), position.realized_pnl)
         self.assertEqual(0.0, position.unrealized_points(last))
         self.assertEqual(0.0, position.unrealized_return(last))
-        self.assertEqual(Money(0), position.unrealized_pnl(last))
+        self.assertEqual(Money(), position.unrealized_pnl(last))
         self.assertEqual(0.0, position.total_points(last))
         self.assertEqual(0.0, position.total_return(last))
-        self.assertEqual(Money(0), position.total_pnl(last))
+        self.assertEqual(Money(), position.total_pnl(last))
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -392,7 +392,7 @@ class PositionTests(unittest.TestCase):
             order2.symbol,
             order2.side,
             Quantity(100000),
-            Quantity(0),
+            Quantity(),
             Price(1.00003, 5),
             Currency.USD,
             UNIX_EPOCH,
@@ -409,7 +409,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled3)
 
         # Assert
-        self.assertEqual(Quantity(0), position.quantity)
+        self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.0, position.average_open_price)
@@ -483,7 +483,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order2_filled)
 
         # Assert
-        self.assertEqual(Quantity(0), position.quantity)
+        self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.0, position.average_open_price)
@@ -578,7 +578,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order3_filled)
 
         # Assert
-        self.assertEqual(Quantity(0), position.quantity)
+        self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.0000050067901611, position.average_open_price)

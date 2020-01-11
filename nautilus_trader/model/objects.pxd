@@ -30,26 +30,27 @@ cdef class Decimal:
     cdef readonly int precision
 
     cpdef float as_float(self)
+    cpdef str to_string(self, bint format_commas=*)
     @staticmethod
     cdef Decimal zero()
     @staticmethod
-    cdef Decimal from_string(str value)
+    cdef Decimal from_string_to_decimal(str value)
     @staticmethod
     cdef int precision_from_string(str value)
     cdef bint equals(self, Decimal other)
-    cdef bint eq(self, Decimal other)
-    cdef bint ne(self, Decimal other)
-    cdef bint lt(self, Decimal other)
-    cdef bint le(self, Decimal other)
-    cdef bint gt(self, Decimal other)
-    cdef bint ge(self, Decimal other)
+    cpdef bint eq(self, Decimal other)
+    cpdef bint ne(self, Decimal other)
+    cpdef bint lt(self, Decimal other)
+    cpdef bint le(self, Decimal other)
+    cpdef bint gt(self, Decimal other)
+    cpdef bint ge(self, Decimal other)
+    cpdef Decimal add(self, Decimal other)
+    cpdef Decimal subtract(self, Decimal other)
 
 
 cdef class Price(Decimal):
     @staticmethod
     cdef Price from_string(str value)
-    cpdef Price add(self, Decimal price)
-    cpdef Price subtract(self, Decimal price)
 
 
 cdef class Money(Decimal):
@@ -57,8 +58,6 @@ cdef class Money(Decimal):
     cdef Money zero()
     @staticmethod
     cdef Money from_string(str value)
-    cpdef Money add(self, Money other)
-    cpdef Money subtract(self, Money other)
 
 
 cdef class Tick:

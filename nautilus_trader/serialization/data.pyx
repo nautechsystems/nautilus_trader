@@ -214,7 +214,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             base_currency=currency_from_string(deserialized[BASE_CURRENCY]),
             security_type=security_type_from_string(deserialized[SECURITY_TYPE]),
             tick_precision=deserialized[TICK_PRECISION],
-            tick_size=Decimal.from_string(str(deserialized[TICK_SIZE])),
+            tick_size=Decimal.from_string_to_decimal(str(deserialized[TICK_SIZE])),
             round_lot_size=Quantity(deserialized[ROUND_LOT_SIZE]),
             min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
             min_stop_distance=deserialized[MIN_STOP_DISTANCE],
@@ -222,8 +222,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
             min_trade_size=Quantity(deserialized[MIN_TRADE_SIZE]),
             max_trade_size=Quantity(deserialized[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal.from_string(str(deserialized[ROLL_OVER_INTEREST_BUY])),
-            rollover_interest_sell=Decimal.from_string(str(deserialized[ROLL_OVER_INTEREST_SELL])),
+            rollover_interest_buy=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_BUY])),
+            rollover_interest_sell=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_SELL])),
             timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
 

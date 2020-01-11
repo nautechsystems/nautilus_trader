@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import sys
 import decimal
 import unittest
 import timeit
@@ -36,15 +37,31 @@ class PriceInitializations:
 
     @staticmethod
     def float_comparisons():
-        x1 = 1.0 > 2.0
-        x2 = 1.0 >= 2.0
+        # x1 = 1.0 > 2.0
+        # x2 = 1.0 >= 2.0
         x3 = 1.0 == 2.0
 
     @staticmethod
+    def float_arithmetic():
+        x1 = 1.0 * 2.0
+
+    @staticmethod
     def decimal_comparisons():
-        x1 = _DECIMAL1.value > _DECIMAL2.value
-        x2 = _DECIMAL1.value >= _DECIMAL2.value
-        x3 = _DECIMAL1.value == _DECIMAL2.value
+        # x1 = _DECIMAL1.value > _DECIMAL2.value
+        # x2 = _DECIMAL1.value >= _DECIMAL2.value
+        # x3 = _DECIMAL1.value == _DECIMAL2.value
+
+        # x1 = _DECIMAL1.gt(_DECIMAL2)
+        # x2 = _DECIMAL1.ge(_DECIMAL2)
+        x3 = _DECIMAL1.eq(_DECIMAL1)
+
+        # x3 = _DECIMAL1 == 1.0
+        # x3 = _DECIMAL1.eq_float(1.0)
+
+    @staticmethod
+    def decimal_arithmetic():
+        # x0 = _DECIMAL1 + 1.0
+        x1 = _DECIMAL1 * 1.0
 
     @staticmethod
     def stock_decimal_comparisons():
@@ -64,63 +81,6 @@ class PriceInitializations:
 class PricePerformanceTests(unittest.TestCase):
 
     @staticmethod
-    def test_float_comparisons():
-        # Arrange
-        tests = 3
-        number = 1000000
-
-        total_elapsed = 0
-
-        for x in range(tests):
-            srt_time = time()
-            timeit.Timer(PriceInitializations.float_comparisons).timeit(number=number)
-            end_time = time()
-            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
-
-        print('\n' + f'test_decimal_from_string({number} iterations)')
-        print(f'{round(total_elapsed / tests)}ms')
-
-        # ~58ms for 1000000 decimals (wrapping adds 60ms)
-
-    @staticmethod
-    def test_decimal_comparisons():
-        # Arrange
-        tests = 3
-        number = 1000000
-
-        total_elapsed = 0
-
-        for x in range(tests):
-            srt_time = time()
-            timeit.Timer(PriceInitializations.decimal_comparisons).timeit(number=number)
-            end_time = time()
-            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
-
-        print('\n' + f'test_decimal_from_string({number} iterations)')
-        print(f'{round(total_elapsed / tests)}ms')
-
-        # ~129ms for 1000000 decimals (wrapping adds 60ms)
-
-    @staticmethod
-    def test_stock_decimal_comparisons():
-        # Arrange
-        tests = 3
-        number = 1000000
-
-        total_elapsed = 0
-
-        for x in range(tests):
-            srt_time = time()
-            timeit.Timer(PriceInitializations.stock_decimal_comparisons).timeit(number=number)
-            end_time = time()
-            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
-
-        print('\n' + f'test_decimal_from_string({number} iterations)')
-        print(f'{round(total_elapsed / tests)}ms')
-
-        # ~129ms for 1000000 decimals (wrapping adds 60ms)
-
-    @staticmethod
     def test_make_stock_decimal():
         # Arrange
         tests = 3
@@ -136,27 +96,10 @@ class PricePerformanceTests(unittest.TestCase):
 
         print('\n' + f'test_decimal_from_string({number} iterations)')
         print(f'{round(total_elapsed / tests)}ms')
+        x = decimal.Decimal('1.00000')
+        print(f'{type(x)} size is {sys.getsizeof(x)} bytes')
 
-        # ~393ms for 1000000 decimals (wrapping adds 60ms)
-
-    @staticmethod
-    def test_make_decimal():
-        # Arrange
-        tests = 3
-        number = 1000000
-
-        total_elapsed = 0
-
-        for x in range(tests):
-            srt_time = time()
-            timeit.Timer(PriceInitializations.make_experimental_decimal).timeit(number=number)
-            end_time = time()
-            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
-
-        print('\n' + f'test_decimal_from_string({number} iterations)')
-        print(f'{round(total_elapsed / tests)}ms')
-
-        # ~439ms for 1000000 decimals (wrapping adds 60ms)
+        # ~716ms for 1000000 decimals
 
     @staticmethod
     def test_make_decimal():
@@ -174,8 +117,10 @@ class PricePerformanceTests(unittest.TestCase):
 
         print('\n' + f'test_decimal_from_string({number} iterations)')
         print(f'{round(total_elapsed / tests)}ms')
+        x = Decimal(1.00000, 5)
+        print(f'{type(x)} size is {sys.getsizeof(x)} bytes')
 
-        # ~685ms for 1000000 decimals (wrapping adds 60ms)
+        # ~489ms for 1000000 decimals
 
     @staticmethod
     def test_make_price():
@@ -195,3 +140,98 @@ class PricePerformanceTests(unittest.TestCase):
         print(f'{round(total_elapsed / tests)}ms')
 
         # ~665ms for 1000000 prices
+
+    @staticmethod
+    def test_float_comparisons():
+        # Arrange
+        tests = 3
+        number = 1000000
+
+        total_elapsed = 0
+
+        for x in range(tests):
+            srt_time = time()
+            timeit.Timer(PriceInitializations.float_comparisons).timeit(number=number)
+            end_time = time()
+            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
+
+        print('\n' + f'test_decimal_from_string({number} iterations)')
+        print(f'{round(total_elapsed / tests)}ms')
+
+        # ~58ms for 1000000 iterations
+
+    @staticmethod
+    def test_decimal_comparisons():
+        # Arrange
+        tests = 3
+        number = 1000000
+
+        total_elapsed = 0
+
+        for x in range(tests):
+            srt_time = time()
+            timeit.Timer(PriceInitializations.decimal_comparisons).timeit(number=number)
+            end_time = time()
+            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
+
+        print('\n' + f'test_decimal_comparisons({number} iterations)')
+        print(f'{round(total_elapsed / tests)}ms')
+
+        # ~197ms for 1000000 decimals
+
+    @staticmethod
+    def test_stock_decimal_comparisons():
+        # Arrange
+        tests = 3
+        number = 1000000
+
+        total_elapsed = 0
+
+        for x in range(tests):
+            srt_time = time()
+            timeit.Timer(PriceInitializations.stock_decimal_comparisons).timeit(number=number)
+            end_time = time()
+            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
+
+        print('\n' + f'test_decimal_from_string({number} iterations)')
+        print(f'{round(total_elapsed / tests)}ms')
+
+        # ~164ms for 1000000 decimals
+
+    @staticmethod
+    def test_float_arithmetic():
+        # Arrange
+        tests = 3
+        number = 1000000
+
+        total_elapsed = 0
+
+        for x in range(tests):
+            srt_time = time()
+            timeit.Timer(PriceInitializations.float_arithmetic).timeit(number=number)
+            end_time = time()
+            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
+
+        print('\n' + f'test_decimal_from_string({number} iterations)')
+        print(f'{round(total_elapsed / tests)}ms')
+
+        # ~129ms for 1000000 decimals
+
+    @staticmethod
+    def test_decimal_arithmetic():
+        # Arrange
+        tests = 3
+        number = 1000000
+
+        total_elapsed = 0
+
+        for x in range(tests):
+            srt_time = time()
+            timeit.Timer(PriceInitializations.decimal_arithmetic).timeit(number=number)
+            end_time = time()
+            total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
+
+        print('\n' + f'test_decimal_from_string({number} iterations)')
+        print(f'{round(total_elapsed / tests)}ms')
+
+        # ~217ms for 1000000 decimals

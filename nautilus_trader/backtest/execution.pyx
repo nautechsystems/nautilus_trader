@@ -124,6 +124,14 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._set_slippage_index()
 
+    cdef void _set_slippage_index(self) except *:
+        cdef dict slippage_index = {}  # type: Dict[Symbol, float]
+
+        for symbol, instrument in self.instruments.items():
+            slippage_index[symbol] = instrument.tick_size.value
+
+        self._slippage_index = slippage_index
+
     cpdef datetime time_now(self):
         """
         Return the current time for the execution client.
@@ -201,7 +209,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Order order
         cdef Instrument instrument
         for order_id, order in self._working_orders.copy().items():  # Copies dict to avoid resize during loop
-            if order.symbol != tick.symbol:
+            if not order.symbol.equals(tick.symbol):
                 continue  # Order is for a different symbol
             if order.state != OrderState.WORKING:
                 continue  # Orders state has changed since the loop commenced
@@ -210,7 +218,7 @@ cdef class BacktestExecClient(ExecutionClient):
             # Check for order fill
             if order.side == OrderSide.BUY:
                 if order.type in STOP_ORDER_TYPES:
-                    if tick.ask > order.price or (tick.ask.equals(order.price) and self.fill_model.is_stop_filled()):
+                    if tick.ask.gt(order.price) or (tick.ask.eq(order.price) and self.fill_model.is_stop_filled()):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, Price(order.price.value + self._slippage_index[order.symbol], instrument.tick_precision))
@@ -218,7 +226,7 @@ cdef class BacktestExecClient(ExecutionClient):
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if tick.ask < order.price or (tick.ask.equals(order.price) and self.fill_model.is_limit_filled()):
+                    if tick.ask.lt(order.price) or (tick.ask.eq(order.price) and self.fill_model.is_limit_filled()):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, Price(order.price.value + self._slippage_index[order.symbol], instrument.tick_precision))
@@ -227,7 +235,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type in STOP_ORDER_TYPES:
-                    if tick.bid < order.price or (tick.bid.equals(order.price) and self.fill_model.is_stop_filled()):
+                    if tick.bid.lt(order.price) or (tick.bid.eq(order.price) and self.fill_model.is_stop_filled()):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, Price(order.price.value - self._slippage_index[order.symbol], instrument.tick_precision))
@@ -235,7 +243,7 @@ cdef class BacktestExecClient(ExecutionClient):
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if tick.bid > order.price or (tick.bid.equals(order.price) and self.fill_model.is_limit_filled()):
+                    if tick.bid.gt(order.price) or (tick.bid.eq(order.price) and self.fill_model.is_limit_filled()):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, Price(order.price.value - self._slippage_index[order.symbol], instrument.tick_precision))
@@ -300,14 +308,6 @@ cdef class BacktestExecClient(ExecutionClient):
             ValidString('N'),
             self._guid_factory.generate(),
             self._clock.time_now())
-
-    cdef void _set_slippage_index(self) except *:
-        cdef dict slippage_index = {}  # type: Dict[Symbol, float]
-
-        for symbol, instrument in self.instruments.items():
-            slippage_index[symbol] = instrument.tick_size.value
-
-        self._slippage_index = slippage_index
 
 
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #

@@ -497,7 +497,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Money.from_string(unpacked[CASH_ACTIVITY_DAY]),
                 Money.from_string(unpacked[MARGIN_USED_LIQUIDATION]),
                 Money.from_string(unpacked[MARGIN_USED_MAINTENANCE]),
-                Decimal.from_string(unpacked[MARGIN_RATIO]),
+                Decimal.from_string_to_decimal(unpacked[MARGIN_RATIO]),
                 ValidString(unpacked[MARGIN_CALL_STATUS]),
                 event_id,
                 event_timestamp)

@@ -54,6 +54,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef dict _atomic_child_orders
     cdef dict _oco_orders
 
+    cdef void _set_slippage_index(self) except *
     cpdef datetime time_now(self)
     cpdef void register_exec_db(self, ExecutionDatabase exec_db) except *
     cpdef void change_fill_model(self, FillModel fill_model) except *
@@ -62,7 +63,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void reset(self) except *
 
     cdef AccountStateEvent reset_account_event(self)
-    cdef void _set_slippage_index(self) except *
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
     cdef void _accept_order(self, Order order) except *

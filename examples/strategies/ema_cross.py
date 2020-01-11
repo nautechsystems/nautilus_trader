@@ -143,7 +143,7 @@ class EMACrossPy(TradingStrategy):
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(bar.high + self.entry_buffer + self.spreads[-1], self.precision)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
-                price_take_profit = (price_entry.add(price_entry.subtract(price_stop_loss)))
+                price_take_profit = Price(price_entry + (price_entry.as_float() - price_stop_loss.as_float()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
@@ -178,7 +178,7 @@ class EMACrossPy(TradingStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer, self.precision)
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
-                price_take_profit = price_entry.subtract(price_stop_loss.subtract(price_entry))
+                price_take_profit = Price(price_entry - (price_stop_loss.as_float() - price_entry.as_float()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
