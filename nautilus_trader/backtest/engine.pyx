@@ -175,14 +175,11 @@ cdef class BacktestEngine:
         """
         Run a backtest.
 
-        :param start: The optional start UTC datetime for the backtest run (if None will run from the start of the data).
-        :param stop: The optional stop UTC datetime for the backtest run (if None will run to the end of the data).
+        :param start: The optional start datetime (UTC) for the backtest run (if None will run from the start of the data).
+        :param stop: The optional stop datetime (UTC) for the backtest run (if None will run to the end of the data).
         :param fill_model: The optional fill model change for the backtest run (if None will use previous).
         :param strategies: The optional strategies change for the backtest run (if None will use previous).
         :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
-
-        :raises: ConditionFailed: If the start timezone is not UTC.
-        :raises: ConditionFailed: If the stop timezone is not UTC.
         :raises: ConditionFailed: If the stop is >= the start datetime.
         :raises: ConditionFailed: If the fill_model is a type other than FillModel or None.
         :raises: ConditionFailed: If the strategies contains a type other than TradingStrategy.

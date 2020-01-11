@@ -160,7 +160,7 @@ class LiveClockTests(unittest.TestCase):
             start_time=start_time,
             stop_time=None)
 
-        time.sleep(0.5)
+        time.sleep(0.55)
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())

@@ -357,7 +357,7 @@ cdef class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         #self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spreads.append(tick.ask.as_float() - tick.bid.as_float())
+        self.spreads.append(float(tick.ask.value - tick.bid.value))
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -389,6 +389,9 @@ cdef class EMACross(TradingStrategy):
                 self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
+        cdef Price price_entry
+        cdef Price price_stop_loss
+        cdef Price price_take_profit
         cdef AtomicOrder atomic_order
         cdef float exchange_rate
 
@@ -397,7 +400,7 @@ cdef class EMACross(TradingStrategy):
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(bar.high + self.entry_buffer + self.spreads[-1], self.precision)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
-                price_take_profit = (price_entry.add(price_entry.subtract(price_stop_loss)))
+                price_take_profit = Price(price_entry + (price_entry.as_float() - price_stop_loss.as_float()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = currency_from_string(self.instrument.symbol.code[3:])
@@ -432,7 +435,7 @@ cdef class EMACross(TradingStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer, self.precision)
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
-                price_take_profit = price_entry.subtract(price_stop_loss.subtract(price_entry))
+                price_take_profit = Price(price_entry - (price_stop_loss.as_float() - price_entry.as_float()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = currency_from_string(self.instrument.symbol.code[3:])

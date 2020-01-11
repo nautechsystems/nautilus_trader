@@ -153,7 +153,7 @@ cdef class FixedRiskSizer(PositionSizer):
 
         # Divide by zero protection
         if risk_points <= 0:
-            return Quantity(0)
+            return Quantity()
 
         cdef long position_size = long(long((((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_float())))
 

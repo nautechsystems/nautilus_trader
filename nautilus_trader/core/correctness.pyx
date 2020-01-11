@@ -228,7 +228,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is not positive (> 0).
         """
         if value <= 0.:
-            raise ConditionFailed(f"The \'{param}\' was not a positive real {value}")
+            raise ConditionFailed(f"The \'{param}\' was not a positive real, was {value}")
 
     @staticmethod
     cdef void positive_int(int value, str param) except *:
@@ -240,7 +240,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is not positive (> 0).
         """
         if value <= 0:
-            raise ConditionFailed(f"The \'{param}\' was not a positive integer {value}")
+            raise ConditionFailed(f"The \'{param}\' was not a positive integer, was {value}")
 
     @staticmethod
     cdef void not_negative(float value, str param) except *:
@@ -252,7 +252,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is a negative integer (< 0).
         """
         if value < 0.:
-            raise ConditionFailed(f"The \'{param}\' was a negative real {value}")
+            raise ConditionFailed(f"The \'{param}\' was a negative real, was {value}")
 
     @staticmethod
     cdef void not_negative_int(int value, str param) except *:
@@ -264,7 +264,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is a negative integer (< 0).
         """
         if value < 0:
-            raise ConditionFailed(f"The \'{param}\' was a negative integer {value}")
+            raise ConditionFailed(f"The \'{param}\' was a negative integer, was {value}")
 
     @staticmethod
     cdef void in_range(float value, float start, float end, str param) except *:

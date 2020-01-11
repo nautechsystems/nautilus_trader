@@ -69,8 +69,8 @@ if __name__ == "__main__":
 
     input("Press Enter to continue...")
 
-    start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2013, 2, 1, 0, 0, 0, 0)
+    stop = datetime(2013, 2, 3, 0, 0, 0, 0)
 
     engine.run(start, stop)
 
