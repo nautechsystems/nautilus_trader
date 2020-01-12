@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import pandas as pd
 import datetime
 
 from nautilus_trader.model.objects import Quantity, Money, Price
