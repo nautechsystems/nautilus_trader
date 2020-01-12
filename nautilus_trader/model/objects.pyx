@@ -12,6 +12,7 @@ import decimal
 import iso8601
 import re
 
+from libc.math cimport round
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -178,8 +179,10 @@ cdef class Quantity:
 cdef Decimal _ZERO_DECIMAL = Decimal()
 
 cdef class Decimal:
+    """
+    Represents a decimal floating point value type.
+    """
 
-    """ Experimental"""
     def __init__(self, float value=0.0, int precision=1):
         """
         Initializes a new instance of the Decimal class.
@@ -241,7 +244,7 @@ cdef class Decimal:
         :param value: The string value to parse (must contain a decimal '.').
         :return: int.
         """
-        return len(value.rpartition('.')[2])
+        return len(value.partition('.')[2])
 
     cdef bint equals(self, Decimal other):
         """
@@ -341,11 +344,11 @@ cdef class Decimal:
         :return bool.
         """
         try:
-            return float(self.value) == <float?>other
+            return self.value == <float?>other
         except TypeError:
             return self.value == <Decimal>other.value
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
@@ -353,11 +356,11 @@ cdef class Decimal:
         :return bool.
         """
         try:
-            return float(self.value) != <float?>other
+            return self.value != <float?>other
         except TypeError:
             return self.value != <Decimal>other.value
 
-    def __lt__(self, other):
+    def __lt__(self, other) -> bool:
         """
         Return a value indicating whether this object is less than (<) the given object.
 
@@ -369,7 +372,7 @@ cdef class Decimal:
         except TypeError:
             return self.value < <Decimal>other.value
 
-    def __le__(self, other):
+    def __le__(self, other) -> bool:
         """
         Return a value indicating whether this object is less than or equal to (<=) the given object.
 
@@ -381,7 +384,7 @@ cdef class Decimal:
         except TypeError:
             return self.value <= <Decimal>other.value
 
-    def __gt__(self, other):
+    def __gt__(self, other) -> bool:
         """
         Return a value indicating whether this object is greater than (>) the given object.
 
@@ -393,7 +396,7 @@ cdef class Decimal:
         except TypeError:
             return self.value > <Decimal>other.value
 
-    def __ge__(self, other):
+    def __ge__(self, other) -> bool:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
@@ -405,47 +408,53 @@ cdef class Decimal:
         except TypeError:
             return self.value >= <Decimal>other.value
 
-    def __add__(self, other):
+    def __add__(self, other) -> float:
         """
         Return the result of adding the given object to this object.
 
         :param other: The other object.
-        :return Decimal.
+        :return float.
         """
         try:
             return float(self.value) + <float?>other
         except TypeError:
-            return self.add(other)
+            return float(self.value) + float(other.value)
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> float:
         """
         Return the result of subtracting the given object from this object.
 
         :param other: The other object.
-        :return Decimal.
+        :return float.
         """
         try:
             return float(self.value) - <float?>other
         except TypeError:
-            return self.subtract(other)
+            return float(self.value) - float(other.value)
 
-    def __truediv__(self, float other):
+    def __truediv__(self, other) -> float:
         """
         Return the result of dividing this object by the given object.
 
         :param other: The other object.
-        :return Decimal.
+        :return float.
         """
-        return float(self.value) / other
+        try:
+            return float(self.value) / <float?>other
+        except TypeError:
+            return float(self.value) / float(<Decimal>other.value)
 
-    def __mul__(self, float other):
+    def __mul__(self, other) -> float:
         """
         Return the result of multiplying this object by the given object.
 
         :param other: The other object.
-        :return Decimal.
+        :return float.
         """
-        return float(self.value) * other
+        try:
+            return float(self.value) * <float?>other
+        except TypeError:
+            return float(self.value) * float(<Decimal>other.value)
 
     def __hash__(self) -> int:
         """"
