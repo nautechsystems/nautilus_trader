@@ -29,7 +29,6 @@ cdef class PerformanceProfiler:
         :param iterations: The number of times to call the function per run.
         :param runs: The number of runs for the test
         """
-        cdef str signature = str(inspect.getmembers(function)[4][1])
         cdef float total_elapsed = 0
 
         cdef int x
@@ -39,7 +38,7 @@ cdef class PerformanceProfiler:
             stop_time = time.time()
             total_elapsed += stop_time - start_time
 
-        print('\n' + f'Performance test: {signature} ')
+        print('\n' + f'Performance test: {str(inspect.getmembers(function)[4][1])} ')
         print(f'# ~{math.ceil((total_elapsed / runs) * _MILLISECONDS_IN_SECOND)}ms '
               f'({math.ceil((total_elapsed / runs) * _MICROSECONDS_IN_SECOND)}μs) '
               f'average over {runs} runs @ {iterations} iterations')
