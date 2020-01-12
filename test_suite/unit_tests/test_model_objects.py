@@ -111,7 +111,7 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, result)
         self.assertEqual(1, result.precision)
-        self.assertEqual(0, result.value)
+        self.assertEqual(decimal.Decimal('0'), result.value)
         self.assertEqual(0, result.as_float())
 
     def test_decimal_initialized_with_valid_inputs(self):
@@ -143,18 +143,13 @@ class ObjectTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(float, type(result0))
-        self.assertEqual(Decimal, type(result1))
+        self.assertEqual(float, type(result1))
         self.assertEqual(Decimal, type(result2))
         self.assertEqual(Decimal, type(result3))
         self.assertEqual(1.0000199999997474, result0)
-        self.assertEqual(1.0000200271606445, result1.as_float())
+        self.assertEqual(1.0000200000000001, result1)
         self.assertEqual(Decimal(1.00002, 5), result2)
         self.assertEqual(1.5000100135803223, result3.as_float())
-        # self.assertEqual(result0, result1)
-        # self.assertEqual(Decimal, type(result1))
-        # self.assertEqual(Decimal(1.00002, 5), result1)
-        # self.assertEqual(Decimal, type(result2))
-        # self.assertEqual(Decimal(1.000015, 6), result2)
 
     def test_decimal_add_with_finer_precision_raises_exception(self):
         # Arrange

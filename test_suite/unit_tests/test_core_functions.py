@@ -14,8 +14,9 @@ import pytz
 from datetime import timezone, timedelta
 
 from nautilus_trader.core.functions import (
-    pad_string,
+    fast_round,
     basis_points_as_percentage,
+    pad_string,
     format_zulu_datetime,
     as_utc_timestamp,
     with_utc_index,
@@ -27,6 +28,30 @@ from test_kit.stubs import UNIX_EPOCH
 
 
 class TestFunctionsTests(unittest.TestCase):
+
+    def test_fast_round(self):
+        # Arrange
+        # Act
+        result0 = fast_round(1.0012, 0)
+        result1 = fast_round(1.0012, 3)
+        result2 = fast_round(-0.020, 2)
+        result3 = fast_round(1.0015, 3)
+
+        # Assert
+        self.assertEqual(1.0, result0)
+        self.assertEqual(1.0010000467300415, result1)
+        self.assertEqual(-0.019999999552965164, result2)
+        self.assertEqual(1.0019999742507935, result3)
+
+    def test_basis_points_as_percentage(self):
+        # Arrange
+        # Act
+        result1 = basis_points_as_percentage(0)
+        result2 = basis_points_as_percentage(0.020)
+
+        # Assert
+        self.assertEqual(0.0, result1)
+        self.assertAlmostEqual(0.000002, result2)
 
     def test_pad_string(self):
         # Arrange
@@ -59,16 +84,6 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual('1970-01-01T00:00:00.001Z', result3)
         self.assertEqual('1970-01-01T00:00:01.000Z', result4)
         self.assertEqual('1970-01-01T01:01:02.003Z', result5)
-
-    def test_basis_points_as_percentage(self):
-        # Arrange
-        # Act
-        result1 = basis_points_as_percentage(0)
-        result2 = basis_points_as_percentage(0.020)
-
-        # Assert
-        self.assertEqual(0.0, result1)
-        self.assertAlmostEqual(0.000002, result2)
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange

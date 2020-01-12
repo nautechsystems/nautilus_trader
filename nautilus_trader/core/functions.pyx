@@ -9,6 +9,30 @@
 import pandas as pd
 import pytz
 
+from libc.math cimport round
+
+
+cpdef float fast_round(float value, int precision):
+    """
+    Return the given value rounded to the nearest precision digits.
+    
+    :param value: The value to round.
+    :param precision: The precision to round to.
+    :return: float.
+    """
+    cdef int power = 10 ** precision
+    return round(value * power) / power
+
+
+cpdef float basis_points_as_percentage(float basis_points):
+    """
+    Return the given basis points expressed as a percentage where 100% = 1.0.
+    
+    :param basis_points: The basis points to convert to percentage.
+    :return float.
+    """
+    return basis_points * 0.0001
+
 
 cpdef str pad_string(str string, int length):
     """
@@ -16,7 +40,6 @@ cpdef str pad_string(str string, int length):
 
     :param string: The string to pad.
     :param length: The length to pad to.
-    
     :return str.
     """
     return ((length - len(string)) * ' ') + string
@@ -27,7 +50,6 @@ cpdef str format_zulu_datetime(datetime dt):
     Return the formatted string from the given datetime.
     
     :param dt: The datetime to format.
-    
     :return str.
     """
     cdef str formatted_dt = ''
@@ -41,24 +63,12 @@ cpdef str format_zulu_datetime(datetime dt):
         return formatted_dt + 'Z'
 
 
-cpdef float basis_points_as_percentage(float basis_points):
-    """
-    Return the given basis points expressed as a percentage where 100% = 1.0.
-    
-    :param basis_points: The basis points to convert to percentage.
-    
-    :return float.
-    """
-    return basis_points * 0.0001
-
-
 cpdef object with_utc_index(dataframe):
         """
         Return the given pandas DataFrame with the index timestamps localized 
         or converted to UTC. If the DataFrame is None then returns None.
         
         :param dataframe: The pd.DataFrame to localize.
-        
         :return pd.DataFrame or None.
         """
         if dataframe is not None:
@@ -87,6 +97,7 @@ cpdef object as_utc_timestamp(datetime timestamp):
         return timestamp.tz_convert('UTC')
     else:
         return timestamp  # Already UTC
+
 
 # Closures in cpdef functions not yet supported (21/6/19)
 def max_in_dict(dict dictionary):

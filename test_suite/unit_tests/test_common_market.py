@@ -59,8 +59,8 @@ class TickDataWranglerTests(unittest.TestCase):
 
     def test_build_ticks_with_bar_data(self):
         # Arrange
-        bid_data = TestDataProvider.usdjpy_1min_bid()[:10000]
-        ask_data = TestDataProvider.usdjpy_1min_ask()[:10000]
+        bid_data = TestDataProvider.usdjpy_1min_bid()
+        ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = TickDataWrangler(
             instrument=TestStubs.instrument_usdjpy(),
             data_ticks=None,
