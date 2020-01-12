@@ -21,7 +21,7 @@ cdef class Quantity:
 
     @staticmethod
     cdef Quantity zero()
-    cdef bint equals(self, Quantity other)
+    cpdef bint equals(self, Quantity other)
     cpdef str to_string(self, bint format_commas=*)
 
 
@@ -29,15 +29,15 @@ cdef class Decimal:
     cdef readonly object value
     cdef readonly int precision
 
-    cpdef float as_float(self)
-    cpdef str to_string(self, bint format_commas=*)
     @staticmethod
     cdef Decimal zero()
     @staticmethod
     cdef Decimal from_string_to_decimal(str value)
     @staticmethod
     cdef int precision_from_string(str value)
-    cdef bint equals(self, Decimal other)
+    cpdef bint equals(self, Decimal other)
+    cpdef str to_string(self, bint format_commas=*)
+    cpdef float as_float(self)
     cpdef bint eq(self, Decimal other)
     cpdef bint ne(self, Decimal other)
     cpdef bint lt(self, Decimal other)
@@ -77,6 +77,7 @@ cdef class Tick:
     cdef Tick from_string_with_symbol(Symbol symbol, str values)
     @staticmethod
     cdef Tick from_string(str value)
+    cpdef str to_string(self)
 
 
 cdef class BarSpecification:
@@ -84,23 +85,24 @@ cdef class BarSpecification:
     cdef readonly BarStructure structure
     cdef readonly PriceType price_type
 
-    cdef bint equals(self, BarSpecification other)
-    cdef str structure_string(self)
-    cdef str quote_type_string(self)
     @staticmethod
     cdef BarSpecification from_string(str value)
+    cdef str structure_string(self)
+    cdef str price_type_string(self)
+    cpdef bint equals(self, BarSpecification other)
+    cpdef str to_string(self)
 
 
 cdef class BarType:
     cdef readonly Symbol symbol
     cdef readonly BarSpecification specification
 
-    cdef bint equals(self, BarType other)
-    cdef str structure_string(self)
-    cdef str quote_type_string(self)
-
     @staticmethod
     cdef BarType from_string(str value)
+    cdef str structure_string(self)
+    cdef str price_type_string(self)
+    cpdef bint equals(self, BarType other)
+    cpdef str to_string(self)
 
 
 cdef class Bar:
@@ -114,6 +116,7 @@ cdef class Bar:
 
     @staticmethod
     cdef Bar from_string(str value)
+    cpdef str to_string(self)
 
 
 cdef class DataBar:

@@ -25,7 +25,7 @@ cdef class Message:
     cdef readonly GUID id
     cdef readonly datetime timestamp
 
-    cdef bint equals(self, Message other)
+    cpdef bint equals(self, Message other)
 
 
 cdef class Command(Message):

@@ -167,7 +167,7 @@ cdef class Order:
             expire_time=event.expire_time,
             init_id=event.id)
 
-    cdef bint equals(self, Order other):
+    cpdef bint equals(self, Order other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -232,7 +232,7 @@ cdef class Order:
         """
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
+        return (f"{order_side_to_string(self.side)} {self.quantity.to_string(format_commas=True)} {self.symbol} "
                 f"{order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
@@ -369,7 +369,7 @@ cdef class AtomicOrder:
         self.has_take_profit = take_profit is not None
         self.timestamp = entry.timestamp
 
-    cdef bint equals(self, AtomicOrder other):
+    cpdef bint equals(self, AtomicOrder other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

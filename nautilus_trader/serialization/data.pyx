@@ -6,14 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import iso8601
-
 from bson import BSON
 from bson.raw_bson import RawBSONDocument
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Quantity, Decimal, Price, Tick, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Decimal, Tick, Bar, Instrument
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport security_type_to_string, security_type_from_string
 from nautilus_trader.serialization.constants cimport *
@@ -33,31 +31,25 @@ cdef class Utf8TickSerializer:
         :param tick: The tick to serialize.
         :return bytes.
         """
-        return str(tick).encode(UTF8)
+        return tick.to_string().encode(UTF8)
 
     @staticmethod
-    cdef Tick deserialize(Symbol symbol, bytes values_bytes):
+    cdef Tick deserialize(Symbol symbol, bytes tick_bytes):
         """
         Deserialize the given tick bytes to a tick.
 
         :param symbol: The symbol to deserialize.
-        :param values_bytes: The tick value bytes to deserialize.
+        :param tick_bytes: The tick bytes to deserialize.
         :return Tick.
         """
-        cdef list values = values_bytes.decode(UTF8).split(',', maxsplit=2)
-
-        return Tick(
-            symbol,
-            Price.from_string(values[0]),
-            Price.from_string(values[1]),
-            iso8601.parse_date(values[2]))
+        return Tick.from_string_with_symbol(symbol, tick_bytes.decode(UTF8))
 
     @staticmethod
-    def py_serialize(tick: Tick) -> bytes:
+    def py_serialize(Tick tick) -> bytes:
         return Utf8TickSerializer.serialize(tick)
 
     @staticmethod
-    def py_deserialize(symbol: Symbol, values_bytes: bytes) -> Tick:
+    def py_deserialize(Symbol symbol, bytes values_bytes) -> Tick:
         return Utf8TickSerializer.deserialize(symbol, values_bytes)
 
 
@@ -73,7 +65,7 @@ cdef class Utf8BarSerializer:
         :param bar: The bar to serialize.
         :return bytes.
         """
-        return str(bar).encode(UTF8)
+        return bar.to_string().encode(UTF8)
 
     @staticmethod
     cdef Bar deserialize(bytes bar_bytes):
@@ -83,14 +75,7 @@ cdef class Utf8BarSerializer:
         :param bar_bytes: The bar bytes to deserialize.
         :return Bar.
         """
-        cdef list values = bar_bytes.decode(UTF8).split(',', maxsplit=5)
-
-        return Bar(Price.from_string(values[0]),
-                   Price.from_string(values[1]),
-                   Price.from_string(values[2]),
-                   Price.from_string(values[3]),
-                   long(values[4]),
-                   iso8601.parse_date(values[5]))
+        return Bar.from_string(bar_bytes.decode(UTF8))
 
     @staticmethod
     cdef list deserialize_bars(bytes[:] bar_bytes_array):
@@ -100,23 +85,23 @@ cdef class Utf8BarSerializer:
         :param bar_bytes_array: The bar bytes to deserialize.
         :return List[Bar].
         """
-        cdef list bars = []
         cdef int i
         cdef int array_length = len(bar_bytes_array)
+        cdef list bars = []
         for i in range(array_length):
             bars.append(Utf8BarSerializer.deserialize(bar_bytes_array[i]))
         return bars
 
     @staticmethod
-    def py_serialize(bar: Bar) -> bytes:
+    def py_serialize(Bar bar) -> bytes:
         return Utf8BarSerializer.serialize(bar)
 
     @staticmethod
-    def py_deserialize(bar_bytes: bytes) -> Bar:
+    def py_deserialize(bytes bar_bytes) -> Bar:
         return Utf8BarSerializer.deserialize(bar_bytes)
 
     @staticmethod
-    def py_deserialize_bars(bar_bytes_array: bytearray):
+    def py_deserialize_bars(bytearray bar_bytes_array):
         return Utf8BarSerializer.deserialize_bars(bar_bytes_array)
 
 

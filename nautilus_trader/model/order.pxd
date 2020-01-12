@@ -63,7 +63,7 @@ cdef class Order:
 
     @staticmethod
     cdef Order create(OrderInitialized event)
-    cdef bint equals(self, Order other)
+    cpdef bint equals(self, Order other)
     cpdef str status_string(self)
     cpdef str state_as_string(self)
     cpdef list get_execution_ids(self)
@@ -83,7 +83,7 @@ cdef class AtomicOrder:
     cdef readonly bint has_take_profit
     cdef readonly datetime timestamp
 
-    cdef bint equals(self, AtomicOrder other)
+    cpdef bint equals(self, AtomicOrder other)
 
 
 cdef class OrderFactory:

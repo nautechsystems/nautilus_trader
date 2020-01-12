@@ -65,7 +65,7 @@ cdef class TradingStrategy:
     cdef readonly bint is_exec_engine_registered
     cdef readonly bint is_running
 
-    cdef bint equals(self, TradingStrategy other)
+    cpdef bint equals(self, TradingStrategy other)
 
 #-- ABSTRACT METHODS ------------------------------------------------------------------------------#
     cpdef void on_start(self) except *

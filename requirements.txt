@@ -2,7 +2,6 @@ cython
 numpy
 scipy
 pandas
-iso8601
 pytz
 pyzmq
 pymongo

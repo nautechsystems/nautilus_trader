@@ -113,7 +113,7 @@ cdef class TradingStrategy:
         self.is_exec_engine_registered = False  # True when registered with the execution engine
         self.is_running = False
 
-    cdef bint equals(self, TradingStrategy other):
+    cpdef bint equals(self, TradingStrategy other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

@@ -109,7 +109,7 @@ class DataSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual('AUDUSD.FXCM', deserialized.symbol.value)
 
-    def test_can_deserialize_tick_data_response_from_csharp(self):
+    def test_can_deserialize_bar_data_response_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
         bar_type = TestStubs.bartype_audusd_1min_bid()

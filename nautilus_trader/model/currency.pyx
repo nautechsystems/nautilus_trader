@@ -29,12 +29,12 @@ cdef class ExchangeRateCalculator:
             dict ask_rates) except *:
         """
         Return the calculated exchange rate for the given quote currency to the 
-        given base currency for the given quote type using the given dictionary of 
+        given base currency for the given price type using the given dictionary of 
         bid and ask rates.
 
         :param from_currency: The currency to convert from.
         :param to_currency: The currency to convert to.
-        :param price_type: The quote type for conversion.
+        :param price_type: The price type for conversion.
         :param bid_rates: The dictionary of currency pair bid rates Dict[str, float].
         :param ask_rates: The dictionary of currency pair ask rates Dict[str, float].
         :return float.
@@ -54,7 +54,7 @@ cdef class ExchangeRateCalculator:
             for ccy_pair in bid_rates.keys():
                 calculation_rates[ccy_pair] = (bid_rates[ccy_pair] + ask_rates[ccy_pair]) / 2.0
         else:
-            raise ValueError(f"Cannot calculate exchange rate for quote type {price_type_to_string(price_type)}.")
+            raise ValueError(f"Cannot calculate exchange rate for price type {price_type_to_string(price_type)}.")
 
         cdef dict exchange_rates = {}
         cdef set symbols = set()

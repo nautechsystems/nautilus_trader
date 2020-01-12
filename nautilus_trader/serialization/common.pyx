@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import iso8601
+import pandas as pd
 
 from cpython.datetime cimport datetime
 
@@ -68,4 +68,4 @@ cpdef datetime convert_string_to_datetime(str time_string):
     :param time_string: The time string to convert.
     :return datetime or None.
     """
-    return None if time_string == NONE else iso8601.parse_date(time_string)
+    return None if time_string == NONE else pd.to_datetime(time_string)
