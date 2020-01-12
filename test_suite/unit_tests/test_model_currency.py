@@ -45,7 +45,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             ask_rates)
 
         # Assert
-        self.assertEqual(0.800000011920929, result)
+        self.assertEqual(0.8, result)
 
     def test_calculate_exchange_rate_for_inverse(self):
         # Arrange
@@ -62,7 +62,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             ask_rates)
 
         # Assert
-        self.assertEqual(0.009082651697099209, result)
+        self.assertEqual(0.009082652134423252, result)
 
     def test_calculate_exchange_rate_by_inference(self):
         # Arrange
@@ -91,8 +91,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             ask_rates)
 
         # Assert
-        self.assertEqual(0.011353314854204655, result1)  # JPYAUD
-        self.assertEqual(88.1150131225586, result2)  # AUDJPY
+        self.assertEqual(0.011353315168029064, result1)  # JPYAUD
+        self.assertEqual(88.11501299999999, result2)  # AUDJPY
 
     def test_calculate_exchange_rate_for_mid_quote_type(self):
         # Arrange
@@ -109,7 +109,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             ask_rates)
 
         # Assert
-        self.assertEqual(0.00908141490072012, result)
+        self.assertEqual(0.009081414884438995, result)
 
     def test_calculate_exchange_rate_for_mid_quote_type2(self):
         # Arrange
@@ -126,4 +126,4 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             ask_rates)
 
         # Assert
-        self.assertEqual(110.11499786376953, result)
+        self.assertEqual(110.115, result)

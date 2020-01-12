@@ -23,7 +23,7 @@ cdef class BacktestConfig:
                  int starting_capital=1000000,
                  Currency account_currency=Currency.USD,
                  str short_term_interest_csv_path='default',
-                 float commission_rate_bp=0.20,
+                 double commission_rate_bp=0.20,
                  bint bypass_logging=False,
                  int level_console=LogLevel.INFO,
                  int level_file=LogLevel.DEBUG,

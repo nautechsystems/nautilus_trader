@@ -61,7 +61,7 @@ cdef class AccountStateEvent(Event):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        Condition.not_negative(margin_ratio.value, 'margin_ratio')
+        Condition.not_negative(margin_ratio.as_double(), 'margin_ratio')
 
         super().__init__(event_id, event_timestamp)
         self.account_id = account_id

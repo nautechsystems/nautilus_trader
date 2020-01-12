@@ -729,7 +729,7 @@ cdef class TradingStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    cpdef float xrate_for_account(self, Currency quote_currency, PriceType price_type=PriceType.MID):
+    cpdef double xrate_for_account(self, Currency quote_currency, PriceType price_type=PriceType.MID):
         """
         Return the calculated exchange rate for the give trading instrument quote 
         currency to the account currency.
@@ -748,8 +748,8 @@ cdef class TradingStrategy:
         cdef dict ask_rates = {}
         cdef Symbol symbol
         for symbol, ticks in self._ticks.items():
-            bid_rates[symbol.code] = ticks[0].bid.as_float()
-            ask_rates[symbol.code] = ticks[0].ask.as_float()
+            bid_rates[symbol.code] = ticks[0].bid.as_double()
+            ask_rates[symbol.code] = ticks[0].ask.as_double()
 
         return self._exchange_calculator.get_rate(
             from_currency=quote_currency,

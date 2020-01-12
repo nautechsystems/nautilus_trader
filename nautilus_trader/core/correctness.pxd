@@ -37,15 +37,15 @@ cdef class Condition:
     @staticmethod
     cdef void equal_length(object collection1, object collection2, str param1, str param2) except *
     @staticmethod
-    cdef void positive(float value, str param) except *
+    cdef void positive(double value, str param) except *
     @staticmethod
     cdef void positive_int(int value, str param) except *
     @staticmethod
-    cdef void not_negative(float value, str param) except *
+    cdef void not_negative(double value, str param) except *
     @staticmethod
     cdef void not_negative_int(int value, str param) except *
     @staticmethod
-    cdef void in_range(float value, float start, float end, str param) except *
+    cdef void in_range(double value, double start, double end, str param) except *
     @staticmethod
     cdef void in_range_int(int value, int start, int end, str param) except *
     @staticmethod

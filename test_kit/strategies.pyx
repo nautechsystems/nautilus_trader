@@ -278,10 +278,10 @@ cdef class EMACross(TradingStrategy):
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
     cdef readonly int precision
-    cdef readonly float risk_bp
-    cdef readonly float SL_atr_multiple
-    cdef readonly float entry_buffer
-    cdef readonly float SL_buffer
+    cdef readonly double risk_bp
+    cdef readonly double SL_atr_multiple
+    cdef readonly double entry_buffer
+    cdef readonly double SL_buffer
     cdef readonly object spreads
     cdef readonly ExponentialMovingAverage fast_ema
     cdef readonly ExponentialMovingAverage slow_ema
@@ -291,11 +291,11 @@ cdef class EMACross(TradingStrategy):
     def __init__(self,
                  Instrument instrument,
                  BarSpecification bar_spec,
-                 float risk_bp=10.0,
+                 double risk_bp=10.0,
                  int fast_ema=10,
                  int slow_ema=20,
                  int atr_period=20,
-                 float sl_atr_multiple=2.0,
+                 double sl_atr_multiple=2.0,
                  str extra_id_tag=''):
         """
         Initializes a new instance of the EMACross class.
@@ -318,7 +318,7 @@ cdef class EMACross(TradingStrategy):
         self.precision = instrument.tick_precision
 
         self.risk_bp = risk_bp
-        self.entry_buffer = instrument.tick_size.as_float()
+        self.entry_buffer = instrument.tick_size.as_double()
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10.0
 
@@ -357,7 +357,7 @@ cdef class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spreads.append(float(tick.ask.value - tick.bid.value))
+        self.spreads.append(float(tick.ask.as_double() - tick.bid.as_double()))
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -377,8 +377,8 @@ cdef class EMACross(TradingStrategy):
             return  # Wait for ticks...
 
         # Calculate average spread
-        cdef float average_spread = np.mean(self.spreads)
-        cdef float liquidity_ratio
+        cdef double average_spread = np.mean(self.spreads)
+        cdef double liquidity_ratio
 
         # Check market liquidity
         if average_spread == 0.0:
@@ -393,14 +393,14 @@ cdef class EMACross(TradingStrategy):
         cdef Price price_stop_loss
         cdef Price price_take_profit
         cdef AtomicOrder atomic_order
-        cdef float exchange_rate
+        cdef double exchange_rate
 
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(bar.high + self.entry_buffer + self.spreads[-1], self.precision)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
-                price_take_profit = Price(price_entry + (price_entry.as_float() - price_stop_loss.as_float()), self.precision)
+                price_take_profit = Price(price_entry + (price_entry.as_double() - price_stop_loss.as_double()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = currency_from_string(self.instrument.symbol.code[3:])
@@ -437,7 +437,7 @@ cdef class EMACross(TradingStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer, self.precision)
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
-                price_take_profit = Price(price_entry - (price_stop_loss.as_float() - price_entry.as_float()), self.precision)
+                price_take_profit = Price(price_entry - (price_stop_loss.as_double() - price_entry.as_double()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = currency_from_string(self.instrument.symbol.code[3:])

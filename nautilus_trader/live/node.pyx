@@ -47,7 +47,7 @@ cdef class TradingNode:
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
 
-    cdef float _check_residuals_delay
+    cdef double _check_residuals_delay
     cdef bint _load_strategy_state
     cdef bint _save_strategy_state
 

@@ -20,7 +20,7 @@ cdef class ExchangeRateCalculator:
     the value of one nation or economic zones currency versus that of another.
     """
 
-    cpdef float get_rate(
+    cpdef double get_rate(
             self,
             Currency from_currency,
             Currency to_currency,
@@ -35,10 +35,10 @@ cdef class ExchangeRateCalculator:
         :param from_currency: The currency to convert from.
         :param to_currency: The currency to convert to.
         :param price_type: The price type for conversion.
-        :param bid_rates: The dictionary of currency pair bid rates Dict[str, float].
-        :param ask_rates: The dictionary of currency pair ask rates Dict[str, float].
-        :return float.
+        :param bid_rates: The dictionary of currency pair bid rates Dict[str, double].
+        :param ask_rates: The dictionary of currency pair ask rates Dict[str, double].
         :raises ConditionFailed: If the bid rates length is not equal to the ask rates length.
+        :return double.
         """
         Condition.equal_length(bid_rates, ask_rates, 'bid_rates', 'ask_rates')
 
@@ -94,15 +94,15 @@ cdef class ExchangeRateCalculator:
 
         cdef str lhs_str = currency_to_string(from_currency)
         cdef str rhs_str = currency_to_string(to_currency)
-        cdef float exchange_rate
+        cdef double exchange_rate
         try:
             return exchange_rates[lhs_str][rhs_str]
         except KeyError:
             pass # Exchange rate not yet calculated
 
         # Continue to calculate remaining currency rates
-        cdef float common_ccy1
-        cdef float common_ccy2
+        cdef double common_ccy1
+        cdef double common_ccy2
         for ccy_pair in possible_pairs:
             if ccy_pair[0] not in exchange_rates[ccy_pair[1]]:
                 # Search for common currency

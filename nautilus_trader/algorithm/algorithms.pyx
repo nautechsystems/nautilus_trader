@@ -168,7 +168,7 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
     def __init__(self,
                  list bars,
                  int bars_back,
-                 float sl_atr_multiple,
+                 double sl_atr_multiple,
                  object atr,
                  Order order,
                  BarType bar_type):

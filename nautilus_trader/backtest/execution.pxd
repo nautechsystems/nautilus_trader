@@ -43,7 +43,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly RolloverInterestCalculator rollover_calculator
-    cdef readonly float rollover_spread
+    cdef readonly double rollover_spread
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover
     cdef readonly FillModel fill_model
@@ -79,4 +79,4 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
-    cdef Money _calculate_pnl(self, MarketPosition direction, float open_price, float close_price, Quantity quantity, float exchange_rate)
+    cdef Money _calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)

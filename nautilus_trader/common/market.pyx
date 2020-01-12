@@ -366,9 +366,9 @@ cdef class IndicatorUpdater:
         """
         cdef str param
         if self._include_self:
-            self._input_method(self._indicator, *[tick.__getattribute__(param).value for param in self._input_params])
+            self._input_method(self._indicator, *[tick.__getattribute__(param).as_double() for param in self._input_params])
         else:
-            self._input_method(*[tick.__getattribute__(param).value for param in self._input_params])
+            self._input_method(*[tick.__getattribute__(param).as_double() for param in self._input_params])
 
     cpdef void update_bar(self, Bar bar) except *:
         """
@@ -378,9 +378,9 @@ cdef class IndicatorUpdater:
         """
         cdef str param
         if self._include_self:
-            self._input_method(self._indicator, *[bar.__getattribute__(param).value for param in self._input_params])
+            self._input_method(self._indicator, *[bar.__getattribute__(param).as_double() for param in self._input_params])
         else:
-            self._input_method(*[bar.__getattribute__(param).value for param in self._input_params])
+            self._input_method(*[bar.__getattribute__(param).as_double() for param in self._input_params])
 
     cpdef void update_databar(self, DataBar bar) except *:
         """
@@ -490,9 +490,9 @@ cdef class BarBuilder:
             self._open = price
             self._high = price
             self._low = price
-        elif price.value > self._high.value:
+        elif price.as_double() > self._high.as_double():
             self._high = price
-        elif price.value < self._low.value:
+        elif price.as_double() < self._low.as_double():
             self._low = price
 
         self._close = price
@@ -540,7 +540,7 @@ cdef class BarBuilder:
 
     cdef Price _get_price(self, Tick tick):
         if self.bar_spec.price_type == PriceType.MID:
-            return Price((tick.bid.value + tick.ask.value) / 2, tick.bid.precision + 1)
+            return Price((tick.bid.as_double() + tick.ask.as_double()) / 2, tick.bid.precision + 1)
         elif self.bar_spec.price_type == PriceType.BID:
             return tick.bid
         elif self.bar_spec.price_type == PriceType.ASK:

@@ -29,7 +29,7 @@ cdef class PerformanceProfiler:
         :param iterations: The number of times to call the function per run.
         :param runs: The number of runs for the test
         """
-        cdef float total_elapsed = 0
+        cdef double total_elapsed = 0
 
         cdef int x
         for x in range(runs):

@@ -9,7 +9,8 @@
 import decimal
 import unittest
 
-from nautilus_trader.model.objects import Decimal, Price
+from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.model.objects import Price
 
 from test_kit.performance import PerformanceProfiler
 
@@ -93,13 +94,13 @@ class PricePerformanceTests(unittest.TestCase):
     def test_make_decimal():
 
         PerformanceProfiler.profile_function(PriceInitializations.make_decimal, 1000000, 3)
-        # ~489ms (488900μs) average over 3 runs @ 1000000 iterations
+        # ~174ms (173409μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_make_price():
 
         PerformanceProfiler.profile_function(PriceInitializations.make_price, 1000000, 3)
-        # ~676ms (675491μs) average over 3 runs @ 1000000 iterations
+        # ~343ms (342190μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_float_comparisons():

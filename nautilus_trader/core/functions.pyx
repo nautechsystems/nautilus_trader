@@ -13,24 +13,24 @@ from cpython.datetime cimport datetime
 from libc.math cimport round
 
 
-cpdef float fast_round(float value, int precision):
+cpdef double fast_round(double value, int precision):
     """
     Return the given value rounded to the nearest precision digits.
     
     :param value: The value to round.
     :param precision: The precision to round to.
-    :return: float.
+    :return: double.
     """
     cdef int power = 10 ** precision
     return round(value * power) / power
 
 
-cpdef float basis_points_as_percentage(float basis_points):
+cpdef double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
     
     :param basis_points: The basis points to convert to percentage.
-    :return float.
+    :return double.
     """
     return basis_points * 0.0001
 

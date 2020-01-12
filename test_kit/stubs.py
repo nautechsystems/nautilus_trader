@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.core.types import GUID, ValidString
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import (
     BarStructure,
@@ -21,7 +22,6 @@ from nautilus_trader.model.enums import (
     OrderSide)
 from nautilus_trader.model.objects import (
     Quantity,
-    Decimal,
     Money,
     Price,
     Tick,

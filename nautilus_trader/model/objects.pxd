@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
@@ -23,29 +24,6 @@ cdef class Quantity:
     cdef Quantity zero()
     cpdef bint equals(self, Quantity other)
     cpdef str to_string(self, bint format_commas=*)
-
-
-cdef class Decimal:
-    cdef readonly object value
-    cdef readonly int precision
-
-    @staticmethod
-    cdef Decimal zero()
-    @staticmethod
-    cdef Decimal from_string_to_decimal(str value)
-    @staticmethod
-    cdef int precision_from_string(str value)
-    cpdef bint equals(self, Decimal other)
-    cpdef str to_string(self, bint format_commas=*)
-    cpdef float as_float(self)
-    cpdef bint eq(self, Decimal other)
-    cpdef bint ne(self, Decimal other)
-    cpdef bint lt(self, Decimal other)
-    cpdef bint le(self, Decimal other)
-    cpdef bint gt(self, Decimal other)
-    cpdef bint ge(self, Decimal other)
-    cpdef Decimal add_decimal(self, Decimal other, bint keep_precision=*)
-    cpdef Decimal subtract_decimal(self, Decimal other, bint keep_precision=*)
 
 
 cdef class Price(Decimal):
@@ -120,11 +98,11 @@ cdef class Bar:
 
 
 cdef class DataBar:
-    cdef readonly float open
-    cdef readonly float high
-    cdef readonly float low
-    cdef readonly float close
-    cdef readonly float volume
+    cdef readonly double open
+    cdef readonly double high
+    cdef readonly double low
+    cdef readonly double close
+    cdef readonly double volume
     cdef readonly datetime timestamp
 
 

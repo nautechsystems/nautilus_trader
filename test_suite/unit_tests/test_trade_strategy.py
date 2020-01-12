@@ -433,7 +433,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.xrate_for_account(Currency.JPY)
 
         # Assert
-        self.assertEqual(0.009025266394019127, result)
+        self.assertEqual(0.009025266685348969, result)
 
     def test_can_get_exchange_rate_with_no_conversion(self):
         # Arrange
@@ -451,7 +451,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.xrate_for_account(Currency.AUD)
 
         # Assert
-        self.assertEqual(0.8000500202178955, result)
+        self.assertEqual(0.80005, result)
 
     def test_stopping_a_strategy_cancels_a_running_time_alert(self):
         # Arrange

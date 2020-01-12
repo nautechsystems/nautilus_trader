@@ -7,12 +7,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import decimal
 
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Quantity, Decimal, Price, Money, Tick, BarSpecification, BarType, Bar
+from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
 from test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -126,110 +125,6 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(int, type(result8))
         self.assertEqual(4, result8)
 
-    def test_decimal_initialized_with_no_value_returns_valid_decimal(self):
-        # Arrange
-        # Act
-        result = Decimal()
-
-        # Assert
-        self.assertEqual(0, result)
-        self.assertEqual(1, result.precision)
-        self.assertEqual(decimal.Decimal('0'), result.value)
-        self.assertEqual(0, result.as_float())
-
-    def test_decimal_initialized_with_valid_inputs(self):
-        # Arrange
-        # Act
-        result0 = Decimal(1.0, 1)
-        result1 = Decimal(-1.001, 3)
-        result2 = Decimal(1.0005, 3)
-
-        # Assert
-        self.assertEqual(decimal.Decimal('1'), result0.value)
-        self.assertEqual(decimal.Decimal('-1.001'), result1.value)
-        self.assertEqual(decimal.Decimal('1.000'), result2.value)  # Rounds down
-        self.assertEqual(1.0, result0.as_float())
-        self.assertEqual(-1.0010000467300415, result1.as_float())
-        self.assertEqual(1.0, result2.as_float())
-
-    def test_decimal_initialized_with_not_positive_precision_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(ConditionFailed, Decimal, 1.00000, 0)
-        self.assertRaises(ConditionFailed, Decimal, 1.00000, -1)
-
-    def test_decimal_addition(self):
-        # Arrange
-        # Act
-        result0 = Decimal(1.00001, 5) + 0.00001
-        result1 = Decimal(1.00001, 5) + Decimal(0.00001, 5)
-        result3 = Decimal(1.00001, 5).add_decimal(Decimal(0.00001, 5))
-        result4 = Decimal(1.00001, 5).add_decimal(Decimal(0.5, 1))
-
-        # Assert
-        self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
-        self.assertEqual(Decimal, type(result3))
-        self.assertEqual(Decimal, type(result4))
-        self.assertEqual(1.0000199999997474, result0)
-        self.assertEqual(1.0000199999997474, result1)
-        self.assertEqual(Decimal(1.00002, 5), result3)
-        self.assertEqual(Decimal(1.50001, 5), result4)
-
-    def test_decimal_subtraction(self):
-        # Arrange
-        # Act
-        result0 = Decimal(1.00001, 5) - 0.00001
-        result1 = Decimal(1.00001, 5) - Decimal(0.00001, 5)
-        result3 = Decimal(1.00001, 5).subtract_decimal(Decimal(0.00001, 5))
-        result4 = Decimal(1.00001, 5).subtract_decimal(Decimal(0.5, 1))
-
-        # Assert
-        self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
-        self.assertEqual(Decimal, type(result3))
-        self.assertEqual(Decimal, type(result4))
-        self.assertEqual(1.0000000000002527, result0)
-        self.assertEqual(1.0000000000002527, result1)
-        self.assertEqual(Decimal(1.00000, 5), result3)
-        self.assertEqual(Decimal(0.50001, 5), result4)
-
-    def test_decimal_division(self):
-        # Arrange
-        # Act
-        result0 = Decimal(1.00001, 5) / 2.0
-        result1 = Decimal(1.00001, 5) / Decimal(0.5000, 5)
-
-        # Assert
-        self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
-        self.assertEqual(0.500005, result0)
-        self.assertEqual(2.00002, result1)
-
-    def test_decimal_multiplication(self):
-        # Arrange
-        # Act
-        result0 = Decimal(1.00001, 5) * 2.0
-        result1 = Decimal(1.00001, 5) * Decimal(1.5000, 5)
-
-        # Assert
-        self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
-        self.assertEqual(2.00002, result0)
-        self.assertEqual(1.500015, result1)
-
-    def test_decimal_subtract_returns_expected_decimal(self):
-        # Arrange
-        price1 = Price(2.00000, 5)
-        price2 = Price(1.00010, 5)
-
-        # Act
-        result = price1.subtract(price2)
-
-        # Assert
-        self.assertEqual(Price(0.99990, 5), result)
-
     def test_price_initialized_with_negative_value_raises_exception(self):
         # Arrange
         # Act
@@ -339,7 +234,7 @@ class ObjectTests(unittest.TestCase):
         money = Money(1)
 
         # Assert
-        self.assertEqual(1.00, money.value)
+        self.assertEqual(1.00, money.as_double())
         self.assertEqual('1.00', str(money))
 
     def test_money_initialized_with_valid_inputs(self):
@@ -350,9 +245,9 @@ class ObjectTests(unittest.TestCase):
         result3 = Money(2)
 
         # Assert
-        self.assertEqual(1.00, result1.value)
-        self.assertEqual(1000.00, result2.value)
-        self.assertEqual(2.00, result3.value)
+        self.assertEqual(1.00, result1.as_double())
+        self.assertEqual(1000.00, result2.as_double())
+        self.assertEqual(2.00, result3.as_double())
 
     def test_money_initialized_with_many_decimals(self):
         # Arrange
@@ -363,16 +258,6 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual('1,000.33', result1.to_string(format_commas=True))
         self.assertEqual('5,005.56', result2.to_string(format_commas=True))
-
-    def test_money_initialized_with_many_scientific_notation_returns_zero(self):
-        # Arrange
-        # Act
-        result1 = Money(0E-30)
-        result2 = Money(-0E-33)
-
-        # Assert
-        self.assertEqual(0.0, result1.value)
-        self.assertEqual(0.0, result2.value)
 
     def test_money_str(self):
         # Arrange

@@ -12,6 +12,7 @@ from cpython.datetime cimport datetime
 from typing import Set, List
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
@@ -19,7 +20,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_s
 from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose, order_purpose_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
-from nautilus_trader.model.objects cimport Quantity, Decimal, Price
+from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport (
     OrderEvent,
     OrderFillEvent,
@@ -340,9 +341,9 @@ cdef class Order:
             return
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal(self.average_price.as_float() - self.price.as_float(), self.average_price.precision)
+            self.slippage = Decimal(self.average_price.as_double() - self.price.as_double(), self.average_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal(self.price.as_float() - self.average_price.as_float(), self.average_price.precision)
+            self.slippage = Decimal(self.price.as_double() - self.average_price.as_double(), self.average_price.precision)
 
 
 cdef class AtomicOrder:

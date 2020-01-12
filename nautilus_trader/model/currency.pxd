@@ -11,7 +11,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 
 
 cdef class ExchangeRateCalculator:
-    cpdef float get_rate(
+    cpdef double get_rate(
             self,
             Currency from_currency,
             Currency to_currency,

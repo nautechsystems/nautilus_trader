@@ -119,7 +119,7 @@ cdef class Account:
         self.last_updated = event.timestamp
 
     cdef Money _calculate_free_equity(self):
-        return Money(max((self.cash_balance.value - (self.margin_used_maintenance.value + self.margin_used_liquidation.value)), 0))
+        return Money(max((self.cash_balance.as_double() - (self.margin_used_maintenance.as_double() + self.margin_used_liquidation.as_double())), 0))
 
 
 cdef class NullAccount(Account):

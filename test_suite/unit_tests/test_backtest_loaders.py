@@ -8,8 +8,8 @@
 
 import unittest
 
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.backtest.loaders import InstrumentLoader
 
 

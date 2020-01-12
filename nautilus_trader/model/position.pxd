@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.objects cimport Quantity, Tick, Decimal, Money
+from nautilus_trader.model.objects cimport Quantity, Price, Tick, Money
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport (
     Symbol,
@@ -46,10 +46,10 @@ cdef class Position:
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time
     cdef readonly timedelta open_duration
-    cdef readonly float average_open_price
-    cdef readonly float average_close_price
-    cdef readonly float realized_points
-    cdef readonly float realized_return
+    cdef readonly double average_open_price
+    cdef readonly double average_close_price
+    cdef readonly double realized_points
+    cdef readonly double realized_return
     cdef readonly Money realized_pnl
     cdef readonly Money realized_pnl_last
     cdef readonly OrderFillEvent last_event
@@ -70,17 +70,17 @@ cdef class Position:
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
     cpdef void apply(self, OrderFillEvent event) except *
-    cpdef float unrealized_points(self, Tick last)
-    cpdef float total_points(self, Tick last)
-    cpdef float unrealized_return(self, Tick last)
-    cpdef float total_return(self, Tick last)
+    cpdef double unrealized_points(self, Tick last)
+    cpdef double total_points(self, Tick last)
+    cpdef double unrealized_return(self, Tick last)
+    cpdef double total_return(self, Tick last)
     cpdef Money unrealized_pnl(self, Tick last)
     cpdef Money total_pnl(self, Tick last )
 
     cdef void _update(self, OrderFillEvent event) except *
     cdef void _handle_buy_order_fill(self, OrderFillEvent event)
     cdef void _handle_sell_order_fill(self, OrderFillEvent event)
-    cdef float _calculate_average_price(self, dict fills, long total_quantity)
-    cdef float _calculate_points(self, float open_price, float close_price)
-    cdef float _calculate_return(self, float open_price, float close_price)
-    cdef Money _calculate_pnl(self, float open_price, float close_price, long filled_quantity)
+    cdef double _calculate_average_price(self, dict fills, long total_quantity)
+    cdef double _calculate_points(self, double open_price, double close_price)
+    cdef double _calculate_return(self, double open_price, double close_price)
+    cdef Money _calculate_pnl(self, double open_price, double close_price, long filled_quantity)
