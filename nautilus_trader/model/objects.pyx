@@ -9,7 +9,7 @@
 """Define common trading model value objects."""
 
 import decimal
-import iso8601
+import pandas as pd
 import re
 
 from cpython.datetime cimport datetime
@@ -49,7 +49,7 @@ cdef class Quantity:
         """
         return _ZERO_QUANTITY
 
-    cdef bint equals(self, Quantity other):
+    cpdef bint equals(self, Quantity other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -58,7 +58,7 @@ cdef class Quantity:
         """
         return self.value == other.value
 
-    cpdef str to_string(self, bint format_commas=True):
+    cpdef str to_string(self, bint format_commas=False):
         """
         Return the formatted string representation of this object.
         
@@ -216,7 +216,7 @@ cdef class Quantity:
 
         :return str.
         """
-        return str(self.value)
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -247,26 +247,6 @@ cdef class Decimal:
 
         self.value = decimal.Decimal(f'{value:.{precision}f}')
         self.precision = precision
-
-    cpdef float as_float(self):
-        """
-        Return the internal value as a floating point number.
-
-        :return float.
-        """
-        return float(self.value)
-
-    cpdef str to_string(self, bint format_commas=True):
-        """
-        Return the formatted string representation of this object.
-        
-        :param format_commas: If the string should be formatted with commas separating thousands.
-        :return: str.
-        """
-        if format_commas:
-            return f'{self.value:,.{self.precision}f}'
-        else:
-            return f'{self.value:.{self.precision}f}'
 
     @staticmethod
     cdef Decimal zero():
@@ -301,7 +281,15 @@ cdef class Decimal:
         else:
             return 1
 
-    cdef bint equals(self, Decimal other):
+    cpdef float as_float(self):
+        """
+        Return the internal value as a floating point number.
+
+        :return float.
+        """
+        return float(self.value)
+
+    cpdef bint equals(self, Decimal other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -309,6 +297,18 @@ cdef class Decimal:
         :return bool.
         """
         return self.value == other.value
+
+    cpdef str to_string(self, bint format_commas=False):
+        """
+        Return the formatted string representation of this object.
+        
+        :param format_commas: If the string should be formatted with commas separating thousands.
+        :return: str.
+        """
+        if format_commas:
+            return f'{self.value:,.{self.precision}f}'
+        else:
+            return f'{self.value:.{self.precision}f}'
 
     cpdef bint eq(self, Decimal other):
         """
@@ -524,7 +524,7 @@ cdef class Decimal:
 
         :return str.
         """
-        return self.to_string(format_commas=False)
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -701,6 +701,70 @@ cdef class Tick:
         self.ask_size = ask_size
         self.timestamp = timestamp
 
+    @staticmethod
+    cdef Tick from_string_with_symbol(Symbol symbol, str values):
+        """
+        Return a tick parsed from the given symbol and values string.
+
+        :param symbol: The tick symbol.
+        :param values: The tick values string.
+        :return Tick.
+        """
+        cdef list split_values = values.split(',', maxsplit=2)
+        return Tick(
+            symbol,
+            Price.from_string(split_values[0]),
+            Price.from_string(split_values[1]),
+            pd.to_datetime(split_values[2]))
+
+    @staticmethod
+    cdef Tick from_string(str value):
+        """
+        Return a tick parsed from the given value string.
+
+        :param value: The tick value string to parse.
+        :return Tick.
+        """
+        cdef list split_values = value.split(',', maxsplit=3)
+        return Tick(
+            Symbol.from_string(split_values[0]),
+            Price.from_string(split_values[1]),
+            Price.from_string(split_values[2]),
+            pd.to_datetime(split_values[3]))
+
+    @staticmethod
+    def py_from_string_with_symbol(Symbol symbol, str values) -> Tick:
+        """
+        Python wrapper for the from_string_with_symbol method.
+
+        Return a tick parsed from the given symbol and values string.
+
+        :param symbol: The tick symbol.
+        :param values: The tick values string.
+        :return Tick.
+        """
+        return Tick.from_string_with_symbol(symbol, values)
+
+    @staticmethod
+    def py_from_string(str values) -> Tick:
+        """
+        Python wrapper for the from_string method.
+
+        Return a tick parsed from the given values string.
+
+        :param values: The tick values string.
+        :return Tick.
+        """
+        return Tick.from_string(values)
+
+    cpdef str to_string(self):
+        """
+        Return the string representation of this object.
+
+        :return: str.
+        """
+        return f"{self.bid},{self.ask},{self.timestamp.isoformat()}"
+
     def __eq__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -775,7 +839,7 @@ cdef class Tick:
 
         :return str.
         """
-        return f"{self.bid},{self.ask},{self.timestamp.isoformat()}"
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -785,64 +849,6 @@ cdef class Tick:
         :return str.
         """
         return f"<{self.__class__.__name__}({self.symbol},{str(self)}) object at {id(self)}>"
-
-    @staticmethod
-    cdef Tick from_string_with_symbol(Symbol symbol, str values):
-        """
-        Return a tick parsed from the given symbol and values string.
-
-        :param symbol: The tick symbol.
-        :param values: The tick values string.
-        :return Tick.
-        """
-        cdef list split_values = values.split(',', maxsplit=2)
-
-        return Tick(
-            symbol,
-            Price.from_string(split_values[0]),
-            Price.from_string(split_values[1]),
-            iso8601.parse_date(split_values[2]))
-
-    @staticmethod
-    cdef Tick from_string(str value):
-        """
-        Return a tick parsed from the given value string.
-
-        :param value: The tick value string to parse.
-        :return Tick.
-        """
-        cdef list split_values = value.split(',', maxsplit=3)
-
-        return Tick(
-            Symbol.from_string(split_values[0]),
-            Price.from_string(split_values[1]),
-            Price.from_string(split_values[2]),
-            iso8601.parse_date(split_values[3]))
-
-    @staticmethod
-    def py_from_string_with_symbol(Symbol symbol, str values) -> Tick:
-        """
-        Python wrapper for the from_string_with_symbol method.
-
-        Return a tick parsed from the given symbol and values string.
-
-        :param symbol: The tick symbol.
-        :param values: The tick values string.
-        :return Tick.
-        """
-        return Tick.from_string_with_symbol(symbol, values)
-
-    @staticmethod
-    def py_from_string(str values) -> Tick:
-        """
-        Python wrapper for the from_string method.
-
-        Return a tick parsed from the given values string.
-
-        :param values: The tick values string.
-        :return Tick.
-        """
-        return Tick.from_string(values)
 
 
 cdef class BarSpecification:
@@ -858,9 +864,9 @@ cdef class BarSpecification:
 
         :param step: The bar step (> 0).
         :param structure: The bar structure.
-        :param price_type: The bar quote type.
+        :param price_type: The bar price type.
         :raises ConditionFailed: If the step is not positive (> 0).
-        :raises ConditionFailed: If the quote type is LAST.
+        :raises ConditionFailed: If the price type is LAST.
         """
         Condition.positive_int(step, 'step')
         Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
@@ -868,76 +874,6 @@ cdef class BarSpecification:
         self.step = step
         self.structure = structure
         self.price_type = price_type
-
-    cdef bint equals(self, BarSpecification other):
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return (self.step == other.step
-                and self.structure == other.structure
-                and self.price_type == other.price_type)
-
-    def __eq__(self, BarSpecification other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.equals(other)
-
-    def __ne__(self, BarSpecification other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return not self.equals(other)
-
-    def __hash__(self) -> int:
-        """"
-         Return a hash representation of this object.
-
-        :return int.
-        """
-        return hash((self.step, self.structure, self.price_type))
-
-    def __str__(self) -> str:
-        """
-        Return a string representation of this object.
-
-        :return str.
-        """
-        return f"{self.step}-{bar_structure_to_string(self.structure)}[{price_type_to_string(self.price_type)}]"
-
-    def __repr__(self) -> str:
-        """
-        Return a string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
-
-    cdef str structure_string(self):
-        """
-        Return the bar structure as a string
-        
-        :return str.
-        """
-        return bar_structure_to_string(self.structure)
-
-    cdef str quote_type_string(self):
-        """
-        Return the quote type as a string.
-        
-        :return str.
-        """
-        return price_type_to_string(self.price_type)
 
     @staticmethod
     cdef BarSpecification from_string(str value):
@@ -971,6 +907,84 @@ cdef class BarSpecification:
         """
         return BarSpecification.from_string(value)
 
+    cdef str structure_string(self):
+        """
+        Return the bar structure as a string
+        
+        :return str.
+        """
+        return bar_structure_to_string(self.structure)
+
+    cdef str price_type_string(self):
+        """
+        Return the price type as a string.
+        
+        :return str.
+        """
+        return price_type_to_string(self.price_type)
+
+    cpdef bint equals(self, BarSpecification other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return (self.step == other.step
+                and self.structure == other.structure
+                and self.price_type == other.price_type)
+
+    cpdef str to_string(self):
+        """
+        Return the string representation of this object.
+
+        :return: str.
+        """
+        return f"{self.step}-{bar_structure_to_string(self.structure)}[{price_type_to_string(self.price_type)}]"
+
+    def __eq__(self, BarSpecification other) -> bool:
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.equals(other)
+
+    def __ne__(self, BarSpecification other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to (!=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return not self.equals(other)
+
+    def __hash__(self) -> int:
+        """"
+         Return a hash representation of this object.
+
+        :return int.
+        """
+        return hash((self.step, self.structure, self.price_type))
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return self.to_string()
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+
 
 cdef class BarType:
     """
@@ -989,7 +1003,54 @@ cdef class BarType:
         self.symbol = symbol
         self.specification = bar_spec
 
-    cdef bint equals(self, BarType other):
+    @staticmethod
+    cdef BarType from_string(str value):
+        """
+        Return a bar type parsed from the given string.
+
+        :param value: The bar type string to parse.
+        :return BarType.
+        """
+        cdef list split_string = re.split(r'[.-]+', value)
+        cdef str structure = split_string[3].split('[', maxsplit=1)[0]
+        cdef str price_type = split_string[3].split('[', maxsplit=1)[1].strip(']')
+        cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1]))
+        cdef BarSpecification bar_spec = BarSpecification(
+            int(split_string[2]),
+            bar_structure_from_string(structure.upper()),
+            price_type_from_string(price_type.upper()))
+
+        return BarType(symbol, bar_spec)
+
+    @staticmethod
+    def py_from_string(value: str) -> BarType:
+        """
+        Python wrapper for the from_string method.
+
+        Return a bar type parsed from the given string.
+
+        :param value: The bar type string to parse.
+        :return BarType.
+        """
+        return BarType.from_string(value)
+
+    cdef str structure_string(self):
+        """
+        Return the bar structure as a string
+        
+        :return str.
+        """
+        return self.specification.structure_string()
+
+    cdef str price_type_string(self):
+        """
+        Return the price type as a string.
+        
+        :return str.
+        """
+        return self.specification.price_type_string()
+
+    cpdef bint equals(self, BarType other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -997,6 +1058,14 @@ cdef class BarType:
         :return bool.
         """
         return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
+
+    cpdef str to_string(self):
+        """
+        Return the string representation of this object.
+
+        :return: str.
+        """
+        return f"{str(self.symbol)}-{self.specification}"
 
     def __eq__(self, BarType other) -> bool:
         """
@@ -1030,7 +1099,7 @@ cdef class BarType:
 
         :return str.
         """
-        return f"{str(self.symbol)}-{self.specification}"
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -1040,51 +1109,6 @@ cdef class BarType:
         :return str.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
-
-    cdef str structure_string(self):
-        """
-        Return the bar structure as a string
-        
-        :return str.
-        """
-        return self.specification.structure_string()
-
-    cdef str quote_type_string(self):
-        """
-        Return the quote type as a string.
-        
-        :return str.
-        """
-        return self.specification.quote_type_string()
-
-    @staticmethod
-    cdef BarType from_string(str value):
-        """
-        Return a bar type parsed from the given string.
-
-        :param value: The bar type string to parse.
-        :return BarType.
-        """
-        cdef list split_string = re.split(r'[.-]+', value)
-        cdef str structure = split_string[3].split('[', maxsplit=1)[0]
-        cdef str price_type = split_string[3].split('[', maxsplit=1)[1].strip(']')
-        cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1]))
-        cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
-                                                          bar_structure_from_string(structure.upper()),
-                                                          price_type_from_string(price_type.upper()))
-        return BarType(symbol, bar_spec)
-
-    @staticmethod
-    def py_from_string(value: str) -> BarType:
-        """
-        Python wrapper for the from_string method.
-
-        Return a bar type parsed from the given string.
-
-        :param value: The bar type string to parse.
-        :return BarType.
-        """
-        return BarType.from_string(value)
 
 
 cdef class Bar:
@@ -1129,6 +1153,48 @@ cdef class Bar:
         self.timestamp = timestamp
         self.checked = checked
 
+    @staticmethod
+    cdef Bar from_string(str value):
+        """
+        Return a bar parsed from the given string.
+
+        :param value: The bar string to parse.
+        :return Bar.
+        """
+        cdef list split_bar = value.split(',', maxsplit=5)
+
+        return Bar(Price.from_string(split_bar[0]),
+                   Price.from_string(split_bar[1]),
+                   Price.from_string(split_bar[2]),
+                   Price.from_string(split_bar[3]),
+                   long(split_bar[4]),
+                   pd.to_datetime(split_bar[5]))
+
+    @staticmethod
+    def py_from_string(value: str) -> Bar:
+        """
+        Python wrapper for the from_string method.
+
+        Return a bar parsed from the given string.
+
+        :param value: The bar string to parse.
+        :return Bar.
+        """
+        return Bar.from_string(value)
+
+    cpdef str to_string(self):
+        """
+        Return the string representation of this object.
+
+        :return: str.
+        """
+        return (f"{self.open},"
+                f"{self.high},"
+                f"{self.low},"
+                f"{self.close},"
+                f"{self.volume},"
+                f"{self.timestamp.isoformat()}")
+
     def __eq__(self, Bar other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -1164,12 +1230,7 @@ cdef class Bar:
 
         :return str.
         """
-        return (f"{self.open},"
-                f"{self.high},"
-                f"{self.low},"
-                f"{self.close},"
-                f"{self.volume},"
-                f"{self.timestamp.isoformat()}")
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -1179,35 +1240,6 @@ cdef class Bar:
         :return str.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
-
-    @staticmethod
-    cdef Bar from_string(str value):
-        """
-        Return a bar parsed from the given string.
-
-        :param value: The bar string to parse.
-        :return Bar.
-        """
-        cdef list split_bar = value.split(',', maxsplit=5)
-
-        return Bar(Price.from_string(split_bar[0]),
-                   Price.from_string(split_bar[1]),
-                   Price.from_string(split_bar[2]),
-                   Price.from_string(split_bar[3]),
-                   long(split_bar[4]),
-                   iso8601.parse_date(split_bar[5]))
-
-    @staticmethod
-    def py_from_string(value: str) -> Bar:
-        """
-        Python wrapper for the from_string method.
-
-        Return a bar parsed from the given string.
-
-        :param value: The bar string to parse.
-        :return Bar.
-        """
-        return Bar.from_string(value)
 
 
 cdef class DataBar:

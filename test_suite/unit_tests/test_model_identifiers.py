@@ -48,7 +48,7 @@ class IdentifierTests(unittest.TestCase):
         result = str(identifier)
 
         # Assert
-        self.assertEqual('Identifier(some-id)', result)
+        self.assertEqual('some-id', result)
 
     def test_identifier_repr(self):
         # Arrange

@@ -37,14 +37,6 @@ cdef class Symbol(Identifier):
         self.venue = venue
         super().__init__(f'{self.code}.{self.venue.value}')
 
-    def __str__(self) -> str:
-        """
-        Return a string representation of this object.
-
-        :return str.
-        """
-        return self.value
-
     @staticmethod
     cdef Symbol from_string(str value):
         """

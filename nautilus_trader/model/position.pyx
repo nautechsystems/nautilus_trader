@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import Set, Tuple, List, Dict
+from typing import Set, List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
@@ -64,7 +64,7 @@ cdef class Position:
 
         self._update(event)
 
-    cdef bint equals(self, Position other):
+    cpdef bint equals(self, Position other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -73,7 +73,7 @@ cdef class Position:
         """
         return self.id.equals(other.id)
 
-    cdef str to_string(self):
+    cpdef str to_string(self):
         """
         Return a string representation of this object.
 
@@ -122,7 +122,7 @@ cdef class Position:
 
         :return str.
         """
-        cdef str quantity = ' ' if self.relative_quantity == 0 else f' {self.quantity.to_string()} '
+        cdef str quantity = ' ' if self.relative_quantity == 0 else f' {self.quantity.to_string(format_commas=True)} '
         return f"{market_position_to_string(self.market_position)}{quantity}{self.symbol}"
 
     cpdef list get_order_ids(self):

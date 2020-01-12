@@ -361,8 +361,8 @@ class ObjectTests(unittest.TestCase):
         result2 = Money(5005.556666)
 
         # Assert
-        self.assertEqual('1,000.33', result1.to_string())
-        self.assertEqual('5,005.56', result2.to_string())
+        self.assertEqual('1,000.33', result1.to_string(format_commas=True))
+        self.assertEqual('5,005.56', result2.to_string(format_commas=True))
 
     def test_money_initialized_with_many_scientific_notation_returns_zero(self):
         # Arrange
@@ -386,7 +386,7 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual('1.00', str(money1))
         self.assertEqual('1.00', money1.to_string())
         self.assertEqual('1000000.00', str(money2))
-        self.assertEqual('1,000,000.00', money2.to_string())
+        self.assertEqual('1,000,000.00', money2.to_string(format_commas=True))
 
     def test_money_repr(self):
         # Arrange

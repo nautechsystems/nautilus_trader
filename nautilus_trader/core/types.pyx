@@ -139,14 +139,6 @@ cdef class Identifier(ValidString):
         """
         super().__init__(value)
 
-    def __str__(self) -> str:
-        """
-        Return a string representation of this object.
-
-        :return str.
-        """
-        return f"{str(self.__class__.__name__)}({self.value})"
-
 
 cdef class GUID(Identifier):
     """

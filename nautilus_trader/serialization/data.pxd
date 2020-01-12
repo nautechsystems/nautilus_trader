@@ -15,7 +15,7 @@ cdef class Utf8TickSerializer:
     @staticmethod
     cdef bytes serialize(Tick tick)
     @staticmethod
-    cdef Tick deserialize(Symbol symbol, bytes values_bytes)
+    cdef Tick deserialize(Symbol symbol, bytes tick_bytes)
 
 
 cdef class Utf8BarSerializer:
