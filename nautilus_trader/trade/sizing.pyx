@@ -48,8 +48,8 @@ cdef class PositionSizer:
             int unit_batch_size=1):
         """
         Return the calculated quantity for the position size.
-        
         Note: 1 basis point = 0.01%.
+        
         :param equity: The account equity.
         :param risk_bp: The risk in basis points.
         :param price_entry: The entry price.
@@ -123,8 +123,8 @@ cdef class FixedRiskSizer(PositionSizer):
             int unit_batch_size=1):
         """
         Return the calculated quantity for the position size.
-
         Note: 1 basis point = 0.01%.
+        
         :param equity: The account equity.
         :param risk_bp: The risk in basis points.
         :param price_entry: The entry price.

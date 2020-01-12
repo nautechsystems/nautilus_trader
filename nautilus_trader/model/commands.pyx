@@ -38,7 +38,7 @@ cdef class AccountInquiry(Command):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -80,7 +80,7 @@ cdef class SubmitOrder(Command):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -125,7 +125,7 @@ cdef class SubmitAtomicOrder(Command):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -170,7 +170,7 @@ cdef class ModifyOrder(Command):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -212,7 +212,7 @@ cdef class CancelOrder(Command):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """

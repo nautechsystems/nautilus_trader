@@ -74,7 +74,6 @@ cdef class Condition:
     cdef void equals(object object1, object object2, str param1, str param2) except *:
         """
         Check the objects are equal.
-        
         Note: The given objects must implement the cdef .equals() method.
 
         :param object1: The first object to check.

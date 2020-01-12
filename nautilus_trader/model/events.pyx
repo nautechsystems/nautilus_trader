@@ -78,7 +78,7 @@ cdef class AccountStateEvent(Event):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -89,7 +89,7 @@ cdef class AccountStateEvent(Event):
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -118,7 +118,7 @@ cdef class OrderEvent(Event):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -126,7 +126,7 @@ cdef class OrderEvent(Event):
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -258,7 +258,7 @@ cdef class OrderSubmitted(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -292,7 +292,7 @@ cdef class OrderInvalid(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -326,7 +326,7 @@ cdef class OrderDenied(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -366,7 +366,7 @@ cdef class OrderRejected(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -410,7 +410,7 @@ cdef class OrderAccepted(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -477,7 +477,7 @@ cdef class OrderWorking(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -525,7 +525,7 @@ cdef class OrderCancelReject(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -564,7 +564,7 @@ cdef class OrderCancelled(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -610,7 +610,7 @@ cdef class OrderModified(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -649,7 +649,7 @@ cdef class OrderExpired(OrderEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -711,7 +711,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -774,7 +774,7 @@ cdef class OrderFilled(OrderFillEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -814,7 +814,7 @@ cdef class PositionEvent(Event):
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -850,7 +850,7 @@ cdef class PositionOpened(PositionEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -892,7 +892,7 @@ cdef class PositionModified(PositionEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -938,7 +938,7 @@ cdef class PositionClosed(PositionEvent):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -1029,7 +1029,7 @@ cdef class TimeEvent(Event):
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -1037,7 +1037,7 @@ cdef class TimeEvent(Event):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -1047,7 +1047,7 @@ cdef class TimeEvent(Event):
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.

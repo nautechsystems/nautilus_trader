@@ -64,7 +64,7 @@ cdef class Message:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -72,7 +72,7 @@ cdef class Message:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -80,7 +80,7 @@ cdef class Message:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -156,7 +156,7 @@ cdef class Response(Message):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """

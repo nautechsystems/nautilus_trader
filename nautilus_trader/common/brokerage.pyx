@@ -31,8 +31,8 @@ cdef class CommissionCalculator:
                  Money minimum=Money(2.00)):
         """
         Initializes a new instance of the CommissionCalculator class.
-
         Note: Commission rates are expressed as basis points of notional transaction value.
+
         :param rates: The dictionary of commission rates Dict[Symbol, float].
         :param default_rate_bp: The default rate if not found in dictionary.
         :param minimum: The minimum commission charge per transaction.
@@ -127,7 +127,6 @@ cdef class RolloverInterestCalculator:
     cpdef float calc_overnight_rate(self, Symbol symbol, datetime timestamp) except *:
         """
         Return the rollover interest rate between the given base currency and quote currency.
-        
         Note: 1% = 0.01
         
         :param symbol: The forex currency symbol for the calculation.
