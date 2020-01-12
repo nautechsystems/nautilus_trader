@@ -142,7 +142,7 @@ cdef class TradingStrategy:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -150,7 +150,7 @@ cdef class TradingStrategy:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -158,7 +158,7 @@ cdef class TradingStrategy:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -461,7 +461,6 @@ cdef class TradingStrategy:
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
         """
         Request the historical bars for the given parameters from the data service.
-
         Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
         :param bar_type: The historical bar type to download.
@@ -1003,7 +1002,6 @@ cdef class TradingStrategy:
         """
         Reset the strategy by returning all stateful values to their
         initial value, the on_reset() implementation is then called. 
-        
         Note: The strategy cannot be running otherwise an error is logged.
         """
         if self.is_running:

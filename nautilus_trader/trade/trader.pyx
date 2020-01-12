@@ -181,7 +181,6 @@ cdef class Trader:
         """
         Reset the trader by returning all stateful values of the portfolio, 
         and every strategy to their initial value.
-        
         Note: The trader cannot be running otherwise an error is logged.
         """
         if self.is_running:

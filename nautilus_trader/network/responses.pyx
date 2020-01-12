@@ -35,7 +35,7 @@ cdef class MessageReceived(Response):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -65,7 +65,7 @@ cdef class MessageRejected(Response):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -95,7 +95,7 @@ cdef class QueryFailure(Response):
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """

@@ -75,7 +75,7 @@ cdef class Position:
 
     cpdef str to_string(self):
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -101,7 +101,7 @@ cdef class Position:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -109,7 +109,7 @@ cdef class Position:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.

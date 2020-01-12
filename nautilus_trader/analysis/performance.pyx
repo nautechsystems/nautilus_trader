@@ -386,7 +386,6 @@ cdef class PerformanceAnalyzer:
     cpdef dict get_performance_stats(self):
         """
         Return the performance statistics from the last backtest run.
-        
         Note: Money objects are converted to floats.
 
         Statistics Keys

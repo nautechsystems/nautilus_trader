@@ -46,7 +46,7 @@ cdef class Handler:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """

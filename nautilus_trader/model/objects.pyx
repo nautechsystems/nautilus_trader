@@ -204,7 +204,7 @@ cdef class Quantity:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -212,7 +212,7 @@ cdef class Quantity:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -220,7 +220,7 @@ cdef class Quantity:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -512,7 +512,7 @@ cdef class Decimal:
 
     def __hash__(self) -> int:
         """"
-         Return a hash representation of this object.
+         Return the hash code of this object.
 
         :return int.
         """
@@ -520,7 +520,7 @@ cdef class Decimal:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -528,7 +528,7 @@ cdef class Decimal:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -592,7 +592,7 @@ cdef class Price(Decimal):
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -610,9 +610,9 @@ cdef class Money(Decimal):
     def __init__(self, float value=0.0):
         """
         Initializes a new instance of the Money class.
+        Note: The value is rounded to 2 decimal places of precision.
 
         :param value: The value of the money.
-        Note: The value is rounded to 2 decimal places of precision.
         """
         super().__init__(value, precision=2)
 
@@ -657,7 +657,7 @@ cdef class Money(Decimal):
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -768,8 +768,8 @@ cdef class Tick:
     def __eq__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
-
         Note: The equality is based on the ticks timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -778,8 +778,8 @@ cdef class Tick:
     def __ne__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
-
         Note: The equality is based on the ticks timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -788,8 +788,8 @@ cdef class Tick:
     def __lt__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is less than (<) the given object.
-
         Note: The equality is based on the ticks timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -798,8 +798,8 @@ cdef class Tick:
     def __le__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is less than or equal to (<=) the given object.
-
         Note: The equality is based on the ticks timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -808,8 +808,8 @@ cdef class Tick:
     def __gt__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is greater than (>) the given object.
-
         Note: The equality is based on the ticks timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -818,8 +818,8 @@ cdef class Tick:
     def __ge__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
         Note: The equality is based on the ticks timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -827,7 +827,7 @@ cdef class Tick:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -835,7 +835,7 @@ cdef class Tick:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -843,7 +843,7 @@ cdef class Tick:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -879,8 +879,8 @@ cdef class BarSpecification:
     cdef BarSpecification from_string(str value):
         """
         Return a bar specification parsed from the given string.
-
         Note: String format example is '200-TICK-[MID]'.
+        
         :param value: The bar specification string to parse.
         :return BarSpecification.
         """
@@ -895,13 +895,13 @@ cdef class BarSpecification:
             price_type_from_string(price_type))
 
     @staticmethod
-    def py_from_string(value: str) -> BarSpecification:
+    def py_from_string(str value) -> BarSpecification:
         """
         Python wrapper for the from_string method.
 
         Return a bar specification parsed from the given string.
-
         Note: String format example is '1-MINUTE-[BID]'.
+
         :param value: The bar specification string to parse.
         :return BarSpecification.
         """
@@ -962,7 +962,7 @@ cdef class BarSpecification:
 
     def __hash__(self) -> int:
         """"
-         Return a hash representation of this object.
+         Return the hash code of this object.
 
         :return int.
         """
@@ -970,7 +970,7 @@ cdef class BarSpecification:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -978,7 +978,7 @@ cdef class BarSpecification:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -1023,7 +1023,7 @@ cdef class BarType:
         return BarType(symbol, bar_spec)
 
     @staticmethod
-    def py_from_string(value: str) -> BarType:
+    def py_from_string(str value) -> BarType:
         """
         Python wrapper for the from_string method.
 
@@ -1087,7 +1087,7 @@ cdef class BarType:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -1095,7 +1095,7 @@ cdef class BarType:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -1103,7 +1103,7 @@ cdef class BarType:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -1171,7 +1171,7 @@ cdef class Bar:
                    pd.to_datetime(split_bar[5]))
 
     @staticmethod
-    def py_from_string(value: str) -> Bar:
+    def py_from_string(str value) -> Bar:
         """
         Python wrapper for the from_string method.
 
@@ -1198,8 +1198,8 @@ cdef class Bar:
     def __eq__(self, Bar other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
-
         Note: The equality is based on the bars timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -1208,8 +1208,8 @@ cdef class Bar:
     def __ne__(self, Bar other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
-
         Note: The equality is based on the bars timestamp only.
+
         :param other: The other object.
         :return bool.
         """
@@ -1217,16 +1217,16 @@ cdef class Bar:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
-
+        Return the hash code of this object.
         Note: The hash is based on the bars timestamp only.
+
         :return int.
         """
         return hash(str(self.timestamp))
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -1234,7 +1234,7 @@ cdef class Bar:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -1291,7 +1291,7 @@ cdef class DataBar:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -1299,7 +1299,7 @@ cdef class DataBar:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -1308,7 +1308,7 @@ cdef class DataBar:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
@@ -1407,7 +1407,7 @@ cdef class Instrument:
 
     def __hash__(self) -> int:
         """"
-        Return a hash representation of this object.
+        Return the hash code of this object.
 
         :return int.
         """
@@ -1415,7 +1415,7 @@ cdef class Instrument:
 
     def __str__(self) -> str:
         """
-        Return a string representation of this object.
+        Return the string representation of this object.
 
         :return str.
         """
@@ -1423,7 +1423,7 @@ cdef class Instrument:
 
     def __repr__(self) -> str:
         """
-        Return a string representation of this object which includes the objects
+        Return the string representation of this object which includes the objects
         location in memory.
 
         :return str.
