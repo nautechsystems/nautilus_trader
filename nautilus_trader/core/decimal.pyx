@@ -79,7 +79,7 @@ cdef class Decimal:
 
     cpdef object as_decimal(self):
         """
-        Return the internal value as a builtin decimal.
+        Return the internal value as a built-in decimal.
 
         :return decimal.Decimal.
         """
