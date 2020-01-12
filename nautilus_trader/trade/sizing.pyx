@@ -76,7 +76,7 @@ cdef class PositionSizer:
         
         :return int.
         """
-        return int(abs(entry.as_float() - stop_loss.as_float()) / self.instrument.tick_size.as_float())
+        return int(abs(entry - stop_loss) / self.instrument.tick_size.as_float())
 
     cdef Money _calculate_riskable_money(
             self,
@@ -155,13 +155,13 @@ cdef class FixedRiskSizer(PositionSizer):
         if risk_points <= 0:
             return Quantity()
 
-        cdef long position_size = long(long((((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_float())))
+        cdef long position_size = long((((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_float()))
 
         # Limit size
         if hard_limit > 0:
             position_size = min(position_size, hard_limit)
 
         # Batch into units
-        cdef long position_size_batched = long(long(position_size / units / unit_batch_size) * unit_batch_size)
+        cdef long position_size_batched = (position_size // units // unit_batch_size) * unit_batch_size
 
-        return Quantity(min(position_size_batched, self.instrument.max_trade_size.value))
+        return Quantity(min(max(0, position_size_batched), self.instrument.max_trade_size.value))

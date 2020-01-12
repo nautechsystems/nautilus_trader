@@ -66,22 +66,6 @@ class OrderTests(unittest.TestCase):
             Quantity(),
             UNIX_EPOCH)
 
-    def test_priced_order_with_negative_price_raises_exception(self):
-        # Arrange
-        negative_price = Price(0.1, 1).subtract(Decimal(0.2, 1))
-
-        # Act
-        self.assertRaises(
-            ConditionFailed,
-            Order,
-            OrderId('O-123456'),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            OrderType.STOP_MARKET,
-            Quantity(),
-            UNIX_EPOCH,
-            price=negative_price)
-
     def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(self):
         # Arrange
         # Act

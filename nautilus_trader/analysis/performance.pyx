@@ -181,7 +181,9 @@ cdef class PerformanceAnalyzer:
         
         :return float. 
         """
-        return ((self._account_capital.as_float() - self._account_starting_capital.as_float()) / self._account_starting_capital.as_float()) * 100
+        if self._account_starting_capital == Money.zero():  # Protect divide by zero
+            return 0.0
+        return ((self._account_capital - self._account_starting_capital) / self._account_starting_capital.as_float()) * 100
 
     cpdef Money max_winner(self):
         """

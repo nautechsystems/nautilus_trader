@@ -9,7 +9,7 @@
 
 import pandas as pd
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, Currency, PriceType

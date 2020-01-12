@@ -83,7 +83,6 @@ cdef class Order:
         :raises ConditionFailed: If the order side is UNKNOWN.
         :raises ConditionFailed: If the order type should not have a price and the price is not None.
         :raises ConditionFailed: If the order type should have a price and the price is None.
-        :raises ConditionFailed: If the price is negative (< 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
         Condition.positive_int(quantity.value, 'quantity')
@@ -91,7 +90,6 @@ cdef class Order:
         # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:
             Condition.not_none(price, 'price')
-            Condition.not_negative(price.value, 'price.value')
         # For orders which require no price
         else:
             Condition.none(price, 'price')
@@ -531,7 +529,6 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
@@ -571,7 +568,6 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
@@ -611,7 +607,6 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
@@ -651,7 +646,6 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
@@ -684,7 +678,6 @@ cdef class OrderFactory:
         :param label: The optional order label / secondary identifier.
         :param order_purpose: The orders specified purpose (default=NONE).
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :return Order.
         """
         return Order(
@@ -749,7 +742,6 @@ cdef class OrderFactory:
         :param price_take_profit: The optional take-profit order price.
         :param label: The optional order label / secondary identifier.
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :return AtomicOrder.
         """
         cdef Label entry_label = None
@@ -794,7 +786,6 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return AtomicOrder.
         """
@@ -842,7 +833,6 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ConditionFailed: If the quantity is not positive (> 0).
-        :raises ConditionFailed: If the price is negative (< 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return AtomicOrder.
         """

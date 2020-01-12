@@ -125,6 +125,9 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(decimal.Decimal('1'), result0.value)
         self.assertEqual(decimal.Decimal('-1.001'), result1.value)
         self.assertEqual(decimal.Decimal('1.000'), result2.value)  # Rounds down
+        self.assertEqual(1.0, result0.as_float())
+        self.assertEqual(-1.0010000467300415, result1.as_float())
+        self.assertEqual(1.0, result2.as_float())
 
     def test_decimal_initialized_with_not_positive_precision_raises_exception(self):
         # Arrange
@@ -133,43 +136,65 @@ class ObjectTests(unittest.TestCase):
         self.assertRaises(ConditionFailed, Decimal, 1.00000, 0)
         self.assertRaises(ConditionFailed, Decimal, 1.00000, -1)
 
-    def test_decimal_arithmetic(self):
+    def test_decimal_addition(self):
         # Arrange
         # Act
         result0 = Decimal(1.00001, 5) + 0.00001
         result1 = Decimal(1.00001, 5) + Decimal(0.00001, 5)
-        result2 = Decimal(1.00001, 5).add(Decimal(0.00001, 5))
-        result3 = Decimal(1.00001, 5).add(Decimal(0.5, 1))
+        result3 = Decimal(1.00001, 5).add_decimal(Decimal(0.00001, 5))
+        result4 = Decimal(1.00001, 5).add_decimal(Decimal(0.5, 1))
 
         # Assert
         self.assertEqual(float, type(result0))
         self.assertEqual(float, type(result1))
-        self.assertEqual(Decimal, type(result2))
         self.assertEqual(Decimal, type(result3))
+        self.assertEqual(Decimal, type(result4))
         self.assertEqual(1.0000199999997474, result0)
-        self.assertEqual(1.0000200000000001, result1)
-        self.assertEqual(Decimal(1.00002, 5), result2)
-        self.assertEqual(1.5000100135803223, result3.as_float())
+        self.assertEqual(1.0000199999997474, result1)
+        self.assertEqual(Decimal(1.00002, 5), result3)
+        self.assertEqual(Decimal(1.50001, 5), result4)
 
-    def test_decimal_add_with_finer_precision_raises_exception(self):
+    def test_decimal_subtraction(self):
         # Arrange
-        decimal1 = Decimal(1.00000, 5)
-        decimal2 = Decimal(1.000001, 6)
-
         # Act
-        # Assert
-        self.assertRaises(ConditionFailed, decimal1.add, decimal2)
-
-    def test_decimal_add_returns_expected_decimal(self):
-        # Arrange
-        price1 = Price(1.00000, 5)
-        price2 = Price(1.00010, 5)
-
-        # Act
-        result = price1.add(price2)
+        result0 = Decimal(1.00001, 5) - 0.00001
+        result1 = Decimal(1.00001, 5) - Decimal(0.00001, 5)
+        result3 = Decimal(1.00001, 5).subtract_decimal(Decimal(0.00001, 5))
+        result4 = Decimal(1.00001, 5).subtract_decimal(Decimal(0.5, 1))
 
         # Assert
-        self.assertEqual(Price(2.00010, 5), result)
+        self.assertEqual(float, type(result0))
+        self.assertEqual(float, type(result1))
+        self.assertEqual(Decimal, type(result3))
+        self.assertEqual(Decimal, type(result4))
+        self.assertEqual(1.0000000000002527, result0)
+        self.assertEqual(1.0000000000002527, result1)
+        self.assertEqual(Decimal(1.00000, 5), result3)
+        self.assertEqual(Decimal(0.50001, 5), result4)
+
+    def test_decimal_division(self):
+        # Arrange
+        # Act
+        result0 = Decimal(1.00001, 5) / 2.0
+        result1 = Decimal(1.00001, 5) / Decimal(0.5000, 5)
+
+        # Assert
+        self.assertEqual(float, type(result0))
+        self.assertEqual(float, type(result1))
+        self.assertEqual(0.500005, result0)
+        self.assertEqual(2.00002, result1)
+
+    def test_decimal_multiplication(self):
+        # Arrange
+        # Act
+        result0 = Decimal(1.00001, 5) * 2.0
+        result1 = Decimal(1.00001, 5) * Decimal(1.5000, 5)
+
+        # Assert
+        self.assertEqual(float, type(result0))
+        self.assertEqual(float, type(result1))
+        self.assertEqual(2.00002, result0)
+        self.assertEqual(1.500015, result1)
 
     def test_decimal_subtract_returns_expected_decimal(self):
         # Arrange
@@ -239,10 +264,10 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         result1 = Price(1.0000, 5) + 1.0000
-        result2 = Price(1.0000, 5).add(Price(1.0000, 5))
+        result2 = Price(1.0000, 5).add_decimal(Price(1.0000, 5))
 
         result3 = Price(3.0000, 5) - 1.0000
-        result4 = Price(3.0000, 5).subtract(Price(1.0000, 5))
+        result4 = Price(3.0000, 5).subtract_decimal(Price(1.0000, 5))
 
         result5 = Price(1.0000, 5) / 1.0000
         result6 = Price(3.0000, 5) * 1.0000
@@ -269,7 +294,7 @@ class ObjectTests(unittest.TestCase):
         price2 = Price(1.00010, 5)
 
         # Act
-        result = price1.add(price2)
+        result = price1.add_decimal(price2)
 
         # Assert
         self.assertEqual(Price(2.00010, 5), result)
@@ -280,7 +305,7 @@ class ObjectTests(unittest.TestCase):
         price2 = Price(1.00010, 5)
 
         # Act
-        result = price1.subtract(price2)
+        result = price1.subtract_decimal(price2)
 
         # Assert
         self.assertEqual(Price(0.99990, 5), result)
