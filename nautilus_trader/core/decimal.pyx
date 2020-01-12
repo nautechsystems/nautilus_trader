@@ -61,7 +61,7 @@ cdef class Decimal:
         """
         Return the decimal precision inferred from the number of digits after the decimal place.
 
-        :param value: The string value to parse (must contain a decimal '.').
+        :param value: The string value to parse.
         :return: int.
         """
         if value.__contains__('.'):
