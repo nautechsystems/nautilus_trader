@@ -178,7 +178,7 @@ cdef class ModifyOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"order_id={self.order_id.value}, "
-                f"quantity={self.modified_quantity.to_string_formatted()}, "
+                f"quantity={self.modified_quantity.to_string()}, "
                 f"price={self.modified_price})")
 
 

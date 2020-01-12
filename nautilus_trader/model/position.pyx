@@ -122,7 +122,7 @@ cdef class Position:
 
         :return str.
         """
-        cdef str quantity = ' ' if self.relative_quantity == 0 else f' {self.quantity.to_string_formatted()} '
+        cdef str quantity = ' ' if self.relative_quantity == 0 else f' {self.quantity.to_string()} '
         return f"{market_position_to_string(self.market_position)}{quantity}{self.symbol}"
 
     cpdef list get_order_ids(self):

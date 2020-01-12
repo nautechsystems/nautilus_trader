@@ -46,7 +46,9 @@ class ObjectTests(unittest.TestCase):
         quantity3 = Quantity(2)
 
         # Assert
+        self.assertEqual(1, quantity1)
         self.assertEqual(quantity1, quantity2)
+        self.assertNotEqual(1, quantity3)
         self.assertNotEqual(quantity1, quantity3)
 
     def test_quantity_str(self):
@@ -77,6 +79,11 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
+        self.assertTrue(quantity1 < 1)
+        self.assertTrue(quantity1 <= 1)
+        self.assertTrue(quantity2 <= 1)
+        self.assertTrue(quantity3 > 1)
+        self.assertTrue(quantity3 >= 2)
         self.assertTrue(quantity1 < quantity2)
         self.assertTrue(quantity1 <= quantity2)
         self.assertTrue(quantity2 <= quantity2)
@@ -92,6 +99,12 @@ class ObjectTests(unittest.TestCase):
         result3 = Quantity(2) - 1
         result4 = Quantity(2) - Quantity(1)
 
+        result5 = Quantity(4) / 2
+        result6 = Quantity(4) / Quantity(2)
+
+        result7 = Quantity(2) * 2
+        result8 = Quantity(2) * Quantity(2)
+
         # Assert
         self.assertEqual(int, type(result1))
         self.assertEqual(2, result1)
@@ -102,6 +115,16 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(1, result3)
         self.assertEqual(int, type(result4))
         self.assertEqual(1, result4)
+
+        self.assertEqual(int, type(result5))
+        self.assertEqual(2, result5)
+        self.assertEqual(int, type(result6))
+        self.assertEqual(2, result6)
+
+        self.assertEqual(int, type(result7))
+        self.assertEqual(4, result7)
+        self.assertEqual(int, type(result8))
+        self.assertEqual(4, result8)
 
     def test_decimal_initialized_with_no_value_returns_valid_decimal(self):
         # Arrange
