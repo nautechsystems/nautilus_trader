@@ -211,7 +211,7 @@ class EMACrossPy(TradingStrategy):
                     self.log.info("Insufficient equity for SELL signal.")
 
             # ENTRY ORDER SUBMISSION
-            if atomic_order is not None:
+            if atomic_order:
                 self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
 
         for working_order in self.orders_working().values():

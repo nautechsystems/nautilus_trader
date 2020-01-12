@@ -264,10 +264,10 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         result1 = Price(1.0000, 5) + 1.0000
-        result2 = Price(1.0000, 5).add_decimal(Price(1.0000, 5))
+        result2 = Price(1.0000, 5).add(Price(1.0000, 5))
 
         result3 = Price(3.0000, 5) - 1.0000
-        result4 = Price(3.0000, 5).subtract_decimal(Price(1.0000, 5))
+        result4 = Price(3.0000, 5).subtract(Price(1.0000, 5))
 
         result5 = Price(1.0000, 5) / 1.0000
         result6 = Price(3.0000, 5) * 1.0000
