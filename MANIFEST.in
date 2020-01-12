@@ -1,2 +1,4 @@
 include nautilus_trader/_data/libor-1-month.csv
 include nautilus_trader/_data/short-term-interest.csv
+include README.md
+include LICENSE.md

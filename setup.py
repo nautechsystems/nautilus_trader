@@ -72,6 +72,7 @@ setup(
     url=URL,
     python_requires=PYTHON_REQUIRES,
     install_requires=parse_requirements('requirements-install.txt'),
+    tests_require=parse_requirements('requirements-test.txt'),
     requires=parse_requirements('requirements.txt'),
     packages=packages,
     package_data=package_data,
