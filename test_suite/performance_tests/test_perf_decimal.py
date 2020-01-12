@@ -26,7 +26,7 @@ class PriceInitializations:
 
     @staticmethod
     def make_stock_decimal():
-        decimal.Decimal(1.23456, _PRECISION_5_CONTEXT)
+        decimal.Decimal('1.23456')
 
     @staticmethod
     def make_decimal():
@@ -81,13 +81,13 @@ class PricePerformanceTests(unittest.TestCase):
     def test_decimal_to_string():
 
         PerformanceProfiler.profile_function(_DECIMAL1.to_string, 1000000, 3)
-        # ~325ms (324393μs) average over 3 runs @ 1000000 iterations
+        # ~417ms (416678μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_make_stock_decimal():
 
         PerformanceProfiler.profile_function(PriceInitializations.make_stock_decimal, 1000000, 3)
-        # ~712ms (711539μs) average over 3 runs @ 1000000 iterations
+        # ~248ms (247206μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_make_decimal():

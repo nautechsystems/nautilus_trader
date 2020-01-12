@@ -175,7 +175,6 @@ cdef class Quantity:
         return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
 
 
-
 cdef Decimal _ZERO_DECIMAL = Decimal()
 
 cdef class Decimal:
@@ -244,7 +243,10 @@ cdef class Decimal:
         :param value: The string value to parse (must contain a decimal '.').
         :return: int.
         """
-        return len(value.partition('.')[2])
+        if value.__contains__('.'):
+            return len(value.partition('.')[2])
+        else:
+            return 1
 
     cdef bint equals(self, Decimal other):
         """
