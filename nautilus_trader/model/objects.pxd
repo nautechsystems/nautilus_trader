@@ -22,7 +22,7 @@ cdef class Quantity:
     @staticmethod
     cdef Quantity zero()
     cdef bint equals(self, Quantity other)
-    cdef str to_string_formatted(self)
+    cpdef str to_string(self, bint format_commas=*)
 
 
 cdef class Decimal:

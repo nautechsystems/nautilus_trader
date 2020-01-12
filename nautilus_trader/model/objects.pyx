@@ -58,67 +58,89 @@ cdef class Quantity:
         """
         return self.value == other.value
 
-    cdef str to_string_formatted(self):
+    cpdef str to_string(self, bint format_commas=True):
         """
         Return the formatted string representation of this object.
         
+        :param format_commas: If the string should be formatted with commas separating thousands.
         :return: str.
         """
-        return f'{self.value:,}'
+        if format_commas:
+            return f'{self.value:,}'
+        else:
+            return str(self.value)
 
-    def __eq__(self, Quantity other) -> bool:
+    def __eq__(self, other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
         """
-        return self.equals(other)
+        try:
+            return self.value == <int?>other
+        except TypeError:
+            return self.value == <int>other.value
 
-    def __ne__(self, Quantity other) -> bool:
+    def __ne__(self, other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
         """
-        return not self.equals(other)
+        try:
+            return self.value != <int?>other
+        except TypeError:
+            return self.value != <int>other.value
 
-    def __lt__(self, Quantity other) -> bool:
+    def __lt__(self, other) -> bool:
         """
         Return a value indicating whether this object is less than (<) the given object.
 
         :param other: The other object.
         :return bool.
         """
-        return self.value < other.value
+        try:
+            return self.value < <int?>other
+        except TypeError:
+            return self.value < <int>other.value
 
-    def __le__(self, Quantity other) -> bool:
+    def __le__(self, other) -> bool:
         """
         Return a value indicating whether this object is less than or equal to (<=) the given object.
 
         :param other: The other object.
         :return bool.
         """
-        return self.value <= other.value
+        try:
+            return self.value <= <int?>other
+        except TypeError:
+            return self.value <= <int>other.value
 
-    def __gt__(self, Quantity other) -> bool:
+    def __gt__(self, other) -> bool:
         """
         Return a value indicating whether this object is greater than (>) the given object.
 
         :param other: The other object.
         :return bool.
         """
-        return self.value > other.value
+        try:
+            return self.value > <int?>other
+        except TypeError:
+            return self.value > <int>other.value
 
-    def __ge__(self, Quantity other) -> bool:
+    def __ge__(self, other) -> bool:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
         :param other: The other object.
         :return bool.
         """
-        return self.value >= other.value
+        try:
+            return self.value >= <int?>other
+        except TypeError:
+            return self.value >= <int>other.value
 
     def __add__(self, other) -> int:
         """
@@ -127,12 +149,10 @@ cdef class Quantity:
         :param other: The other object.
         :return int.
         """
-        if isinstance(other, Quantity):
-            return self.value + other.value
-        elif isinstance(other, long):
-            return self.value + other
-        else:
-            raise NotImplementedError(f"Cannot add {type(other)} to a quantity.")
+        try:
+            return self.value + <int?>other
+        except TypeError:
+            return self.value + <int>other.value
 
     def __sub__(self, other) -> int:
         """
@@ -141,12 +161,46 @@ cdef class Quantity:
         :param other: The other object.
         :return int.
         """
-        if isinstance(other, Quantity):
-            return self.value - other.value
-        elif isinstance(other, long):
-            return self.value - other
-        else:
-            raise NotImplementedError(f"Cannot subtract {type(other)} from a quantity.")
+        try:
+            return self.value - <int?>other
+        except TypeError:
+            return self.value - <int>other.value
+
+    def __idiv__(self, other) -> int:
+        """
+        Return the result of dividing this object by the given object.
+
+        :param other: The other object.
+        :return int.
+        """
+        try:
+            return self.value // <int?>other
+        except TypeError:
+            return self.value // <int>other.value
+
+    def __truediv__(self, other) -> int:
+        """
+        Return the result of dividing this object by the given object.
+
+        :param other: The other object.
+        :return int.
+        """
+        try:
+            return self.value // <int?>other
+        except TypeError:
+            return self.value // <int>other.value
+
+    def __mul__(self, other) -> int:
+        """
+        Return the result of multiplying this object by the given object.
+
+        :param other: The other object.
+        :return int.
+        """
+        try:
+            return self.value * <int?>other
+        except TypeError:
+            return self.value * <int>other.value
 
     def __hash__(self) -> int:
         """"
@@ -196,7 +250,7 @@ cdef class Decimal:
 
     cpdef float as_float(self):
         """
-        Return the internal decimal value as a floating point number.
+        Return the internal value as a floating point number.
 
         :return float.
         """
