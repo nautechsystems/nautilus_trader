@@ -698,8 +698,8 @@ cdef class BacktestExecClient(ExecutionClient):
             filled_price=event.average_price,
             exchange_rate=exchange_rate)
 
-        self.total_commissions.subtract(commission)
-        pnl.subtract(commission)
+        self.total_commissions = self.total_commissions.subtract(commission)
+        pnl = pnl.subtract(commission)
 
         cdef AccountStateEvent account_event
         if not self.frozen_account:
