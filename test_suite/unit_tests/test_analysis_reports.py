@@ -12,9 +12,10 @@ import uuid
 from datetime import timedelta
 
 from nautilus_trader.core.types import GUID
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, Currency
-from nautilus_trader.model.objects import Quantity, Price, Decimal
+from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId, PositionIdBroker
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.events import OrderFilled
@@ -80,7 +81,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
-        self.assertEqual(0.8001099824905396, report.iloc[0]['avg_price'].as_float())
+        self.assertEqual(0.80011, report.iloc[0]['avg_price'].as_double())
         self.assertEqual(Decimal(0.00001, 5), report.iloc[0]['slippage'])
 
     def test_can_produce_order_fills_report(self):
@@ -127,7 +128,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
-        self.assertAlmostEqual(0.80011, report.iloc[0]['avg_price'].as_float())
+        self.assertAlmostEqual(0.80011, report.iloc[0]['avg_price'].as_double())
         self.assertEqual(Decimal(0.00001, 5), report.iloc[0]['slippage'])
 
     def test_can_produce_trades_report(self):
@@ -152,8 +153,8 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual('BUY', report.iloc[0]['direction'])
         self.assertEqual(100000, report.iloc[0]['peak_quantity'])
         self.assertEqual(1.00000, report.iloc[0]['avg_open_price'])
-        self.assertEqual(1.000100016593933, report.iloc[0]['avg_close_price'])
+        self.assertEqual(1.0001, report.iloc[0]['avg_close_price'])
         self.assertEqual(UNIX_EPOCH, report.iloc[0]['opened_time'])
         self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]['closed_time'])
-        self.assertEqual(0.00010001659393310547, report.iloc[0]['realized_points'])
-        self.assertEqual(0.00010001659393310547, report.iloc[0]['realized_return'])
+        self.assertEqual(9.999999999998899e-05, report.iloc[0]['realized_points'])
+        self.assertEqual(9.999999999998899e-05, report.iloc[0]['realized_return'])

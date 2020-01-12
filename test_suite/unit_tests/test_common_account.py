@@ -10,8 +10,9 @@ import unittest
 import uuid
 
 from nautilus_trader.core.types import GUID, ValidString
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Decimal, Money
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.identifiers import Brokerage, AccountNumber, AccountId
 from nautilus_trader.common.account import Account

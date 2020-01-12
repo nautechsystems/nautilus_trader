@@ -39,9 +39,9 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1.0, result0)
-        self.assertEqual(1.0010000467300415, result1)
-        self.assertEqual(-0.019999999552965164, result2)
-        self.assertEqual(1.0019999742507935, result3)
+        self.assertEqual(1.001, result1)
+        self.assertEqual(-0.02, result2)
+        self.assertEqual(1.002, result3)
 
     def test_basis_points_as_percentage(self):
         # Arrange

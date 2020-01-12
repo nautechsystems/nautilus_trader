@@ -38,11 +38,11 @@ cdef class PositionSizer:
     cpdef Quantity calculate(
             self,
             Money equity,
-            float risk_bp,
+            double risk_bp,
             Price price_entry,
             Price price_stop_loss,
-            float exchange_rate=1.0,
-            float commission_rate_bp=0.20,
+            double exchange_rate=1.0,
+            double commission_rate_bp=0.20,
             int hard_limit=0,
             int units=1,
             int unit_batch_size=1):
@@ -76,14 +76,14 @@ cdef class PositionSizer:
         
         :return int.
         """
-        return int(abs(entry - stop_loss) / self.instrument.tick_size.as_float())
+        return int(abs(entry - stop_loss) / self.instrument.tick_size.as_double())
 
     cdef Money _calculate_riskable_money(
             self,
             Money equity,
-            float risk_bp,
-            float commission_rate_bp,
-            float exchange_rate):
+            double risk_bp,
+            double commission_rate_bp,
+            double exchange_rate):
         """
         Return the calculated amount of risk money available.
         
@@ -113,11 +113,11 @@ cdef class FixedRiskSizer(PositionSizer):
     cpdef Quantity calculate(
             self,
             Money equity,
-            float risk_bp,
+            double risk_bp,
             Price price_entry,
             Price price_stop_loss,
-            float exchange_rate=1.0,
-            float commission_rate_bp=0.20,
+            double exchange_rate=1.0,
+            double commission_rate_bp=0.20,
             int hard_limit=0,
             int units=1,
             int unit_batch_size=1):
@@ -155,7 +155,7 @@ cdef class FixedRiskSizer(PositionSizer):
         if risk_points <= 0:
             return Quantity()
 
-        cdef long position_size = long((((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_float()))
+        cdef long position_size = long((((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_double()))
 
         # Limit size
         if hard_limit > 0:

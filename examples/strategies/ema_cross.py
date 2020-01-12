@@ -85,7 +85,7 @@ class EMACrossPy(TradingStrategy):
         # Put custom code to be run on strategy start here (or pass)
         self.instrument = self.get_instrument(self.symbol)
         self.precision = self.instrument.tick_precision
-        self.entry_buffer = self.instrument.tick_size.as_float()
+        self.entry_buffer = self.instrument.tick_size.as_double()
         self.SL_buffer = self.instrument.tick_size * 10.0
         self.position_sizer = FixedRiskSizer(self.instrument)
 
@@ -103,7 +103,7 @@ class EMACrossPy(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spreads.append(tick.ask.as_float() - tick.bid.as_float())
+        self.spreads.append(tick.ask.as_double() - tick.bid.as_double())
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -143,7 +143,7 @@ class EMACrossPy(TradingStrategy):
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(bar.high + self.entry_buffer + self.spreads[-1], self.precision)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
-                price_take_profit = Price(price_entry + (price_entry.as_float() - price_stop_loss.as_float()), self.precision)
+                price_take_profit = Price(price_entry + (price_entry.as_double() - price_stop_loss.as_double()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
@@ -178,7 +178,7 @@ class EMACrossPy(TradingStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer, self.precision)
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
-                price_take_profit = Price(price_entry - (price_stop_loss.as_float() - price_entry.as_float()), self.precision)
+                price_take_profit = Price(price_entry - (price_stop_loss.as_double() - price_entry.as_double()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]

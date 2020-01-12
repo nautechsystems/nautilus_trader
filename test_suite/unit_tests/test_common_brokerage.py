@@ -93,7 +93,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         rate = calculator.calc_overnight_rate(AUDUSD_FXCM, TestStubs.unix_epoch())
 
         # Assert
-        self.assertEqual(-8.520547271473333e-05, rate)
+        self.assertEqual(-8.52054794520548e-05, rate)
 
     def test_calc_overnight_fx_rate_with_audusd_on_later_date_returns_correct_rate(self):
         # Arrange
@@ -103,7 +103,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         rate = calculator.calc_overnight_rate(AUDUSD_FXCM, datetime.datetime(2018, 2, 1, 1, 0, 0))
 
         # Assert
-        self.assertEqual(-2.739723470313038e-07, rate)
+        self.assertEqual(-2.739726027397263e-07, rate)
 
     def test_calc_overnight_fx_rate_with_audusd_on_impossible_dates_returns_zero(self):
         # Arrange

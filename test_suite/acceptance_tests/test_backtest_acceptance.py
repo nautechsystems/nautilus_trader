@@ -83,7 +83,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(558, strategies[0].fast_ema.count)
-        self.assertEqual(-433.44000244140625, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as float here
+        self.assertEqual(-475.8, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
         # Old value -12085.9296875
 
     def test_can_reset_and_rerun_ema_cross_strategy_returns_identical_performance(self):

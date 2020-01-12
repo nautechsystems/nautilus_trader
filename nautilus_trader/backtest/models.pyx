@@ -18,9 +18,9 @@ cdef class FillModel:
     """
 
     def __init__(self,
-                 float prob_fill_at_limit=0.,
-                 float prob_fill_at_stop=1.,
-                 float prob_slippage=0.,
+                 double prob_fill_at_limit=0.,
+                 double prob_fill_at_stop=1.,
+                 double prob_slippage=0.,
                  random_seed=None):
         """
         Initializes a new instance of the FillModel class.
@@ -67,7 +67,7 @@ cdef class FillModel:
         """
         return self._did_event_occur(self.prob_slippage)
 
-    cdef bint _did_event_occur(self, float probability):
+    cdef bint _did_event_occur(self, double probability):
         # Return a result indicating whether an event occurred based on the
         # given probability.
         

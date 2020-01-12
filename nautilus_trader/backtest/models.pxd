@@ -8,12 +8,12 @@
 
 
 cdef class FillModel:
-    cdef readonly float prob_fill_at_limit
-    cdef readonly float prob_fill_at_stop
-    cdef readonly float prob_slippage
+    cdef readonly double prob_fill_at_limit
+    cdef readonly double prob_fill_at_stop
+    cdef readonly double prob_slippage
 
     cpdef bint is_limit_filled(self)
     cpdef bint is_stop_filled(self)
     cpdef bint is_slipped(self)
 
-    cdef bint _did_event_occur(self, float probability)
+    cdef bint _did_event_occur(self, double probability)

@@ -9,8 +9,8 @@
 from cpython.datetime cimport datetime
 
 
-cpdef float fast_round(float value, int precision)
-cpdef float basis_points_as_percentage(float basis_points)
+cpdef double fast_round(double value, int precision)
+cpdef double basis_points_as_percentage(double basis_points)
 cpdef str pad_string(str string, int length, str pad=*)
 cpdef str format_zulu_datetime(datetime dt)
 cpdef object with_utc_index(dataframe)

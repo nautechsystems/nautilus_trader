@@ -218,9 +218,9 @@ cdef class Condition:
                 f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
 
     @staticmethod
-    cdef void positive(float value, str param) except *:
+    cdef void positive(double value, str param) except *:
         """
-        Check the real value is positive (> 0.0).
+        Check the real number value is positive (> 0.0).
 
         :param value: The value to check.
         :param param: The name of the values parameter.
@@ -242,9 +242,9 @@ cdef class Condition:
             raise ConditionFailed(f"The \'{param}\' was not a positive integer, was {value}")
 
     @staticmethod
-    cdef void not_negative(float value, str param) except *:
+    cdef void not_negative(double value, str param) except *:
         """
-        Check the float value is not a negative integer (< 0).
+        Check the real number value is not negative (< 0).
 
         :param value: The value to check.
         :param param: The name of the values parameter.
@@ -266,9 +266,9 @@ cdef class Condition:
             raise ConditionFailed(f"The \'{param}\' was a negative integer, was {value}")
 
     @staticmethod
-    cdef void in_range(float value, float start, float end, str param) except *:
+    cdef void in_range(double value, double start, double end, str param) except *:
         """
-        Check the real value is within the specified range (inclusive).
+        Check the real number value is within the specified range (inclusive).
 
         :param value: The value to check.
         :param start: The start of the range.

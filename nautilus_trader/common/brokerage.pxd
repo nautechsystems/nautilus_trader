@@ -15,13 +15,13 @@ from nautilus_trader.model.currency cimport ExchangeRateCalculator
 
 cdef class CommissionCalculator:
     cdef dict rates
-    cdef float default_rate_bp
+    cdef double default_rate_bp
     cdef Money minimum
 
-    cpdef Money calculate(self, Symbol symbol, Quantity filled_quantity, Price filled_price, float exchange_rate)
+    cpdef Money calculate(self, Symbol symbol, Quantity filled_quantity, Price filled_price, double exchange_rate)
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value)
 
-    cdef float _get_commission_rate(self, Symbol symbol)
+    cdef double _get_commission_rate(self, Symbol symbol)
 
 
 cdef class RolloverInterestCalculator:
@@ -29,4 +29,4 @@ cdef class RolloverInterestCalculator:
     cdef dict _rate_data
 
     cpdef object get_rate_data(self)
-    cpdef float calc_overnight_rate(self, Symbol symbol, datetime timestamp) except *
+    cpdef double calc_overnight_rate(self, Symbol symbol, datetime timestamp) except *
