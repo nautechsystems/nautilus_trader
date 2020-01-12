@@ -356,7 +356,7 @@ cdef class EMACross(TradingStrategy):
 
         :param tick: The received tick.
         """
-        #self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
         self.spreads.append(float(tick.ask.value - tick.bid.value))
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:

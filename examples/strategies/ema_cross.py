@@ -102,7 +102,7 @@ class EMACrossPy(TradingStrategy):
 
         :param tick: The received tick.
         """
-        #self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
         self.spreads.append(tick.ask.as_float() - tick.bid.as_float())
 
     def on_bar(self, bar_type: BarType, bar: Bar):
