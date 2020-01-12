@@ -49,7 +49,7 @@ if __name__ == "__main__":
         short_term_interest_csv_path='default',
         commission_rate_bp=0.20,
         bypass_logging=False,
-        level_console=LogLevel.INFO,
+        level_console=LogLevel.DEBUG,
         level_file=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     input("Press Enter to continue...")
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 2, 1, 5, 0, 0, 0)
+    stop = datetime(2013, 3, 1, 0, 0, 0, 0)
 
     engine.run(start, stop)
 

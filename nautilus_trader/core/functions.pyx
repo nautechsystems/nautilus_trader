@@ -9,6 +9,7 @@
 import pandas as pd
 import pytz
 
+from cpython.datetime cimport datetime
 from libc.math cimport round
 
 
@@ -34,15 +35,16 @@ cpdef float basis_points_as_percentage(float basis_points):
     return basis_points * 0.0001
 
 
-cpdef str pad_string(str string, int length):
+cpdef str pad_string(str string, int length, str pad=' '):
     """
-    Return the given string front padded to the given length.
+    Return the given string front padded.
 
     :param string: The string to pad.
     :param length: The length to pad to.
+    :param pad: The padding character.
     :return str.
     """
-    return ((length - len(string)) * ' ') + string
+    return ((length - len(string)) * pad) + string
 
 
 cpdef str format_zulu_datetime(datetime dt):
@@ -53,6 +55,9 @@ cpdef str format_zulu_datetime(datetime dt):
     :return str.
     """
     cdef str formatted_dt = ''
+    cdef tuple dt_partitioned
+    cdef str end
+
     try:
         formatted_dt = dt.isoformat(timespec='microseconds').partition('+')[0][:-3]
     except TypeError as ex:
@@ -60,7 +65,11 @@ cpdef str format_zulu_datetime(datetime dt):
     if not formatted_dt.__contains__('.'):
         return formatted_dt + '.000Z'
     else:
-        return formatted_dt + 'Z'
+        dt_partitioned = formatted_dt.rpartition('.')
+        end = dt_partitioned[2]
+        if len(end) > 3:
+            end = end[:3]
+        return f'{dt_partitioned[0]}.{end}Z'
 
 
 cpdef object with_utc_index(dataframe):

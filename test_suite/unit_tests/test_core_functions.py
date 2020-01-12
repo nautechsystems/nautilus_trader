@@ -71,6 +71,7 @@ class TestFunctionsTests(unittest.TestCase):
         dt4 = UNIX_EPOCH + timedelta(seconds=1)
         dt5 = UNIX_EPOCH + timedelta(hours=1, minutes=1, seconds=2, milliseconds=3)
 
+        print(dt3)
         # Act
         result1 = format_zulu_datetime(dt1)
         result2 = format_zulu_datetime(dt2)
