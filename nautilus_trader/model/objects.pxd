@@ -44,13 +44,15 @@ cdef class Decimal:
     cpdef bint le(self, Decimal other)
     cpdef bint gt(self, Decimal other)
     cpdef bint ge(self, Decimal other)
-    cpdef Decimal add(self, Decimal other)
-    cpdef Decimal subtract(self, Decimal other)
+    cpdef Decimal add_decimal(self, Decimal other, bint keep_precision=*)
+    cpdef Decimal subtract_decimal(self, Decimal other, bint keep_precision=*)
 
 
 cdef class Price(Decimal):
     @staticmethod
     cdef Price from_string(str value)
+    cpdef Price add(self, Decimal other)
+    cpdef Price subtract(self, Decimal other)
 
 
 cdef class Money(Decimal):
@@ -58,6 +60,8 @@ cdef class Money(Decimal):
     cdef Money zero()
     @staticmethod
     cdef Money from_string(str value)
+    cpdef Money add(self, Money other)
+    cpdef Money subtract(self, Money other)
 
 
 cdef class Tick:

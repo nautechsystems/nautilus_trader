@@ -12,7 +12,6 @@ import decimal
 import iso8601
 import re
 
-from libc.math cimport round
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -311,32 +310,31 @@ cdef class Decimal:
         """
         return self.value >= other.value
 
-    cpdef Decimal add(self, Decimal other):
+    cpdef Decimal add_decimal(self, Decimal other, bint keep_precision=False):
         """
         Return a new decimal by adding the given decimal to this decimal.
 
         :param other: The other decimal to add.
-        :raises ConditionFailed: If the precision is not >= the other decimal precision.
+        :param keep_precision: If the original precision should be maintained.
         :return Decimal.
         """
-        Condition.true(self.precision >= other.precision, 'self.precision >= other.precision')
+        if keep_precision:
+            return Decimal(float(self.value) + float(other.value), self.precision)
+        else:
+            return Decimal(float(self.value) + float(other.value), max(self.precision, other.precision))
 
-        self.value += other.value
-        return self
-
-    cpdef Decimal subtract(self, Decimal other):
+    cpdef Decimal subtract_decimal(self, Decimal other, bint keep_precision=False):
         """
         Return a new decimal by subtracting the given decimal from this decimal.
-        Note: This operation can result in negative decimals.
 
         :param other: The other decimal to subtract.
-        :raises ConditionFailed: If the precision is not >= the other decimal precision.
+        :param keep_precision: If the original precision should be maintained.
         :return Decimal.
         """
-        Condition.true(self.precision >= other.precision, 'self.precision >= other.precision')
-
-        self.value -= other.value
-        return self
+        if keep_precision:
+            return Decimal(float(self.value) - float(other.value), self.precision)
+        else:
+            return Decimal(float(self.value) - float(other.value), max(self.precision, other.precision))
 
     def __eq__(self, other) -> bool:
         """
@@ -420,7 +418,7 @@ cdef class Decimal:
         try:
             return float(self.value) + <float?>other
         except TypeError:
-            return float(self.value) + float(other.value)
+            return float(self.value) + <float>other.value
 
     def __sub__(self, other) -> float:
         """
@@ -432,7 +430,7 @@ cdef class Decimal:
         try:
             return float(self.value) - <float?>other
         except TypeError:
-            return float(self.value) - float(other.value)
+            return float(self.value) - <float>other.value
 
     def __truediv__(self, other) -> float:
         """
@@ -444,7 +442,7 @@ cdef class Decimal:
         try:
             return float(self.value) / <float?>other
         except TypeError:
-            return float(self.value) / float(<Decimal>other.value)
+            return float(self.value) / <float>other.value
 
     def __mul__(self, other) -> float:
         """
@@ -456,7 +454,7 @@ cdef class Decimal:
         try:
             return float(self.value) * <float?>other
         except TypeError:
-            return float(self.value) * float(<Decimal>other.value)
+            return float(self.value) * <float>other.value
 
     def __hash__(self) -> int:
         """"
@@ -513,6 +511,31 @@ cdef class Price(Decimal):
         """
         return Price(float(value), precision=Decimal.precision_from_string(value))
 
+    cpdef Price add(self, Decimal other):
+        """
+        Return a new price by adding the given decimal to this price.
+
+        :param other: The other price to add (precision must be <= this decimals precision).
+        :raises ConditionFailed: If the precision of the given decimal is not <= this precision.
+        :return Price.
+        """
+        Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
+
+        return Price(float(self.value) + float(other.value), self.precision)
+
+    cpdef Price subtract(self, Decimal other):
+        """
+        Return a new price by subtracting the decimal price from this price.
+
+        :param other: The other decimal to subtract (precision must be <= this decimals precision).
+        :raises ConditionFailed: If price precision is < the other decimal precision.
+        :raises ConditionFailed: If value of the other decimal is greater than this price.
+        :return Price.
+        """
+        Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
+
+        return Price(float(self.value) - float(other.value), self.precision)
+
     def __repr__(self) -> str:
         """
         Return a string representation of this object which includes the objects
@@ -530,7 +553,7 @@ cdef class Money(Decimal):
     Represents the 'concept' of money.
     """
 
-    def __init__(self, float value=0):
+    def __init__(self, float value=0.0):
         """
         Initializes a new instance of the Money class.
 
@@ -557,6 +580,26 @@ cdef class Money(Decimal):
         :return Money.
         """
         return Money(float(value))
+
+    cpdef Money add(self, Money other):
+        """
+        Return a new price by adding the given price to this price.
+
+        :param other: The other money to add.
+        :return Price.
+        :raises ConditionFailed: If the precision of the prices are not equal.
+        """
+        return Money(float(self.value) + float(other.value))
+
+    cpdef Money subtract(self, Money other):
+        """
+        Return a new price by subtracting the given price from this price.
+
+        :param other: The other price to subtract.
+        :return Price.
+        :raises ConditionFailed: If the precision of the prices are not equal.
+        """
+        return Money(float(self.value) - float(other.value))
 
     def __repr__(self) -> str:
         """

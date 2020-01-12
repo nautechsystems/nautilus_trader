@@ -77,7 +77,6 @@ cdef class CommissionCalculator:
     cdef float _get_commission_rate(self, Symbol symbol):
         cdef float rate = self.rates.get(symbol, -1.0)
         if rate != -1.0:
-            print("***** rate found")
             return rate
         else:
             return self.default_rate_bp
