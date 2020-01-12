@@ -94,7 +94,7 @@ class PricePerformanceTests(unittest.TestCase):
     def test_make_decimal():
 
         PerformanceProfiler.profile_function(PriceInitializations.make_decimal, 1000000, 3)
-        # ~174ms (173409μs) average over 3 runs @ 1000000 iterations
+        # ~171ms (170487μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_make_price():
@@ -112,7 +112,7 @@ class PricePerformanceTests(unittest.TestCase):
     def test_decimal_comparisons():
 
         PerformanceProfiler.profile_function(PriceInitializations.decimal_comparisons, 1000000, 3)
-        # ~125ms (124726μs) average over 3 runs @ 1000000 iterations
+        # ~105ms (104642μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_stock_decimal_comparisons():
@@ -130,4 +130,4 @@ class PricePerformanceTests(unittest.TestCase):
     def test_decimal_arithmetic():
 
         PerformanceProfiler.profile_function(PriceInitializations.decimal_arithmetic, 1000000, 3)
-        # ~212ms (211537μs) average over 3 runs @ 1000000 iterations
+        # ~126ms (125350μs) average over 3 runs @ 1000000 iterations
