@@ -114,6 +114,7 @@ cdef class BacktestEngine:
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
+        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.data_client = BacktestDataClient(
             venue=Venue('BACKTEST'),
             data=data,
@@ -150,6 +151,7 @@ cdef class BacktestEngine:
 
         self._change_clocks_and_loggers(strategies)
 
+        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.trader = Trader(
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -275,7 +277,7 @@ cdef class BacktestEngine:
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
-        self.log.info("Stopping...")
+        self.log.debug("Stopping...")
         self.trader.stop()
         self.log.info("Stopped.")
         self._backtest_footer(run_started, self.clock.time_now(), start, stop)
@@ -347,9 +349,9 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
         self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({round(100 - psutil.virtual_memory()[2], 2)}%)")
-        self.log.info(f"Run started datetime:    {format_zulu_datetime(run_started)}")
-        self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
-        self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
+        self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
+        self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
+        self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
         self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
@@ -369,11 +371,11 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"Run started datetime:    {format_zulu_datetime(run_started)}")
-        self.log.info(f"Run finished datetime:   {format_zulu_datetime(run_finished)}")
-        self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
-        self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Elapsed time (running):  {run_finished - run_started}")
+        self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
+        self.log.info(f"Run finished:   {format_zulu_datetime(run_finished)}")
+        self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
+        self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
+        self.log.info(f"Elapsed time:   {run_finished - run_started}")
 
         self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
         self.log.info(f"Iterations: {self.iteration}")
