@@ -8,10 +8,9 @@
 
 import sys
 import math
+import time
 import timeit
 import inspect
-
-from time import time
 
 
 cdef int _MILLISECONDS_IN_SECOND = 1000
@@ -35,9 +34,9 @@ cdef class PerformanceProfiler:
 
         cdef int x
         for x in range(runs):
-            start_time = time()
+            start_time = time.time()
             timeit.Timer(function).timeit(number=iterations)
-            stop_time = time()
+            stop_time = time.time()
             total_elapsed += stop_time - start_time
 
         print('\n' + f'Performance test: {signature} ')
