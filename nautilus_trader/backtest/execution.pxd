@@ -49,12 +49,16 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly FillModel fill_model
 
     cdef dict _market
-    cdef dict _slippage_index
+    cdef dict _slippages
+    cdef dict _min_stops
+    cdef dict _min_limits
+
     cdef dict _working_orders
     cdef dict _atomic_child_orders
     cdef dict _oco_orders
 
-    cdef void _set_slippage_index(self) except *
+    cdef void _set_slippages(self) except *
+    cdef void _set_min_distances(self) except *
     cpdef datetime time_now(self)
     cpdef void register_exec_db(self, ExecutionDatabase exec_db) except *
     cpdef void change_fill_model(self, FillModel fill_model) except *
