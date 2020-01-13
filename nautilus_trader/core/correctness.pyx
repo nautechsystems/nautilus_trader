@@ -6,6 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject_Length, PyCallable_Check, PyObject_IsInstance
+
+
 class ConditionFailed(Exception):
     """
     Represents a failed condition check.
@@ -55,20 +58,63 @@ cdef class Condition:
             raise ConditionFailed(f"The \'{param}\' argument was None")
 
     @staticmethod
-    cdef void valid_string(str argument, str param) except *:
+    cdef void type(object argument, object expected, str param) except *:
         """
-        Check the string argument is not None, empty or whitespace.
+        Check the argument is of the specified type.
 
-        :param argument: The string argument to check.
+        :param argument: The object to check.
+        :param expected: The expected class type.
         :param param: The arguments parameter name.
-        :raises ConditionFailed: If the string argument is None, empty or whitespace.
+        :raises ConditionFailed: If the object is not of the expected type.
+        """
+        cdef int result = PyObject_IsInstance(argument, expected)
+        if result == 1:
+            return
+        elif result == 0:
+            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected}, was {type(argument)}")
+        elif result == -1:
+            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected}, was {type(argument)}")
+
+    @staticmethod
+    cdef void type_or_none(object argument, object expected, str param) except *:
+        """
+        Check the argument is of the specified type, or is None.
+
+        :param argument: The object to check.
+        :param expected: The expected class type (if not None).
+        :param param: The arguments parameter name.
+        :raises ConditionFailed: If the object is not None and not of the expected type.
         """
         if argument is None:
-            raise ConditionFailed(f"The \'{param}\' string argument was None")
-        if argument == '':
-            raise ConditionFailed(f"The \'{param}\' string argument was empty")
-        if argument.isspace():
-            raise ConditionFailed(f"The \'{param}\' string argument was whitespace")
+            return
+
+        Condition.type(argument, expected, param)
+
+    @staticmethod
+    cdef void callable(object argument, str param) except *:
+        """
+        Check the object is callable.
+
+        :param argument: The object to check.
+        :param param: The objects parameter name.
+        :raises ConditionFailed: If the argument is not callable.
+        """
+        if not PyCallable_Check(argument):
+            raise ConditionFailed(f"The \'{param}\' object was not callable.")
+
+    @staticmethod
+    cdef void callable_or_none(object argument, str param) except *:
+        """
+        Check the object is callable or None.
+
+        :param argument: The object to check.
+        :param param: The objects parameter name.
+        :raises ConditionFailed: If the argument is not None and not callable.
+        """
+        if argument is None:
+            return
+
+        Condition.callable(argument, param)
 
     @staticmethod
     cdef void equals(object object1, object object2, str param1, str param2) except *:
@@ -84,35 +130,6 @@ cdef class Condition:
         """
         if not object1.equals(object2):
             raise ConditionFailed(f"The \'{param1}\' {type(object1)} was not equal to the \'{param2}\' {type(object2)}")
-
-    @staticmethod
-    cdef void type(object argument, object expected_type, str param) except *:
-        """
-        Check the argument is of the specified type.
-
-        :param argument: The argument to check.
-        :param expected_type: The expected argument type.
-        :param param: The arguments parameter name.
-        :raises ConditionFailed: If the object is not of the expected type.
-        """
-        if not isinstance(argument, expected_type):
-            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected_type}, was {type(argument)}")
-
-    @staticmethod
-    cdef void type_or_none(object argument, object expected_type, str param) except *:
-        """
-        Check the argument is of the specified type, or is None.
-
-        :param argument: The argument to check.
-        :param expected_type: The expected argument type (if not None).
-        :param param: The arguments parameter name.
-        :raises ConditionFailed: If the object is not None and not of the expected type.
-        """
-        if argument is None:
-            return
-
-        if not isinstance(argument, expected_type):
-            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected_type} or None, was {type(argument)}")
 
     @staticmethod
     cdef void list_type(list list, type expected_type, str param) except *:
@@ -183,7 +200,7 @@ cdef class Condition:
         :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is empty.
         """
-        if len(collection) == 0:
+        if PyObject_Length(collection) == 0:
             raise ConditionFailed(f"The \'{param}\' collection was empty")
 
     @staticmethod
@@ -195,7 +212,7 @@ cdef class Condition:
         :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is not empty.
         """
-        if len(collection) > 0:
+        if PyObject_Length(collection) > 0:
             raise ConditionFailed(f"The \'{param}\' collection was not empty")
 
     @staticmethod
@@ -213,7 +230,7 @@ cdef class Condition:
         :param param2: The second collections parameter name.
         :raises ConditionFailed: If the collection lengths are not equal.
         """
-        if len(collection1) != len(collection2):
+        if PyObject_Length(collection1) != PyObject_Length(collection2):
             raise ConditionFailed(
                 f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
 
@@ -294,6 +311,22 @@ cdef class Condition:
             raise ConditionFailed(f"The \'{param}\' was out of range [{start}-{end}], was {value}")
 
     @staticmethod
+    cdef void valid_string(str argument, str param) except *:
+        """
+        Check the string argument is not None, empty or whitespace.
+
+        :param argument: The string argument to check.
+        :param param: The arguments parameter name.
+        :raises ConditionFailed: If the string argument is None, empty or whitespace.
+        """
+        if argument is None:
+            raise ConditionFailed(f"The \'{param}\' string argument was None")
+        if argument == '':
+            raise ConditionFailed(f"The \'{param}\' string argument was empty")
+        if argument.isspace():
+            raise ConditionFailed(f"The \'{param}\' string argument was whitespace")
+
+    @staticmethod
     cdef void valid_port(int value, str param) except *:
         """
         Check the port integer value is valid in range [0, 65535].
@@ -328,6 +361,18 @@ class PyCondition:
         Condition.type_or_none(argument, expected_type, param)
 
     @staticmethod
+    def callable(argument, param):
+        Condition.callable(argument, param)
+
+    @staticmethod
+    def callable_or_none(argument, param):
+        Condition.callable_or_none(argument, param)
+
+    @staticmethod
+    def equals(argument1, argument2, param1, param2):
+        Condition.equals(argument1, argument2, param1, param2)
+
+    @staticmethod
     def list_type(list, expected_type, param):
         Condition.list_type(list, expected_type, param)
 
@@ -342,14 +387,6 @@ class PyCondition:
     @staticmethod
     def not_in(object element, object collection, str param1, str param2):
         Condition.not_in(element, collection, param1, param2)
-
-    @staticmethod
-    def valid_string(argument, param):
-        Condition.valid_string(argument, param)
-
-    @staticmethod
-    def equals(argument1, argument2, param1, param2):
-        Condition.equals(argument1, argument2, param1, param2)
 
     @staticmethod
     def not_empty(argument, param):
@@ -386,6 +423,10 @@ class PyCondition:
     @staticmethod
     def in_range_int(value, start, end, param):
         Condition.in_range_int(value, start, end, param)
+
+    @staticmethod
+    def valid_string(argument, param):
+        Condition.valid_string(argument, param)
 
     @staticmethod
     def valid_port(int value, param):

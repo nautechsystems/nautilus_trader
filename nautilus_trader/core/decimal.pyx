@@ -6,11 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-"""Define common trading model value objects."""
-
 import decimal
 
 from libc.math cimport pow, round
+from cpython.object cimport PyObject_Length
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -19,7 +18,7 @@ cdef Decimal _ZERO_DECIMAL = Decimal()
 
 cdef class Decimal:
     """
-    Represents a decimal floating point value type.
+    Represents a decimal floating point value type with fixed precision.
     """
 
     def __init__(self, double value=0.0, int precision=1):
@@ -65,7 +64,7 @@ cdef class Decimal:
         :return: int.
         """
         if value.__contains__('.'):
-            return len(value.partition('.')[2])
+            return PyObject_Length(value.partition('.')[2])
         else:
             return 1
 
@@ -329,4 +328,4 @@ cdef class Decimal:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({str(self)}, precision={self.precision}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.to_string()}, precision={self.precision}) object at {id(self)}>"

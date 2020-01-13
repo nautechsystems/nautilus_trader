@@ -173,8 +173,9 @@ cdef class LiveTimer(Timer):
         :param now: The datetime now (UTC).
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
+        :raises ConditionFailed: If the function is not of type Callable.
         """
-        Condition.type(function, Callable, 'function')
+        Condition.callable(function, 'function')
         # Condition: interval checked in base class
         # Condition: stop_time checked in base class
 
@@ -266,7 +267,7 @@ cdef class Clock:
         :param handler: The handler to register (must be Callable).
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self._default_handler = handler
         self.is_default_handler_registered = True
@@ -294,7 +295,7 @@ cdef class Clock:
         Condition.not_in(label, self._handlers, 'label', 'handlers')
         cdef datetime now = self.time_now()
         Condition.true(alert_time >= now, 'alert_time >= time_now()')
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         cdef Timer timer = self._get_timer(
             label=label,
@@ -323,7 +324,7 @@ cdef class Clock:
         :param interval: The time interval for the timer.
         :param start_time: The optional start time for the timer (if None then starts immediately).
         :param stop_time: The optional stop time for the timer (if None then repeats indefinitely).
-        :param handler: The optional handler to receive time events (must be Callable).
+        :param handler: The optional handler to receive time events (must be Callable or None).
         :raises ConditionFailed: If the label is not unique for this clock.
         :raises ConditionFailed: If the interval is not positive (> 0).
         :raises ConditionFailed: If the stop_time is not None and stop_time < time_now.
@@ -336,7 +337,7 @@ cdef class Clock:
         Condition.not_in(label, self._timers, 'label', 'timers')
         Condition.not_in(label, self._handlers, 'label', 'handlers')
         Condition.true(interval.total_seconds() > 0, 'interval positive')
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
         cdef datetime now = self.time_now()
         if start_time is None:
             start_time = now

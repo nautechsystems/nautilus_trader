@@ -174,12 +174,13 @@ cdef class SubscriberWorker(MQWorker):
         :raises ConditionFailed: If the service_name is not a valid string.
         :raises ConditionFailed: If the port is not in range [0, 65535].
         :raises ConditionFailed: If the topic is not a valid string.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')
         Condition.valid_port(service_port, 'port')
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         super().__init__(
             worker_name,

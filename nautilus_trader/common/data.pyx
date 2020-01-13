@@ -205,7 +205,7 @@ cdef class DataClient:
 
     cdef void _add_tick_handler(self, Symbol symbol, handler: Callable):
         # Subscribe to tick data for the given symbol and handler
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         if symbol not in self._tick_handlers:
             self._tick_handlers[symbol] = []  # type: List[TickHandler]
@@ -220,7 +220,7 @@ cdef class DataClient:
 
     cdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
         # Subscribe to bar data for the given bar type and handler
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         if bar_type not in self._bar_handlers:
             self._bar_handlers[bar_type] = []  # type: List[BarHandler]
@@ -235,7 +235,7 @@ cdef class DataClient:
 
     cdef void _add_instrument_handler(self, Symbol symbol, handler: Callable):
         # Subscribe to tick data for the given symbol and handler
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         if symbol not in self._instrument_handlers:
             self._instrument_handlers[symbol] = []  # type: List[InstrumentHandler]
@@ -250,7 +250,7 @@ cdef class DataClient:
 
     cdef void _remove_tick_handler(self, Symbol symbol, handler: Callable):
         # Unsubscribe from tick data for the given symbol and handler
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         if symbol not in self._tick_handlers:
             self._log.error(f"Cannot remove handler (no handlers for {symbol}).")
@@ -268,7 +268,7 @@ cdef class DataClient:
 
     cdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
         # Unsubscribe from bar data for the given bar type and handler
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         if bar_type not in self._bar_handlers:
             self._log.error(f"Cannot remove handler (no handlers for {bar_type}).")
@@ -286,7 +286,7 @@ cdef class DataClient:
 
     cdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable):
         # Unsubscribe from tick data for the given symbol and handler
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         if symbol not in self._instrument_handlers:
             self._log.error(f"Cannot remove handler (no handlers for {symbol}).")

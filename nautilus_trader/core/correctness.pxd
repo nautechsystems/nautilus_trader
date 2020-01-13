@@ -15,13 +15,15 @@ cdef class Condition:
     @staticmethod
     cdef void not_none(object argument, str param) except *
     @staticmethod
-    cdef void valid_string(str argument, str param) except *
+    cdef void type(object argument, object expected, str param) except *
+    @staticmethod
+    cdef void type_or_none(object argument, object expected, str param) except *
+    @staticmethod
+    cdef void callable(object argument, str param) except *
+    @staticmethod
+    cdef void callable_or_none(object argument, str param) except *
     @staticmethod
     cdef void equals(object argument1, object argument2, str param1, str param2) except *
-    @staticmethod
-    cdef void type(object argument, object expected_type, str param) except *
-    @staticmethod
-    cdef void type_or_none(object argument, object expected_type, str param) except *
     @staticmethod
     cdef void list_type(list list, type expected_type, str param) except *
     @staticmethod
@@ -48,5 +50,7 @@ cdef class Condition:
     cdef void in_range(double value, double start, double end, str param) except *
     @staticmethod
     cdef void in_range_int(int value, int start, int end, str param) except *
+    @staticmethod
+    cdef void valid_string(str argument, str param) except *
     @staticmethod
     cdef void valid_port(int value, str param) except *

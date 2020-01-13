@@ -322,9 +322,9 @@ cdef class IndicatorUpdater:
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
-        :raises ConditionFailed: If the input_method is not None and not of type Callable.
+        :raises ConditionFailed: If the input_method is not of type Callable or None.
         """
-        Condition.type_or_none(input_method, Callable, 'input_method')
+        Condition.callable_or_none(input_method, 'input_method')
 
         self._indicator = indicator
         if input_method is None:
