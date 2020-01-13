@@ -8,8 +8,9 @@
 
 from typing import Callable
 
+from cpython.object cimport PyObject_Repr
+
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 
 
 cdef class Handler:
@@ -34,7 +35,7 @@ cdef class Handler:
         :param other: The other object.
         :return bool.
         """
-        return repr(self.handle) == repr(other.handle)
+        return PyObject_Repr(self.handle) == PyObject_Repr(other.handle)
 
     def __ne__(self, Handler other) -> bool:
         """
