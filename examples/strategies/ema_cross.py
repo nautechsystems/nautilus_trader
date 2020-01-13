@@ -85,7 +85,7 @@ class EMACrossPy(TradingStrategy):
         # Put custom code to be run on strategy start here (or pass)
         self.instrument = self.get_instrument(self.symbol)
         self.precision = self.instrument.tick_precision
-        self.entry_buffer = self.instrument.tick_size.as_double()
+        self.entry_buffer = self.instrument.tick_size.as_double() * 3.0
         self.SL_buffer = self.instrument.tick_size * 10.0
         self.position_sizer = FixedRiskSizer(self.instrument)
 
@@ -303,7 +303,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
                  fast_ema: int=10,
                  slow_ema: int=20,
                  atr_period: int=20,
-                 sl_atr_multiple: float=2.0):
+                 sl_atr_multiple: float=4.0):
         """
         Initializes a new instance of the EMACrossPy class.
 
@@ -321,9 +321,9 @@ class EMACrossMarketEntryPy(TradingStrategy):
         # Custom strategy variables
         self.symbol = symbol
         self.bar_type = BarType(symbol, bar_spec)
+        self.precision = 5  # dummy initial value for FX
         self.risk_bp = risk_bp
-        self.entry_buffer = 0  # instrument.tick_size
-        self.SL_buffer = 0  # instrument.tick_size * 10
+        self.SL_buffer = 0.0  # instrument.tick_size * 10
         self.SL_atr_multiple = sl_atr_multiple
 
         self.instrument = None
@@ -348,7 +348,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         """
         # Put custom code to be run on strategy start here (or pass)
         self.instrument = self.get_instrument(self.symbol)
-        self.entry_buffer = self.instrument.tick_size
+        self.precision = self.instrument.tick_precision
         self.SL_buffer = self.instrument.tick_size * 10
         self.position_sizer = FixedRiskSizer(self.instrument)
 
@@ -366,7 +366,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.spreads.append(float(tick.ask - tick.bid))
+        self.spreads.append(tick.ask.as_double() - tick.bid.as_double())
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -379,31 +379,35 @@ class EMACrossMarketEntryPy(TradingStrategy):
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
-        # Check indicators warm
+        # Check if indicators ready
         if not self.indicators_initialized():
             return  # Wait for indicators to warm up...
 
-        # Check has ticks
+        # Check if tick data available
         if not self.has_ticks(self.symbol):
             return  # Wait for ticks...
 
+        # Calculate average spread
         average_spread = np.mean(self.spreads)
 
         # Check market liquidity
-        if self.atr.value / average_spread < 2.:
-            return  # Market not liquid...
-
-        last_tick = self.tick(self.symbol, 0)
-        spread = last_tick.bid - last_tick.ask
+        if average_spread == 0.0:
+            return  # Protect divide by zero
+        else:
+            liquidity_ratio = self.atr.value / average_spread
+            if liquidity_ratio < 2.0:
+                self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
+                return
 
         if self.count_orders_working() == 0 and self.is_flat():
             atomic_order = None
+            last_tick = self.tick(self.symbol, 0)
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = last_tick.ask
-                price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
-                price_take_profit = Price(price_entry + (price_entry - price_stop_loss) + spread)
+                price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
+                price_take_profit = Price(price_entry + (price_entry.as_double() - price_stop_loss.as_double()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
@@ -434,8 +438,8 @@ class EMACrossMarketEntryPy(TradingStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = last_tick.bid
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple))
-                price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
+                price_take_profit = Price(price_entry - (price_stop_loss.as_double() - price_entry.as_double()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
                     quote_currency = Currency[self.instrument.symbol.code[3:]]
@@ -468,17 +472,17 @@ class EMACrossMarketEntryPy(TradingStrategy):
             if atomic_order is not None:
                 self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
 
-        # TRAILING STOP LOGIC
         for working_order in self.orders_working().values():
+            # TRAILING STOP LOGIC
             if working_order.purpose == OrderPurpose.STOP_LOSS:
                 # SELL SIDE ORDERS
                 if working_order.is_sell:
-                    temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
+                    temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
                     if temp_price > working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + spread)
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
