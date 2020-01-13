@@ -51,9 +51,9 @@ class PriceInitializations:
 
         # x1 = _DECIMAL1.gt(_DECIMAL2)
         # x2 = _DECIMAL1.ge(_DECIMAL2)
-        x3 = _DECIMAL1.eq(_DECIMAL1)
+        #x3 = _DECIMAL1.eq(_DECIMAL1)
 
-        # x3 = _DECIMAL1 == 1.0
+         x3 = _DECIMAL1 == 1.0
         # x3 = _DECIMAL1.eq_float(1.0)
 
     @staticmethod
@@ -112,7 +112,7 @@ class PricePerformanceTests(unittest.TestCase):
     def test_decimal_comparisons():
 
         PerformanceProfiler.profile_function(PriceInitializations.decimal_comparisons, 1000000, 3)
-        # ~105ms (104642μs) average over 3 runs @ 1000000 iterations
+        # ~82ms (81578μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_stock_decimal_comparisons():
