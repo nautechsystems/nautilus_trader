@@ -27,7 +27,7 @@ cdef class PerformanceProfiler:
         :param runs: The number of runs for the test.
         :param iterations: The number of call iterations per run.
         :param print_output: If the output should be printed to the console.
-        :return The minimum time for the test in seconds.
+        :return float.
         """
         cdef list results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
         cdef double minimum = min(results)
@@ -37,7 +37,7 @@ cdef class PerformanceProfiler:
             result_microseconds = math.floor(minimum * _MICROSECONDS_IN_SECOND)
             print(f'\nPerformance test: {str(inspect.getmembers(function)[4][1])} ')
             print(f'# ~{result_milliseconds}ms ({result_microseconds}μs) minimum '
-                  f'of {runs} runs @ {iterations} iterations')
+                  f'of {runs} runs @ {iterations:,} iterations each run.')
 
         return minimum
 
@@ -53,6 +53,6 @@ cdef class PerformanceProfiler:
         cdef int size = sys.getsizeof(x)
 
         if print_output:
-            print(f'\n# Object size test: {type(x)} is {size} bytes')
+            print(f'\n# Object size test: {type(x)} is {size} bytes.')
 
         return size
