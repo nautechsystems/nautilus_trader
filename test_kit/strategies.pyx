@@ -318,7 +318,7 @@ cdef class EMACross(TradingStrategy):
         self.precision = instrument.tick_precision
 
         self.risk_bp = risk_bp
-        self.entry_buffer = instrument.tick_size.as_double()
+        self.entry_buffer = instrument.tick_size.as_double() * 3.0
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10.0
 
@@ -398,7 +398,7 @@ cdef class EMACross(TradingStrategy):
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(bar.high + self.entry_buffer + self.spreads[-1], self.precision)
+                price_entry = Price(bar.high + self.entry_buffer + max(average_spread, self.spreads[-1]), self.precision)
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
                 price_take_profit = Price(price_entry + (price_entry.as_double() - price_stop_loss.as_double()), self.precision)
 
@@ -436,7 +436,7 @@ cdef class EMACross(TradingStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(bar.low - self.entry_buffer, self.precision)
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + max(average_spread, self.spreads[-1]), self.precision)
                 price_take_profit = Price(price_entry - (price_stop_loss.as_double() - price_entry.as_double()), self.precision)
 
                 if self.instrument.security_type == SecurityType.FOREX:
@@ -486,7 +486,7 @@ cdef class EMACross(TradingStrategy):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spreads[-1], self.precision)
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + max(average_spread, self.spreads[-1]), self.precision)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
