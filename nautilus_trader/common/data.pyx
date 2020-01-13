@@ -191,69 +191,75 @@ cdef class DataClient:
         return self._instruments[symbol]
 
     cdef void _self_generate_bars(self, BarType bar_type, handler):
-        if bar_type.specification.structure == BarStructure.TICK:
-            aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
-
-        elif bar_type.specification.structure in _TIME_BARS:
-            aggregator = TimeBarAggregator(bar_type,  self._handle_bar, self._clock, self._log.get_logger())
-
         if bar_type not in self._bar_aggregators:
+            if bar_type.specification.structure == BarStructure.TICK:
+                aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
+            elif bar_type.specification.structure in _TIME_BARS:
+                aggregator = TimeBarAggregator(bar_type,  self._handle_bar, self._clock, self._log.get_logger())
             self._bar_aggregators[bar_type] = aggregator
             self.subscribe_ticks(bar_type.symbol, aggregator.update)
 
         self._add_bar_handler(bar_type, handler)
 
     cdef void _add_tick_handler(self, Symbol symbol, handler: Callable):
-        # Subscribe to tick data for the given symbol and handler
+        """
+        Subscribe to tick data for the given symbol and handler.
+        """
         Condition.callable(handler, 'handler')
 
         if symbol not in self._tick_handlers:
             self._tick_handlers[symbol] = []  # type: List[TickHandler]
+            self._log.info(f"Subscribed to {symbol} tick data.")
 
         cdef TickHandler tick_handler = TickHandler(handler)
         if tick_handler not in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].append(tick_handler)
             self._log.debug(f"Added {tick_handler} for {symbol} tick data.")
-            self._log.info(f"Subscribed to {symbol} tick data.")
         else:
             self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
     cdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
-        # Subscribe to bar data for the given bar type and handler
+        """
+        Subscribe to bar data for the given bar type and handler.
+        """
         Condition.callable(handler, 'handler')
 
         if bar_type not in self._bar_handlers:
             self._bar_handlers[bar_type] = []  # type: List[BarHandler]
+            self._log.info(f"Subscribed to {bar_type} bar data.")
 
         cdef BarHandler bar_handler = BarHandler(handler)
         if bar_handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(bar_handler)
             self._log.debug(f"Added {bar_handler} for {bar_type} bar data.")
-            self._log.info(f"Subscribed to {bar_type} bar data.")
         else:
             self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
 
     cdef void _add_instrument_handler(self, Symbol symbol, handler: Callable):
-        # Subscribe to tick data for the given symbol and handler
+        """
+        Subscribe to instrument data for the given symbol and handler.
+        """
         Condition.callable(handler, 'handler')
 
         if symbol not in self._instrument_handlers:
             self._instrument_handlers[symbol] = []  # type: List[InstrumentHandler]
+            self._log.info(f"Subscribed to {symbol} instrument data.")
 
         cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
         if instrument_handler not in self._instrument_handlers[symbol]:
             self._instrument_handlers[symbol].append(instrument_handler)
             self._log.debug(f"Added {instrument_handler} for {symbol} instruments.")
-            self._log.info(f"Subscribed to {symbol} instrument data.")
         else:
             self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
 
     cdef void _remove_tick_handler(self, Symbol symbol, handler: Callable):
-        # Unsubscribe from tick data for the given symbol and handler
+        """
+        Unsubscribe from tick data for the given symbol and handler.
+        """
         Condition.callable(handler, 'handler')
 
         if symbol not in self._tick_handlers:
-            self._log.error(f"Cannot remove handler (no handlers for {symbol}).")
+            self._log.debug(f"Cannot remove handler (no handlers for {symbol}).")
             return
 
         cdef TickHandler tick_handler = TickHandler(handler)
@@ -265,9 +271,12 @@ cdef class DataClient:
 
         if len(self._tick_handlers[symbol]) == 0:
             del self._tick_handlers[symbol]
+            self._log.info(f"Unsubscribed from {symbol} tick data.")
 
     cdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
-        # Unsubscribe from bar data for the given bar type and handler
+        """
+        Unsubscribe from bar data for the given bar type and handler.
+        """
         Condition.callable(handler, 'handler')
 
         if bar_type not in self._bar_handlers:
@@ -283,9 +292,12 @@ cdef class DataClient:
 
         if len(self._bar_handlers[bar_type]) == 0:
             del self._bar_handlers[bar_type]
+            self._log.info(f"Unsubscribed from {bar_type} bar data.")
 
     cdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable):
-        # Unsubscribe from tick data for the given symbol and handler
+        """
+        Unsubscribe from tick data for the given symbol and handler.
+        """
         Condition.callable(handler, 'handler')
 
         if symbol not in self._instrument_handlers:
@@ -301,6 +313,7 @@ cdef class DataClient:
 
         if len(self._instrument_handlers[symbol]) == 0:
             del self._instrument_handlers[symbol]
+            self._log.info(f"Unsubscribed from {symbol} instrument data.")
 
     cpdef void _handle_tick(self, Tick tick):
         # Handle the given tick by sending it to all tick handlers for that symbol
@@ -337,6 +350,8 @@ cdef class DataClient:
 
     cpdef void _reset(self):
         # Reset the class to its initial state
+        self._clock.cancel_all_timers()
+        self._bar_aggregators.clear()
         self._tick_handlers.clear()
         self._bar_handlers.clear()
         self._instrument_handlers.clear()

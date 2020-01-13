@@ -44,10 +44,28 @@ cdef class BacktestDataContainer:
         self.instruments = dict(sorted(self.instruments.items()))
 
     cpdef void add_ticks(self, Symbol symbol, data: pd.DataFrame):
+        """
+        Add the tick data to the container.
+        
+        :param symbol: The symbol for the tick data.
+        :param data: The tick data to add.
+        :raises ConditionFailed: If the data is a type other than DataFrame.
+        """
+        Condition.type(data, pd.DataFrame, 'data')
+
         self.ticks[symbol] = data
         self.ticks = dict(sorted(self.ticks.items()))
 
     cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data: pd.DataFrame):
+        """
+        Add the bar data to the container.
+        
+        :param symbol: The symbol for the bar data.
+        :param structure: The bar structure of the data.
+        :param price_type: The price type of the data.
+        :param data: The bar data to add.
+        :raises ConditionFailed: If the data is a type other than DataFrame.
+        """
         Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
 
         if price_type == PriceType.BID:
@@ -112,14 +130,6 @@ cdef class BacktestDataClient(DataClient):
         :param data: The data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
-        :raises ConditionFailed: If the instruments list contains a type other than Instrument.
-        :raises ConditionFailed: If the data_ticks dict contains a key type other than Symbol.
-        :raises ConditionFailed: If the data_ticks dict contains a value type other than DataFrame.
-        :raises ConditionFailed: If the data_bars_bid dict contains a key type other than Symbol.
-        :raises ConditionFailed: If the data_bars_bid dict contains a value type other than DataFrame.
-        :raises ConditionFailed: If the data_bars_ask dict contains a key type other than Symbol.
-        :raises ConditionFailed: If the data_bars_ask dict contains a value type other than DataFrame.
-        :raises ConditionFailed: If the data_bars_bid keys does not equal the data_bars_ask keys.
         :raises ConditionFailed: If the clock is None.
         :raises ConditionFailed: If the logger is None.
         """
@@ -302,8 +312,9 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.callable_or_none(handler, 'handler')
 
-        self._log.info(f"Simulated subscribe to {symbol} instrument updates "
-                       f"(a backtest data client wont update an instrument).")
+        if symbol not in self._instrument_handlers:
+            self._log.info(f"Simulated subscribe to {symbol} instrument updates "
+                           f"(a backtest data client wont update an instrument).")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """

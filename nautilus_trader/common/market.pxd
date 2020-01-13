@@ -92,7 +92,7 @@ cdef class BarAggregator:
     cdef readonly BarType bar_type
 
     cpdef void update(self, Tick tick) except *
-    cpdef void _handle_bar(self, Bar bar)
+    cpdef void _handle_bar(self, Bar bar) except *
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -105,7 +105,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly timedelta interval
     cdef readonly datetime next_close
 
-    cpdef void _build_event(self, TimeEvent event)
+    cpdef void _build_event(self, TimeEvent event) except *
     cdef timedelta _get_interval(self)
     cdef datetime _get_start_time(self)
-    cdef void _set_build_timer(self)
+    cdef void _set_build_timer(self) except *
