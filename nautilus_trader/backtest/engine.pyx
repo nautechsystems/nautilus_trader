@@ -356,7 +356,8 @@ cdef class BacktestEngine:
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
-            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_to_string(self.config.account_currency)}")
+            currency = currency_to_string(self.config.account_currency)
+            self.log.info(f"Account balance (starting): {self.config.starting_capital.to_string(format_commas=True)} {currency}")
         self.log.info("#---------------------------------------------------------------#")
 
     cdef void _backtest_footer(
@@ -366,7 +367,7 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop):
         cdef str account_currency = currency_to_string(self.config.account_currency)
-        cdef int account_starting_length = len(str(self.config.starting_capital))
+        cdef int account_starting_length = len(self.config.starting_capital.to_string(format_commas=True))
 
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
@@ -384,10 +385,14 @@ cdef class BacktestEngine:
         self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total()}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
-        self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
-        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_client.account_capital), account_starting_length)} {account_currency}")
-        self.log.info(f"Commissions (total):        {pad_string(str(self.exec_client.total_commissions), account_starting_length)} {account_currency}")
-        self.log.info(f"Rollover interest (total):  {pad_string(str(self.exec_client.total_rollover), account_starting_length)} {account_currency}")
+        account_balance_starting = self.config.starting_capital.to_string(format_commas=True)
+        account_balance_ending = pad_string(self.exec_client.account_capital.to_string(format_commas=True), account_starting_length)
+        commissions_total = pad_string(self.exec_client.total_commissions.to_string(format_commas=True), account_starting_length)
+        rollover_interest = pad_string(self.exec_client.total_rollover.to_string(format_commas=True), account_starting_length)
+        self.log.info(f"Account balance (starting): {account_balance_starting} {account_currency}")
+        self.log.info(f"Account balance (ending):   {account_balance_ending} {account_currency}")
+        self.log.info(f"Commissions (total):        {commissions_total} {account_currency}")
+        self.log.info(f"Rollover interest (total):  {rollover_interest} {account_currency}")
         self.log.info("")
 
         self.log.info("#---------------------------------------------------------------#")

@@ -34,7 +34,7 @@ cdef class Handler:
         :param other: The other object.
         :return bool.
         """
-        return self.handle == other.handle
+        return repr(self.handle) == repr(other.handle)
 
     def __ne__(self, Handler other) -> bool:
         """

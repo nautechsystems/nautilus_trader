@@ -588,7 +588,7 @@ cdef class BarAggregator:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void _handle_bar(self, Bar bar):
+    cpdef void _handle_bar(self, Bar bar) except *:
         self._log.debug(f"Built {self.bar_type} Bar({bar})")
         self._handler.handle(self.bar_type, bar)
 
@@ -671,7 +671,7 @@ cdef class TimeBarAggregator(BarAggregator):
                     handler(event)
                 self.next_close = self._clock.next_event_time
 
-    cpdef void _build_event(self, TimeEvent event):
+    cpdef void _build_event(self, TimeEvent event) except *:
         self._handle_bar(self._builder.build(event.timestamp))
 
     cdef timedelta _get_interval(self):
@@ -724,7 +724,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
 
-    cdef void _set_build_timer(self):
+    cdef void _set_build_timer(self) except *:
         self._clock.set_timer(
             label=Label(str(self.bar_type)),
             interval=self._get_interval(),
