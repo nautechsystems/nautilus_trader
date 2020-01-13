@@ -12,7 +12,7 @@ import re
 
 from typing import List
 
-from tools.setup_tools import scan_directories
+from tools.packaging import scan_directories
 
 
 def check_file_headers(directories: List[str], to_lint: List[str], company_name: str) -> None:

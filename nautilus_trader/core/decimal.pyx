@@ -169,9 +169,9 @@ cdef class Decimal:
         :return Decimal.
         """
         if keep_precision:
-            return Decimal(self._value + other.as_double(), self.precision)
+            return Decimal(self._value + other._value, self.precision)
         else:
-            return Decimal(self._value + other.as_double(), max(self.precision, other.precision))
+            return Decimal(self._value + other._value, max(self.precision, other.precision))
 
     cpdef Decimal subtract_decimal(self, Decimal other, bint keep_precision=False):
         """
@@ -182,9 +182,9 @@ cdef class Decimal:
         :return Decimal.
         """
         if keep_precision:
-            return Decimal(self._value - other.as_double(), self.precision)
+            return Decimal(self._value - other._value, self.precision)
         else:
-            return Decimal(self._value - other.as_double(), max(self.precision, other.precision))
+            return Decimal(self._value - other._value, max(self.precision, other.precision))
 
     def __eq__(self, other) -> bool:
         """

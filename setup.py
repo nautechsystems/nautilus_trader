@@ -14,7 +14,7 @@ from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
 from nautilus_trader.__info__ import __version__
-from tools.setup_tools import parse_requirements, make_extensions
+from tools.packaging import parse_requirements, make_extensions
 from tools.linter import check_file_headers
 
 
@@ -60,7 +60,6 @@ check_file_headers(directories=DIRECTORIES_ALL, to_lint=['.py', '.pyx', '.pxd'],
 packages = [module for module in setuptools.find_packages(exclude=PACKAGE_EXCLUSIONS)]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
 
-
 setup(
     name=PACKAGE_NAME,
     version=__version__,
@@ -71,9 +70,9 @@ setup(
     license=LICENSE,
     url=URL,
     python_requires=PYTHON_REQUIRES,
+    requires=parse_requirements('requirements-install.txt', strip=True),
     install_requires=parse_requirements('requirements-install.txt'),
     tests_require=parse_requirements('requirements-test.txt'),
-    requires=parse_requirements('requirements.txt'),
     packages=packages,
     package_data=package_data,
     include_package_data=True,
