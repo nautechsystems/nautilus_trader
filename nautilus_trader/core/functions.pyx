@@ -9,8 +9,9 @@
 import pandas as pd
 import pytz
 
-from cpython.datetime cimport datetime
 from libc.math cimport round
+from cpython.datetime cimport datetime
+from cpython.unicode cimport PyUnicode_Contains
 
 
 cpdef double fast_round(double value, int precision):
@@ -62,7 +63,7 @@ cpdef str format_zulu_datetime(datetime dt):
         formatted_dt = dt.isoformat(timespec='microseconds').partition('+')[0][:-3]
     except TypeError as ex:
         formatted_dt = dt.isoformat().partition('+')[0]
-    if not formatted_dt.__contains__('.'):
+    if not PyUnicode_Contains(formatted_dt, '.'):
         return formatted_dt + '.000Z'
     else:
         dt_partitioned = formatted_dt.rpartition('.')

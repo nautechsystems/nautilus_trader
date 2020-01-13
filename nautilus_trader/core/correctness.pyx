@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject_Length, PyCallable_Check, PyObject_IsInstance
+from cpython.object cimport PyCallable_Check
 
 
 class ConditionFailed(Exception):
@@ -67,12 +67,7 @@ cdef class Condition:
         :param param: The arguments parameter name.
         :raises ConditionFailed: If the object is not of the expected type.
         """
-        cdef int result = PyObject_IsInstance(argument, expected)
-        if result == 1:
-            return
-        elif result == 0:
-            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected}, was {type(argument)}")
-        elif result == -1:
+        if not isinstance(argument, expected):
             raise ConditionFailed(f"The \'{param}\' argument was not of type {expected}, was {type(argument)}")
 
     @staticmethod
@@ -200,7 +195,7 @@ cdef class Condition:
         :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is empty.
         """
-        if PyObject_Length(collection) == 0:
+        if len(collection) == 0:
             raise ConditionFailed(f"The \'{param}\' collection was empty")
 
     @staticmethod
@@ -212,7 +207,7 @@ cdef class Condition:
         :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is not empty.
         """
-        if PyObject_Length(collection) > 0:
+        if len(collection) > 0:
             raise ConditionFailed(f"The \'{param}\' collection was not empty")
 
     @staticmethod
@@ -230,7 +225,7 @@ cdef class Condition:
         :param param2: The second collections parameter name.
         :raises ConditionFailed: If the collection lengths are not equal.
         """
-        if PyObject_Length(collection1) != PyObject_Length(collection2):
+        if len(collection1) != len(collection2):
             raise ConditionFailed(
                 f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
 

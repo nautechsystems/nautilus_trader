@@ -9,7 +9,7 @@
 import decimal
 
 from libc.math cimport pow, round
-from cpython.object cimport PyObject_Length
+from cpython.unicode cimport PyUnicode_Contains
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -63,8 +63,8 @@ cdef class Decimal:
         :param value: The string value to parse.
         :return: int.
         """
-        if value.__contains__('.'):
-            return PyObject_Length(value.partition('.')[2])
+        if PyUnicode_Contains(value, '.'):
+            return len(value.partition('.')[2])
         else:
             return 1
 
