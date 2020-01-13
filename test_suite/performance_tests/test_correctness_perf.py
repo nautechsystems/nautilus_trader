@@ -34,8 +34,8 @@ class CorrectnessConditionPerformanceTests(unittest.TestCase):
         test_function = CorrectnessConditionPerformanceTest().true
 
         # Test
-        PerformanceProfiler.profile_function(test_function, 100000, 3)
-        # ~12ms (11865μs) average over 3 runs @ 100000 iterations
+        PerformanceProfiler.profile_function(test_function, 5, 100000)
+        # ~12ms (12012μs) minimum of 5 runs @ 100000 iterations
 
         # 100000 iterations @ 12ms with boolean except returning False
         # 100000 iterations @ 12ms with void except returning * !
@@ -46,5 +46,5 @@ class CorrectnessConditionPerformanceTests(unittest.TestCase):
         test_function = CorrectnessConditionPerformanceTest().valid_string
 
         # Test
-        PerformanceProfiler.profile_function(test_function, 100000, 3)
-        # ~12ms (11865μs) average over 3 runs @ 100000 iterations
+        PerformanceProfiler.profile_function(test_function, 5, 100000)
+        # ~15ms (15622μs) minimum of 5 runs @ 100000 iterations
