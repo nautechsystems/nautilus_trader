@@ -16,8 +16,8 @@ from test_kit.performance import PerformanceProfiler
 
 
 _PRECISION_5_CONTEXT = decimal.Context(prec=5)
-_STOCK_DECIMAL1 = decimal.Decimal('1.00000')
-_STOCK_DECIMAL2 = decimal.Decimal('1.00001')
+_BUILTIN_DECIMAL1 = decimal.Decimal('1.00000')
+_BUILTIN_DECIMAL2 = decimal.Decimal('1.00001')
 
 _DECIMAL1 = Decimal(1.00000, 5)
 _DECIMAL2 = Decimal(1.00001, 5)
@@ -26,7 +26,7 @@ _DECIMAL2 = Decimal(1.00001, 5)
 class PriceInitializations:
 
     @staticmethod
-    def make_stock_decimal():
+    def make_builtin_decimal():
         decimal.Decimal('1.23456')
 
     @staticmethod
@@ -51,9 +51,9 @@ class PriceInitializations:
 
         # x1 = _DECIMAL1.gt(_DECIMAL2)
         # x2 = _DECIMAL1.ge(_DECIMAL2)
-        #x3 = _DECIMAL1.eq(_DECIMAL1)
+        # x3 = _DECIMAL1.eq(_DECIMAL1)
 
-         x3 = _DECIMAL1 == 1.0
+        x3 = _DECIMAL1 == 1.0
         # x3 = _DECIMAL1.eq_float(1.0)
 
     @staticmethod
@@ -62,10 +62,10 @@ class PriceInitializations:
         x1 = _DECIMAL1 * 1.0
 
     @staticmethod
-    def stock_decimal_comparisons():
-        x1 = _STOCK_DECIMAL1 > _STOCK_DECIMAL2
-        x2 = _STOCK_DECIMAL1 >= _STOCK_DECIMAL2
-        x3 = _STOCK_DECIMAL1 == _STOCK_DECIMAL2
+    def builtin_decimal_comparisons():
+        x1 = _BUILTIN_DECIMAL1 > _BUILTIN_DECIMAL2
+        x2 = _BUILTIN_DECIMAL1 >= _BUILTIN_DECIMAL2
+        x3 = _BUILTIN_DECIMAL1 == _BUILTIN_DECIMAL2
 
     @staticmethod
     def make_price():
@@ -78,56 +78,68 @@ class PriceInitializations:
 
 class DecimalPerformanceTests(unittest.TestCase):
 
-    @staticmethod
-    def test_decimal_to_string():
+    def test_builtin_decimal_size(self):
 
-        PerformanceProfiler.profile_function(_DECIMAL1.to_string, 5, 1000000)
+        result = PerformanceProfiler.object_size(_BUILTIN_DECIMAL1)
+        # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
+        self.assertTrue(result == 104)
+
+    def test_decimal_size(self):
+
+        result = PerformanceProfiler.object_size(_DECIMAL1)
+        # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
+        self.assertTrue(result <= 104)
+
+    def test_decimal_to_string(self):
+
+        result = PerformanceProfiler.profile_function(_DECIMAL1.to_string, 5, 1000000)
         # ~221ms (221710μs) minimum of 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.25)
 
-    @staticmethod
-    def test_make_stock_decimal():
+    def test_make_builtin_decimal(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.make_stock_decimal, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.make_builtin_decimal, 5, 1000000)
         # ~236ms (236837μs) minimum of 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.3)
 
-    @staticmethod
-    def test_make_decimal():
+    def test_make_decimal(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.make_decimal, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.make_decimal, 5, 1000000)
         # ~170ms (170577μs) minimum of 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.2)
 
-    @staticmethod
-    def test_make_price():
+    def test_make_price(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.make_price, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.make_price, 5, 1000000)
         # ~332ms (332406μs) minimum of 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.4)
 
-    @staticmethod
-    def test_float_comparisons():
+    def test_float_comparisons(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.float_comparisons, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.float_comparisons, 5, 1000000)
         # ~61ms (60721μs) average over 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.1)
 
-    @staticmethod
-    def test_decimal_comparisons():
+    def test_decimal_comparisons(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.decimal_comparisons, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.decimal_comparisons, 5, 1000000)
         # ~80ms (80051μs) minimum of 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.1)
 
-    @staticmethod
-    def test_stock_decimal_comparisons():
+    def test_builtin_decimal_comparisons(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.stock_decimal_comparisons, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.builtin_decimal_comparisons, 5, 1000000)
         # ~160ms (162997μs) minimum of 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.2)
 
-    @staticmethod
-    def test_float_arithmetic():
+    def test_float_arithmetic(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.float_arithmetic, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.float_arithmetic, 5, 1000000)
         # ~49ms (61914μs) average over 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.1)
 
-    @staticmethod
-    def test_decimal_arithmetic():
+    def test_decimal_arithmetic(self):
 
-        PerformanceProfiler.profile_function(PriceInitializations.decimal_arithmetic, 5, 1000000)
+        result = PerformanceProfiler.profile_function(PriceInitializations.decimal_arithmetic, 5, 1000000)
         # ~124ms (125350μs) average over 3 runs @ 1000000 iterations
+        self.assertTrue(result < 0.15)
