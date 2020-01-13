@@ -76,58 +76,58 @@ class PriceInitializations:
         Price.from_string('1.23456')
 
 
-class PricePerformanceTests(unittest.TestCase):
+class DecimalPerformanceTests(unittest.TestCase):
 
     @staticmethod
     def test_decimal_to_string():
 
-        PerformanceProfiler.profile_function(_DECIMAL1.to_string, 1000000, 3)
-        # ~417ms (416678μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(_DECIMAL1.to_string, 5, 1000000)
+        # ~221ms (221710μs) minimum of 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_make_stock_decimal():
 
-        PerformanceProfiler.profile_function(PriceInitializations.make_stock_decimal, 1000000, 3)
-        # ~248ms (247206μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(PriceInitializations.make_stock_decimal, 5, 1000000)
+        # ~236ms (236837μs) minimum of 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_make_decimal():
 
-        PerformanceProfiler.profile_function(PriceInitializations.make_decimal, 1000000, 3)
-        # ~171ms (170487μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(PriceInitializations.make_decimal, 5, 1000000)
+        # ~170ms (170577μs) minimum of 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_make_price():
 
-        PerformanceProfiler.profile_function(PriceInitializations.make_price, 1000000, 3)
-        # ~343ms (342190μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(PriceInitializations.make_price, 5, 1000000)
+        # ~332ms (332406μs) minimum of 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_float_comparisons():
 
-        PerformanceProfiler.profile_function(PriceInitializations.float_comparisons, 1000000, 3)
+        PerformanceProfiler.profile_function(PriceInitializations.float_comparisons, 5, 1000000)
         # ~61ms (60721μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_decimal_comparisons():
 
-        PerformanceProfiler.profile_function(PriceInitializations.decimal_comparisons, 1000000, 3)
-        # ~82ms (81578μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(PriceInitializations.decimal_comparisons, 5, 1000000)
+        # ~80ms (80051μs) minimum of 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_stock_decimal_comparisons():
 
-        PerformanceProfiler.profile_function(PriceInitializations.stock_decimal_comparisons, 1000000, 3)
-        # ~166ms (165420μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(PriceInitializations.stock_decimal_comparisons, 5, 1000000)
+        # ~160ms (162997μs) minimum of 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_float_arithmetic():
 
-        PerformanceProfiler.profile_function(PriceInitializations.float_arithmetic, 1000000, 3)
-        # ~62ms (61914μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(PriceInitializations.float_arithmetic, 5, 1000000)
+        # ~49ms (61914μs) average over 3 runs @ 1000000 iterations
 
     @staticmethod
     def test_decimal_arithmetic():
 
-        PerformanceProfiler.profile_function(PriceInitializations.decimal_arithmetic, 1000000, 3)
-        # ~126ms (125350μs) average over 3 runs @ 1000000 iterations
+        PerformanceProfiler.profile_function(PriceInitializations.decimal_arithmetic, 5, 1000000)
+        # ~124ms (125350μs) average over 3 runs @ 1000000 iterations

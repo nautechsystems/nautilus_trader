@@ -8,7 +8,6 @@
 
 import sys
 import math
-import time
 import timeit
 import inspect
 
@@ -20,37 +19,40 @@ cdef int _MICROSECONDS_IN_SECOND = 1000000
 cdef class PerformanceProfiler:
 
     @staticmethod
-    def profile_function(function, int iterations, int runs):
+    def profile_function(function, int runs, int iterations, bint print_output=True) -> float:
         """
-        Profile the given function by calling it iteration times for the given
-        runs.
+        Return the minimum time in seconds taken to call the given function iteration times.
 
-        :param function: The function to profile.
-        :param iterations: The number of times to call the function per run.
-        :param runs: The number of runs for the test
+        :param function: The function call to profile.
+        :param runs: The number of runs for the test.
+        :param iterations: The number of call iterations per run.
+        :param print_output: If the output should be printed to the console.
+        :return The minimum time for the test in seconds.
         """
-        cdef double total_elapsed = 0
+        cdef list results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
+        cdef double minimum = min(results)
 
-        cdef int x
-        for x in range(runs):
-            start_time = time.time()
-            timeit.Timer(function).timeit(number=iterations)
-            stop_time = time.time()
-            total_elapsed += stop_time - start_time
+        if print_output:
+            result_milliseconds = math.floor(minimum * _MILLISECONDS_IN_SECOND)
+            result_microseconds = math.floor(minimum * _MICROSECONDS_IN_SECOND)
+            print('\n' + f'Performance test: {str(inspect.getmembers(function)[4][1])} ')
+            print(f'# ~{result_milliseconds}ms ({result_microseconds}μs) minimum '
+                  f'of {runs} runs @ {iterations} iterations')
 
-        print('\n' + f'Performance test: {str(inspect.getmembers(function)[4][1])} ')
-        print(f'# ~{math.ceil((total_elapsed / runs) * _MILLISECONDS_IN_SECOND)}ms '
-              f'({math.ceil((total_elapsed / runs) * _MICROSECONDS_IN_SECOND)}μs) '
-              f'average over {runs} runs @ {iterations} iterations')
+        return minimum
 
     @staticmethod
-    def object_size(object x) -> int:
+    def object_size(object x, bint print_output=True) -> int:
         """
-        Return the size of the object in bytes and print a message.
+        Return the object size in bytes and optionally print the message.
 
-        :param x: The object.
+        :param x: The object to check.
+        :param print_output: If the output should be printed to the console.
         :return: int.
         """
         cdef int size = sys.getsizeof(x)
-        print(f'{type(x)} size is {size} bytes')
+
+        if print_output:
+            print(f'{type(x)} size is {size} bytes')
+
         return size
