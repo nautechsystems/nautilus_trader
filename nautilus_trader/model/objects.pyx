@@ -540,7 +540,7 @@ cdef class Tick:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({self.symbol},{str(self)}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.symbol},{self.to_string()}) object at {id(self)}>"
 
 
 cdef class BarSpecification:
@@ -675,7 +675,7 @@ cdef class BarSpecification:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
 
 cdef class BarType:
@@ -800,7 +800,7 @@ cdef class BarType:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
 
 cdef class Bar:
@@ -931,7 +931,7 @@ cdef class Bar:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
 
 cdef class DataBar:

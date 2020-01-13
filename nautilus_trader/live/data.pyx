@@ -220,8 +220,9 @@ cdef class LiveDataClient(DataClient):
         :param from_datetime: The from date time for the request.
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
+        :raises ConditionFailed: If the callback is not of type Callable.
         """
-        Condition.type(callback, Callable, 'callback')
+        Condition.callable(callback, 'callback')
 
         cdef dict query = {
             DATA_TYPE: "Tick[]",
@@ -260,8 +261,9 @@ cdef class LiveDataClient(DataClient):
         :param from_datetime: The from date time for the request.
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
+        :raises ConditionFailed: If the callback is not of type Callable.
         """
-        Condition.type(callback, Callable, 'callback')
+        Condition.callable(callback, 'callback')
 
         cdef dict query = {
             DATA_TYPE: "Bar[]",
@@ -294,8 +296,9 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
+        :raises ConditionFailed: If the callback is not of type Callable.
         """
-        Condition.type(callback, Callable, 'callback')
+        Condition.callable(callback, 'callback')
 
         cdef dict query = {
             DATA_TYPE: "Instrument",
@@ -322,8 +325,11 @@ cdef class LiveDataClient(DataClient):
     cpdef void request_instruments(self, callback: Callable):
         """
         Request all instrument for the data clients venue.
+        
+        :param callback: The callback for the response.
+        :raises ConditionFailed: If the callback is not of type Callable.
         """
-        Condition.type(callback, Callable, 'callback')
+        Condition.callable(callback, 'callback')
 
         cdef dict query = {
             DATA_TYPE: "Instrument[]",
@@ -365,7 +371,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription (if None will just call print).
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self._add_tick_handler(symbol, handler)
         self._tick_sub_worker.subscribe(str(symbol))
@@ -378,7 +384,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self._add_bar_handler(bar_type, handler)
         self._bar_sub_worker.subscribe(str(bar_type))
@@ -391,7 +397,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self._add_instrument_handler(symbol, handler)
         self._inst_sub_worker.subscribe(symbol.value)
@@ -404,7 +410,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self._tick_sub_worker.unsubscribe(str(symbol))
         self._remove_tick_handler(symbol, handler)
@@ -417,7 +423,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self._bar_sub_worker.unsubscribe(str(bar_type))
         self._remove_bar_handler(bar_type, handler)
@@ -430,7 +436,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self._inst_sub_worker.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)

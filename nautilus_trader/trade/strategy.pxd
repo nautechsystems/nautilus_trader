@@ -17,7 +17,6 @@ from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport (
     Symbol,
     TraderId,
-    AccountId,
     StrategyId,
     OrderId,
     PositionId,

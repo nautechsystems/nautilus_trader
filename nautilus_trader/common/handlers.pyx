@@ -21,8 +21,9 @@ cdef class Handler:
         Initializes a new instance of the TickHandler class.
 
         :param handler: The callable handler.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.type(handler, Callable, 'handler')
+        Condition.callable(handler, 'handler')
 
         self.handle = handler
 
