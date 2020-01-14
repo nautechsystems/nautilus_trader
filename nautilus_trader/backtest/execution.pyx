@@ -232,6 +232,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 continue  # Orders state has changed since the loop commenced
 
             instrument = self.instruments[order.symbol]
+
             # Check for order fill
             if order.side == OrderSide.BUY:
                 if order.type in STOP_ORDER_TYPES:
