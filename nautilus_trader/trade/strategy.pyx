@@ -54,9 +54,9 @@ cdef class TradingStrategy:
         Initializes a new instance of the TradingStrategy class.
 
         :param order_id_tag: The order_id tag for the strategy (must be unique at trader level).
-        :param flatten_on_stop: The flag indicating whether the strategy should be flattened on stop.
-        :param flatten_on_sl_reject: The flag indicating whether an open position should be flattened on SL reject.
-        :param cancel_all_orders_on_stop: The flag indicating whether all residual orders should be cancelled on stop.
+        :param flatten_on_stop: If all strategy positions should be flattened on stop.
+        :param flatten_on_sl_reject: If open positions should be flattened on SL reject.
+        :param cancel_all_orders_on_stop: If all residual orders should be cancelled on stop.
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.

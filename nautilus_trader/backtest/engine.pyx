@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
+from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_obj_size
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
@@ -166,6 +166,7 @@ cdef class BacktestEngine:
 
         self.time_to_initialize = self.clock.get_delta(self.created_time)
         self.log.info(f'Initialized in {self.time_to_initialize}.')
+        self._backtest_memory()
 
     cpdef run(
             self,
@@ -175,13 +176,15 @@ cdef class BacktestEngine:
             list strategies=None,
             bint print_log_store=True):
         """
-        Run a backtest.
+        Run a backtest from the start datetime to the stop datetime.
+        Note: If start datetime is None will run from the start of the data.
+        Note: If stop datetime is None will run to the end of the data.
 
-        :param start: The optional start datetime (UTC) for the backtest run (if None will run from the start of the data).
-        :param stop: The optional stop datetime (UTC) for the backtest run (if None will run to the end of the data).
+        :param start: The optional start datetime (UTC) for the backtest run.
+        :param stop: The optional stop datetime (UTC) for the backtest run.
         :param fill_model: The optional fill model change for the backtest run (if None will use previous).
         :param strategies: The optional strategies change for the backtest run (if None will use previous).
-        :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
+        :param print_log_store: If the log store should be printed at the end of the run.
         :raises: ConditionFailed: If the stop is >= the start datetime.
         :raises: ConditionFailed: If the fill_model is a type other than FillModel or None.
         :raises: ConditionFailed: If the strategies contains a type other than TradingStrategy.
@@ -339,6 +342,24 @@ cdef class BacktestEngine:
         """
         self.trader.dispose()
 
+    cdef void _backtest_memory(self):
+        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("#-------------------- MEMORY STATISTICS ------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
+        ram_totl_mb = round(psutil.virtual_memory()[0] / 1000000)
+        ram_used_mb = round(psutil.virtual_memory()[3] / 1000000)
+        ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
+        ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
+        self.log.info(f"RAM-total: {ram_totl_mb:,} MB")
+        self.log.info(f"RAM-Used:  {ram_used_mb:,} MB ({100.0 - ram_aval_pc}%)")
+        self.log.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
+        if self.data_client.ticks:
+            tick_size = get_obj_size(self.data_client.ticks[0])
+        else:
+            tick_size = 0
+        self.log.info(f"Tick objects: {len(self.data_client.ticks):,} @ {tick_size} bytes each = "
+                      f"{format_bytes(len(self.data_client.ticks) * tick_size)}")
+
     cdef void _backtest_header(
             self,
             datetime run_started,
@@ -347,8 +368,6 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#----------------------- BACKTEST RUN --------------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
-        self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({round(100 - psutil.virtual_memory()[2], 2)}%)")
         self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
@@ -377,7 +396,6 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
         self.log.info(f"Elapsed time:   {run_finished - run_started}")
-
         self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
         self.log.info(f"Iterations: {self.iteration}")
         self.log.info(f"Total events: {self.exec_engine.event_count}")

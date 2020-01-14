@@ -105,9 +105,9 @@ cdef class Logger:
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: The flag indicating whether log messages should print.
-        :param log_thread: The flag indicating whether log messages should log the thread.
-        :param log_to_file: The flag indicating whether log messages should log to file.
+        :param console_prints: If log messages should print to the console.
+        :param log_thread: If log messages should include the thread.
+        :param log_to_file: If log messages should be written to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :param clock: The clock for the logger.
         :raises ConditionFailed: If the name is not a valid string.
@@ -242,9 +242,9 @@ cdef class TestLogger(Logger):
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: The flag indicating whether log messages should print.
-        :param log_thread: The flag indicating whether log messages should log the thread.
-        :param log_to_file: The flag indicating whether log messages should log to file.
+        :param console_prints: If log messages should print to the console.
+        :param log_thread: If log messages should include the thread.
+        :param log_to_file: If log messages should write to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :param clock: The clock for the logger.
         :raises ConditionFailed: If the name is not a valid string.
@@ -412,9 +412,15 @@ cpdef void nautilus_header(LoggerAdapter logger):
         logger.info("#---------------------------------------------------------------#")
         logger.info(f"OS: {platform.platform()}")
         logger.info(f"CPU architecture: {platform.processor()}" )
-        cdef str cpu_freq_str = '' if psutil.cpu_freq() is None else f'@ {int(psutil.cpu_freq()[2])}MHz'
+        cdef str cpu_freq_str = '' if psutil.cpu_freq() is None else f'@ {int(psutil.cpu_freq()[2])} MHz'
         logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
-        logger.info(f"RAM-total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
+        ram_totl_mb = round(psutil.virtual_memory()[0] / 1000000)
+        ram_used_mb = round(psutil.virtual_memory()[3] / 1000000)
+        ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
+        ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
+        logger.info(f"RAM-total: {ram_totl_mb:,} MB")
+        logger.info(f"RAM-Used:  {ram_used_mb:,} MB ({100.0 - ram_aval_pc}%)")
+        logger.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
         logger.info("#---------------------------------------------------------------#")
         logger.info("#--- VERSIONING ------------------------------------------------#")
         logger.info("#---------------------------------------------------------------#")

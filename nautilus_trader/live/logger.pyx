@@ -87,9 +87,9 @@ cdef class LiveLogger(Logger):
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: The flag indicating whether log messages should print.
-        :param log_thread: The flag indicating whether log messages should log the thread.
-        :param log_to_file: The flag indicating whether log messages should log to file.
+        :param console_prints: If log messages should print to the console.
+        :param log_thread: If log messages should include the thread.
+        :param log_to_file: If log messages should write to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :param clock: The clock for the logger.
         :raises ConditionFailed: If the name is not a valid string.

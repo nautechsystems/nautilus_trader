@@ -6,10 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import gc
+import sys
 import pandas as pd
 import pytz
 
-from libc.math cimport round
+from libc.math cimport round, pow
 from cpython.datetime cimport datetime
 from cpython.unicode cimport PyUnicode_Contains
 
@@ -34,6 +36,47 @@ cpdef double basis_points_as_percentage(double basis_points):
     :return double.
     """
     return basis_points * 0.0001
+
+
+cdef int get_obj_size(obj):
+    cdef set marked = {id(obj)}
+    obj_q = [obj]
+    cdef int size = 0
+
+    while obj_q:
+        size += sum(map(sys.getsizeof, obj_q))
+
+        # Lookup all the object referred to by the object in obj_q.
+        # See: https://docs.python.org/3.7/library/gc.html#gc.get_referents
+        all_refr = ((id(o), o) for o in gc.get_referents(*obj_q))
+
+        # Filter object that are already marked.
+        # Using dict notation will prevent repeated objects.
+        new_refr = {o_id: o for o_id, o in all_refr if o_id not in marked and not isinstance(o, type)}
+
+        # The new obj_q will be the ones that were not marked,
+        # and we will update marked with their ids so we will
+        # not traverse them again.
+        obj_q = new_refr.values()
+        marked.update(new_refr.keys())
+
+    return size
+
+
+cpdef str format_bytes(double size):
+    """
+    Return the formatted bytes size.
+
+    :param size: The size in bytes.
+    :return: str.
+    """
+    cdef double power = pow(2, 10)
+    cdef int n = 0
+    cdef dict power_labels = {0 : 'bytes', 1: 'KB', 2: 'MB', 3: 'GB', 4: 'TB'}
+    while size > power:
+        size /= power
+        n += 1
+    return f'{fast_round(size, 2):,} {power_labels[n]}'
 
 
 cpdef str pad_string(str string, int length, str pad=' '):
