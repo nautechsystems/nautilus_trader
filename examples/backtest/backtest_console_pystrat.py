@@ -31,7 +31,7 @@ if __name__ == "__main__":
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-    strategies = [EMACrossMarketEntryPy(
+    strategies = [EMACrossPy(
         symbol=USDJPY.symbol,
         bar_spec=BarSpecification(1, BarStructure.MINUTE, PriceType.BID),
         risk_bp=10,
