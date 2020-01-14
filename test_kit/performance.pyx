@@ -6,10 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import sys
 import math
 import timeit
 import inspect
+
+from nautilus_trader.core.functions cimport get_obj_size
 
 
 cdef int _MILLISECONDS_IN_SECOND = 1000
@@ -50,7 +51,7 @@ cdef class PerformanceProfiler:
         :param print_output: If the output should be printed to the console.
         :return: int.
         """
-        cdef int size = sys.getsizeof(x)
+        cdef int size = get_obj_size(x)
 
         if print_output:
             print(f'\n# Object size test: {type(x)} is {size} bytes.')
