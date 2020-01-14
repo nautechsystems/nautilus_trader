@@ -211,7 +211,7 @@ cdef class BacktestExecClient(ExecutionClient):
         if not self.rollover_applied and time_now >= self.rollover_time:
             try:
                 self.rollover_applied = True
-                self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
+                self.apply_rollover_interest(time_now, self.rollover_time.isoweekday())
             except RuntimeError as ex:
                 # Cannot calculate rollover interest
                 self._log.error(str(ex))
@@ -269,6 +269,134 @@ cdef class BacktestExecClient(ExecutionClient):
                     del self._working_orders[order.id]
                     self._expire_order(order)
 
+    cpdef Money calculate_pnl(
+            self,
+            MarketPosition direction,
+            double open_price,
+            double close_price,
+            Quantity quantity,
+            double exchange_rate):
+        cdef double difference
+        if direction == MarketPosition.LONG:
+            difference = close_price - open_price
+        elif direction == MarketPosition.SHORT:
+            difference = open_price - close_price
+        else:
+            raise ValueError(f'Cannot calculate the pnl of a {market_position_to_string(direction)} direction.')
+
+        return Money(difference * quantity.value * exchange_rate)
+
+    cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
+        # Calculate commission
+        cdef Instrument instrument = self.instruments[event.symbol]
+        cdef double exchange_rate = self.exchange_calculator.get_rate(
+            from_currency=instrument.base_currency,
+            to_currency=self._account.currency,
+            price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
+            bid_rates=self._build_current_bid_rates(),
+            ask_rates=self._build_current_ask_rates())
+
+        cdef Money pnl = self.calculate_pnl(
+            direction=position.market_position,
+            open_price=position.average_open_price,
+            close_price=event.average_price.as_double(),
+            quantity=event.filled_quantity,
+            exchange_rate=exchange_rate)
+
+        cdef Money commission = self.commission_calculator.calculate(
+            symbol=event.symbol,
+            filled_quantity=event.filled_quantity,
+            filled_price=event.average_price,
+            exchange_rate=exchange_rate)
+
+        self.total_commissions = self.total_commissions.subtract(commission)
+        pnl = pnl.subtract(commission)
+
+        cdef AccountStateEvent account_event
+        if not self.frozen_account:
+            self.account_capital = self.account_capital.add(pnl)
+            self.account_cash_activity_day = self.account_cash_activity_day.add(pnl)
+
+            account_event = AccountStateEvent(
+                self._account.id,
+                self._account.currency,
+                self.account_capital,
+                self.account_cash_start_day,
+                self.account_cash_activity_day,
+                margin_used_liquidation=Money.zero(),
+                margin_used_maintenance=Money.zero(),
+                margin_ratio=Decimal.zero(),
+                margin_call_status=ValidString('N'),
+                event_id=self._guid_factory.generate(),
+                event_timestamp=self._clock.time_now())
+
+            self._exec_engine.handle_event(account_event)
+
+    cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
+        # Apply rollover interest for all open positions
+        if self.exec_db is None:
+            self._log.error("Cannot apply rollover interest (no execution database registered).")
+            return
+
+        cdef dict open_positions = self.exec_db.get_positions_open()
+
+        cdef Instrument instrument
+        cdef Currency base_currency
+        cdef double interest_rate
+        cdef double exchange_rate
+        cdef double rollover
+        cdef double rollover_cumulative = 0.0
+        cdef double mid_price
+        cdef dict mid_prices = {}
+        cdef Tick market
+        for position in open_positions.values():
+            instrument = self.instruments[position.symbol]
+            if instrument.security_type == SecurityType.FOREX:
+                mid_price = mid_prices.get(instrument.symbol, 0.0)
+                if mid_price == 0.0:
+                    market = self._market[instrument.symbol]
+                    mid_price = (market.ask.as_double() + market.bid.as_double()) / 2.0
+                    mid_prices[instrument.symbol] = mid_price
+                quote_currency = currency_from_string(position.symbol.code[3:])
+                interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)
+                exchange_rate = self.exchange_calculator.get_rate(
+                        from_currency=quote_currency,
+                        to_currency=self._account.currency,
+                        price_type=PriceType.MID,
+                        bid_rates=self._build_current_bid_rates(),
+                        ask_rates=self._build_current_ask_rates())
+                rollover = mid_price * position.quantity.value * interest_rate * exchange_rate
+                # Apply any bank and broker spread markup (basis points)
+                rollover_cumulative += rollover - (rollover * self.rollover_spread)
+
+        if iso_week_day == 3: # Book triple for Wednesdays
+            rollover_cumulative = rollover_cumulative * 3.0
+        elif iso_week_day == 5: # Book triple for Fridays (holding over weekend)
+            rollover_cumulative = rollover_cumulative * 3.0
+
+        cdef Money rollover_final = Money(rollover_cumulative)
+        self.total_rollover = self.total_rollover.add(rollover_final)
+
+        cdef AccountStateEvent account_event
+        if not self.frozen_account:
+            self.account_capital = self.account_capital.add(rollover_final)
+            self.account_cash_activity_day = self.account_cash_activity_day.add(rollover_final)
+
+            account_event = AccountStateEvent(
+                self._account.id,
+                self._account.currency,
+                self.account_capital,
+                self.account_cash_start_day,
+                self.account_cash_activity_day,
+                margin_used_liquidation=Money.zero(),
+                margin_used_maintenance=Money.zero(),
+                margin_ratio=Decimal.zero(),
+                margin_call_status=ValidString('N'),
+                event_id=self._guid_factory.generate(),
+                event_timestamp=self._clock.time_now())
+
+            self._exec_engine.handle_event(account_event)
+
     cpdef void check_residuals(self) except *:
         """
         Check for any residual objects and log warnings if any are found.
@@ -320,6 +448,26 @@ cdef class BacktestExecClient(ExecutionClient):
             ValidString('N'),
             self._guid_factory.generate(),
             self._clock.time_now())
+
+    cdef dict _build_current_bid_rates(self):
+        """
+        Return the current currency bid rates in the markets.
+        
+        :return: Dict[Symbol, double].
+        """
+        cdef Symbol symbol
+        cdef Tick tick
+        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
+
+    cdef dict _build_current_ask_rates(self):
+        """
+        Return the current currency ask rates in the markets.
+        
+        :return: Dict[Symbol, double].
+        """
+        cdef Symbol symbol
+        cdef Tick tick
+        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
 
 
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #
@@ -615,7 +763,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Adjust account if position exists and opposite order side
         cdef Position position = self._exec_engine.database.get_position_for_order(order.id)
         if position is not None and position.entry_direction != order.side:
-            self._adjust_account(filled, position)
+            self.adjust_account(filled, position)
 
         self._exec_engine.handle_event(filled)
         self._check_oco_order(order.id)
@@ -684,151 +832,3 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._log.debug(f"OCO order cancelled from {oco_order_id}.")
         self._exec_engine.handle_event(event)
-
-    cdef void _adjust_account(self, OrderFillEvent event, Position position) except *:
-        # Calculate commission
-        cdef Instrument instrument = self.instruments[event.symbol]
-        cdef double exchange_rate = self.exchange_calculator.get_rate(
-            from_currency=instrument.base_currency,
-            to_currency=self._account.currency,
-            price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-            bid_rates=self._build_current_bid_rates(),
-            ask_rates=self._build_current_ask_rates())
-
-        cdef Money pnl = self._calculate_pnl(
-            direction=position.market_position,
-            open_price=position.average_open_price,
-            close_price=event.average_price.as_double(),
-            quantity=event.filled_quantity,
-            exchange_rate=exchange_rate)
-
-        cdef Money commission = self.commission_calculator.calculate(
-            symbol=event.symbol,
-            filled_quantity=event.filled_quantity,
-            filled_price=event.average_price,
-            exchange_rate=exchange_rate)
-
-        self.total_commissions = self.total_commissions.subtract(commission)
-        pnl = pnl.subtract(commission)
-
-        cdef AccountStateEvent account_event
-        if not self.frozen_account:
-            self.account_capital = self.account_capital.add(pnl)
-            self.account_cash_activity_day = self.account_cash_activity_day.add(pnl)
-
-            account_event = AccountStateEvent(
-                self._account.id,
-                self._account.currency,
-                self.account_capital,
-                self.account_cash_start_day,
-                self.account_cash_activity_day,
-                margin_used_liquidation=Money.zero(),
-                margin_used_maintenance=Money.zero(),
-                margin_ratio=Decimal.zero(),
-                margin_call_status=ValidString('N'),
-                event_id=self._guid_factory.generate(),
-                event_timestamp=self._clock.time_now())
-
-            self._exec_engine.handle_event(account_event)
-
-    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        # Apply rollover interest for all open positions
-        if self.exec_db is None:
-            self._log.error("Cannot apply rollover interest (no execution database registered).")
-            return
-
-        cdef dict open_positions = self.exec_db.get_positions_open()
-
-        cdef Instrument instrument
-        cdef Currency base_currency
-        cdef double interest_rate
-        cdef double exchange_rate
-        cdef double rollover
-        cdef double rollover_cumulative = 0.0
-        cdef double mid_price
-        cdef dict mid_prices = {}
-        cdef Tick market
-        for position in open_positions.values():
-            instrument = self.instruments[position.symbol]
-            if instrument.security_type == SecurityType.FOREX:
-                mid_price = mid_prices.get(instrument.symbol, 0.0)
-                if mid_price == 0.0:
-                    market = self._market[instrument.symbol]
-                    mid_price = (market.ask.as_double() + market.bid.as_double()) / 2.0
-                    mid_prices[instrument.symbol] = mid_price
-                quote_currency = currency_from_string(position.symbol.code[3:])
-                interest_rate = self.rollover_calculator.calc_overnight_rate(position.symbol, timestamp)
-                exchange_rate = self.exchange_calculator.get_rate(
-                        from_currency=quote_currency,
-                        to_currency=self._account.currency,
-                        price_type=PriceType.MID,
-                        bid_rates=self._build_current_bid_rates(),
-                        ask_rates=self._build_current_ask_rates())
-                rollover = mid_price * position.quantity.value * interest_rate * exchange_rate
-                # Apply any bank and broker spread markup (basis points)
-                rollover_cumulative += rollover - (rollover * self.rollover_spread)
-
-        if iso_week_day == 3: # Book triple for Wednesdays
-            rollover_cumulative = rollover_cumulative * 3.0
-        elif iso_week_day == 5: # Book triple for Fridays (holding over weekend)
-            rollover_cumulative = rollover_cumulative * 3.0
-
-        cdef Money rollover_final = Money(rollover_cumulative)
-        self.total_rollover = self.total_rollover.add(rollover_final)
-
-        cdef AccountStateEvent account_event
-        if not self.frozen_account:
-            self.account_capital = self.account_capital.add(rollover_final)
-            self.account_cash_activity_day = self.account_cash_activity_day.add(rollover_final)
-
-            account_event = AccountStateEvent(
-                self._account.id,
-                self._account.currency,
-                self.account_capital,
-                self.account_cash_start_day,
-                self.account_cash_activity_day,
-                margin_used_liquidation=Money.zero(),
-                margin_used_maintenance=Money.zero(),
-                margin_ratio=Decimal.zero(),
-                margin_call_status=ValidString('N'),
-                event_id=self._guid_factory.generate(),
-                event_timestamp=self._clock.time_now())
-
-            self._exec_engine.handle_event(account_event)
-
-    cdef dict _build_current_bid_rates(self):
-        """
-        Return the current currency bid rates in the markets.
-        
-        :return: Dict[Symbol, double].
-        """
-        cdef Symbol symbol
-        cdef Tick tick
-        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
-
-    cdef dict _build_current_ask_rates(self):
-        """
-        Return the current currency ask rates in the markets.
-        
-        :return: Dict[Symbol, double].
-        """
-        cdef Symbol symbol
-        cdef Tick tick
-        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
-
-    cdef Money _calculate_pnl(
-            self,
-            MarketPosition direction,
-            double open_price,
-            double close_price,
-            Quantity quantity,
-            double exchange_rate):
-        cdef double difference
-        if direction == MarketPosition.LONG:
-            difference = close_price - open_price
-        elif direction == MarketPosition.SHORT:
-            difference = open_price - close_price
-        else:
-            raise ValueError(f'Cannot calculate the pnl of a {market_position_to_string(direction)} direction.')
-
-        return Money(difference * quantity.value * exchange_rate)
