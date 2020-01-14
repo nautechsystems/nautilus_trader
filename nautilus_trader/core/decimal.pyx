@@ -8,7 +8,7 @@
 
 import decimal
 
-from libc.math cimport pow, round
+from libc.math cimport round
 from cpython.unicode cimport PyUnicode_Contains
 
 from nautilus_trader.core.correctness cimport Condition
@@ -31,7 +31,7 @@ cdef class Decimal:
         """
         Condition.positive_int(precision, 'precision')
 
-        self._power = pow(10, precision)
+        self._power = 10 ** precision
         self._value = round(value * self._power) / self._power  # Rounding to nearest
         self.precision = precision
 

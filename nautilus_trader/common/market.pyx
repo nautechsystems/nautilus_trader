@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-import numpy as np
 import pandas as pd
 
 from cpython.datetime cimport datetime, timedelta
@@ -451,6 +450,7 @@ cdef class IndicatorUpdater:
     cdef list _get_values(self):
         # Create a list of the current indicator outputs. The list will contain
         # a tuple of the name of the output and the float value. Returns List[(str, float)].
+        cdef str output
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
 
 
@@ -490,9 +490,9 @@ cdef class BarBuilder:
             self._open = price
             self._high = price
             self._low = price
-        elif price.as_double() > self._high.as_double():
+        elif price.gt(self._high):
             self._high = price
-        elif price.as_double() < self._low.as_double():
+        elif price.lt(self._low):
             self._low = price
 
         self._close = price

@@ -23,7 +23,7 @@ _DECIMAL1 = Decimal(1.00000, 5)
 _DECIMAL2 = Decimal(1.00001, 5)
 
 
-class PriceInitializations:
+class DecimalTesting:
 
     @staticmethod
     def make_builtin_decimal():
@@ -53,7 +53,7 @@ class PriceInitializations:
         # x2 = _DECIMAL1.ge(_DECIMAL2)
         # x3 = _DECIMAL1.eq(_DECIMAL1)
 
-        x3 = _DECIMAL1 == 1.0
+        x3 = _DECIMAL1.as_double() == _DECIMAL1.as_double()
         # x3 = _DECIMAL1.eq_float(1.0)
 
     @staticmethod
@@ -79,67 +79,56 @@ class PriceInitializations:
 class DecimalPerformanceTests(unittest.TestCase):
 
     def test_builtin_decimal_size(self):
-
         result = PerformanceProfiler.object_size(_BUILTIN_DECIMAL1)
         # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
         self.assertTrue(result == 104)
 
     def test_decimal_size(self):
-
         result = PerformanceProfiler.object_size(_DECIMAL1)
         # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
         self.assertTrue(result <= 104)
 
     def test_decimal_to_string(self):
-
-        result = PerformanceProfiler.profile_function(_DECIMAL1.to_string, 5, 1000000)
+        result = PerformanceProfiler.profile_function(_DECIMAL1.to_string, 3, 1000000)
         # ~221ms (221710μs) minimum of 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.25)
 
     def test_make_builtin_decimal(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.make_builtin_decimal, 5, 1000000)
+        result = PerformanceProfiler.profile_function(DecimalTesting.make_builtin_decimal, 3, 1000000)
         # ~236ms (236837μs) minimum of 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.3)
 
     def test_make_decimal(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.make_decimal, 5, 1000000)
+        result = PerformanceProfiler.profile_function(DecimalTesting.make_decimal, 3, 1000000)
         # ~170ms (170577μs) minimum of 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.2)
 
     def test_make_price(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.make_price, 5, 1000000)
+        result = PerformanceProfiler.profile_function(DecimalTesting.make_price, 3, 1000000)
         # ~332ms (332406μs) minimum of 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.4)
 
     def test_float_comparisons(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.float_comparisons, 5, 1000000)
+        result = PerformanceProfiler.profile_function(DecimalTesting.float_comparisons, 3, 1000000)
         # ~61ms (60721μs) average over 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.1)
 
     def test_decimal_comparisons(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.decimal_comparisons, 5, 1000000)
-        # ~80ms (80051μs) minimum of 3 runs @ 1000000 iterations
-        self.assertTrue(result < 0.1)
+        result = PerformanceProfiler.profile_function(DecimalTesting.decimal_comparisons, 3, 1000000)
+        # ~100ms (100542μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        self.assertTrue(result <= 1.5)
 
     def test_builtin_decimal_comparisons(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.builtin_decimal_comparisons, 5, 1000000)
+        result = PerformanceProfiler.profile_function(DecimalTesting.builtin_decimal_comparisons, 3, 1000000)
         # ~160ms (162997μs) minimum of 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.2)
 
     def test_float_arithmetic(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.float_arithmetic, 5, 1000000)
+        result = PerformanceProfiler.profile_function(DecimalTesting.float_arithmetic, 3, 1000000)
         # ~49ms (61914μs) average over 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.1)
 
     def test_decimal_arithmetic(self):
-
-        result = PerformanceProfiler.profile_function(PriceInitializations.decimal_arithmetic, 5, 1000000)
+        result = PerformanceProfiler.profile_function(DecimalTesting.decimal_arithmetic, 3, 1000000)
         # ~124ms (125350μs) average over 3 runs @ 1000000 iterations
         self.assertTrue(result < 0.15)

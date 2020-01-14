@@ -18,9 +18,9 @@ cdef class FillModel:
     """
 
     def __init__(self,
-                 double prob_fill_at_limit=0.,
-                 double prob_fill_at_stop=1.,
-                 double prob_slippage=0.,
+                 double prob_fill_at_limit=0.0,
+                 double prob_fill_at_stop=1.0,
+                 double prob_slippage=0.0,
                  random_seed=None):
         """
         Initializes a new instance of the FillModel class.
@@ -32,9 +32,9 @@ cdef class FillModel:
         :raises ConditionFailed: If any probability argument is not within range [0, 1].
         :raises ConditionFailed: If the random_seed is not None and not of type int.
         """
-        Condition.in_range(prob_fill_at_limit, 0., 1., 'prob_fill_at_limit')
-        Condition.in_range(prob_fill_at_stop, 0., 1., 'prob_fill_at_stop')
-        Condition.in_range(prob_slippage, 0., 1., 'prob_slippage')
+        Condition.in_range(prob_fill_at_limit, 0.0, 1.0, 'prob_fill_at_limit')
+        Condition.in_range(prob_fill_at_stop, 0.0, 1.0, 'prob_fill_at_stop')
+        Condition.in_range(prob_slippage, 0.0, 1.0, 'prob_slippage')
         if random_seed is not None:
             Condition.type(random_seed, int, 'random_seed')
 
@@ -70,7 +70,7 @@ cdef class FillModel:
     cdef bint _did_event_occur(self, double probability):
         # Return a result indicating whether an event occurred based on the
         # given probability.
-        
+
         # :param probability: The probability of the event occurring [0, 1].
         if probability == 0.0:
             return False
