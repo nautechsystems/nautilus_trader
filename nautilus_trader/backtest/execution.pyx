@@ -208,6 +208,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 0,
                 tzinfo=pytz.timezone('US/Eastern')).astimezone(tz=pytz.utc) - timedelta(minutes=56) # TODO: Why is this consistently 56 min out?
 
+        # Check for and apply any rollover interest
         if not self.rollover_applied and time_now >= self.rollover_time:
             try:
                 self.rollover_applied = True
@@ -215,6 +216,10 @@ cdef class BacktestExecClient(ExecutionClient):
             except RuntimeError as ex:
                 # Cannot calculate rollover interest
                 self._log.error(str(ex))
+
+        # Check if any working orders
+        if len(self._working_orders) == 0:
+            return
 
         # Simulate market
         cdef OrderId order_id
@@ -230,7 +235,7 @@ cdef class BacktestExecClient(ExecutionClient):
             # Check for order fill
             if order.side == OrderSide.BUY:
                 if order.type in STOP_ORDER_TYPES:
-                    if tick.ask.ge(order.price) and self.fill_model.is_stop_filled():
+                    if tick.ask.ge(order.price) or self._is_marginal_buy_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, order.price.add(self._slippages[order.symbol]))
@@ -238,7 +243,7 @@ cdef class BacktestExecClient(ExecutionClient):
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if tick.ask.le(order.price) and self.fill_model.is_limit_filled():
+                    if tick.ask.le(order.price) or self._is_marginal_buy_limit_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, order.price.add(self._slippages[order.symbol]))
@@ -247,7 +252,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type in STOP_ORDER_TYPES:
-                    if tick.bid.le(order.price) and self.fill_model.is_stop_filled():
+                    if tick.bid.le(order.price) or self._is_marginal_sell_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, order.price.subtract(self._slippages[order.symbol]))
@@ -255,7 +260,7 @@ cdef class BacktestExecClient(ExecutionClient):
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if tick.bid.ge(order.price) and self.fill_model.is_limit_filled():
+                    if tick.bid.ge(order.price) or self._is_marginal_sell_limit_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(order, order.price.subtract(self._slippages[order.symbol]))
@@ -555,26 +560,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._cancel_reject_order(order, 'modify order', f'modified quantity {command.modified_quantity} invalid')
             return  # Cannot modify order
 
-        cdef Tick current_market = self._market[order.symbol]
-        # Check order price is valid or reject
-        if order.side == OrderSide.BUY:
-            if order.type in STOP_ORDER_TYPES:
-                if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
-                    self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={current_market.ask}')
-                    return  # Cannot accept order
-            elif order.type == OrderType.LIMIT:
-                if order.price.gt(current_market.bid.subtract(self._min_limits[order.symbol])):
-                    self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, bid={current_market.bid}')
-                    return  # Cannot accept order
-        elif order.side == OrderSide.SELL:
-            if order.type in STOP_ORDER_TYPES:
-                if order.price.gt(current_market.bid.subtract(self._min_stops[order.symbol])):
-                    self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={current_market.bid}')
-                    return  # Cannot accept order
-            elif order.type == OrderType.LIMIT:
-                if order.price.lt(current_market.ask.add(self._min_limits[order.symbol])):
-                    self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, ask={current_market.ask}')
-                    return  # Cannot accept order
+        if not self._check_valid_price(order, self._market[order.symbol], reject=True):
+            return # Cannot accept order
 
         # Generate event
         cdef OrderModified modified = OrderModified(
@@ -591,6 +578,45 @@ cdef class BacktestExecClient(ExecutionClient):
 
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
+
+    cdef bint _check_valid_price(self, Order order, Tick current_market, bint reject=True):
+        # Check order price is valid and reject if not
+        if order.side == OrderSide.BUY:
+            if order.type in STOP_ORDER_TYPES:
+                if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
+                    if reject:
+                        self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={current_market.ask}')
+                    return False  # Invalid price
+            elif order.type == OrderType.LIMIT:
+                if order.price.gt(current_market.bid.subtract(self._min_limits[order.symbol])):
+                    if reject:
+                        self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, bid={current_market.bid}')
+                    return False  # Invalid price
+        elif order.side == OrderSide.SELL:
+            if order.type in STOP_ORDER_TYPES:
+                if order.price.gt(current_market.bid.subtract(self._min_stops[order.symbol])):
+                    if reject:
+                        self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={current_market.bid}')
+                    return False  # Invalid price
+            elif order.type == OrderType.LIMIT:
+                if order.price.lt(current_market.ask.add(self._min_limits[order.symbol])):
+                    if reject:
+                        self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, ask={current_market.ask}')
+                    return False  # Invalid price
+
+        return True  # Valid price
+
+    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, Tick current_market):
+        return current_market.ask.eq(order_price) and self.fill_model.is_stop_filled()
+
+    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, Tick current_market):
+        return current_market.ask.eq(order_price) and self.fill_model.is_limit_filled()
+
+    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, Tick current_market):
+        return current_market.bid.eq(order_price) and self.fill_model.is_stop_filled()
+
+    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, Tick current_market):
+        return current_market.bid.eq(order_price) and self.fill_model.is_limit_filled()
 
     cdef void _accept_order(self, Order order) except *:
         # Generate event
@@ -684,40 +710,26 @@ cdef class BacktestExecClient(ExecutionClient):
             return  # Cannot accept order
 
         # Check order price is valid or reject
-        if order.side == OrderSide.BUY:
-            if order.type == OrderType.MARKET:
-                # Accept and fill market orders immediately
-                self._accept_order(order)
+        if not self._check_valid_price(order, current_market, reject=True):
+            return  # Cannot accept order
+
+         # Check if market order and accept and fill immediately
+        if order.type == OrderType.MARKET:
+            self._accept_order(order)
+
+            if order.side == OrderSide.BUY:
                 if self.fill_model.is_slipped():
                     self._fill_order(order, current_market.ask.add(self._slippages[order.symbol]))
                 else:
                     self._fill_order(order, current_market.ask)
-                return  # Order filled - nothing further to process
-            elif order.type in STOP_ORDER_TYPES:
-                if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
-                    self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={current_market.ask}')
-                    return  # Cannot accept order
-            elif order.type == OrderType.LIMIT:
-                if order.price.gt(current_market.bid.subtract(self._min_limits[order.symbol])):
-                    self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, bid={current_market.bid}')
-                    return  # Cannot accept order
-        elif order.side == OrderSide.SELL:
-            if order.type == OrderType.MARKET:
-                # Accept and fill market orders immediately
-                self._accept_order(order)
-                if self.fill_model.is_slipped():
-                    self._fill_order(order, current_market.bid.subtract(self._slippages[order.symbol]))
-                else:
-                    self._fill_order(order, current_market.bid)
-                return  # Order filled - nothing further to process
-            elif order.type in STOP_ORDER_TYPES:
-                if order.price.gt(current_market.bid.subtract(self._min_stops[order.symbol])):
-                    self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={current_market.bid}')
-                    return  # Cannot accept order
-            elif order.type == OrderType.LIMIT:
-                if order.price.lt(current_market.ask.add(self._min_limits[order.symbol])):
-                    self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, ask={current_market.ask}')
-                    return  # Cannot accept order
+                return  # Market order filled - nothing further to process
+            elif order.side == OrderSide.SELL:
+                if order.type == OrderType.MARKET:
+                    if self.fill_model.is_slipped():
+                        self._fill_order(order, current_market.bid.subtract(self._slippages[order.symbol]))
+                    else:
+                        self._fill_order(order, current_market.bid)
+                    return  # Market order filled - nothing further to process
 
         # Order is valid and accepted
         self._accept_order(order)
