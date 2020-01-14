@@ -11,7 +11,7 @@ import sys
 import pandas as pd
 import pytz
 
-from libc.math cimport round, pow
+from libc.math cimport round
 from cpython.datetime cimport datetime
 from cpython.unicode cimport PyUnicode_Contains
 
