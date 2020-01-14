@@ -74,6 +74,11 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef dict _build_current_ask_rates(self)
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
+    cdef bint _check_valid_price(self, Order order, Tick current_market, bint reject=*)
+    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, Tick current_market)
+    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, Tick current_market)
+    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, Tick current_market)
+    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, Tick current_market)
     cdef void _accept_order(self, Order order) except *
     cdef void _reject_order(self, Order order, str reason) except *
     cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason) except *
