@@ -36,14 +36,13 @@ cdef class BacktestConfig:
         Initializes a new instance of the BacktestConfig class.
 
         :param exec_db_type: The type for the execution database (can be the default 'in-memory' or redis).
-        :param exec_db_flush: The flag indicating whether the execution database should be flushed on each run.
-        :param frozen_account: The flag indicating whether the account should be
-        frozen for testing (no pnl applied).
+        :param exec_db_flush: If the execution database should be flushed on each run.
+        :param frozen_account: If the account should be frozen for testing (no pnl applied).
         :param starting_capital: The starting account capital (> 0).
         :param account_currency: The currency for the account.
         :param short_term_interest_csv_path: The path for the short term interest csv data (default='default').
         :param commission_rate_bp: The commission rate in basis points per notional transaction size.
-        :param bypass_logging: The flag indicating whether logging should be bypassed.
+        :param bypass_logging: If logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param level_store: The minimum log level for storing log messages in memory.

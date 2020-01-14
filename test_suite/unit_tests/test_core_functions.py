@@ -16,6 +16,7 @@ from datetime import timezone, timedelta
 from nautilus_trader.core.functions import (
     fast_round,
     basis_points_as_percentage,
+    format_bytes,
     pad_string,
     format_zulu_datetime,
     as_utc_timestamp,
@@ -62,6 +63,24 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(" 1234", result)
+
+    def test_format_bytes(self):
+        # Arrange
+        # Act
+        result0 = format_bytes(1000)
+        result1 = format_bytes(100000)
+        result2 = format_bytes(10000000)
+        result3 = format_bytes(1000000000)
+        result4 = format_bytes(10000000000)
+        result5 = format_bytes(100000000000000)
+
+        # Assert
+        self.assertEqual("1,000.0 bytes", result0)
+        self.assertEqual("97.66 KB", result1)
+        self.assertEqual("9.54 MB", result2)
+        self.assertEqual("953.67 MB", result3)
+        self.assertEqual("9.31 GB", result4)
+        self.assertEqual("90.95 TB", result5)
 
     def test_format_zulu_datetime(self):
         # Arrange

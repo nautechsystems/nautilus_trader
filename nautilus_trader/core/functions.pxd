@@ -11,6 +11,8 @@ from cpython.datetime cimport datetime
 
 cpdef double fast_round(double value, int precision)
 cpdef double basis_points_as_percentage(double basis_points)
+cdef int get_obj_size(obj)
+cpdef str format_bytes(double size)
 cpdef str pad_string(str string, int length, str pad=*)
 cpdef str format_zulu_datetime(datetime dt)
 cpdef object with_utc_index(dataframe)
