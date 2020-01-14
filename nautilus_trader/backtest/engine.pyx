@@ -351,7 +351,7 @@ cdef class BacktestEngine:
         ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
         ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
         self.log.info(f"RAM-total: {ram_totl_mb:,} MB")
-        self.log.info(f"RAM-Used:  {ram_used_mb:,} MB ({100.0 - ram_aval_pc}%)")
+        self.log.info(f"RAM-Used:  {ram_used_mb:,} MB ({round(100.0 - ram_aval_pc, 2)}%)")
         self.log.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
         if self.data_client.ticks:
             tick_size = get_obj_size(self.data_client.ticks[0])

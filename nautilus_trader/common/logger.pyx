@@ -419,7 +419,7 @@ cpdef void nautilus_header(LoggerAdapter logger):
         ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
         ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
         logger.info(f"RAM-total: {ram_totl_mb:,} MB")
-        logger.info(f"RAM-Used:  {ram_used_mb:,} MB ({100.0 - ram_aval_pc}%)")
+        logger.info(f"RAM-Used:  {ram_used_mb:,} MB ({round(100.0 - ram_aval_pc, 2)}%)")
         logger.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
         logger.info("#---------------------------------------------------------------#")
         logger.info("#--- VERSIONING ------------------------------------------------#")
