@@ -63,10 +63,15 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void register_exec_db(self, ExecutionDatabase exec_db) except *
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, Tick tick) except *
+    cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
+    cpdef void adjust_account(self, OrderFillEvent event, Position position) except *
+    cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
     cdef AccountStateEvent reset_account_event(self)
+    cdef dict _build_current_bid_rates(self)
+    cdef dict _build_current_ask_rates(self)
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
     cdef void _accept_order(self, Order order) except *
@@ -79,8 +84,3 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _check_oco_order(self, OrderId order_id) except *
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id) except *
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id) except *
-    cdef void _adjust_account(self, OrderFillEvent event, Position position) except *
-    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
-    cdef dict _build_current_bid_rates(self)
-    cdef dict _build_current_ask_rates(self)
-    cdef Money _calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
