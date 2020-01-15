@@ -15,10 +15,14 @@ from test_kit.performance import PerformanceProfiler
 USDJPY_FXCM = TestStubs.instrument_usdjpy()
 
 
-class CorrectnessConditionPerformanceTest:
+class CorrectnessTests:
+
+    @staticmethod
+    def none():
+        PyCondition.none(None, 'param')
+
     @staticmethod
     def true():
-
         PyCondition.true(True, 'this should be true')
 
     @staticmethod
@@ -30,11 +34,14 @@ class CorrectnessConditionPerformanceTests(unittest.TestCase):
 
     @staticmethod
     def test_condition_true():
-        # Arrange
-        test_function = CorrectnessConditionPerformanceTest().true
-
         # Test
-        PerformanceProfiler.profile_function(test_function, 3, 100000)
+        PerformanceProfiler.profile_function(CorrectnessTests.none, 3, 100000)
+        # ~11ms (11827μs) minimum of 3 runs @ 100,000 iterations each run
+
+    @staticmethod
+    def test_condition_not_none():
+        # Test
+        PerformanceProfiler.profile_function(CorrectnessTests.true, 3, 100000)
         # ~12ms (12012μs) minimum of 5 runs @ 100000 iterations
 
         # 100000 iterations @ 12ms with boolean except returning False
@@ -42,9 +49,6 @@ class CorrectnessConditionPerformanceTests(unittest.TestCase):
 
     @staticmethod
     def test_condition_valid_string():
-        # Arrange
-        test_function = CorrectnessConditionPerformanceTest().valid_string
-
         # Test
-        PerformanceProfiler.profile_function(test_function, 3, 100000)
+        PerformanceProfiler.profile_function(CorrectnessTests.valid_string, 3, 100000)
         # ~15ms (15622μs) minimum of 5 runs @ 100000 iterations
