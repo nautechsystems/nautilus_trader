@@ -143,7 +143,7 @@ cdef class BacktestDataClient(DataClient):
         # Check data integrity
         data.check_integrity()
 
-        # Update instruments dictionary
+        # Prepare instruments
         for instrument in data.instruments.values():
             self._handle_instrument(instrument)
 
@@ -151,12 +151,13 @@ cdef class BacktestDataClient(DataClient):
         cdef int symbol_counter = 0
 
         # Prepare data
+        self._log.info(f"Preparing data...")
         cdef list tick_frames = []
         self.execution_resolutions = []
+
         for symbol, instrument in self._instruments.items():
             self._symbol_index[symbol_counter] = symbol
             start = datetime.utcnow()
-            self._log.info(f"Preparing {symbol} data...")
             wrangler = TickDataWrangler(
                 instrument=instrument,
                 data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
@@ -243,6 +244,10 @@ cdef class BacktestDataClient(DataClient):
         Reset the client to its initial state.
         """
         self._log.info(f"Resetting...")
+        self._prices = None
+        self._symbols = None
+        self._volumes = None
+        self._timestamps = None
         self._index = 0
         self._index_last = len(self._tick_data) - 1
         self.has_data = True
