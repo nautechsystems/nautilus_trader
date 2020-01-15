@@ -67,7 +67,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -348,7 +348,7 @@ cdef class DataClient:
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void _reset(self):
+    cpdef void _reset(self) except *:
         # Reset the class to its initial state
         self._clock.cancel_all_timers()
         self._bar_aggregators.clear()

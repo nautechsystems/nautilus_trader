@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import psutil
 import pytz
 
 from cpython.datetime cimport datetime
@@ -166,15 +165,15 @@ cdef class BacktestEngine:
 
         self.time_to_initialize = self.clock.get_delta(self.created_time)
         self.log.info(f'Initialized in {self.time_to_initialize}.')
-        self._backtest_memory()
+        #self._backtest_memory()
 
-    cpdef run(
+    cpdef void run(
             self,
             datetime start=None,
             datetime stop=None,
             FillModel fill_model=None,
             list strategies=None,
-            bint print_log_store=True):
+            bint print_log_store=True) except *:
         """
         Run a backtest from the start datetime to the stop datetime.
         Note: If start datetime is None will run from the start of the data.
@@ -221,15 +220,16 @@ cdef class BacktestEngine:
             self.logger.change_log_file_name(backtest_log_name)
             self.test_logger.change_log_file_name(backtest_log_name)
 
+        self._backtest_header(run_started, start, stop)
+        self.log.info(f"Setting up backtest...")
+
         # Setup clocks
         self.test_clock.set_time(start)
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
         # Setup data
-        self._backtest_header(run_started, start, stop)
-        self.log.info(f"Setting up backtest...")
-        self.log.debug("Setting initial iterations...")
+        self.data_client.setup_ticks(start, stop)
 
         # Setup new fill model
         if fill_model:
@@ -240,29 +240,18 @@ cdef class BacktestEngine:
             self._change_clocks_and_loggers(strategies)
             self.trader.initialize_strategies(strategies)
 
-        # Determine start-stop indexes
-        cdef int index_start = -1
-        cdef int index_stop = -1
-        cdef int i
-        for i in range(len(self.data_client.ticks)):
-            if index_start == -1 and start >= self.data_client.ticks[i].timestamp:
-                index_start = i
-            if index_stop != -1:
-                break
-            if stop <= self.data_client.ticks[i].timestamp:
-                index_stop = i
-
         # Run the backtest
         self.log.info(f"Running backtest...")
         self.trader.start()
 
-        cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
         cdef Tick tick
         cdef TradingStrategy strategy
         cdef TimeEvent event
+        cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        for tick in self.data_client.ticks[index_start:index_stop]:
+        while self.data_client.has_data:
+            tick = self.data_client.generate_tick()
             for strategy in self.trader.strategies:
                 if strategy.clock.has_timers:
                     strategy.clock.advance_time(tick.timestamp)
@@ -342,23 +331,23 @@ cdef class BacktestEngine:
         """
         self.trader.dispose()
 
-    cdef void _backtest_memory(self):
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#-------------------- MEMORY STATISTICS ------------------------#")
-        self.log.info("#---------------------------------------------------------------#")
-        ram_totl_mb = round(psutil.virtual_memory()[0] / 1000000)
-        ram_used_mb = round(psutil.virtual_memory()[3] / 1000000)
-        ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
-        ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
-        self.log.info(f"RAM-total: {ram_totl_mb:,} MB")
-        self.log.info(f"RAM-Used:  {ram_used_mb:,} MB ({round(100.0 - ram_aval_pc, 2)}%)")
-        self.log.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
-        if self.data_client.ticks:
-            tick_size = get_obj_size(self.data_client.ticks[0])
-        else:
-            tick_size = 0
-        self.log.info(f"Tick objects: {len(self.data_client.ticks):,} @ {tick_size} bytes each = "
-                      f"{format_bytes(len(self.data_client.ticks) * tick_size)}")
+    # cdef void _backtest_memory(self):
+    #     self.log.info("#---------------------------------------------------------------#")
+    #     self.log.info("#-------------------- MEMORY STATISTICS ------------------------#")
+    #     self.log.info("#---------------------------------------------------------------#")
+    #     ram_totl_mb = round(psutil.virtual_memory()[0] / 1000000)
+    #     ram_used_mb = round(psutil.virtual_memory()[3] / 1000000)
+    #     ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
+    #     ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
+    #     self.log.info(f"RAM-Total: {ram_totl_mb:,} MB")
+    #     self.log.info(f"RAM-Used:  {ram_used_mb:,} MB ({round(100.0 - ram_aval_pc, 2)}%)")
+    #     self.log.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
+        # if len(self.data_client.tick_data) > 0:
+        #     tick_size = get_obj_size(self.data_client.tick_data[0])
+        # else:
+        #     tick_size = 0
+        # self.log.info(f"Tick objects: {len(self.data_client.tick_data):,} @ {tick_size} bytes each = "
+        #               f"{format_bytes(len(self.data_client.tick_data) * tick_size)}")
 
     cdef void _backtest_header(
             self,

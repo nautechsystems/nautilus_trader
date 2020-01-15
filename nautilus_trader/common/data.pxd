@@ -31,7 +31,7 @@ cdef class DataClient:
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef void connect(self)
     cpdef void disconnect(self)
-    cpdef void reset(self)
+    cpdef void reset(self) except *
     cpdef void dispose(self)
     cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback)
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback)
@@ -66,4 +66,4 @@ cdef class DataClient:
     cpdef void _handle_bar(self, BarType bar_type, Bar bar)
     cpdef void _handle_instrument(self, Instrument instrument)
     cpdef void _handle_instruments(self, list instruments)
-    cpdef void _reset(self)
+    cpdef void _reset(self) except *

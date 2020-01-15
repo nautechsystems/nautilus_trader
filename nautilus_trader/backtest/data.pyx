@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import numpy as np
 import pandas as pd
 
 from cpython.datetime cimport datetime
@@ -15,7 +16,8 @@ from pandas import DatetimeIndex
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.objects cimport Instrument, Tick, BarType
+from nautilus_trader.model.c_enums.tick_type cimport TickType
+from nautilus_trader.model.objects cimport Instrument, Price, Tick, BarType
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.common.clock cimport TestClock
@@ -145,28 +147,84 @@ cdef class BacktestDataClient(DataClient):
         for instrument in data.instruments.values():
             self._handle_instrument(instrument)
 
-        # Prepare data
-        self._log.info("Preparing data...")
+        self._symbol_index = {}
+        cdef int symbol_counter = 0
 
-        self.ticks = []
+        # Prepare data
+        cdef list tick_frames = []
         self.execution_resolutions = []
         for symbol, instrument in self._instruments.items():
-            self._log.debug(f'Creating DataProvider for {symbol}...')
+            self._symbol_index[symbol_counter] = symbol
             start = datetime.utcnow()
-            self._log.info(f"Building {symbol} ticks...")
+            self._log.info(f"Preparing {symbol} data...")
             wrangler = TickDataWrangler(
                 instrument=instrument,
                 data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
                 data_bars_bid=data.bars_bid[symbol],
                 data_bars_ask=data.bars_ask[symbol])
-            wrangler.build()
-            self.ticks += wrangler.ticks
+            wrangler.build(symbol_counter)
+            tick_frames.append(wrangler.tick_data)
+            symbol_counter += 1
             self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}')
-            self._log.info(f"Built {len(wrangler.ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
+            self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
-        self.ticks = sorted(self.ticks)
-        self.min_timestamp = self.ticks[0].timestamp
-        self.max_timestamp = self.ticks[-1].timestamp
+        # Merge and sort all ticks
+        self._tick_data = pd.concat(tick_frames)
+        self._tick_data.sort_index(axis=0, inplace=True)
+
+        # Set min and max timestamps
+        self.min_timestamp = self._tick_data.index.min()
+        self.max_timestamp = self._tick_data.index.max()
+
+        self._prices = None
+        self._symbols = None
+        self._volumes = None
+        self._timestamps = None
+        self._index = 0
+        self._index_last = len(self._tick_data) - 1
+        self.has_data = False
+
+    # Function only exists due to some limitation with Cython and closures created by the slice
+    def _slice_dataframe(self, dataframe, start, end) -> pd.DataFrame:
+        """
+        Return the dataframe sliced using the given arguments.
+
+        :param dataframe: The dataframe to slice.
+        :param start: The start of the slice.
+        :param end: The end of the slice.
+        :return: pd.DataFrame.
+        """
+        if dataframe is None:
+            return pd.DataFrame()
+
+        return dataframe[start:end]
+
+    cpdef void setup_ticks(self, datetime start, datetime stop) except *:
+        data_slice = self._slice_dataframe(self._tick_data, start, stop)
+        self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
+        self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
+        self._volumes = data_slice[['bid_size', 'ask_size']].to_numpy(dtype=np.double)
+        self._timestamps = data_slice.index
+        self._index = 0
+        self._index_last = len(data_slice) - 1
+        self.has_data = True
+        self._clock.set_time(start)
+
+    cdef Tick generate_tick(self):
+        cdef Tick tick = Tick(
+            self._symbol_index[self._symbols[self._index]],
+            Price(self._prices[self._index][0], 3),
+            Price(self._prices[self._index][1], 3),
+            self._timestamps[self._index],
+            TickType.TRADE,
+            self._volumes[self._index][0],
+            self._volumes[self._index][1])
+
+        self._index += 1
+        if self._index >= self._index_last:
+            self.has_data = False
+
+        return tick
 
     cpdef void connect(self):
         """
@@ -180,11 +238,14 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.info("Disconnected.")
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the client to its initial state.
         """
         self._log.info(f"Resetting...")
+        self._index = 0
+        self._index_last = len(self._tick_data) - 1
+        self.has_data = True
         self._reset()
         self._log.info("Reset.")
 
@@ -194,7 +255,7 @@ cdef class BacktestDataClient(DataClient):
         """
         pass
 
-    cpdef void process_tick(self, Tick tick):
+    cpdef void process_tick(self, Tick tick) except *:
         """
         Process the given tick with the data client.
         

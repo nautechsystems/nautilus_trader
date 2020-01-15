@@ -178,7 +178,7 @@ cdef class LiveDataClient(DataClient):
         except zmq.ZMQError as ex:
             self._log.exception(ex)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the class to its initial state.
         """
