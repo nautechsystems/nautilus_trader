@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 import unittest
 
 from nautilus_trader.common.clock import TestClock

@@ -42,7 +42,7 @@ def scan_directories(directories: List[str]) -> List[str]:
     return file_names
 
 
-def get_files(directory: str, files: List[str]=[]) -> List[str]:
+def get_files(directory: str, files: List[str]=None) -> List[str]:
     """
     Return a list of all file names in the given directory with the given extension
     by recursive scan and appending to the given list of files.
@@ -51,6 +51,9 @@ def get_files(directory: str, files: List[str]=[]) -> List[str]:
     :param files: The current list of files.
     :return: List[str].
     """
+    if files is None:
+        files = []
+
     for path_name in os.listdir(directory):
         path = os.path.join(directory, path_name)
         if os.path.isfile(path):

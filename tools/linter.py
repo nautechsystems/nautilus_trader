@@ -59,10 +59,11 @@ def check_docstrings(directories: List[str], to_lint: List[str]):
     :param directories: The list of directories for files to check.
     :param to_lint: The list of file extensions to lint.
     """
-    files = scan_directories(directories)
-    for file in files:
-        if os.path.isfile(file):
-            file_extension = os.path.splitext(file)[1]
-            if file_extension in to_lint:
-                with open(file, 'r') as open_file:
-                    source_code = (open_file.read())
+    pass
+    # files = scan_directories(directories)
+    # for file in files:
+    #     if os.path.isfile(file):
+    #         file_extension = os.path.splitext(file)[1]
+    #         if file_extension in to_lint:
+    #             with open(file, 'r') as open_file:
+    #                 x = source_code = (open_file.read())

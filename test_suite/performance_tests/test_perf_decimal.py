@@ -41,7 +41,7 @@ class DecimalTesting:
 
     @staticmethod
     def float_arithmetic():
-        x1 = 1.0 * 2.0
+        x = 1.0 * 2.0
 
     @staticmethod
     def decimal_comparisons():

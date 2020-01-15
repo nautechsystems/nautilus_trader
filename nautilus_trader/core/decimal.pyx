@@ -94,6 +94,8 @@ cdef class Decimal:
         :param other: The other object.
         :return bool.
         """
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
         return self._value == other._value
 
     cpdef str to_string(self, bint format_commas=False):
@@ -115,6 +117,8 @@ cdef class Decimal:
         :param other: The other decimal.
         :return bool.
         """
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
         return self._value == other._value
 
     cpdef bint ne(self, Decimal other):
@@ -124,6 +128,8 @@ cdef class Decimal:
         :param other: The other decimal.
         :return bool.
         """
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
         return self._value != other._value
 
     cpdef bint lt(self, Decimal other):
@@ -133,6 +139,8 @@ cdef class Decimal:
         :param other: The other decimal.
         :return bool.
         """
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
         return self._value < other._value
 
     cpdef bint le(self, Decimal other):
@@ -142,6 +150,8 @@ cdef class Decimal:
         :param other: The other decimal.
         :return bool.
         """
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
         return self._value <= other._value
 
     cpdef bint gt(self, Decimal other):
@@ -151,6 +161,8 @@ cdef class Decimal:
         :param other: The other decimal.
         :return bool.
         """
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
         return self._value > other._value
 
     cpdef bint ge(self, Decimal other):
@@ -160,6 +172,8 @@ cdef class Decimal:
         :param other: The other decimal.
         :return bool.
         """
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
         return self._value >= other._value
 
     cpdef Decimal add_decimal(self, Decimal other, bint keep_precision=False):
@@ -171,8 +185,12 @@ cdef class Decimal:
         :return Decimal.
         """
         if keep_precision:
+            # noinspection PyProtectedMember
+            # direct access to protected member ok here
             return Decimal(self._value + other._value, self.precision)
         else:
+            # noinspection PyProtectedMember
+            # direct access to protected member ok here
             return Decimal(self._value + other._value, max(self.precision, other.precision))
 
     cpdef Decimal subtract_decimal(self, Decimal other, bint keep_precision=False):
@@ -184,8 +202,12 @@ cdef class Decimal:
         :return Decimal.
         """
         if keep_precision:
+            # noinspection PyProtectedMember
+            # direct access to protected member ok here
             return Decimal(self._value - other._value, self.precision)
         else:
+            # noinspection PyProtectedMember
+            # direct access to protected member ok here
             return Decimal(self._value - other._value, max(self.precision, other.precision))
 
     def __eq__(self, other) -> bool:

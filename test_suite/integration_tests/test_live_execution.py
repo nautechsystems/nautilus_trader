@@ -10,7 +10,7 @@ import redis
 import unittest
 
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import AccountId, TraderId, OrderId, PositionId
+from nautilus_trader.model.identifiers import TraderId, OrderId, PositionId
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.position import Position
 from nautilus_trader.common.account import Account

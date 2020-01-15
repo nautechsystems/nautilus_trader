@@ -125,7 +125,7 @@ cdef class MockServer:
             zmq_context: Context,
             int port,
             Logger logger,
-            list responses=[]):
+            list responses=None):
         """
         Initializes a new instance of the MockServer class.
 
@@ -134,6 +134,8 @@ cdef class MockServer:
         :param logger: The logger for the component.
         :param responses: The responses to send.
         """
+        if responses is None:
+            responses = []
         super().__init__()
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._service_address = f'tcp://127.0.0.1:{port}'
