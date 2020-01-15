@@ -224,7 +224,7 @@ cdef class TestStrategy1(TradingStrategy):
 
         self.object_storer.store((bar_type, Bar))
 
-        if bar_type == self.bar_type:
+        if bar_type.equals(self.bar_type):
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
                     self.bar_type.symbol,
@@ -471,7 +471,7 @@ cdef class EMACross(TradingStrategy):
                     atomic_order = None
 
             # ENTRY ORDER SUBMISSION
-            if atomic_order:
+            if atomic_order is not None:
                 self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
 
         # TRAILING STOP LOGIC
@@ -482,12 +482,12 @@ cdef class EMACross(TradingStrategy):
                 # SELL SIDE ORDERS
                 if working_order.is_sell:
                     temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
-                    if temp_price > working_order.price:
+                    if temp_price.gt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
                     temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + max(average_spread, self.spreads[-1]), self.precision)
-                    if temp_price < working_order.price:
+                    if temp_price.lt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
     cpdef void on_instrument(self, Instrument instrument):

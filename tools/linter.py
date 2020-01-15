@@ -35,7 +35,7 @@ def check_file_headers(directories: List[str], to_lint: List[str], company_name:
                     source_code = (open_file.read())
                     expected_file_name = file.split('/')[-1]
                     result = re.findall(r'\"(.+?)\"', source_code)
-                    if len(result) == 0:
+                    if not result:
                         raise ValueError(f"No file header found in {file}.")
                     parsed_file_name = result[0]
                     parsed_company_name = result[1]
