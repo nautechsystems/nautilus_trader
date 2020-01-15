@@ -334,7 +334,7 @@ cdef class BacktestEngine:
 
     cdef void _backtest_memory(self) except *:
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#-------------------- MEMORY STATISTICS ------------------------#")
+        self.log.info("#----------------------- MEMORY USAGE --------------------------#")
         self.log.info("#---------------------------------------------------------------#")
         ram_totl_mb = round(psutil.virtual_memory()[0] / 1000000)
         ram_used_mb = round(psutil.virtual_memory()[3] / 1000000)
