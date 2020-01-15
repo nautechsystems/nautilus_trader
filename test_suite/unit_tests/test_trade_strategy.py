@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.core.correctness import ConditionFailed
-from nautilus_trader.common.clock import TestClock, LiveClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
@@ -26,7 +26,6 @@ from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, 
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.enums import OrderState, Currency, MarketPosition
 from nautilus_trader.model.objects import Tick, Bar
-from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.model.identifiers import StrategyId, Label
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -77,6 +76,8 @@ class TradeStrategyTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=self.logger)
 
+        # noinspection PyPep8Naming
+        # USDJPY is clear
         USDJPY = TestStubs.instrument_usdjpy()
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,

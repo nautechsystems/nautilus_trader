@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers cimport (
     PositionId,
     ExecutionId,
     PositionIdBroker)
-from nautilus_trader.model.objects cimport Quantity, Decimal, Money, Price
+from nautilus_trader.model.objects cimport Quantity, Decimal, Money
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.common.logger cimport LogMessage, log_level_from_string

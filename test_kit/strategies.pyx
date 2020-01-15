@@ -14,7 +14,7 @@ from typing import Deque
 
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
-from nautilus_trader.model.objects cimport Decimal, Price, Tick, BarSpecification, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.trade.strategy cimport TradingStrategy

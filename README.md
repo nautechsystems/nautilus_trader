@@ -6,7 +6,7 @@
 * **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
 * **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 * **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
-* **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud enviornment.
+* **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud environment.
 
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
