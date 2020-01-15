@@ -120,7 +120,7 @@ cdef class PerformanceAnalyzer:
         cdef str symbol
         cdef list columns
         for position in positions:
-            symbol = str(position.symbol)
+            symbol = position.symbol.to_string()
             columns = list(self._positions.columns.values)
             if symbol not in columns:
                 self._positions[symbol] = 0

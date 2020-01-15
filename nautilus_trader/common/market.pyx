@@ -724,7 +724,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cdef void _set_build_timer(self) except *:
         self._clock.set_timer(
-            label=Label(str(self.bar_type)),
+            label=Label(self.bar_type.to_string()),
             interval=self._get_interval(),
             start_time=self._get_start_time(),
             stop_time=None,

@@ -32,7 +32,7 @@ cdef class Symbol(Identifier):
         :raises ConditionFailed: If the code is not a valid string.
         """
         Condition.valid_string(code, 'code')
-        assert code.isupper()
+        assert code.isupper()  # Design time check
         self.code = code.upper()
         self.venue = venue
         super().__init__(f'{self.code}.{self.venue.value}')

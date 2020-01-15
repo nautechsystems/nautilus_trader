@@ -14,6 +14,7 @@ from typing import Set, Dict, Callable
 from pandas import DatetimeIndex
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions import slice_dataframe
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.tick_type cimport TickType
@@ -187,21 +188,6 @@ cdef class BacktestDataClient(DataClient):
         self._index_last = len(self._tick_data) - 1
         self.has_data = False
 
-    # Function only exists due to some limitation with Cython and closures created by the slice
-    def _slice_dataframe(self, dataframe, start, end) -> pd.DataFrame:
-        """
-        Return the dataframe sliced using the given arguments.
-
-        :param dataframe: The dataframe to slice.
-        :param start: The start of the slice.
-        :param end: The end of the slice.
-        :return: pd.DataFrame.
-        """
-        if dataframe is None:
-            return pd.DataFrame()
-
-        return dataframe[start:end]
-
     cpdef void setup_ticks(self, datetime start, datetime stop) except *:
         """
         Setup tick data for a backtest run.
@@ -209,7 +195,7 @@ cdef class BacktestDataClient(DataClient):
         :param start: The start datetime (UTC) for the run.
         :param stop: The stop datetime (UTC) for the run.
         """
-        data_slice = self._slice_dataframe(self._tick_data, start, stop)
+        data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
         self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
         self._volumes = data_slice[['bid_size', 'ask_size']].to_numpy(dtype=np.double)

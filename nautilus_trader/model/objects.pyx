@@ -757,7 +757,7 @@ cdef class BarType:
 
         :return: str.
         """
-        return f"{str(self.symbol)}-{self.specification}"
+        return f"{self.symbol.to_string()}-{self.specification}"
 
     def __eq__(self, BarType other) -> bool:
         """
@@ -1103,7 +1103,7 @@ cdef class Instrument:
 
         :return int.
         """
-        return hash(str(self.symbol))
+        return hash(self.symbol.to_string())
 
     def __str__(self) -> str:
         """

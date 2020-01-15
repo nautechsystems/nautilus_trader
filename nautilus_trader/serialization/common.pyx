@@ -23,7 +23,7 @@ cpdef str convert_price_to_string(Price price):
     :param price: The price to convert.
     :return str.
     """
-    return NONE if price is None else str(price)
+    return NONE if price is None else price.to_string()
 
 cpdef str convert_label_to_string(Label label):
     """
