@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import psutil
 import pytz
 
 from cpython.datetime cimport datetime
@@ -165,7 +166,7 @@ cdef class BacktestEngine:
 
         self.time_to_initialize = self.clock.get_delta(self.created_time)
         self.log.info(f'Initialized in {self.time_to_initialize}.')
-        #self._backtest_memory()
+        self._backtest_memory()
 
     cpdef void run(
             self,
@@ -284,7 +285,7 @@ cdef class BacktestEngine:
         """
         return self.test_logger.get_log_store()
 
-    cpdef void print_log_store(self):
+    cpdef void print_log_store(self) except *:
         """
         Print the contents of the test loggers store to the console.
         """
@@ -301,7 +302,7 @@ cdef class BacktestEngine:
             for message in self.test_logger.get_log_store():
                 print(message)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the backtest engine. 
         
@@ -325,35 +326,30 @@ cdef class BacktestEngine:
         self.test_logger.clear_log_store()
         self.log.info("Reset.")
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
         """
         self.trader.dispose()
 
-    # cdef void _backtest_memory(self):
-    #     self.log.info("#---------------------------------------------------------------#")
-    #     self.log.info("#-------------------- MEMORY STATISTICS ------------------------#")
-    #     self.log.info("#---------------------------------------------------------------#")
-    #     ram_totl_mb = round(psutil.virtual_memory()[0] / 1000000)
-    #     ram_used_mb = round(psutil.virtual_memory()[3] / 1000000)
-    #     ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
-    #     ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
-    #     self.log.info(f"RAM-Total: {ram_totl_mb:,} MB")
-    #     self.log.info(f"RAM-Used:  {ram_used_mb:,} MB ({round(100.0 - ram_aval_pc, 2)}%)")
-    #     self.log.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
-        # if len(self.data_client.tick_data) > 0:
-        #     tick_size = get_obj_size(self.data_client.tick_data[0])
-        # else:
-        #     tick_size = 0
-        # self.log.info(f"Tick objects: {len(self.data_client.tick_data):,} @ {tick_size} bytes each = "
-        #               f"{format_bytes(len(self.data_client.tick_data) * tick_size)}")
+    cdef void _backtest_memory(self) except *:
+        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("#-------------------- MEMORY STATISTICS ------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
+        ram_totl_mb = round(psutil.virtual_memory()[0] / 1000000)
+        ram_used_mb = round(psutil.virtual_memory()[3] / 1000000)
+        ram_aval_mb = round(psutil.virtual_memory()[1] / 1000000)
+        ram_aval_pc = round(100 - psutil.virtual_memory()[2], 2)
+        self.log.info(f"RAM-Total: {ram_totl_mb:,} MB")
+        self.log.info(f"RAM-Used:  {ram_used_mb:,} MB ({round(100.0 - ram_aval_pc, 2)}%)")
+        self.log.info(f"RAM-Avail: {ram_aval_mb:,} MB ({ram_aval_pc}%)")
+        self.log.info(f"Data size: {format_bytes(get_obj_size(self.data_client))}")
 
     cdef void _backtest_header(
             self,
             datetime run_started,
             datetime start,
-            datetime stop):
+            datetime stop) except *:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#----------------------- BACKTEST RUN --------------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -373,7 +369,7 @@ cdef class BacktestEngine:
             datetime run_started,
             datetime run_finished,
             datetime start,
-            datetime stop):
+            datetime stop) except *:
         cdef str account_currency = currency_to_string(self.config.account_currency)
         cdef int account_starting_length = len(self.config.starting_capital.to_string(format_commas=True))
 
@@ -411,7 +407,7 @@ cdef class BacktestEngine:
         for statistic in self.analyzer.get_performance_stats_formatted():
             self.log.info(statistic)
 
-    cdef void _change_clocks_and_loggers(self, list strategies):
+    cdef void _change_clocks_and_loggers(self, list strategies) except *:
         # Replace the clocks and loggers for every strategy in the given list
         for strategy in strategies:
             # Separate test clocks to iterate independently

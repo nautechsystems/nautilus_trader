@@ -68,7 +68,7 @@ if __name__ == "__main__":
         fill_model=fill_model)
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 2, 1, 1, 10, 0, 0)
+    stop = datetime(2013, 3, 1, 0, 0, 0, 0)
 
     engine.run(start, stop)
 
