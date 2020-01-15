@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
+
 
 cdef class IdentifierCache:
     """
@@ -26,8 +28,11 @@ cdef class IdentifierCache:
         Return the cached trader_id.
         
         :param value: The value to be parsed to a trader_id.
-        :return: TraderId.
+        :return: TraderId or None.
+        :raises: ConditionFailed: If the string is invalid.
         """
+        Condition.valid_string(value, 'value')
+
         return self._cached_trader_ids.get(value)
 
     cpdef AccountId get_account_id(self, str value):
@@ -35,8 +40,11 @@ cdef class IdentifierCache:
         Return the cached account.
         
         :param value: The value to be parsed to a account_id.
-        :return: AccountId.
+        :return: AccountId or None.
+        :raises: ConditionFailed: If the string is invalid.
         """
+        Condition.valid_string(value, 'value')
+
         return self._cached_account_ids.get(value)
 
     cpdef StrategyId get_strategy_id(self, str value):
@@ -44,8 +52,11 @@ cdef class IdentifierCache:
         Return the cached strategy_id.
         
         :param value: The value to be parsed to a strategy_id.
-        :return: StrategyId.
+        :return: StrategyId or None.
+        :raises: ConditionFailed: If the string is invalid.
         """
+        Condition.valid_string(value, 'value')
+
         return self._cached_strategy_ids.get(value)
 
     cpdef Symbol get_symbol(self, str value):
@@ -53,6 +64,9 @@ cdef class IdentifierCache:
         Return the cached symbol.
         
         :param value: The value to be parsed to a symbol.
-        :return: Symbol.
+        :return: Symbol or None.
+        :raises: ConditionFailed: If the string is invalid.
         """
+        Condition.valid_string(value, 'value')
+
         return self._cached_symbols.get(value)

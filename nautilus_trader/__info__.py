@@ -15,8 +15,8 @@ PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # Semantic Versioning (https://semver.org/)
 _MAJOR_VERSION = 1
-_MINOR_VERSION = 9
-_PATCH_VERSION = 1
+_MINOR_VERSION = 10
+_PATCH_VERSION = 0
 
 __version__ = '.'.join([
     str(_MAJOR_VERSION),

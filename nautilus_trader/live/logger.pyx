@@ -25,10 +25,10 @@ cdef class LogStore:
     """
 
     def __init__(self,
-                 TraderId trader_id,
+                 TraderId trader_id not None,
                  str host='localhost',
                  int port=6379,
-                 LogSerializer serializer=MsgPackLogSerializer()):
+                 LogSerializer serializer not None=MsgPackLogSerializer()):
         """
         Initializes a new instance of the LogStore class.
 
@@ -54,6 +54,8 @@ cdef class LogStore:
         
         :param message: The log message to store.
         """
+        Condition.not_none(message, 'message')
+
         self._message_bus.put(message)
 
     cpdef void _consume_messages(self) except *:
@@ -77,8 +79,8 @@ cdef class LiveLogger(Logger):
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path='logs/',
-                 LiveClock clock=LiveClock(),
+                 str log_file_path not None='logs/',
+                 LiveClock clock not None=LiveClock(),
                  LogStore store=None):
         """
         Initializes a new instance of the LiveLogger class.
@@ -117,6 +119,8 @@ cdef class LiveLogger(Logger):
 
         :param message: The log message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._message_bus.put(message)
 
     cpdef void _consume_messages(self) except *:

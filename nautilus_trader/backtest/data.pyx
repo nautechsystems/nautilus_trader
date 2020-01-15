@@ -43,6 +43,13 @@ cdef class BacktestDataContainer:
         self.bars_ask = {}
 
     cpdef void add_instrument(self, Instrument instrument) except *:
+        """
+        Add the instrument to the container.
+
+        :param instrument: The instrument to add.
+        """
+        Condition.not_none(instrument, 'instrument')
+
         self.instruments[instrument.symbol] = instrument
         self.instruments = dict(sorted(self.instruments.items()))
 
@@ -54,6 +61,8 @@ cdef class BacktestDataContainer:
         :param data: The tick data to add.
         :raises ConditionFailed: If the data is a type other than DataFrame.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(data, 'data')
         Condition.type(data, pd.DataFrame, 'data')
 
         self.ticks[symbol] = data
@@ -69,6 +78,8 @@ cdef class BacktestDataContainer:
         :param data: The bar data to add.
         :raises ConditionFailed: If the data is a type other than DataFrame.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(data, 'data')
         Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
 
         if price_type == PriceType.BID:
@@ -123,9 +134,9 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  Venue venue,
-                 BacktestDataContainer data,
-                 TestClock clock,
-                 Logger logger):
+                 BacktestDataContainer data not None,
+                 TestClock clock not None,
+                 Logger logger not None):
         """
         Initializes a new instance of the BacktestDataClient class.
 
@@ -133,12 +144,7 @@ cdef class BacktestDataClient(DataClient):
         :param data: The data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
-        :raises ConditionFailed: If the clock is None.
-        :raises ConditionFailed: If the logger is None.
         """
-        Condition.not_none(clock, 'clock')
-        Condition.not_none(logger, 'logger')
-
         super().__init__(venue, clock, TestGuidFactory(), logger)
 
         # Check data integrity
@@ -195,6 +201,9 @@ cdef class BacktestDataClient(DataClient):
         :param start: The start datetime (UTC) for the run.
         :param stop: The stop datetime (UTC) for the run.
         """
+        Condition.not_none(start, 'start')
+        Condition.not_none(stop, 'stop')
+
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
         self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
@@ -268,6 +277,8 @@ cdef class BacktestDataClient(DataClient):
         
         :param tick: The tick to process.
         """
+        Condition.not_none(tick, 'tick')
+
         self._handle_tick(tick)
 
         if self._clock.has_timers and tick.timestamp < self._clock.next_event_time:
@@ -294,6 +305,9 @@ cdef class BacktestDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(from_datetime, 'from_datetime')
+        Condition.not_none(to_datetime, 'to_datetime')
         Condition.callable(callback, 'callback')
 
         self._log.info(f"Simulated request ticks for {symbol} from {from_datetime} to {to_datetime}.")
@@ -313,6 +327,9 @@ cdef class BacktestDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
+        Condition.not_none(bar_type, 'bar_type')
+        Condition.not_none(from_datetime, 'from_datetime')
+        Condition.not_none(to_datetime, 'to_datetime')
         Condition.callable(callback, 'callback')
 
         self._log.info(f"Simulated request bars for {bar_type} from {from_datetime} to {to_datetime}.")
@@ -325,6 +342,7 @@ cdef class BacktestDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(callback, 'callback')
 
         self._log.info(f"Requesting instrument for {symbol}...")
@@ -353,6 +371,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
         self._add_tick_handler(symbol, handler)
@@ -366,6 +385,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable or None.
         """
+        Condition.not_none(bar_type, 'bar_type')
         Condition.callable_or_none(handler, 'handler')
 
         self._self_generate_bars(bar_type, handler)
@@ -378,6 +398,7 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ConditionFailed: If the handler is not of type Callable or None.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable_or_none(handler, 'handler')
 
         if symbol not in self._instrument_handlers:
@@ -393,6 +414,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable or None.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable_or_none(handler, 'handler')
 
         self._remove_tick_handler(symbol, handler)
@@ -406,6 +428,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable or None.
         """
+        Condition.not_none(bar_type, 'bar_type')
         Condition.callable_or_none(handler, 'handler')
 
         self._remove_bar_handler(bar_type, handler)
@@ -418,6 +441,7 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable_or_none(handler, 'handler')
 
         self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "

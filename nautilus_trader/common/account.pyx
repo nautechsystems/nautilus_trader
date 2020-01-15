@@ -26,6 +26,8 @@ cdef class Account:
 
         :param: event: The initial account state event.
         """
+        Condition.not_none(event, 'event')
+
         self._events = [event]
         self.event_count = 1
         self.last_event = event
@@ -53,6 +55,8 @@ cdef class Account:
         :param other: The other object.
         :return bool.
         """
+        Condition.not_none(other, 'other')
+
         return self.id == other.id
 
     def __ne__(self, Account other) -> bool:
@@ -62,6 +66,8 @@ cdef class Account:
         :param other: The other object.
         :return bool.
         """
+        Condition.not_none(other, 'other')
+
         return not self.__eq__(other)
 
     def __hash__(self) -> int:
@@ -101,6 +107,7 @@ cdef class Account:
 
         :param event: The account event to apply.
         """
+        Condition.not_none(event, 'event')
         Condition.equals(self.id, event.account_id, 'id', 'event.account_id')
 
         self._events.append(event)
@@ -127,7 +134,7 @@ cdef class NullAccount(Account):
     Represents a null un-initialized brokerage account.
     """
 
-    def __init__(self, datetime time_now):
+    def __init__(self, datetime time_now not None):
         """
         Initializes a new instance of the NullAccount class.
 

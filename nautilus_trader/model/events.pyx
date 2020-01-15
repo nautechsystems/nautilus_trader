@@ -35,17 +35,17 @@ cdef class AccountStateEvent(Event):
     """
 
     def __init__(self,
-                 AccountId account_id,
+                 AccountId account_id not None,
                  Currency currency,
-                 Money cash_balance,
-                 Money cash_start_day,
-                 Money cash_activity_day,
-                 Money margin_used_liquidation,
-                 Money margin_used_maintenance,
-                 Decimal margin_ratio,
-                 ValidString margin_call_status,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 Money cash_balance not None,
+                 Money cash_start_day not None,
+                 Money cash_activity_day not None,
+                 Money margin_used_liquidation not None,
+                 Money margin_used_maintenance not None,
+                 Decimal margin_ratio not None,
+                 ValidString margin_call_status not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the AccountEvent class.
 
@@ -103,9 +103,9 @@ cdef class OrderEvent(Event):
     """
 
     def __init__(self,
-                 OrderId order_id,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 OrderId order_id not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderEvent base class.
 
@@ -140,18 +140,18 @@ cdef class OrderFillEvent(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 ExecutionId execution_id,
-                 PositionIdBroker position_id_broker,
-                 Symbol symbol,
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 ExecutionId execution_id not None,
+                 PositionIdBroker position_id_broker not None,
+                 Symbol symbol not None,
                  OrderSide order_side,
-                 Quantity filled_quantity,
-                 Price average_price,
+                 Quantity filled_quantity not None,
+                 Price average_price not None,
                  Currency transaction_currency,
-                 datetime execution_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 datetime execution_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderFillEvent class.
 
@@ -188,18 +188,18 @@ cdef class OrderInitialized(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
-                 Symbol symbol,
-                 Label label,
+                 OrderId order_id not None,
+                 Symbol symbol not None,
+                 Label label,  # Can be None
                  OrderSide order_side,
                  OrderType order_type,
-                 Quantity quantity,
-                 Price price,
+                 Quantity quantity not None,
+                 Price price,  # Can be None
                  OrderPurpose order_purpose,
                  TimeInForce time_in_force,
-                 datetime expire_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 datetime expire_time,  # Can be None
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderInitialized class.
 
@@ -236,11 +236,11 @@ cdef class OrderSubmitted(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 datetime submitted_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 datetime submitted_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderSubmitted class.
 
@@ -273,10 +273,10 @@ cdef class OrderInvalid(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
-                 str invalid_reason,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 OrderId order_id not None,
+                 str invalid_reason not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderInvalid class.
 
@@ -307,10 +307,10 @@ cdef class OrderDenied(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id,
-                 str denied_reason,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 OrderId order_id not None,
+                 str denied_reason not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderDenied class.
 
@@ -341,12 +341,12 @@ cdef class OrderRejected(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 datetime rejected_time,
-                 ValidString rejected_reason,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 datetime rejected_time not None,
+                 ValidString rejected_reason not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderRejected class.
 
@@ -382,13 +382,13 @@ cdef class OrderAccepted(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 OrderIdBroker order_id_broker,
-                 Label label,
-                 datetime accepted_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 OrderIdBroker order_id_broker not None,
+                 Label label,  # Can be None
+                 datetime accepted_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderAccepted class.
 
@@ -426,19 +426,19 @@ cdef class OrderWorking(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 OrderIdBroker order_id_broker,
-                 Symbol symbol,
-                 Label label,
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 OrderIdBroker order_id_broker not None,
+                 Symbol symbol not None,
+                 Label label,  # Can be None
                  OrderSide order_side,
                  OrderType order_type,
-                 Quantity quantity,
-                 Price price,
+                 Quantity quantity not None,
+                 Price price not None,
                  TimeInForce time_in_force,
-                 datetime working_time,
-                 GUID event_id,
-                 datetime event_timestamp,
+                 datetime working_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None,
                  datetime expire_time=None):
         """
         Initializes a new instance of the OrderWorking class.
@@ -497,13 +497,13 @@ cdef class OrderCancelReject(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 datetime rejected_time,
-                 ValidString rejected_response_to,
-                 ValidString rejected_reason,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 datetime rejected_time not None,
+                 ValidString rejected_response_to not None,
+                 ValidString rejected_reason not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderCancelReject class.
 
@@ -542,11 +542,11 @@ cdef class OrderCancelled(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 datetime cancelled_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 datetime cancelled_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderCancelled class.
 
@@ -579,14 +579,14 @@ cdef class OrderModified(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 OrderIdBroker order_id_broker,
-                 Quantity modified_quantity,
-                 Price modified_price,
-                 datetime modified_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 OrderIdBroker order_id_broker not None,
+                 Quantity modified_quantity not None,
+                 Price modified_price not None,
+                 datetime modified_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderModified class.
 
@@ -627,11 +627,11 @@ cdef class OrderExpired(OrderEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 datetime expired_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 datetime expired_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderExpired class.
 
@@ -664,19 +664,19 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 ExecutionId execution_id,
-                 PositionIdBroker position_id_broker,
-                 Symbol symbol,
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 ExecutionId execution_id not None,
+                 PositionIdBroker position_id_broker not None,
+                 Symbol symbol not None,
                  OrderSide order_side,
-                 Quantity filled_quantity,
-                 Quantity leaves_quantity,
-                 Price average_price,
+                 Quantity filled_quantity not None,
+                 Quantity leaves_quantity not None,
+                 Price average_price not None,
                  Currency transaction_currency,
-                 datetime execution_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 datetime execution_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
@@ -731,18 +731,18 @@ cdef class OrderFilled(OrderFillEvent):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 OrderId order_id,
-                 ExecutionId execution_id,
-                 PositionIdBroker position_id_broker,
-                 Symbol symbol,
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 ExecutionId execution_id not None,
+                 PositionIdBroker position_id_broker not None,
+                 Symbol symbol not None,
                  OrderSide order_side,
-                 Quantity filled_quantity,
-                 Price average_price,
+                 Quantity filled_quantity not None,
+                 Price average_price not None,
                  Currency transaction_currency,
-                 datetime execution_time,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 datetime execution_time not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the OrderFilled class.
 
@@ -793,11 +793,11 @@ cdef class PositionEvent(Event):
     """
 
     def __init__(self,
-                 Position position,
-                 StrategyId strategy_id,
-                 OrderEvent order_fill,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 Position position not None,
+                 StrategyId strategy_id not None,
+                 OrderEvent order_fill not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the PositionEvent base class.
 
@@ -828,11 +828,11 @@ cdef class PositionOpened(PositionEvent):
     """
 
     def __init__(self,
-                 Position position,
-                 StrategyId strategy_id,
-                 OrderEvent order_fill,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 Position position not None,
+                 StrategyId strategy_id not None,
+                 OrderEvent order_fill not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the PositionOpened class.
 
@@ -868,11 +868,11 @@ cdef class PositionModified(PositionEvent):
     """
 
     def __init__(self,
-                 Position position,
-                 StrategyId strategy_id,
-                 OrderEvent order_fill,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 Position position not None,
+                 StrategyId strategy_id not None,
+                 OrderEvent order_fill not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the PositionModified class.
 
@@ -914,11 +914,11 @@ cdef class PositionClosed(PositionEvent):
     """
 
     def __init__(self,
-                 Position position,
-                 StrategyId strategy_id,
-                 OrderEvent order_fill,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 Position position not None,
+                 StrategyId strategy_id not None,
+                 OrderEvent order_fill not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the PositionClosed class.
 
@@ -961,9 +961,9 @@ cdef class TimeEvent(Event):
     """
 
     def __init__(self,
-                 Label label,
-                 GUID event_id,
-                 datetime event_timestamp):
+                 Label label not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
         """
         Initializes a new instance of the TimeEvent class.
 

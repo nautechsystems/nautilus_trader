@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.message cimport Response
 
@@ -19,9 +20,9 @@ cdef class MessageReceived(Response):
 
     def __init__(self,
                  str received_type,
-                 GUID correlation_id,
-                 GUID response_id,
-                 datetime response_timestamp):
+                 GUID correlation_id not None,
+                 GUID response_id not None,
+                 datetime response_timestamp not None):
         """
         Initializes a new instance of the MessageReceived class.
 
@@ -30,6 +31,7 @@ cdef class MessageReceived(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
+        Condition.valid_string(received_type, 'received_type')
         super().__init__(correlation_id, response_id, response_timestamp)
         self.received_type = received_type
 
@@ -48,10 +50,10 @@ cdef class MessageRejected(Response):
     """
 
     def __init__(self,
-                 str rejected_message,
-                 GUID correlation_id,
-                 GUID response_id,
-                 datetime response_timestamp):
+                 str rejected_message not None,
+                 GUID correlation_id not None,
+                 GUID response_id not None,
+                 datetime response_timestamp not None):
         """
         Initializes a new instance of the MessageRejected class.
 
@@ -60,6 +62,7 @@ cdef class MessageRejected(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
+        # rejected_message could be an empty string
         super().__init__(correlation_id, response_id, response_timestamp)
         self.message = rejected_message
 
@@ -78,10 +81,10 @@ cdef class QueryFailure(Response):
     """
 
     def __init__(self,
-                 str failure_message,
-                 GUID correlation_id,
-                 GUID response_id,
-                 datetime response_timestamp):
+                 str failure_message not None,
+                 GUID correlation_id not None,
+                 GUID response_id not None,
+                 datetime response_timestamp not None):
         """
         Initializes a new instance of the QueryFailure class.
 
@@ -90,6 +93,7 @@ cdef class QueryFailure(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
+        # failure_message could be an empty string
         super().__init__(correlation_id, response_id, response_timestamp)
         self.message = failure_message
 
@@ -108,11 +112,11 @@ cdef class DataResponse(Response):
     """
 
     def __init__(self,
-                 bytes data,
-                 str data_encoding,
-                 GUID correlation_id,
-                 GUID response_id,
-                 datetime response_timestamp):
+                 bytes data not None,
+                 str data_encoding not None,
+                 GUID correlation_id not None,
+                 GUID response_id not None,
+                 datetime response_timestamp not None):
         """
         Initializes a new instance of the DataResponse class.
 

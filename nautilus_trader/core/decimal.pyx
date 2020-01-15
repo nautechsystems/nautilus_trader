@@ -53,6 +53,8 @@ cdef class Decimal:
         :param value: The string value to parse.
         :return: Decimal.
         """
+        Condition.valid_string(value, 'value')
+
         return Decimal(float(value), precision=Decimal.precision_from_string(value))
 
     @staticmethod
@@ -63,6 +65,8 @@ cdef class Decimal:
         :param value: The string value to parse.
         :return: int.
         """
+        Condition.valid_string(value, 'value')
+
         try:
             if PyUnicode_Contains(value, '.'):
                 return len(value.partition('.')[2])

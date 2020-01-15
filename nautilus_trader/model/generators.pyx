@@ -18,10 +18,10 @@ cdef class IdentifierGenerator:
     """
 
     def __init__(self,
-                 str prefix,
-                 IdTag id_tag_trader,
-                 IdTag id_tag_strategy,
-                 Clock clock,
+                 str prefix not None,
+                 IdTag id_tag_trader not None,
+                 IdTag id_tag_strategy not None,
+                 Clock clock not None,
                  int initial_count=0):
         """
         Initializes a new instance of the IdentifierGenerator class.
@@ -94,9 +94,9 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 IdTag id_tag_trader,
-                 IdTag id_tag_strategy,
-                 Clock clock=LiveClock(),
+                 IdTag id_tag_trader not None,
+                 IdTag id_tag_strategy not None,
+                 Clock clock not None=LiveClock(),
                  int initial_count=0):
         """
         Initializes a new instance of the OrderIdGenerator class.
@@ -128,9 +128,9 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 IdTag id_tag_trader,
-                 IdTag id_tag_strategy,
-                 Clock clock=LiveClock(),
+                 IdTag id_tag_trader not None,
+                 IdTag id_tag_strategy not None,
+                 Clock clock not None=LiveClock(),
                  int initial_count=0):
         """
         Initializes a new instance of the PositionIdGenerator class.

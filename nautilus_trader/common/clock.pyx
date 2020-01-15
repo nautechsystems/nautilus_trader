@@ -30,9 +30,9 @@ cdef class Timer:
     """
 
     def __init__(self,
-                 Label label,
-                 timedelta interval,
-                 datetime start_time,
+                 Label label not None,
+                 timedelta interval not None,
+                 datetime start_time not None,
                  datetime stop_time=None):
         """
         Initializes a new instance of the Timer class.
@@ -61,6 +61,8 @@ cdef class Timer:
         
         :return TimeEvent.
         """
+        Condition.not_none(now, 'now')
+
         cdef TimeEvent event = TimeEvent(self.label, GUID(uuid.uuid4()), self.next_time)
 
         self.next_time += self.interval
@@ -113,9 +115,9 @@ cdef class TestTimer(Timer):
     """
 
     def __init__(self,
-                 Label label,
-                 timedelta interval,
-                 datetime start_time,
+                 Label label not None,
+                 timedelta interval not None,
+                 datetime start_time not None,
                  datetime stop_time=None):
         """
         Initializes a new instance of the TestTimer class.
@@ -139,6 +141,8 @@ cdef class TestTimer(Timer):
         :param to_time: The time to advance the test timer to.
         :return List[TimeEvent].
         """
+        Condition.not_none(to_time, 'to_time')
+
         cdef list time_events = []  # type: List[TimeEvent]
         while not self.expired and to_time >= self.next_time:
             time_events.append(self.iterate_event(self.next_time))
@@ -158,11 +162,11 @@ cdef class LiveTimer(Timer):
     """
 
     def __init__(self,
-                 Label label,
-                 function,
-                 timedelta interval,
-                 datetime now,
-                 datetime start_time,
+                 Label label not None,
+                 function not None,
+                 timedelta interval not None,
+                 datetime now not None,
+                 datetime start_time not None,
                  datetime stop_time=None):
         """
         Initializes a new instance of the LiveTimer class.
@@ -188,6 +192,8 @@ cdef class LiveTimer(Timer):
         """
         Continue the timer.
         """
+        Condition.not_none(now, 'now')
+
         self._internal = self._start_timer(now)
 
     cpdef void cancel(self) except *:
@@ -241,6 +247,8 @@ cdef class Clock:
         
         :return timedelta.
         """
+        Condition.not_none(time, 'time')
+
         return self.time_now() - time
 
     cpdef list get_timer_labels(self):
@@ -257,6 +265,8 @@ cdef class Clock:
         
         :param logger: The logger to register.
         """
+        Condition.not_none(logger, 'logger')
+
         self._log = logger
         self.is_logger_registered = True
 
@@ -289,6 +299,8 @@ cdef class Clock:
         :raises ConditionFailed: If the handler is not of type Callable or None.
         :raises ConditionFailed: If the handler is None and no default handler is registered.
         """
+        Condition.not_none(label, 'label')
+        Condition.not_none(alert_time, 'alert_time')
         if handler is None:
             handler = self._default_handler
         Condition.not_in(label, self._timers, 'label', 'timers')
@@ -332,6 +344,8 @@ cdef class Clock:
         :raises ConditionFailed: If the handler is not of type Callable or None.
         :raises ConditionFailed: If the handler is None and no default handler is registered.
         """
+        Condition.not_none(label, 'label')
+        Condition.not_none(interval, 'interval')
         if handler is None:
             handler = self._default_handler
         Condition.not_in(label, self._timers, 'label', 'timers')
@@ -362,6 +376,8 @@ cdef class Clock:
 
         :param label: The label for the timer to cancel.
         """
+        Condition.not_none(label, 'label')
+
         timer = self._timers.pop(label, None)
         if timer is None:
             if self.is_logger_registered:
@@ -417,7 +433,7 @@ cdef class TestClock(Clock):
     Provides a clock for backtesting and unit testing.
     """
 
-    def __init__(self, datetime initial_time=_UNIX_EPOCH):
+    def __init__(self, datetime initial_time not None=_UNIX_EPOCH):
         """
         Initializes a new instance of the TestClock class.
 
@@ -442,6 +458,8 @@ cdef class TestClock(Clock):
         
         :param to_time: The time to set to.
         """
+        Condition.not_none(to_time, 'to_time')
+
         self._time = to_time
 
     cpdef void advance_time(self, datetime to_time) except *:
@@ -450,6 +468,8 @@ cdef class TestClock(Clock):
 
         :param to_time: The datetime to iterate the test clock to.
         """
+        Condition.not_none(to_time, 'to_time')
+
         if not self.has_timers or to_time < self.next_event_time:
             return # No timer events to iterate
 

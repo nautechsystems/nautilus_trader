@@ -24,14 +24,14 @@ cdef class Condition:
     @staticmethod
     cdef void true(bint predicate, str description) except *:
         """
-        Check the predicate is True.
+        Check the condition predicate is True.
 
-        :param predicate: The predicate condition to check.
-        :param description: The description of the predicate condition.
-        :raises ConditionFailed: If the predicate condition is False.
+        :param predicate: The condition predicate to check.
+        :param description: The description of the condition predicate.
+        :raises ConditionFailed: If the condition predicate is False.
         """
         if not predicate:
-            raise ConditionFailed(f"The predicate condition \'{description}\' was False")
+            raise ConditionFailed(f"The condition predicate \'{description}\' was False")
 
     @staticmethod
     cdef void none(object argument, str param) except *:
@@ -136,6 +136,8 @@ cdef class Condition:
         :param param: The lists parameter name.
         :raises ConditionFailed: If the list is not empty and contains a type other than the expected type.
         """
+        Condition.not_none(list, param)
+
         for element in list:
             if not isinstance(element, expected_type):
                 raise ConditionFailed(f"The \'{param}\' list contained an element with a type other than {expected_type}, was {type(element)}")
@@ -152,6 +154,8 @@ cdef class Condition:
         :raises ConditionFailed: If the dictionary is not empty and contains a key type other than the key_type.
         :raises ConditionFailed: If the dictionary is not empty and contains a value type other than the value_type.
         """
+        Condition.not_none(dictionary, param)
+
         for key, value in dictionary.items():
             if not isinstance(key, key_type):
                 raise ConditionFailed(f"The \'{param}\' dictionary contained a key type other than {key_type}, was {type(key)}")
@@ -169,6 +173,8 @@ cdef class Condition:
         :param param2: The collections name.
         :raises ConditionFailed: If the element is not contained in the collection.
         """
+        Condition.not_none(collection, param2)
+
         if element not in collection:
             raise ConditionFailed(f"The \'{param1}\' {element} was not contained in the {param2} collection")
 
@@ -183,6 +189,8 @@ cdef class Condition:
         :param param2: The collections parameter name.
         :raises ConditionFailed: If the element is already contained in the collection.
         """
+        Condition.not_none(collection, param2)
+
         if element in collection:
             raise ConditionFailed(f"The \'{param1}\' {element} was already contained in the \'{param2}\' collection")
 
@@ -195,7 +203,9 @@ cdef class Condition:
         :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is empty.
         """
-        if len(collection) == 0:
+        Condition.not_none(collection, param)
+
+        if not collection:
             raise ConditionFailed(f"The \'{param}\' collection was empty")
 
     @staticmethod
@@ -207,7 +217,9 @@ cdef class Condition:
         :param param: The collections parameter name.
         :raises ConditionFailed: If the collection is not empty.
         """
-        if len(collection) > 0:
+        Condition.not_none(collection, param)
+
+        if collection:
             raise ConditionFailed(f"The \'{param}\' collection was not empty")
 
     @staticmethod
@@ -225,6 +237,9 @@ cdef class Condition:
         :param param2: The second collections parameter name.
         :raises ConditionFailed: If the collection lengths are not equal.
         """
+        Condition.not_none(collection1, param1)
+        Condition.not_none(collection2, param2)
+
         if len(collection1) != len(collection2):
             raise ConditionFailed(
                 f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
@@ -232,7 +247,7 @@ cdef class Condition:
     @staticmethod
     cdef void positive(double value, str param) except *:
         """
-        Check the real number value is positive (> 0.0).
+        Check the real number value is positive (> 0).
 
         :param value: The value to check.
         :param param: The name of the values parameter.
@@ -314,8 +329,8 @@ cdef class Condition:
         :param param: The arguments parameter name.
         :raises ConditionFailed: If the string argument is None, empty or whitespace.
         """
-        if argument is None:
-            raise ConditionFailed(f"The \'{param}\' string argument was None")
+        Condition.not_none(argument, param)
+
         if argument == '':
             raise ConditionFailed(f"The \'{param}\' string argument was empty")
         if argument.isspace():

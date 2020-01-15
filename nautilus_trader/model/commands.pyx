@@ -20,10 +20,10 @@ cdef class AccountInquiry(Command):
     """
 
     def __init__(self,
-                 TraderId trader_id,
-                 AccountId account_id,
-                 GUID command_id,
-                 datetime command_timestamp):
+                 TraderId trader_id not None,
+                 AccountId account_id not None,
+                 GUID command_id not None,
+                 datetime command_timestamp not None):
         """
         Initializes a new instance of the AccountInquiry class.
 
@@ -53,13 +53,13 @@ cdef class SubmitOrder(Command):
     """
 
     def __init__(self,
-                 TraderId trader_id,
-                 AccountId account_id,
-                 StrategyId strategy_id,
-                 PositionId position_id,
-                 Order order,
-                 GUID command_id,
-                 datetime command_timestamp):
+                 TraderId trader_id not None,
+                 AccountId account_id not None,
+                 StrategyId strategy_id not None,
+                 PositionId position_id not None,
+                 Order order not None,
+                 GUID command_id not None,
+                 datetime command_timestamp not None):
         """
         Initializes a new instance of the SubmitOrder class.
 
@@ -98,13 +98,13 @@ cdef class SubmitAtomicOrder(Command):
     """
 
     def __init__(self,
-                 TraderId trader_id,
-                 AccountId account_id,
-                 StrategyId strategy_id,
-                 PositionId position_id,
-                 AtomicOrder atomic_order,
-                 GUID command_id,
-                 datetime command_timestamp):
+                 TraderId trader_id not None,
+                 AccountId account_id not None,
+                 StrategyId strategy_id not None,
+                 PositionId position_id not None,
+                 AtomicOrder atomic_order not None,
+                 GUID command_id not None,
+                 datetime command_timestamp not None):
         """
         Initializes a new instance of the SubmitAtomicOrder class.
 
@@ -143,13 +143,13 @@ cdef class ModifyOrder(Command):
     """
 
     def __init__(self,
-                 TraderId trader_id,
-                 AccountId account_id,
-                 OrderId order_id,
-                 Quantity modified_quantity,
-                 Price modified_price,
-                 GUID command_id,
-                 datetime command_timestamp):
+                 TraderId trader_id not None,
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 Quantity modified_quantity not None,
+                 Price modified_price not None,
+                 GUID command_id not None,
+                 datetime command_timestamp not None):
         """
         Initializes a new instance of the ModifyOrder class.
 
@@ -188,12 +188,12 @@ cdef class CancelOrder(Command):
     """
 
     def __init__(self,
-                 TraderId trader_id,
-                 AccountId account_id,
-                 OrderId order_id,
-                 ValidString cancel_reason,
-                 GUID command_id,
-                 datetime command_timestamp):
+                 TraderId trader_id not None,
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 ValidString cancel_reason not None,
+                 GUID command_id not None,
+                 datetime command_timestamp not None):
         """
         Initializes a new instance of the CancelOrder class.
 

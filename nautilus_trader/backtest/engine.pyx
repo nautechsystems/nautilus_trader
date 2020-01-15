@@ -42,10 +42,10 @@ cdef class BacktestEngine:
     """
 
     def __init__(self,
-                 BacktestDataContainer data,
-                 list strategies: List[TradingStrategy],
-                 BacktestConfig config=BacktestConfig(),
-                 FillModel fill_model=FillModel()):
+                 BacktestDataContainer data not None,
+                 list strategies not None: List[TradingStrategy],
+                 BacktestConfig config not None=BacktestConfig(),
+                 FillModel fill_model not None=FillModel()):
         """
         Initializes a new instance of the BacktestEngine class.
 

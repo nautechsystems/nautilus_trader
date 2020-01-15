@@ -32,6 +32,8 @@ cdef class CSVTickDataLoader:
         :param file_path: The absolute path to the CSV file.
         :return: pd.DataFrame.
         """
+        Condition.not_none(file_path, 'file_path')
+
         return pd.read_csv(file_path,
                            usecols=[1, 2, 3],
                            index_col=0,
@@ -52,6 +54,8 @@ cdef class CSVBarDataLoader:
         :param file_path: The absolute path to the CSV file.
         :return: pd.DataFrame.
         """
+        Condition.not_none(file_path, 'file_path')
+
         return pd.read_csv(file_path,
                            index_col='Time (UTC)',
                            parse_dates=True)
@@ -71,11 +75,13 @@ cdef class InstrumentLoader:
         :raises ConditionFailed: If the symbol.code length is not == 6.
         :raises ConditionFailed: If the tick_precision is not 3 or 5.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.true(len(symbol.code) == 6, 'len(symbol) == 6')
         Condition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
         cdef Currency quote_currency = currency_from_string(symbol.code[3:])
+
         # Check tick precision of quote currency
         if quote_currency == Currency.USD:
             Condition.true(tick_precision == 5, 'USD tick_precision == 5')

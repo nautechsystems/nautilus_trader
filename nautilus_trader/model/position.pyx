@@ -21,7 +21,7 @@ cdef class Position:
     Represents a position in a financial market.
     """
 
-    def __init__(self, PositionId position_id, OrderFillEvent event):
+    def __init__(self, PositionId position_id not None, OrderFillEvent event not None):
         """
         Initializes a new instance of the Position class.
 
@@ -155,6 +155,8 @@ cdef class Position:
 
         :param event: The order fill event to apply.
         """
+        Condition.not_none(event, 'event')
+
         # Update events
         self._events.append(event)
         self.last_event = event
@@ -176,6 +178,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Decimal.
         """
+        Condition.not_none(last, 'last')
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         if self.market_position == MarketPosition.LONG:
@@ -192,6 +195,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Decimal.
         """
+        Condition.not_none(last, 'last')
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         return self.realized_points + self.unrealized_points(last)
@@ -203,6 +207,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return double.
         """
+        Condition.not_none(last, 'last')
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         if self.market_position == MarketPosition.LONG:
@@ -219,6 +224,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return double.
         """
+        Condition.not_none(last, 'last')
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         return self.realized_return + self.unrealized_return(last)
@@ -230,6 +236,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Money.
         """
+        Condition.not_none(last, 'last')
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         if self.market_position == MarketPosition.LONG:
@@ -246,6 +253,7 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Money.
         """
+        Condition.not_none(last, 'last')
         Condition.equals(self.symbol, last.symbol, 'symbol', 'last.symbol')
 
         return self.realized_pnl.add(self.unrealized_pnl(last))

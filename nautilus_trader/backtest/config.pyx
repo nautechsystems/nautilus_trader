@@ -17,12 +17,12 @@ cdef class BacktestConfig:
     Provides a configuration for a BacktestEngine.
     """
     def __init__(self,
-                 str exec_db_type='in-memory',
+                 str exec_db_type not None='in-memory',
                  bint exec_db_flush=True,
                  bint frozen_account=False,
                  int starting_capital=1000000,
                  Currency account_currency=Currency.USD,
-                 str short_term_interest_csv_path='default',
+                 str short_term_interest_csv_path not None='default',
                  double commission_rate_bp=0.20,
                  bint bypass_logging=False,
                  int level_console=LogLevel.INFO,
@@ -31,7 +31,7 @@ cdef class BacktestConfig:
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path='backtests/'):
+                 str log_file_path not None='backtests/'):
         """
         Initializes a new instance of the BacktestConfig class.
 

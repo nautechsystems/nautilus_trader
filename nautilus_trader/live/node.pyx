@@ -197,6 +197,8 @@ cdef class TradingNode:
         """
         Load the given strategies into the trading nodes trader.
         """
+        Condition.not_empty(strategies, 'strategies')
+
         self.trader.initialize_strategies(strategies)
 
     cpdef void connect(self) except *:
