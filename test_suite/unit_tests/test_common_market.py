@@ -282,24 +282,14 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
 class BarBuilderTests(unittest.TestCase):
 
-    def test_build_with_no_updates(self):
+    def test_build_with_no_updates_raises_exception(self):
         # Arrange
         bar_spec = TestStubs.bar_spec_1min_mid()
         builder = BarBuilder(bar_spec, use_previous_close=False)
 
-        builder.build()
-
         # Act
-        bar = builder.build()  # Also resets builder
-
         # Assert
-        self.assertEqual(None, bar.open)
-        self.assertEqual(None, bar.high)
-        self.assertEqual(None, bar.low)
-        self.assertEqual(None, bar.close)
-        self.assertEqual(0, bar.volume)
-        self.assertEqual(0, builder.count)
-        self.assertEqual(None, builder.last_update)
+        self.assertRaises(TypeError, builder.build)
 
     def test_update(self):
         # Arrange

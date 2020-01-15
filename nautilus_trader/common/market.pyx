@@ -12,7 +12,7 @@ import pandas as pd
 from cpython.datetime cimport datetime, timedelta
 from typing import List, Callable
 
-from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.correctness cimport Condition, ConditionFailed
 from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarType, BarSpecification, Instrument
@@ -472,7 +472,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self._volume = 0
+        self._volume = 0.0
         self._use_previous_close = use_previous_close
 
     cpdef void update(self, Tick tick) except *:
@@ -515,9 +515,7 @@ cdef class BarBuilder:
             low_price=self._low,
             close_price=self._close,
             volume=self._volume,
-            timestamp=close_time,
-            checked=False  # Builder logic will prevent invalid bars
-        )
+            timestamp=close_time)
 
         self._reset()
         return bar
@@ -546,9 +544,9 @@ cdef class BarBuilder:
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
 
-    cdef int _get_volume(self, Tick tick):
+    cdef double _get_volume(self, Tick tick):
         if self.bar_spec.price_type == PriceType.MID:
-            return (tick.bid_size + tick.ask_size) // 2
+            return (tick.bid_size + tick.ask_size) / 2.0
         elif self.bar_spec.price_type == PriceType.BID:
             return tick.bid_size
         elif self.bar_spec.price_type == PriceType.ASK:
@@ -597,9 +595,9 @@ cdef class TickBarAggregator(BarAggregator):
     """
 
     def __init__(self,
-                 BarType bar_type,
-                 handler,
-                 Logger logger):
+                 BarType bar_type not None,
+                 handler not None,
+                 Logger logger not None):
         """
         Initializes a new instance of the TickBarBuilder class.
 
@@ -622,8 +620,16 @@ cdef class TickBarAggregator(BarAggregator):
         """
         self._builder.update(tick)
 
+        cdef Bar bar
         if self._builder.count == self.step:
-            self._handle_bar(self._builder.build())
+            try:
+                bar = self._builder.build()
+            except ConditionFailed as ex:
+                # Bar was somehow malformed
+                self._log.exception(ex)
+                return
+
+            self._handle_bar(bar)
 
 
 cdef class TimeBarAggregator(BarAggregator):
@@ -670,7 +676,15 @@ cdef class TimeBarAggregator(BarAggregator):
                 self.next_close = self._clock.next_event_time
 
     cpdef void _build_event(self, TimeEvent event) except *:
-        self._handle_bar(self._builder.build(event.timestamp))
+        cdef Bar bar
+        try:
+            bar = self._builder.build(event.timestamp)
+        except ConditionFailed as ex:
+            # Bar was somehow malformed
+            self._log.exception(ex)
+            return
+
+        self._handle_bar(bar)
 
     cdef timedelta _get_interval(self):
         if self.bar_type.specification.structure == BarStructure.SECOND:

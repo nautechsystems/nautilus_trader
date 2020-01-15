@@ -1043,7 +1043,7 @@ cdef class TradingStrategy:
         try:
             user_state = self.on_save()
         except Exception as ex:
-            self.log.error(str(ex))
+            self.log.exception(ex)
 
         return {**state, **user_state}
 
@@ -1086,7 +1086,7 @@ cdef class TradingStrategy:
         try:
             self.on_load(state)
         except Exception as ex:
-            self.log.error(str(ex))
+            self.log.exception(ex)
 
         self.update_state_log(self.time_now(), 'LOADED')
 
@@ -1099,7 +1099,7 @@ cdef class TradingStrategy:
         try:
             self.on_dispose()
         except Exception as ex:
-            self.log.error(str(ex))
+            self.log.exception(ex)
 
         self.log.info(f"Disposed.")
 

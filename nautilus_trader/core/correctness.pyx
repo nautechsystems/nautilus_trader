@@ -9,7 +9,7 @@
 from cpython.object cimport PyCallable_Check
 
 
-class ConditionFailed(Exception):
+cdef class ConditionFailed(Exception):
     """
     Represents a failed condition check.
     """

@@ -368,8 +368,8 @@ cdef class Tick:
                  Price ask,
                  datetime timestamp,
                  TickType tick_type=TickType.TRADE,
-                 int bid_size=1,
-                 int ask_size=1):
+                 double bid_size=1.0,
+                 double ask_size=1.0):
         """
         Initializes a new instance of the Tick class.
 
@@ -377,13 +377,14 @@ cdef class Tick:
         :param bid: The tick best bid price.
         :param ask: The tick best ask price.
         :param timestamp: The tick timestamp (UTC).
-        :param tick_type: The optional tick type (default=TRADE).
-        :param tick_type: The optional tick type (default=TRADE).
+        :param tick_type: The tick type (default=TRADE).
+        :param bid_size: The tick bid size (default=1.0).
+        :param ask_size: The tick ask size (default=1.0).
         :raises ConditionFailed: If the bid_size is negative (< 0).
         :raises ConditionFailed: If the ask_size is negative (< 0).
         """
-        Condition.not_negative_int(bid_size, 'bid_size')
-        Condition.not_negative_int(ask_size, 'ask_size')
+        Condition.not_negative(bid_size, 'bid_size')
+        Condition.not_negative(ask_size, 'ask_size')
 
         self.type = TickType.TRADE
         self.symbol = symbol
@@ -809,13 +810,13 @@ cdef class Bar:
     """
 
     def __init__(self,
-                 Price open_price,
-                 Price high_price,
-                 Price low_price,
-                 Price close_price,
-                 long volume,
-                 datetime timestamp,
-                 bint checked=False):
+                 Price open_price not None,
+                 Price high_price not None,
+                 Price low_price not None,
+                 Price close_price not None,
+                 double volume,
+                 datetime timestamp not None,
+                 bint check=False):
         """
         Initializes a new instance of the Bar class.
 
@@ -825,17 +826,18 @@ cdef class Bar:
         :param close_price: The bars close price.
         :param volume: The bars volume (>= 0).
         :param timestamp: The bars timestamp (UTC).
-        :param checked: A value indicating whether the bar was checked valid.
-        :raises ConditionFailed: If checked is true and the volume is negative.
-        :raises ConditionFailed: If checked is true and the high_price is not >= low_price.
-        :raises ConditionFailed: If checked is true and the high_price is not >= close_price.
-        :raises ConditionFailed: If checked is true and the low_price is not <= close_price.
+        :param check: If the bar parameters should be checked valid.
+        :raises ConditionFailed: If check and the volume is negative (< 0).
+        :raises ConditionFailed: If check and the high_price is not >= low_price.
+        :raises ConditionFailed: If check and the high_price is not >= close_price.
+        :raises ConditionFailed: If check and the low_price is not <= close_price.
         """
-        if checked:
-            Condition.not_negative_int(volume, 'volume')
-            Condition.true(high_price >= low_price, 'high_price >= low_price')
-            Condition.true(high_price >= close_price, 'high_price >= close_price')
-            Condition.true(low_price <= close_price, 'low_price <= close_price')
+        Condition.not_negative(volume, 'volume')
+
+        if check:
+            Condition.true(high_price.ge(low_price), 'high_price >= low_price')
+            Condition.true(high_price.ge(close_price), 'high_price >= close_price')
+            Condition.true(low_price.le(close_price), 'low_price <= close_price')
 
         self.open = open_price
         self.high = high_price
@@ -843,7 +845,7 @@ cdef class Bar:
         self.close = close_price
         self.volume = volume
         self.timestamp = timestamp
-        self.checked = checked
+        self.checked = check
 
     @staticmethod
     cdef Bar from_string(str value):
@@ -859,7 +861,7 @@ cdef class Bar:
                    Price.from_string(split_bar[1]),
                    Price.from_string(split_bar[2]),
                    Price.from_string(split_bar[3]),
-                   long(split_bar[4]),
+                   float(split_bar[4]),
                    pd.to_datetime(split_bar[5]))
 
     @staticmethod
