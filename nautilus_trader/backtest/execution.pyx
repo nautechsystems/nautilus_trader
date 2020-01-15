@@ -210,12 +210,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Check for and apply any rollover interest
         if not self.rollover_applied and time_now >= self.rollover_time:
-            try:
-                self.rollover_applied = True
-                self.apply_rollover_interest(time_now, self.rollover_time.isoweekday())
-            except RuntimeError as ex:
-                # Cannot calculate rollover interest
-                self._log.error(str(ex))
+            self.apply_rollover_interest(time_now, self.rollover_time.isoweekday())
+            self.rollover_applied = True
 
         # Check for working orders
         if not self._working_orders:

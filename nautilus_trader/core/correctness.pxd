@@ -7,6 +7,11 @@
 # -------------------------------------------------------------------------------------------------
 
 
+cdef class ConditionFailed(Exception):
+    # Represents a failed condition check
+    pass
+
+
 cdef class Condition:
     @staticmethod
     cdef void true(bint predicate, str description) except *

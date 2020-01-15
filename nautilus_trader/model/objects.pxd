@@ -47,8 +47,8 @@ cdef class Tick:
     cdef readonly Symbol symbol
     cdef readonly Price bid
     cdef readonly Price ask
-    cdef readonly int bid_size
-    cdef readonly int ask_size
+    cdef readonly double bid_size
+    cdef readonly double ask_size
     cdef readonly datetime timestamp
 
     @staticmethod
@@ -88,7 +88,7 @@ cdef class Bar:
     cdef readonly Price high
     cdef readonly Price low
     cdef readonly Price close
-    cdef readonly long volume
+    cdef readonly double volume
     cdef readonly datetime timestamp
     cdef readonly bint checked
 
