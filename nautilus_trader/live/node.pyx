@@ -60,7 +60,7 @@ cdef class TradingNode:
     def __init__(
             self,
             str config_path='config.json',
-            list strategies=[]):
+            list strategies=None):
         """
         Initializes a new instance of the TradingNode class.
 
@@ -68,6 +68,8 @@ cdef class TradingNode:
         :param strategies: The list of strategies for the internal Trader.
         :raises ConditionFailed: If the config_path is not a valid string.
         """
+        if strategies is None:
+            strategies = []
         Condition.valid_string(config_path, 'config_path')
 
         self._clock = LiveClock()
@@ -191,13 +193,13 @@ cdef class TradingNode:
 
         self._log.info("Initialized.")
 
-    cpdef void load_strategies(self, list strategies):
+    cpdef void load_strategies(self, list strategies) except *:
         """
         Load the given strategies into the trading nodes trader.
         """
         self.trader.initialize_strategies(strategies)
 
-    cpdef void connect(self):
+    cpdef void connect(self) except *:
         """
         Connect the trading node to its services.
         """
@@ -212,13 +214,13 @@ cdef class TradingNode:
             command_timestamp=self._clock.time_now())
         self._exec_client.account_inquiry(account_inquiry)
 
-    cpdef void start(self):
+    cpdef void start(self) except *:
         """
         Start the trading nodes trader.
         """
         self.trader.start()
 
-    cpdef void stop(self):
+    cpdef void stop(self) except *:
         """
         Stop the trading nodes trader. After the specified check residuals delay
         the traders residuals will be checked. If save strategy is specified
@@ -232,14 +234,14 @@ cdef class TradingNode:
         if self._save_strategy_state:
             self.trader.save()
 
-    cpdef void disconnect(self):
+    cpdef void disconnect(self) except *:
         """
         Disconnect the trading node from its services.
         """
         self._data_client.disconnect()
         self._exec_client.disconnect()
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         """
         Dispose of the trading node.
         """
@@ -247,7 +249,7 @@ cdef class TradingNode:
         self._data_client.dispose()
         self._exec_client.dispose()
 
-    cdef void _log_header(self):
+    cdef void _log_header(self) except *:
         nautilus_header(self._log)
         self._log.info(f"redis v{redis.__version__}")
         self._log.info(f"pymongo v{pymongo.__version__}")

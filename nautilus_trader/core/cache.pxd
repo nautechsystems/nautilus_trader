@@ -16,4 +16,4 @@ cdef class ObjectCache:
 
     cpdef object get(self, str key)
     cpdef list keys(self)
-    cpdef void clear(self)
+    cpdef void clear(self) except *

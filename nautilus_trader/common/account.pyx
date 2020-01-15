@@ -95,7 +95,7 @@ cdef class Account:
         """
         return self._events.copy()
 
-    cpdef void apply(self, AccountStateEvent event):
+    cpdef void apply(self, AccountStateEvent event) except *:
         """
         Applies the given account event to the account.
 

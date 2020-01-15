@@ -85,14 +85,14 @@ cdef class Logger:
     cdef readonly bint bypass_logging
     cdef readonly Clock clock
 
-    cpdef void change_log_file_name(self, str name)
-    cpdef void log(self, LogMessage message)
+    cpdef void change_log_file_name(self, str name) except *
+    cpdef void log(self, LogMessage message) except *
     cpdef list get_log_store(self)
-    cpdef void clear_log_store(self)
-    cpdef void _log(self, LogMessage message)
+    cpdef void clear_log_store(self) except *
+    cpdef void _log(self, LogMessage message) except *
     cdef str _format_output(self, LogMessage message)
-    cdef void _in_memory_log_store(self, LogLevel level, str text)
-    cdef void _print_to_console(self, LogLevel level, str text)
+    cdef void _in_memory_log_store(self, LogLevel level, str text) except *
+    cdef void _print_to_console(self, LogLevel level, str text) except *
 
 
 cdef class TestLogger(Logger):
@@ -106,15 +106,15 @@ cdef class LoggerAdapter:
     cdef readonly str component_name
 
     cpdef Logger get_logger(self)
-    cpdef void verbose(self, str message)
-    cpdef void debug(self, str message)
-    cpdef void info(self, str message)
-    cpdef void warning(self, str message)
-    cpdef void error(self, str message)
-    cpdef void critical(self, str message)
-    cpdef void exception(self, ex)
-    cdef void _send_to_logger(self, LogLevel level, str message)
+    cpdef void verbose(self, str message) except *
+    cpdef void debug(self, str message) except *
+    cpdef void info(self, str message) except *
+    cpdef void warning(self, str message) except *
+    cpdef void error(self, str message) except *
+    cpdef void critical(self, str message) except *
+    cpdef void exception(self, ex) except *
+    cdef void _send_to_logger(self, LogLevel level, str message) except *
     cdef str _format_message(self, str message)
 
 
-cpdef void nautilus_header(LoggerAdapter logger)
+cpdef void nautilus_header(LoggerAdapter logger) except *

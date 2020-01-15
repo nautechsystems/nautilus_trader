@@ -52,7 +52,7 @@ cdef class Clock:
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
     cpdef list get_timer_labels(self)
-    cpdef void register_logger(self, LoggerAdapter logger)
+    cpdef void register_logger(self, LoggerAdapter logger) except *
     cpdef void register_default_handler(self, handler) except *
     cpdef void set_time_alert(self, Label label, datetime alert_time, handler=*) except *
     cpdef void set_timer(self, Label label, timedelta interval, datetime start_time=*, datetime stop_time=*, handler=*) except *
@@ -69,8 +69,8 @@ cdef class TestClock(Clock):
     cdef datetime _time
     cdef dict _pending_events
 
-    cpdef void set_time(self, datetime to_time)
-    cpdef void advance_time(self, datetime to_time)
+    cpdef void set_time(self, datetime to_time) except *
+    cpdef void advance_time(self, datetime to_time) except *
     cpdef dict pop_events(self)
 
 

@@ -47,7 +47,7 @@ cdef class Portfolio:
         self.total_pnl_realized = Money.zero()
         self.date_now = self._clock.time_now().date()
 
-    cpdef void update(self, PositionEvent event):
+    cpdef void update(self, PositionEvent event) except *:
         """
         Update the portfolio with the given event.
         
@@ -64,7 +64,7 @@ cdef class Portfolio:
         else:
             self._handle_position_closed(event)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the portfolio by returning all stateful values to their initial value.
         """
@@ -149,7 +149,7 @@ cdef class Portfolio:
         """
         return {**self.positions_open(symbol), **self.positions_closed(symbol)}
 
-    cdef void _handle_position_opened(self, PositionOpened event):
+    cdef void _handle_position_opened(self, PositionOpened event) except *:
         cdef Position position = event.position
 
         # Remove from positions closed if found
@@ -172,7 +172,7 @@ cdef class Portfolio:
         else:
             positions_open[position.id] = position
 
-    cdef void _handle_position_modified(self, PositionModified event):
+    cdef void _handle_position_modified(self, PositionModified event) except *:
         cdef Position position = event.position
         cdef OrderFillEvent fill_event = position.last_event
 
@@ -181,7 +181,7 @@ cdef class Portfolio:
             self.daily_pnl_realized = self.daily_pnl_realized.add(position.realized_pnl_last)
             self.total_pnl_realized = self.total_pnl_realized.add(position.realized_pnl_last)
 
-    cdef void _handle_position_closed(self, PositionClosed event):
+    cdef void _handle_position_closed(self, PositionClosed event) except *:
         cdef Position position = event.position
 
         # Remove from positions open if found

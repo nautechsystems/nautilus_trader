@@ -18,8 +18,8 @@ cdef class IdentifierGenerator:
     cdef readonly IdTag id_tag_strategy
     cdef readonly int count
 
-    cpdef void set_count(self, int count)
-    cpdef void reset(self)
+    cpdef void set_count(self, int count) except *
+    cpdef void reset(self) except *
 
     cdef str _generate(self)
     cdef str _get_datetime_tag(self)

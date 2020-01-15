@@ -24,7 +24,7 @@ cdef class PositionSizer:
         """
         self.instrument = instrument
 
-    cpdef void update_instrument(self, Instrument instrument):
+    cpdef void update_instrument(self, Instrument instrument) except *:
         """
         Update the internal instrument with the given instrument.
         

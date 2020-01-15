@@ -288,7 +288,7 @@ cdef class Position:
             self.is_long = False
             self.is_short = False
 
-    cdef void _handle_buy_order_fill(self, OrderFillEvent event):
+    cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *:
         self._buy_quantities[event.order_id] = event.filled_quantity.value
         self._buy_quantity = sum(self._buy_quantities.itervalues())
 
@@ -302,7 +302,7 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.average_open_price, self.average_close_price)
             self.realized_pnl = self._calculate_pnl(self.average_open_price, self.average_close_price, self._buy_quantity)
 
-    cdef void _handle_sell_order_fill(self, OrderFillEvent event):
+    cdef void _handle_sell_order_fill(self, OrderFillEvent event) except *:
         self._sell_quantities[event.order_id] = event.filled_quantity.value
         self._sell_quantity = sum(self._sell_quantities.itervalues())
 

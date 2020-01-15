@@ -251,7 +251,7 @@ cdef class Clock:
         """
         return list(self._timers.keys())
 
-    cpdef void register_logger(self, LoggerAdapter logger):
+    cpdef void register_logger(self, LoggerAdapter logger) except *:
         """
         Register the given logger with the clock.
         
@@ -436,7 +436,7 @@ cdef class TestClock(Clock):
         """
         return self._time
 
-    cpdef void set_time(self, datetime to_time):
+    cpdef void set_time(self, datetime to_time) except *:
         """
         Set the clocks datetime to the given time (UTC).
         
@@ -444,7 +444,7 @@ cdef class TestClock(Clock):
         """
         self._time = to_time
 
-    cpdef void advance_time(self, datetime to_time):
+    cpdef void advance_time(self, datetime to_time) except *:
         """
         Iterates the clocks time to the given datetime.
 

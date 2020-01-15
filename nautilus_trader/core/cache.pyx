@@ -51,7 +51,7 @@ cdef class ObjectCache:
         """
         return list(self._cache.keys())
 
-    cpdef void clear(self):
+    cpdef void clear(self) except *:
         """
         Clears all cached values.
         """

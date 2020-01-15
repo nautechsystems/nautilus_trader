@@ -69,11 +69,11 @@ cdef class Order:
     cpdef str state_as_string(self)
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
-    cpdef void apply(self, OrderEvent event)
-    cdef void _set_is_working_true(self)
-    cdef void _set_is_completed_true(self)
-    cdef void _set_filled_state(self)
-    cdef void _set_slippage(self)
+    cpdef void apply(self, OrderEvent event) except *
+    cdef void _set_is_working_true(self) except *
+    cdef void _set_is_completed_true(self) except *
+    cdef void _set_filled_state(self) except *
+    cdef void _set_slippage(self) except *
 
 
 cdef class AtomicOrder:
@@ -91,9 +91,9 @@ cdef class OrderFactory:
     cdef Clock _clock
     cdef OrderIdGenerator _id_generator
 
-    cpdef void set_count(self, int count)
     cpdef int count(self)
-    cpdef void reset(self)
+    cpdef void set_count(self, int count) except *
+    cpdef void reset(self) except *
 
     cpdef Order market(
             self,

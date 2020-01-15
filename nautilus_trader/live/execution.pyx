@@ -969,7 +969,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
-    cpdef void execute_command(self, Command command):
+    cpdef void execute_command(self, Command command) except *:
         """
         Execute the given command by inserting it into the message bus for processing.
         
@@ -977,7 +977,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         self._message_bus.put(command)
 
-    cpdef void handle_event(self, Event event):
+    cpdef void handle_event(self, Event event) except *:
         """
         Handle the given event by inserting it into the message bus for processing.
         
@@ -985,7 +985,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         self._message_bus.put(event)
 
-    cpdef void _consume_messages(self):
+    cpdef void _consume_messages(self) except *:
         self._log.info("Running...")
 
         cdef Message message

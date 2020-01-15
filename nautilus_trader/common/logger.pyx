@@ -143,7 +143,7 @@ cdef class Logger:
             self._log_file_handler = logging.FileHandler(self._log_file)
             self._logger.addHandler(self._log_file_handler)
 
-    cpdef void change_log_file_name(self, str name):
+    cpdef void change_log_file_name(self, str name) except *:
         """
         Change the log file name.
         
@@ -156,7 +156,7 @@ cdef class Logger:
         self._log_file_handler = logging.FileHandler(self._log_file)
         self._logger.addHandler(self._log_file_handler)
 
-    cpdef void log(self, LogMessage message):
+    cpdef void log(self, LogMessage message) except *:
         """
         Log the given log message.
         
@@ -173,13 +173,13 @@ cdef class Logger:
         """
         return self._log_store
 
-    cpdef void clear_log_store(self):
+    cpdef void clear_log_store(self) except *:
         """
         Clear the log store.
         """
         self._log_store = []
 
-    cpdef void _log(self, LogMessage message):
+    cpdef void _log(self, LogMessage message) except *:
         cdef str formatted_msg = self._format_output(message)
         self._in_memory_log_store(message.level, formatted_msg)
         self._print_to_console(message.level, formatted_msg)
@@ -207,12 +207,12 @@ cdef class Logger:
 
         return f"{_BOLD}{time}{_ENDC} {thread}{formatted_text}"
 
-    cdef void _in_memory_log_store(self, LogLevel level, str text):
+    cdef void _in_memory_log_store(self, LogLevel level, str text) except *:
         # Store the given log message if the given log level is >= the log_level_store
         if level >= self._log_level_store:
             self._log_store.append(text)
 
-    cdef void _print_to_console(self, LogLevel level, str text):
+    cdef void _print_to_console(self, LogLevel level, str text) except *:
         # Print the given log message to the console if the given log level if
         # >= the log_level_console level.
         if self._console_prints and level >= self._log_level_console:
@@ -261,7 +261,7 @@ cdef class TestLogger(Logger):
                          log_file_path,
                          clock)
 
-    cpdef void log(self, LogMessage message):
+    cpdef void log(self, LogMessage message) except *:
         """
         Log the given log message.
         
@@ -305,7 +305,7 @@ cdef class LoggerAdapter:
         """
         return self._logger
 
-    cpdef void verbose(self, str message):
+    cpdef void verbose(self, str message) except *:
         """
         Log the given verbose message with the logger.
         
@@ -313,7 +313,7 @@ cdef class LoggerAdapter:
         """
         self._send_to_logger(LogLevel.VERBOSE, message)
 
-    cpdef void debug(self, str message):
+    cpdef void debug(self, str message) except *:
         """
         Log the given debug message with the logger.
 
@@ -321,7 +321,7 @@ cdef class LoggerAdapter:
         """
         self._send_to_logger(LogLevel.DEBUG, message)
 
-    cpdef void info(self, str message):
+    cpdef void info(self, str message) except *:
         """
         Log the given information message with the logger.
 
@@ -329,7 +329,7 @@ cdef class LoggerAdapter:
         """
         self._send_to_logger(LogLevel.INFO, message)
 
-    cpdef void warning(self, str message):
+    cpdef void warning(self, str message) except *:
         """
         Log the given warning message with the logger.
 
@@ -337,7 +337,7 @@ cdef class LoggerAdapter:
         """
         self._send_to_logger(LogLevel.WARNING, message)
 
-    cpdef void error(self, str message):
+    cpdef void error(self, str message) except *:
         """
         Log the given error message with the logger.
 
@@ -345,7 +345,7 @@ cdef class LoggerAdapter:
         """
         self._send_to_logger(LogLevel.ERROR, message)
 
-    cpdef void critical(self, str message):
+    cpdef void critical(self, str message) except *:
         """
         Log the given critical message with the logger.
 
@@ -353,7 +353,7 @@ cdef class LoggerAdapter:
         """
         self._send_to_logger(LogLevel.CRITICAL, message)
 
-    cpdef void exception(self, ex):
+    cpdef void exception(self, ex) except *:
         """
         Log the given exception including stack trace information.
         
@@ -370,7 +370,7 @@ cdef class LoggerAdapter:
 
         self.error(ex_string + stack_trace_lines)
 
-    cdef void _send_to_logger(self, LogLevel level, str message):
+    cdef void _send_to_logger(self, LogLevel level, str message) except *:
         if not self.bypassed:
             self._logger.log(LogMessage(
                 self._logger.clock.time_now(),
@@ -383,7 +383,7 @@ cdef class LoggerAdapter:
         return f"{self.component_name}: {message}"
 
 
-cpdef void nautilus_header(LoggerAdapter logger):
+cpdef void nautilus_header(LoggerAdapter logger) except *:
         logger.info("#---------------------------------------------------------------#")
         logger.info(f" Nautilus Trader - Algorithmic Trading Platform")
         logger.info(f" by Nautech Systems Pty Ltd. ")

@@ -1002,7 +1002,7 @@ cdef class ExecutionEngine:
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
 
-    cpdef void register_client(self, ExecutionClient exec_client):
+    cpdef void register_client(self, ExecutionClient exec_client) except *:
         """
         Register the given execution client with the execution engine.
         :param exec_client: The execution client to register.
@@ -1010,7 +1010,7 @@ cdef class ExecutionEngine:
         self._exec_client = exec_client
         self._log.info("Registered execution client.")
 
-    cpdef void register_strategy(self, TradingStrategy strategy):
+    cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
         Register the given strategy with the execution engine.
 
@@ -1023,7 +1023,7 @@ cdef class ExecutionEngine:
         strategy.register_execution_engine(self)
         self._log.info(f"Registered strategy {strategy}.")
 
-    cpdef void deregister_strategy(self, TradingStrategy strategy):
+    cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
         """
         Deregister the given strategy with the execution engine.
         
@@ -1035,7 +1035,7 @@ cdef class ExecutionEngine:
         del self._registered_strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")
 
-    cpdef void execute_command(self, Command command):
+    cpdef void execute_command(self, Command command) except *:
         """
         Execute the given command.
         
@@ -1043,7 +1043,7 @@ cdef class ExecutionEngine:
         """
         self._execute_command(command)
 
-    cpdef void handle_event(self, Event event):
+    cpdef void handle_event(self, Event event) except *:
         """
         Handle the given command.
         
@@ -1051,13 +1051,13 @@ cdef class ExecutionEngine:
         """
         self._handle_event(event)
 
-    cpdef void check_residuals(self):
+    cpdef void check_residuals(self) except *:
         """
         Check for residual working orders or open positions.
         """
         self.database.check_residuals()
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the execution engine by clearing all stateful values.
         """
@@ -1095,7 +1095,7 @@ cdef class ExecutionEngine:
 
 #--------------------------------------------------------------------------------------------------"
 
-    cdef void _execute_command(self, Command command):
+    cdef void _execute_command(self, Command command) except *:
         self._log.debug(f'{RECV}{CMD} {command}.')
         self.command_count += 1
 
@@ -1115,7 +1115,7 @@ cdef class ExecutionEngine:
         elif isinstance(command, CancelOrder):
             self._exec_client.cancel_order(command)
 
-    cdef void _handle_event(self, Event event):
+    cdef void _handle_event(self, Event event) except *:
         self._log.debug(f'{RECV}{EVT} {event}.')
         self.event_count += 1
 
@@ -1129,7 +1129,7 @@ cdef class ExecutionEngine:
         elif isinstance(event, AccountStateEvent):
             self._handle_account_event(event)
 
-    cdef void _handle_order_cancel_reject(self, OrderCancelReject event):
+    cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.order_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {event} ({strategy_id} not found).")
@@ -1137,7 +1137,7 @@ cdef class ExecutionEngine:
 
         self._send_to_strategy(event, strategy_id)
 
-    cdef void _handle_order_event(self, OrderEvent event):
+    cdef void _handle_order_event(self, OrderEvent event) except *:
         cdef Order order = self.database.get_order(event.order_id)
         if order is None:
             self._log.warning(f"Cannot apply event {event} to any order ({event.order_id} not found in cache).")
@@ -1152,7 +1152,7 @@ cdef class ExecutionEngine:
 
         self._send_to_strategy(event, self.database.get_strategy_for_order(event.order_id))
 
-    cdef void _handle_order_fill(self, OrderFillEvent event):
+    cdef void _handle_order_fill(self, OrderFillEvent event) except *:
         cdef PositionId position_id = self.database.get_position_id(event.order_id)
         if position_id is None:
             position_id = self.database.get_position_id_for_broker_id(event.position_id_broker)
@@ -1182,11 +1182,11 @@ cdef class ExecutionEngine:
             else:
                 self._position_modified(position, strategy_id, event)
 
-    cdef void _handle_position_event(self, PositionEvent event):
+    cdef void _handle_position_event(self, PositionEvent event) except *:
         self.portfolio.update(event)
         self._send_to_strategy(event, event.strategy_id)
 
-    cdef void _handle_account_event(self, AccountStateEvent event):
+    cdef void _handle_account_event(self, AccountStateEvent event) except *:
         cdef Account account = self.database.get_account(event.account_id)
 
         if account is None:
@@ -1201,7 +1201,7 @@ cdef class ExecutionEngine:
             self._log.warning(f"Cannot process event {event} "
                               f"(event {event.account_id} does not match this account {account.id}).")
 
-    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event):
+    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef PositionOpened position_opened = PositionOpened(
             position,
             strategy_id,
@@ -1212,7 +1212,7 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, strategy_id)
         self.handle_event(position_opened)
 
-    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event):
+    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef PositionModified position_modified = PositionModified(
             position,
             strategy_id,
@@ -1223,7 +1223,7 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, strategy_id)
         self.handle_event(position_modified)
 
-    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event):
+    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef datetime time_now = self._clock.time_now()
         cdef PositionClosed position_closed = PositionClosed(
             position,
@@ -1235,7 +1235,7 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, strategy_id)
         self.handle_event(position_closed)
 
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id):
+    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
             self._log.error(f"Cannot send event {event} to strategy ({strategy_id} not found).")
             return  # Cannot send to strategy
@@ -1247,7 +1247,7 @@ cdef class ExecutionEngine:
 
         strategy.handle_event(event)
 
-    cdef void _reset(self):
+    cdef void _reset(self) except *:
         """
         Reset the execution engine to its initial state.
         """
@@ -1316,7 +1316,7 @@ cdef class ExecutionClient:
         raise NotImplementedError("Method must be implemented in the subclass.")
 # -----------------------------------------------------------------------------#
 
-    cdef void _reset(self):
+    cdef void _reset(self) except *:
         # Reset the class to its initial state
         self.command_count = 0
         self.event_count = 0

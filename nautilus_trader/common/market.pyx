@@ -522,7 +522,7 @@ cdef class BarBuilder:
         self._reset()
         return bar
 
-    cdef void _reset(self):
+    cdef void _reset(self) except *:
         if self._use_previous_close:
             self._open = self._close
             self._high = self._close

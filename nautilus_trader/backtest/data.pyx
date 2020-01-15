@@ -41,11 +41,11 @@ cdef class BacktestDataContainer:
         self.bars_bid = {}
         self.bars_ask = {}
 
-    cpdef void add_instrument(self, Instrument instrument):
+    cpdef void add_instrument(self, Instrument instrument) except *:
         self.instruments[instrument.symbol] = instrument
         self.instruments = dict(sorted(self.instruments.items()))
 
-    cpdef void add_ticks(self, Symbol symbol, data: pd.DataFrame):
+    cpdef void add_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
         """
         Add the tick data to the container.
         
@@ -58,7 +58,7 @@ cdef class BacktestDataContainer:
         self.ticks[symbol] = data
         self.ticks = dict(sorted(self.ticks.items()))
 
-    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data: pd.DataFrame):
+    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data: pd.DataFrame) except *:
         """
         Add the bar data to the container.
         
@@ -84,7 +84,7 @@ cdef class BacktestDataContainer:
             self.bars_ask[symbol][structure] = data
             self.bars_ask[symbol] = dict(sorted(self.bars_ask[symbol].items()))
 
-    cpdef void check_integrity(self):
+    cpdef void check_integrity(self) except *:
         """
         Check the integrity of the data inside the container.
         
@@ -203,6 +203,12 @@ cdef class BacktestDataClient(DataClient):
         return dataframe[start:end]
 
     cpdef void setup_ticks(self, datetime start, datetime stop) except *:
+        """
+        Setup tick data for a backtest run.
+
+        :param start: The start datetime (UTC) for the run.
+        :param stop: The stop datetime (UTC) for the run.
+        """
         data_slice = self._slice_dataframe(self._tick_data, start, stop)
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
         self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
@@ -214,6 +220,11 @@ cdef class BacktestDataClient(DataClient):
         self._clock.set_time(start)
 
     cdef Tick generate_tick(self):
+        """
+        Generate the next tick in the ordered data sequence.
+
+        :return: Tick.
+        """
         cdef int symbol_indexer = self._symbols[self._index]
         cdef int precision = self._precision_index[symbol_indexer]
 
@@ -232,13 +243,13 @@ cdef class BacktestDataClient(DataClient):
 
         return tick
 
-    cpdef void connect(self):
+    cpdef void connect(self) except *:
         """
         Connect to the data service.
         """
         self._log.info("Connected.")
 
-    cpdef void disconnect(self):
+    cpdef void disconnect(self) except *:
         """
         Disconnect from the data service.
         """
@@ -259,7 +270,7 @@ cdef class BacktestDataClient(DataClient):
         self._reset()
         self._log.info("Reset.")
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         """
         Dispose of the data client by releasing all resources.
         """
@@ -287,7 +298,7 @@ cdef class BacktestDataClient(DataClient):
             Symbol symbol,
             datetime from_datetime,
             datetime to_datetime,
-            callback: Callable):
+            callback: Callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
@@ -306,7 +317,7 @@ cdef class BacktestDataClient(DataClient):
             BarType bar_type,
             datetime from_datetime,
             datetime to_datetime,
-            callback: Callable):
+            callback: Callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
@@ -320,7 +331,7 @@ cdef class BacktestDataClient(DataClient):
 
         self._log.info(f"Simulated request bars for {bar_type} from {from_datetime} to {to_datetime}.")
 
-    cpdef void request_instrument(self, Symbol symbol, callback: Callable):
+    cpdef void request_instrument(self, Symbol symbol, callback: Callable) except *:
         """
         Request the instrument for the given symbol.
 
@@ -334,7 +345,7 @@ cdef class BacktestDataClient(DataClient):
 
         callback(self._instruments[symbol])
 
-    cpdef void request_instruments(self, callback: Callable):
+    cpdef void request_instruments(self, callback: Callable) except *:
         """
         Request all instrument for the data clients venue.
         
@@ -347,7 +358,7 @@ cdef class BacktestDataClient(DataClient):
 
         callback([instrument for instrument in self._instruments.values()])
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable) except *:
         """
         Subscribe to tick data for the given symbol.
 
@@ -360,7 +371,7 @@ cdef class BacktestDataClient(DataClient):
 
         self._add_tick_handler(symbol, handler)
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable) except *:
         """
         Subscribe to live bar data for the given bar parameters.
 
@@ -373,7 +384,7 @@ cdef class BacktestDataClient(DataClient):
 
         self._self_generate_bars(bar_type, handler)
 
-    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable):
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable) except *:
         """
         Subscribe to live instrument data updates for the given symbol and handler.
 
@@ -387,7 +398,7 @@ cdef class BacktestDataClient(DataClient):
             self._log.info(f"Simulated subscribe to {symbol} instrument updates "
                            f"(a backtest data client wont update an instrument).")
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable) except *:
         """
         Unsubscribes from tick data for the given symbol.
 
@@ -400,7 +411,7 @@ cdef class BacktestDataClient(DataClient):
 
         self._remove_tick_handler(symbol, handler)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable) except *:
         """
         Unsubscribes from bar data for the given symbol and venue.
 
@@ -413,7 +424,7 @@ cdef class BacktestDataClient(DataClient):
 
         self._remove_bar_handler(bar_type, handler)
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable):
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable) except *:
         """
         Unsubscribe from live instrument data updates for the given symbol and handler.
 
@@ -426,7 +437,7 @@ cdef class BacktestDataClient(DataClient):
         self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "
                        f"(a backtest data client will not update an instrument).")
 
-    cpdef void update_instruments(self):
+    cpdef void update_instruments(self) except *:
         """
         Update all instruments from the database.
         """
