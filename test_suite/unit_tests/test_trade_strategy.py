@@ -125,7 +125,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.__hash__()
 
         # Assert
-        # If this passes then result must be an int.
+        # If this passes then result must be an int
         self.assertTrue(result != 0)
 
     def test_strategy_str_and_repr(self):

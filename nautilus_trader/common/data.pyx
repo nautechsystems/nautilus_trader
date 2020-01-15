@@ -269,7 +269,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot remove {tick_handler} (no matching handler found).")
 
-        if len(self._tick_handlers[symbol]) == 0:
+        if not self._tick_handlers[symbol]:
             del self._tick_handlers[symbol]
             self._log.info(f"Unsubscribed from {symbol} tick data.")
 
@@ -290,7 +290,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot remove {bar_handler} (no matching handler found).")
 
-        if len(self._bar_handlers[bar_type]) == 0:
+        if not self._bar_handlers[bar_type]:
             del self._bar_handlers[bar_type]
             self._log.info(f"Unsubscribed from {bar_type} bar data.")
 
@@ -311,7 +311,7 @@ cdef class DataClient:
         else:
             self._log.error(f"Cannot remove {instrument_handler} (no matching handler found).")
 
-        if len(self._instrument_handlers[symbol]) == 0:
+        if not self._instrument_handlers[symbol]:
             del self._instrument_handlers[symbol]
             self._log.info(f"Unsubscribed from {symbol} instrument data.")
 

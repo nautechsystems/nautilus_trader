@@ -217,8 +217,8 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Cannot calculate rollover interest
                 self._log.error(str(ex))
 
-        # Check if any working orders
-        if len(self._working_orders) == 0:
+        # Check for working orders
+        if not self._working_orders:
             return
 
         # Simulate market

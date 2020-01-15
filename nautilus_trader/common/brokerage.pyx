@@ -143,14 +143,14 @@ cdef class RolloverInterestCalculator:
         cdef str time_quarter = f'{timestamp.year}-Q{str(int(((timestamp.month - 1) // 3) + 1)).zfill(2)}'
 
         base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_monthly]
-        if len(base_data) == 0:
+        if base_data.empty:
             base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_quarter]
 
         quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_monthly]
-        if len(quote_data) == 0:
+        if quote_data.empty:
             quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_quarter]
 
-        if len(base_data) == 0 or len(quote_data) == 0:
+        if base_data.empty and quote_data.empty:
             raise RuntimeError(f'Cannot find rollover interest rate for {symbol} on {timestamp.date()}.')
 
         cdef double base_interest = base_data['Value']

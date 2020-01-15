@@ -201,7 +201,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         cdef dict unpacked = MsgPackSerializer.deserialize(order_bytes)
 
-        if len(unpacked) == 0:
+        if not unpacked:
             return None  # Null order
 
         return Order(order_id=OrderId(unpacked[ID]),

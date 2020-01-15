@@ -38,7 +38,7 @@ cdef class ReportProvider:
         :param orders: The dictionary of order_ids and order objects.
         :return pd.DataFrame.
         """
-        if len(orders) == 0:
+        if not orders:
             return pd.DataFrame()
 
         cdef list orders_all = [self._order_to_dict(o) for o in orders.values()]
@@ -52,7 +52,7 @@ cdef class ReportProvider:
         :param orders: The dictionary of order_ids and order objects.
         :return pd.DataFrame.
         """
-        if len(orders) == 0:
+        if not orders:
             return pd.DataFrame()
 
         cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.state == OrderState.FILLED]

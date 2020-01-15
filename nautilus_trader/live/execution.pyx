@@ -143,7 +143,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._cached_accounts.clear()
 
         cdef list account_keys = self._redis.keys(f'{self.key_accounts}*')
-        if len(account_keys) == 0:
+        if not account_keys:
             self._log.info('No accounts found in database.')
             return
 
@@ -167,7 +167,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._cached_orders.clear()
 
         cdef list order_keys = self._redis.keys(f'{self.key_orders}*')
-        if len(order_keys) == 0:
+        if not order_keys:
             self._log.info('No orders found in database.')
             return
 
@@ -191,7 +191,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._cached_positions.clear()
 
         cdef list position_keys = self._redis.keys(f'{self.key_positions}*')
-        if len(position_keys) == 0:
+        if not position_keys:
             self._log.info('No positions found in database.')
             return
 
@@ -399,7 +399,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if state_log:
             state[b'StateLog'] = state_log
 
-        if len(state) == 0:
+        if not state:
             self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
             return
 
@@ -417,7 +417,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return: Account or None.
         """
         cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
-        if len(events) == 0:
+        if not events:
             self._log.error(f"Cannot load Account(id={account_id.value}) from database (not found).")
             return None
 
