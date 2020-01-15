@@ -34,6 +34,7 @@ cdef class BacktestDataClient(DataClient):
     cdef object _volumes
     cdef object _timestamps
     cdef dict _symbol_index
+    cdef dict _precision_index
     cdef int _index
     cdef int _index_last
 

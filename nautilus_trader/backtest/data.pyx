@@ -147,8 +147,9 @@ cdef class BacktestDataClient(DataClient):
         for instrument in data.instruments.values():
             self._handle_instrument(instrument)
 
+        cdef int counter = 0
         self._symbol_index = {}
-        cdef int symbol_counter = 0
+        self._precision_index = {}
 
         # Prepare data
         self._log.info(f"Preparing data...")
@@ -156,16 +157,17 @@ cdef class BacktestDataClient(DataClient):
         self.execution_resolutions = []
 
         for symbol, instrument in self._instruments.items():
-            self._symbol_index[symbol_counter] = symbol
+            self._symbol_index[counter] = symbol
+            self._precision_index[counter] = instrument.tick_precision
             start = datetime.utcnow()
             wrangler = TickDataWrangler(
                 instrument=instrument,
                 data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
                 data_bars_bid=data.bars_bid[symbol],
                 data_bars_ask=data.bars_ask[symbol])
-            wrangler.build(symbol_counter)
+            wrangler.build(counter)
             tick_frames.append(wrangler.tick_data)
-            symbol_counter += 1
+            counter += 1
             self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}')
             self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
@@ -212,14 +214,17 @@ cdef class BacktestDataClient(DataClient):
         self._clock.set_time(start)
 
     cdef Tick generate_tick(self):
+        cdef int symbol_indexer = self._symbols[self._index]
+        cdef int precision = self._precision_index[symbol_indexer]
+
         cdef Tick tick = Tick(
-            self._symbol_index[self._symbols[self._index]],
-            Price(self._prices[self._index][0], 3),
-            Price(self._prices[self._index][1], 3),
-            self._timestamps[self._index],
-            TickType.TRADE,
-            self._volumes[self._index][0],
-            self._volumes[self._index][1])
+            symbol=self._symbol_index[symbol_indexer],
+            bid=Price(self._prices[self._index][0], precision),
+            ask=Price(self._prices[self._index][1], precision),
+            timestamp=self._timestamps[self._index],
+            tick_type=TickType.TRADE,
+            bid_size=self._volumes[self._index][0],
+            ask_size=self._volumes[self._index][1])
 
         self._index += 1
         if self._index >= self._index_last:
