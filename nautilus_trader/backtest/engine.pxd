@@ -45,11 +45,11 @@ cdef class BacktestEngine:
 
     cpdef void run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*) except *
     cpdef list get_log_store(self)
-    cpdef void print_log_store(self)
-    cpdef void reset(self)
-    cpdef void dispose(self)
+    cpdef void print_log_store(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
 
-    #cdef void _backtest_memory(self)
-    cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop)
-    cdef void _backtest_footer(self, datetime run_started, datetime run_finished, datetime start, datetime stop)
-    cdef void _change_clocks_and_loggers(self, list strategies)
+    cdef void _backtest_memory(self) except *
+    cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop) except *
+    cdef void _backtest_footer(self, datetime run_started, datetime run_finished, datetime start, datetime stop) except *
+    cdef void _change_clocks_and_loggers(self, list strategies) except *

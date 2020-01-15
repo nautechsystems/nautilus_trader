@@ -177,4 +177,5 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 28/09/19 15588273 function calls (15357338 primitive calls) in 14.742 seconds (performance check)
         # 08/01/20 28153460 function calls (27769629 primitive calls) in 29.399 seconds (reimplemented engine for ticks only)
         # 08/01/20 17842812 function calls (17611531 primitive calls) in 18.792 seconds (reimplemented decimal type)
-        # 08/01/20 17217162 function calls (16995851 primitive calls) in 18.981 seconds (refactor backtest execution)
+        # 15/01/20 17217162 function calls (16995851 primitive calls) in 18.981 seconds (refactor backtest execution)
+        # 15/01/20 20535098 function calls (20313732 primitive calls) in 24.075 seconds (ticks now built on the fly to save memory)
