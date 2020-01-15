@@ -38,10 +38,10 @@ cpdef double basis_points_as_percentage(double basis_points):
     return basis_points * 0.0001
 
 
-cdef int get_obj_size(obj):
+cdef long get_obj_size(obj):
     cdef set marked = {id(obj)}
     obj_q = [obj]
-    cdef int size = 0
+    cdef long size = 0
 
     while obj_q:
         size += sum(map(sys.getsizeof, obj_q))
@@ -71,8 +71,14 @@ cpdef str format_bytes(double size):
     :return: str.
     """
     cdef double power = pow(2, 10)
+    cdef dict power_labels = {
+        0 : 'bytes',
+        1: 'KB',
+        2: 'MB',
+        3: 'GB',
+        4: 'TB'}
+
     cdef int n = 0
-    cdef dict power_labels = {0 : 'bytes', 1: 'KB', 2: 'MB', 3: 'GB', 4: 'TB'}
     while size > power:
         size /= power
         n += 1
