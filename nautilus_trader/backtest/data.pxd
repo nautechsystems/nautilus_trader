@@ -29,9 +29,9 @@ cdef class BacktestDataContainer:
 
 cdef class BacktestDataClient(DataClient):
     cdef object _tick_data
-    cdef object _prices
-    cdef object _symbols
-    cdef object _volumes
+    cdef unsigned short[:] _symbols
+    cdef double[:, :] _prices
+    cdef double[:, :] _volumes
     cdef object _timestamps
     cdef dict _symbol_index
     cdef dict _precision_index

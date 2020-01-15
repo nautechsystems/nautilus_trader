@@ -204,8 +204,8 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void setup_ticks(self, datetime start, datetime stop) except *:
         data_slice = self._slice_dataframe(self._tick_data, start, stop)
-        self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
+        self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
         self._volumes = data_slice[['bid_size', 'ask_size']].to_numpy(dtype=np.double)
         self._timestamps = data_slice.index
         self._index = 0
