@@ -53,12 +53,12 @@ cdef class Order:
     """
 
     def __init__(self,
-                 OrderId order_id,
-                 Symbol symbol,
+                 OrderId order_id not None,
+                 Symbol symbol not None,
                  OrderSide order_side,
                  OrderType order_type,  # 'type' hides keyword
-                 Quantity quantity,
-                 datetime timestamp,
+                 Quantity quantity not None,
+                 datetime timestamp not None,
                  Price price=None,
                  Label label=None,
                  OrderPurpose order_purpose=OrderPurpose.NONE,
@@ -154,6 +154,8 @@ cdef class Order:
         :param event: The event to initialize with.
         :return Order.
         """
+        Condition.not_none(event, 'event')
+
         return Order(
             order_id=event.order_id,
             symbol=event.symbol,
@@ -269,6 +271,7 @@ cdef class Order:
         :raises ConditionFailed: If the order_events order_id is not equal to the event.order_id.
         :raises ConditionFailed: If the order account_id is not None and is not equal to the event.account_id.
         """
+        Condition.not_none(event, 'event')
         Condition.equals(self.id, event.order_id, 'id', 'event.order_id')
         if self.account_id is not None:
             Condition.equals(self.account_id, event.account_id, 'account_id', 'event.account_id')
@@ -353,8 +356,8 @@ cdef class AtomicOrder:
     profit target.
     """
     def __init__(self,
-                 Order entry,
-                 Order stop_loss,
+                 Order entry not None,
+                 Order stop_loss not None,
                  Order take_profit=None):
         """
         Initializes a new instance of the AtomicOrder class.
@@ -430,9 +433,9 @@ cdef class OrderFactory:
     """
 
     def __init__(self,
-                 IdTag id_tag_trader,
-                 IdTag id_tag_strategy,
-                 Clock clock=LiveClock(),
+                 IdTag id_tag_trader not None,
+                 IdTag id_tag_strategy not None,
+                 Clock clock not None=LiveClock(),
                  int initial_count=0):
         """
         Initializes a new instance of the OrderFactory class.
@@ -491,6 +494,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return Order.
         """
+        # Condition: all arguments checked in order
+
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -530,6 +535,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
+        # Condition: all arguments checked in order
+
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -569,6 +576,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
+        # Condition: all arguments checked in order
+
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -608,6 +617,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
+        # Condition: all arguments checked in order
+
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -647,6 +658,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
+        # Condition: all arguments checked in order
+
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -678,6 +691,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return Order.
         """
+        # Condition: all arguments checked in order
+
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -709,6 +724,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return Order.
         """
+        # Condition: all arguments checked in order
+
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -742,6 +759,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return AtomicOrder.
         """
+        # Condition: all arguments checked in order
+
         cdef Label entry_label = None
         if label is not None:
             entry_label = Label(label.value + '_E')
@@ -787,6 +806,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return AtomicOrder.
         """
+        # Condition: all arguments checked in order
+
         cdef Label entry_label = None
         if label is not None:
             entry_label = Label(label.value + '_E')
@@ -834,6 +855,8 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return AtomicOrder.
         """
+        # Condition: all arguments checked in order
+
         cdef Label entry_label = None
         if label is not None:
             entry_label = Label(label.value + '_E')

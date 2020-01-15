@@ -69,13 +69,13 @@ cdef class BacktestExecClient(ExecutionClient):
     """
 
     def __init__(self,
-                 ExecutionEngine exec_engine,
-                 dict instruments: Dict[Symbol, Instrument],
-                 BacktestConfig config,
-                 FillModel fill_model,
-                 TestClock clock,
-                 TestGuidFactory guid_factory,
-                 Logger logger):
+                 ExecutionEngine exec_engine not None,
+                 dict instruments not None: Dict[Symbol, Instrument],
+                 BacktestConfig config not None,
+                 FillModel fill_model not None,
+                 TestClock clock not None,
+                 TestGuidFactory guid_factory not None,
+                 Logger logger not None):
         """
         Initializes a new instance of the BacktestExecClient class.
 
@@ -156,6 +156,8 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Register the given execution database with the client.
         """
+        Condition.not_none(exec_db, 'exec_db')
+
         self.exec_db = exec_db
 
     cpdef void connect(self) except *:
@@ -178,6 +180,8 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param fill_model: The fill model to set.
         """
+        Condition.not_none(fill_model, 'fill_model')
+
         self.fill_model = fill_model
 
     cpdef void process_tick(self, Tick tick) except *:
@@ -187,6 +191,8 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param tick: The tick data to process with.
         """
+        Condition.not_none(tick, 'tick')
+
         self._clock.set_time(tick.timestamp)
         self._market[tick.symbol] = tick
 
@@ -278,6 +284,8 @@ cdef class BacktestExecClient(ExecutionClient):
             double close_price,
             Quantity quantity,
             double exchange_rate):
+        Condition.not_none(quantity, 'quantity')
+
         cdef double difference
         if direction == MarketPosition.LONG:
             difference = close_price - open_price
@@ -289,6 +297,9 @@ cdef class BacktestExecClient(ExecutionClient):
         return Money(difference * quantity.value * exchange_rate)
 
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
+        Condition.not_none(event, 'event')
+        Condition.not_none(position, 'position')
+
         # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
         cdef double exchange_rate = self.exchange_calculator.get_rate(
@@ -335,6 +346,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._exec_engine.handle_event(account_event)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
+        Condition.not_none(timestamp, 'timestamp')
+
         # Apply rollover interest for all open positions
         if self.exec_db is None:
             self._log.error("Cannot apply rollover interest (no execution database registered).")
@@ -475,6 +488,8 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #
 
     cpdef void account_inquiry(self, AccountInquiry command) except *:
+        Condition.not_none(command, 'command')
+
         # Generate event
         cdef AccountStateEvent event = AccountStateEvent(
             self._account.id,
@@ -492,6 +507,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exec_engine.handle_event(event)
 
     cpdef void submit_order(self, SubmitOrder command) except *:
+        Condition.not_none(command, 'command')
+
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             command.account_id,
@@ -504,6 +521,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self._process_order(command.order)
 
     cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *:
+        Condition.not_none(command, 'command')
+
         cdef list atomic_orders = [command.atomic_order.stop_loss]
         if command.atomic_order.has_take_profit:
             atomic_orders.append(command.atomic_order.take_profit)
@@ -525,6 +544,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self.submit_order(submit_order)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
+        Condition.not_none(command, 'command')
+
         if command.order_id not in self._working_orders:
             self._cancel_reject_order(command.order_id, 'cancel order', 'order not found')
             return  # Rejected the cancel order command
@@ -546,6 +567,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self._check_oco_order(command.order_id)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
+        Condition.not_none(command, 'command')
+
         if command.order_id not in self._working_orders:
             self._cancel_reject_order(command.order_id, 'modify order', 'order not found')
             return  # Rejected the modify order command

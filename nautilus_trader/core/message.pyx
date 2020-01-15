@@ -19,8 +19,8 @@ cdef class Message:
 
     def __init__(self,
                  MessageType message_type,
-                 GUID identifier,
-                 datetime timestamp):
+                 GUID identifier not None,
+                 datetime timestamp not None):
         """
         Initializes a new instance of the Message class.
 
@@ -93,7 +93,7 @@ cdef class Command(Message):
     The base class for all commands.
     """
 
-    def __init__(self, GUID identifier, datetime timestamp):
+    def __init__(self, GUID identifier not None, datetime timestamp not None):
         """
         Initializes a new instance of the Command class.
 
@@ -109,8 +109,8 @@ cdef class Event(Message):
     """
 
     def __init__(self,
-                 GUID identifier,
-                 datetime timestamp):
+                 GUID identifier not None,
+                 datetime timestamp not None):
         """
         Initializes a new instance of the Event class.
 
@@ -125,7 +125,7 @@ cdef class Request(Message):
     The base class for all requests.
     """
 
-    def __init__(self, GUID identifier, datetime timestamp):
+    def __init__(self, GUID identifier not None, datetime timestamp not None):
         """
         Initializes a new instance of the Request class.
 
@@ -141,9 +141,9 @@ cdef class Response(Message):
     """
 
     def __init__(self,
-                 GUID correlation_id,
-                 GUID identifier,
-                 datetime timestamp):
+                 GUID correlation_id not None,
+                 GUID identifier not None,
+                 datetime timestamp not None):
         """
         Initializes a new instance of the Response class.
 

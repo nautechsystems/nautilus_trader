@@ -11,6 +11,7 @@ import pandas as pd
 from cpython.datetime cimport datetime
 from typing import Dict
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
@@ -38,6 +39,8 @@ cdef class ReportProvider:
         :param orders: The dictionary of order_ids and order objects.
         :return pd.DataFrame.
         """
+        Condition.not_none(orders, 'orders')
+
         if not orders:
             return pd.DataFrame()
 
@@ -52,6 +55,8 @@ cdef class ReportProvider:
         :param orders: The dictionary of order_ids and order objects.
         :return pd.DataFrame.
         """
+        Condition.not_none(orders, 'orders')
+
         if not orders:
             return pd.DataFrame()
 
@@ -66,7 +71,9 @@ cdef class ReportProvider:
         :param positions: The dictionary of position_ids and objects.
         :return pd.DataFrame.
         """
-        if len(positions) == 0:
+        Condition.not_none(positions, 'positions')
+
+        if not positions:
             return pd.DataFrame()
 
         cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed]
@@ -82,6 +89,8 @@ cdef class ReportProvider:
         :param end: The end of the account reports period.
         :return: pd.DataFrame.
         """
+        Condition.not_none(events, 'events')
+
         if start is None:
             start = events[0].timestamp
         if end is None:

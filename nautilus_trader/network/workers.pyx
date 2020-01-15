@@ -30,7 +30,7 @@ cdef class MQWorker:
             int service_port,
             zmq_context: zmq.Context,
             int zmq_socket_type,
-            Logger logger):
+            Logger logger not None):
         """
         Initializes a new instance of the MQWorker class.
 
@@ -96,7 +96,7 @@ cdef class RequestWorker(MQWorker):
             str service_address,
             int service_port,
             zmq_context: zmq.Context,
-            Logger logger):
+            Logger logger not None):
         """
         Initializes a new instance of the RequestWorker class.
 
@@ -159,7 +159,7 @@ cdef class SubscriberWorker(MQWorker):
             int service_port,
             zmq_context: zmq.Context,
             handler: Callable,
-            Logger logger):
+            Logger logger not None):
         """
         Initializes a new instance of the SubscriberWorker class.
 
@@ -200,6 +200,8 @@ cdef class SubscriberWorker(MQWorker):
         
         :param topic: The topic to subscribe to.
         """
+        Condition.valid_string(topic, 'topic')
+
         self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
         self._log.debug(f"Subscribed to topic {topic}.")
 
@@ -209,6 +211,8 @@ cdef class SubscriberWorker(MQWorker):
         
         :param topic: The topic to unsubscribe from.
         """
+        Condition.valid_string(topic, 'topic')
+
         self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
         self._log.debug(f"Unsubscribed from topic {topic}.")
 

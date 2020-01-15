@@ -8,6 +8,7 @@
 
 from typing import Dict
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport (
     PositionEvent,
     PositionOpened,
@@ -26,8 +27,8 @@ cdef class Portfolio:
     """
 
     def __init__(self,
-                 Clock clock,
-                 GuidFactory guid_factory,
+                 Clock clock not None,
+                 GuidFactory guid_factory not None,
                  Logger logger=None):
         """
         Initializes a new instance of the Portfolio class.
@@ -53,6 +54,8 @@ cdef class Portfolio:
         
         :param event: The event to update with.
         """
+        Condition.not_none(event, 'event')
+
         if event.timestamp.date() != self.date_now:
             self.date_now = event.timestamp.date()
             self.daily_pnl_realized = Money.zero()

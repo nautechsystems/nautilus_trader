@@ -40,6 +40,8 @@ cdef class ExchangeRateCalculator:
         :raises ConditionFailed: If the bid rates length is not equal to the ask rates length.
         :return double.
         """
+        Condition.not_none(bid_rates, 'bid_rates')
+        Condition.not_none(ask_rates, 'ask_rates')
         Condition.equal_length(bid_rates, ask_rates, 'bid_rates', 'ask_rates')
 
         if from_currency == to_currency:

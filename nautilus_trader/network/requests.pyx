@@ -18,9 +18,9 @@ cdef class DataRequest(Request):
     """
 
     def __init__(self,
-                 dict query,
-                 GUID request_id,
-                 datetime request_timestamp):
+                 dict query not None,
+                 GUID request_id not None,
+                 datetime request_timestamp not None):
         """
         Initializes a new instance of the DataRequest class.
 

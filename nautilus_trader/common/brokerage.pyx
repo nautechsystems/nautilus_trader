@@ -60,6 +60,11 @@ cdef class CommissionCalculator:
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
         :return Money.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(filled_quantity, 'filled_quantity')
+        Condition.not_none(filled_price, 'filled_price')
+        Condition.positive(exchange_rate, 'exchange_rate')
+
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
         return Money(max(self.minimum.as_double(), filled_quantity.value * filled_price.as_double() * exchange_rate * commission_rate_percent))
 
@@ -71,6 +76,9 @@ cdef class CommissionCalculator:
         :param notional_value: The notional value for the transaction.
         :return Money.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(notional_value, 'notional_value')
+
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
         return Money(max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent))
 
@@ -88,7 +96,7 @@ cdef class RolloverInterestCalculator:
     will default to the included short-term interest rate data csv (data since 1956).
     """
 
-    def __init__(self, str short_term_interest_csv_path='default'):
+    def __init__(self, str short_term_interest_csv_path not None='default'):
         """
         Initializes a new instance of the RolloverInterestCalculator class.
 
@@ -134,6 +142,8 @@ cdef class RolloverInterestCalculator:
         :return: double.
         :raises ConditionFailed: If the symbol.code length is not == 6.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(timestamp, 'timestamp')
         Condition.true(len(symbol.code) == 6, 'len(symbol) == 6')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])

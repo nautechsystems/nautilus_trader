@@ -41,14 +41,14 @@ cdef class TradingStrategy:
     """
 
     def __init__(self,
-                 str order_id_tag='000',
+                 str order_id_tag not None='000',
                  bint flatten_on_stop=True,
                  bint flatten_on_sl_reject=True,
                  bint cancel_all_orders_on_stop=True,
                  int tick_capacity=1000,
                  int bar_capacity=1000,
-                 Clock clock=LiveClock(),
-                 GuidFactory guid_factory=LiveGuidFactory(),
+                 Clock clock not None=LiveClock(),
+                 GuidFactory guid_factory not None=LiveGuidFactory(),
                  Logger logger=None):
         """
         Initializes a new instance of the TradingStrategy class.
@@ -257,6 +257,8 @@ cdef class TradingStrategy:
 
         :param trader_id: The trader_id to change to.
         """
+        Condition.not_none(trader_id, 'trader_id')
+
         self.trader_id = trader_id
         self.log.debug(f"Registered trader {trader_id.value}.")
 
@@ -266,6 +268,8 @@ cdef class TradingStrategy:
 
         :param client: The data client to register.
         """
+        Condition.not_none(client, 'client')
+
         self._data_client = client
         self.is_data_client_registered = True
         self.log.debug("Registered data client.")
@@ -276,6 +280,8 @@ cdef class TradingStrategy:
 
         :param engine: The execution engine to register.
         """
+        Condition.not_none(engine, 'engine')
+
         self._exec_engine = engine
         self.is_exec_engine_registered = True
         self.log.debug("Registered execution engine.")
@@ -295,6 +301,8 @@ cdef class TradingStrategy:
         :param update_method: The update method for the indicator.
         :raises ConditionFailed: If the update_method is not of type Callable.
         """
+        Condition.not_none(data_source, 'data_source')
+        Condition.not_none(indicator, 'indicator')
         Condition.callable(update_method, 'update_method')
 
         if indicator not in self._indicators:
@@ -319,6 +327,8 @@ cdef class TradingStrategy:
 
         :param tick: The tick received.
         """
+        Condition.not_none(tick, 'tick')
+
         if tick.symbol not in self._ticks:
             self._ticks[tick.symbol] = deque(maxlen=self.tick_capacity)
         self._ticks[tick.symbol].appendleft(tick)
@@ -339,6 +349,8 @@ cdef class TradingStrategy:
         """
         System method. Handle the given list of ticks by handling each tick individually.
         """
+        Condition.not_none(ticks, 'ticks')  # Can be empty
+
         cdef int i
         for i in range(len(ticks)):
             self.handle_tick(ticks[i])
@@ -352,6 +364,9 @@ cdef class TradingStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
+        Condition.not_none(bar_type, 'bar_type')
+        Condition.not_none(bar, 'bar')
+
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self.bar_capacity)
         self._bars[bar_type].appendleft(bar)
@@ -373,6 +388,9 @@ cdef class TradingStrategy:
         System method. Handle the given bar type and bars by handling 
         each bar individually.
         """
+        Condition.not_none(bar_type, 'bar_type')
+        Condition.not_none(bars, 'bars')  # Can be empty
+
         self.log.info(f"Received bar data for {bar_type} of {len(bars)} bars.")
 
         cdef int i
@@ -383,6 +401,8 @@ cdef class TradingStrategy:
         """
         System method. Handle the given instrument.
         """
+        Condition.not_none(instrument, 'instrument')
+
         if self.is_running:
             try:
                 self.on_instrument(instrument)
@@ -395,6 +415,8 @@ cdef class TradingStrategy:
 
         :param event: The event received.
         """
+        Condition.not_none(event, 'event')
+
         cdef Order order
         if isinstance(event, OrderRejected):
             self.log.warning(f"{RECV}{EVT} {event}.")
@@ -469,6 +491,8 @@ cdef class TradingStrategy:
         :param to_datetime: The datetime to which the historical bars should be downloaded.
         :raises ConditionFailed: If the from_datetime is not None and not less than to_datetime.
         """
+        Condition.not_none(bar_type, 'bar_type')
+
         if not self.is_data_client_registered:
             self.log.error("Cannot request bars (data client not registered).")
             return
@@ -492,6 +516,8 @@ cdef class TradingStrategy:
 
         :param symbol: The tick symbol to subscribe to.
         """
+        Condition.not_none(symbol, 'symbol')
+
         if not self.is_data_client_registered:
             self.log.error("Cannot subscribe to ticks (data client not registered).")
             return
@@ -505,6 +531,8 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to subscribe to.
         """
+        Condition.not_none(bar_type, 'bar_type')
+
         if not self.is_data_client_registered:
             self.log.error("Cannot subscribe to bars (data client not registered).")
             return
@@ -518,6 +546,8 @@ cdef class TradingStrategy:
 
         :param symbol: The instrument symbol to subscribe to.
         """
+        Condition.not_none(symbol, 'symbol')
+
         if not self.is_data_client_registered:
             self.log.error("Cannot subscribe to instrument (data client not registered).")
             return
@@ -531,6 +561,8 @@ cdef class TradingStrategy:
 
         :param symbol: The tick symbol to unsubscribe from.
         """
+        Condition.not_none(symbol, 'symbol')
+
         if not self.is_data_client_registered:
             self.log.error("Cannot unsubscribe from ticks (data client not registered).")
             return
@@ -544,6 +576,8 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to unsubscribe from.
         """
+        Condition.not_none(bar_type, 'bar_type')
+
         if not self.is_data_client_registered:
             self.log.error("Cannot unsubscribe from bars (data client not registered).")
             return
@@ -557,6 +591,8 @@ cdef class TradingStrategy:
 
         :param symbol: The instrument symbol to unsubscribe from.
         """
+        Condition.not_none(symbol, 'symbol')
+
         if not self.is_data_client_registered:
             self.log.error("Cannot unsubscribe from instrument (data client not registered).")
             return
@@ -571,6 +607,8 @@ cdef class TradingStrategy:
         :param symbol: The symbol of the ticks.
         :return bool.
         """
+        Condition.not_none(symbol, 'symbol')
+
         return symbol in self._ticks and len(self._ticks[symbol]) > 0
 
     cpdef bint has_bars(self, BarType bar_type):
@@ -580,6 +618,8 @@ cdef class TradingStrategy:
         :param bar_type: The bar_type of the bars.
         :return bool.
         """
+        Condition.not_none(bar_type, 'bar_type')
+
         return bar_type in self._bars and len(self._bars[bar_type]) > 0
 
     cpdef int tick_count(self, Symbol symbol):
@@ -590,6 +630,7 @@ cdef class TradingStrategy:
         :return int.
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return len(self._ticks[symbol])
@@ -602,6 +643,7 @@ cdef class TradingStrategy:
         :return int.
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
+        Condition.not_none(bar_type, 'bar_type')
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return len(self._bars[bar_type])
@@ -614,6 +656,7 @@ cdef class TradingStrategy:
         :return List[Tick].
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return list(self._ticks[symbol])
@@ -626,6 +669,7 @@ cdef class TradingStrategy:
         :return List[Bar].
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
+        Condition.not_none(bar_type, 'bar_type')
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return list(self._bars[bar_type])
@@ -640,6 +684,7 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return self._ticks[symbol][index]
@@ -654,6 +699,7 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
         """
+        Condition.not_none(bar_type, 'bar_type')
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return self._bars[bar_type][index]
@@ -1053,6 +1099,8 @@ cdef class TradingStrategy:
         
         :param timestamp: The timestamp when the strategy was saved.
         """
+        Condition.not_none(timestamp, 'timestamp')
+
         self.update_state_log(timestamp, 'SAVED')
 
     cpdef void load(self, dict state) except *:
@@ -1061,6 +1109,8 @@ cdef class TradingStrategy:
         
         :param state: The state dictionary to load.
         """
+        Condition.not_empty(state, 'state')
+
         state_log = state.get(b'StateLog')
         cdef list buffered = self._state_log
         if state_log:
@@ -1104,6 +1154,9 @@ cdef class TradingStrategy:
         self.log.info(f"Disposed.")
 
     cpdef void update_state_log(self, datetime timestamp, str action) except *:
+        Condition.not_none(timestamp, 'timestamp')
+        Condition.valid_string(action, 'action')
+
         self._state_log.append(f'{format_zulu_datetime(timestamp)} {action}')
 
     cpdef void account_inquiry(self) except *:
@@ -1131,6 +1184,9 @@ cdef class TradingStrategy:
         :param order: The order to submit.
         :param position_id: The position_id to associate with this order.
         """
+        Condition.not_none(order, 'order')
+        Condition.not_none(position_id, 'position_id')
+
         if not self.is_exec_engine_registered:
             self.log.error("Cannot send command SubmitOrder (execution engine not registered).")
             return
@@ -1155,6 +1211,9 @@ cdef class TradingStrategy:
         :param atomic_order: The atomic order to submit.
         :param position_id: The position_id to associate with this order.
         """
+        Condition.not_none(atomic_order, 'atomic_order')
+        Condition.not_none(position_id, 'position_id')
+
         if not self.is_exec_engine_registered:
             self.log.error("Cannot command SubmitAtomicOrder (execution engine not registered).")
             return
@@ -1180,6 +1239,9 @@ cdef class TradingStrategy:
         :param new_quantity: The new quantity for the given order.
         :param new_price: The new price for the given order.
         """
+        Condition.not_none(order, 'order')
+        # TODO: Check if both None etc
+
         if not self.is_exec_engine_registered:
             self.log.error("Cannot send command ModifyOrder (execution engine not registered).")
             return
@@ -1206,6 +1268,9 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the strategy has not been registered with an execution client.
         :raises ConditionFailed: If the cancel_reason is not a valid string.
         """
+        Condition.not_none(order, 'order')
+        Condition.not_none(cancel_reason, 'cancel_reason')  # Can be empty string
+
         if not self.is_exec_engine_registered:
             self.log.error("Cannot send command CancelOrder (execution client not registered).")
             return
@@ -1229,6 +1294,8 @@ cdef class TradingStrategy:
         :param cancel_reason: The reason for cancellation (default='NONE').
         :raises ConditionFailed: If the cancel_reason is not a valid string.
         """
+        Condition.not_none(cancel_reason, 'cancel_reason')  # Can be empty string
+
         if not self.is_exec_engine_registered:
             self.log.error("Cannot execute CANCEL_ALL_ORDERS, execution client not registered.")
             return
@@ -1265,6 +1332,9 @@ cdef class TradingStrategy:
         :param label: The label for the flattening order.
         :raises ConditionFailed: If the position_id is not found in the position book.
         """
+        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(label, 'label')
+
         if not self.is_exec_engine_registered:
             self.log.error("Cannot flatten position (execution client not registered).")
             return
@@ -1296,6 +1366,8 @@ cdef class TradingStrategy:
         
         :param label: The label for the flattening order(s).
         """
+        Condition.not_none(label, 'label')
+
         if not self.is_exec_engine_registered:
             self.log.error("Cannot flatten all positions (execution client not registered).")
             return
@@ -1352,6 +1424,8 @@ cdef class TradingStrategy:
         
         :param clock: The clock to change to.
         """
+        Condition.not_none(clock, 'clock')
+
         self.clock = clock
         self.clock.register_logger(self.log)
         self.clock.register_default_handler(self.handle_event)
@@ -1374,6 +1448,8 @@ cdef class TradingStrategy:
         
         :param guid_factory: The GUID factory to change to.
         """
+        Condition.not_none(guid_factory, 'guid_factory')
+
         self.guid_factory = guid_factory
 
     cpdef void change_logger(self, Logger logger) except *:
@@ -1382,4 +1458,6 @@ cdef class TradingStrategy:
         
         :param logger: The logger to change to.
         """
+        Condition.not_none(logger, 'logger')
+
         self.log = LoggerAdapter(self.id.value, logger)

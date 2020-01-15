@@ -25,14 +25,14 @@ cdef class Trader:
     """
 
     def __init__(self,
-                 TraderId trader_id,
-                 AccountId account_id,
-                 list strategies,
-                 DataClient data_client,
-                 ExecutionEngine exec_engine,
-                 Clock clock,
-                 GuidFactory guid_factory,
-                 Logger logger):
+                 TraderId trader_id not None,
+                 AccountId account_id not None,
+                 list strategies not None,
+                 DataClient data_client not None,
+                 ExecutionEngine exec_engine not None,
+                 Clock clock not None,
+                 GuidFactory guid_factory not None,
+                 Logger logger not None):
         """
         Initializes a new instance of the Trader class.
 
@@ -80,7 +80,6 @@ cdef class Trader:
         :raises ConditionFailed: If the strategies list is empty.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
-        Condition.not_none(strategies, 'strategies')
         Condition.not_empty(strategies, 'strategies')
         Condition.list_type(strategies, TradingStrategy, 'strategies')
 

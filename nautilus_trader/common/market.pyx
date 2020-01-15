@@ -31,7 +31,7 @@ cdef class TickDataWrangler:
     """
 
     def __init__(self,
-                 Instrument instrument,
+                 Instrument instrument not None,
                  data_ticks: pd.DataFrame=None,
                  dict data_bars_bid=None,
                  dict data_bars_ask=None):
@@ -310,7 +310,7 @@ cdef class IndicatorUpdater:
     """
 
     def __init__(self,
-                 indicator,
+                 indicator not None,
                  input_method: Callable=None,
                  list outputs: List[str]=None):
         """
@@ -361,6 +361,8 @@ cdef class IndicatorUpdater:
         
         :param tick: The tick to update with.
         """
+        Condition.not_none(tick, 'tick')
+
         cdef str param
         if self._include_self:
             self._input_method(self._indicator, *[tick.__getattribute__(param).as_double() for param in self._input_params])
@@ -373,6 +375,8 @@ cdef class IndicatorUpdater:
 
         :param bar: The bar to update with.
         """
+        Condition.not_none(bar, 'bar')
+
         cdef str param
         if self._include_self:
             self._input_method(self._indicator, *[bar.__getattribute__(param).as_double() for param in self._input_params])
@@ -385,6 +389,8 @@ cdef class IndicatorUpdater:
 
         :param bar: The bar to update with.
         """
+        Condition.not_none(bar, 'bar')
+
         cdef str param
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
@@ -394,6 +400,8 @@ cdef class IndicatorUpdater:
         
         :return Dict[str, float].
         """
+        Condition.not_none(ticks, 'ticks')
+
         cdef dict features = {}
         for output in self._outputs:
             features[output] = []
@@ -413,6 +421,8 @@ cdef class IndicatorUpdater:
         
         :return Dict[str, float].
         """
+        Condition.not_none(bars, 'bars')
+
         cdef dict features = {}
         for output in self._outputs:
             features[output] = []
@@ -432,6 +442,8 @@ cdef class IndicatorUpdater:
         
         :return Dict[str, float].
         """
+        Condition.not_none(bars, 'bars')
+
         cdef dict features = {}
         for output in self._outputs:
             features[output] = []
@@ -457,7 +469,7 @@ cdef class BarBuilder:
     The base class for all bar builders.
     """
 
-    def __init__(self, BarSpecification bar_spec, bint use_previous_close=False):
+    def __init__(self, BarSpecification bar_spec not None, bint use_previous_close=False):
         """
         Initializes a new instance of the BarBuilder class.
 
@@ -481,6 +493,8 @@ cdef class BarBuilder:
 
         :param tick: The tick to update with.
         """
+        Condition.not_none(tick, 'tick')
+
         cdef Price price = self._get_price(tick)
 
         if self._open is None:
@@ -561,9 +575,9 @@ cdef class BarAggregator:
     """
 
     def __init__(self,
-                 BarType bar_type,
-                 handler,
-                 Logger logger,
+                 BarType bar_type not None,
+                 handler not None,
+                 Logger logger not None,
                  bint use_previous_close):
         """
         Initializes a new instance of the BarAggregator class.
@@ -618,6 +632,8 @@ cdef class TickBarAggregator(BarAggregator):
 
         :param tick: The tick for the update.
         """
+        Condition.not_none(tick, 'tick')
+
         self._builder.update(tick)
 
         cdef Bar bar
@@ -637,10 +653,10 @@ cdef class TimeBarAggregator(BarAggregator):
     Provides a means of building time bars from ticks with an internal timer.
     """
     def __init__(self,
-                 BarType bar_type,
-                 handler,
-                 Clock clock,
-                 Logger logger):
+                 BarType bar_type not None,
+                 handler not None,
+                 Clock clock not None,
+                 Logger logger not None):
         """
         Initializes a new instance of the TickBarBuilder class.
 
@@ -665,6 +681,8 @@ cdef class TimeBarAggregator(BarAggregator):
 
         :param tick: The tick for the update.
         """
+        Condition.not_none(tick, 'tick')
+
         self._builder.update(tick)
 
         cdef TimeEvent event

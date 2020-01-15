@@ -16,7 +16,7 @@ cdef class PositionSizer:
     The base class for all position sizers.
     """
 
-    def __init__(self, Instrument instrument):
+    def __init__(self, Instrument instrument not None):
         """
         Initializes a new instance of the PositionSizer class.
 
@@ -31,6 +31,7 @@ cdef class PositionSizer:
         :param instrument: The instrument for update.
         :raises ConditionFailed: If the instruments symbol does not equal the held instrument symbol.
         """
+        Condition.not_none(instrument, 'instrument')
         Condition.equals(self.instrument.symbol, instrument.symbol, 'instrument.symbol', 'instrument.symbol')
 
         self.instrument = instrument
@@ -102,7 +103,7 @@ cdef class FixedRiskSizer(PositionSizer):
     Provides position sizing calculations based on a given risk.
     """
 
-    def __init__(self, Instrument instrument):
+    def __init__(self, Instrument instrument not None):
         """
         Initializes a new instance of the FixedRiskSizer class.
 
@@ -142,6 +143,9 @@ cdef class FixedRiskSizer(PositionSizer):
         
         :return Quantity.
         """
+        Condition.not_none(equity, 'equity')
+        Condition.not_none(price_entry, 'price_entry')
+        Condition.not_none(price_stop_loss, 'price_stop_loss')
         Condition.positive(risk_bp, 'risk_bp')
         Condition.positive(exchange_rate, 'exchange_rate')
         Condition.not_negative(commission_rate_bp, 'commission_rate_bp')

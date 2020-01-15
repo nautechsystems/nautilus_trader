@@ -42,22 +42,22 @@ cdef class LiveDataClient(DataClient):
 
     def __init__(self,
                  zmq_context: zmq.Context,
-                 Venue venue,
-                 str service_name='NautilusData',
-                 str service_address='localhost',
+                 Venue venue not None,
+                 str service_name not None='NautilusData',
+                 str service_address not None='localhost',
                  int tick_rep_port=55501,
                  int tick_pub_port=55502,
                  int bar_rep_port=55503,
                  int bar_pub_port=55504,
                  int inst_rep_port=55505,
                  int inst_pub_port=55506,
-                 RequestSerializer request_serializer=MsgPackRequestSerializer(),
-                 ResponseSerializer response_serializer=MsgPackResponseSerializer(),
-                 DataSerializer data_serializer=BsonDataSerializer(),
-                 InstrumentSerializer instrument_serializer=BsonInstrumentSerializer(),
-                 LiveClock clock=LiveClock(),
-                 LiveGuidFactory guid_factory=LiveGuidFactory(),
-                 LiveLogger logger=LiveLogger()):
+                 RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
+                 ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
+                 DataSerializer data_serializer not None=BsonDataSerializer(),
+                 InstrumentSerializer instrument_serializer not None=BsonInstrumentSerializer(),
+                 LiveClock clock not None=LiveClock(),
+                 LiveGuidFactory guid_factory not None=LiveGuidFactory(),
+                 LiveLogger logger not None=LiveLogger()):
         """
         Initializes a new instance of the LiveDataClient class.
 
@@ -203,6 +203,8 @@ cdef class LiveDataClient(DataClient):
 
         :param strategy: The strategy to register.
         """
+        Condition.not_none(strategy, 'strategy')
+
         strategy.register_data_client(self)
 
         self._log.info(f"Registered strategy {strategy} with the data client.")
@@ -222,6 +224,9 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(from_datetime, 'from_datetime')
+        Condition.not_none(to_datetime, 'to_datetime')
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
@@ -263,6 +268,9 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
+        Condition.not_none(bar_type, 'bar_type')
+        Condition.not_none(from_datetime, 'from_datetime')
+        Condition.not_none(to_datetime, 'to_datetime')
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
@@ -298,6 +306,7 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
@@ -371,6 +380,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription (if None will just call print).
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
         self._add_tick_handler(symbol, handler)
@@ -384,6 +394,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
 
         self._add_bar_handler(bar_type, handler)
@@ -397,6 +408,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
         self._add_instrument_handler(symbol, handler)
@@ -410,6 +422,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
         self._tick_sub_worker.unsubscribe(symbol.to_string())
@@ -423,6 +436,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
 
         self._bar_sub_worker.unsubscribe(bar_type.to_string())
@@ -436,6 +450,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
         self._inst_sub_worker.unsubscribe(symbol.value)

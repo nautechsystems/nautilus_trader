@@ -137,6 +137,7 @@ cdef class Identifier(ValidString):
 
         :param value: The value of the identifier.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
 

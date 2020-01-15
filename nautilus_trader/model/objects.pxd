@@ -121,6 +121,6 @@ cdef class Instrument:
     cdef readonly int min_limit_distance
     cdef readonly Quantity min_trade_size
     cdef readonly Quantity max_trade_size
-    cdef readonly object rollover_interest_buy
-    cdef readonly object rollover_interest_sell
+    cdef readonly Decimal rollover_interest_buy
+    cdef readonly Decimal rollover_interest_sell
     cdef readonly datetime timestamp

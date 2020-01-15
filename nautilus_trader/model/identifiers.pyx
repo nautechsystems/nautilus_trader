@@ -23,7 +23,7 @@ cdef class Symbol(Identifier):
 
     def __init__(self,
                  str code,
-                 Venue venue):
+                 Venue venue not None):
         """
         Initializes a new instance of the Symbol class.
 
@@ -48,6 +48,8 @@ cdef class Symbol(Identifier):
         :param value: The symbol string value to parse.
         :return Symbol.
         """
+        Condition.valid_string(value, 'value')
+
         cdef tuple partitioned = value.partition('.')
         return Symbol(partitioned[0], Venue(partitioned[2]))
 
@@ -81,6 +83,7 @@ cdef class Venue(Identifier):
         :param name: The venue name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
+        # Condition: name checked in base class
         super().__init__(name.upper())
 
 
@@ -97,6 +100,7 @@ cdef class Exchange(Venue):
         :param name: The exchange name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
+        # Condition: name checked in base class
         super().__init__(name.upper())
 
 
@@ -113,6 +117,7 @@ cdef class Brokerage(Identifier):
         :param name: The brokerage name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
+        # Condition: name checked in base class
         super().__init__(name.upper())
 
 
@@ -128,6 +133,7 @@ cdef class Label(Identifier):
         :param value: The label identifier value.
         :raises ConditionFailed: If the value is not a valid string.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -143,6 +149,7 @@ cdef class IdTag(Identifier):
         :param value: The identifier tag value.
         :raises ConditionFailed: If the value is not a valid string.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -161,9 +168,9 @@ cdef class TraderId(Identifier):
         :raises ConditionFailed: If the name is not a valid string.
         :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
-        super().__init__(f'{name}-{order_id_tag}')
-
         Condition.valid_string(name, 'name')
+        Condition.valid_string(order_id_tag, 'order_id_tag')
+        super().__init__(f'{name}-{order_id_tag}')
 
         self.name = name
         self.order_id_tag = IdTag(order_id_tag)
@@ -183,6 +190,8 @@ cdef class TraderId(Identifier):
         
         :return TraderId.
         """
+        Condition.valid_string(value, 'value')
+
         cdef tuple partitioned = value.partition('-')
 
         return TraderId(name=partitioned[0], order_id_tag=partitioned[2])
@@ -222,8 +231,9 @@ cdef class StrategyId(Identifier):
         :raises ConditionFailed: If the name is not a valid string.
         :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
-        super().__init__(f'{name}-{order_id_tag}')
         Condition.valid_string(name, 'name')
+        Condition.valid_string(order_id_tag, 'order_id_tag')
+        super().__init__(f'{name}-{order_id_tag}')
 
         self.name = name
         self.order_id_tag = IdTag(order_id_tag)
@@ -243,6 +253,8 @@ cdef class StrategyId(Identifier):
         
         :return StrategyId.
         """
+        Condition.valid_string(value, 'value')
+
         cdef tuple partitioned = value.partition('-')
         return StrategyId(name=partitioned[0], order_id_tag=partitioned[2])
 
@@ -282,6 +294,8 @@ cdef class AccountId(Identifier):
         :raises ConditionFailed: If the broker is not a valid string.
         :raises ConditionFailed: If the account_number is not a valid string.
         """
+        Condition.valid_string(broker, 'broker')
+        Condition.valid_string(account_number, 'account_number')
         super().__init__(f'{broker}-{account_number}-{account_type_to_string(account_type)}')
 
         self.broker = Brokerage(broker)
@@ -300,6 +314,8 @@ cdef class AccountId(Identifier):
         
         :return AccountId.
         """
+        Condition.valid_string(value, 'value')
+
         cdef list split = value.split('-', maxsplit=2)
         return AccountId(
             broker=split[0],
@@ -334,6 +350,7 @@ cdef class AccountNumber(Identifier):
 
         :param value: The value of the account number.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -349,6 +366,7 @@ cdef class AtomicOrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
         Condition.true(value.startswith('AO-'), f'value must begin with \'AO-\', was {value}.')
@@ -366,6 +384,7 @@ cdef class OrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
         Condition.true(value.startswith('O-'), f'value must begin with \'O-\', was {value}.')
@@ -382,6 +401,7 @@ cdef class OrderIdBroker(Identifier):
 
         :param value: The broker order identifier value.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -397,6 +417,7 @@ cdef class PositionId(Identifier):
 
         :param value: The position identifier value.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
         Condition.true(value.startswith('P-'), f' value must begin with \'P-\', was {value}.')
@@ -413,6 +434,7 @@ cdef class ExecutionId(Identifier):
 
         :param value: The execution identifier value.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -427,6 +449,7 @@ cdef class PositionIdBroker(Identifier):
 
         :param value: The broker position identifier value.
         """
+        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -442,4 +465,5 @@ cdef class InstrumentId(Identifier):
 
         :param value: The instrument identifier value.
         """
+        # Condition: value checked in base class
         super().__init__(value)

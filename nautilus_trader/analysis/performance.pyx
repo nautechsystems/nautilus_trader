@@ -25,6 +25,8 @@ from empyrical.stats import (
     beta,
     tail_ratio)
 
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport fast_round
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
@@ -53,6 +55,9 @@ cdef class PerformanceAnalyzer:
         """
         Calculate performance metrics from the given data.
         """
+        Condition.not_none(account, 'account')
+        Condition.not_none(positions, 'positions')
+
         self._account = account
 
         for event in self._account.get_events():
@@ -68,6 +73,8 @@ cdef class PerformanceAnalyzer:
 
         :param event: The event to handle.
         """
+        Condition.not_none(event, 'event')
+
         if self._account_capital is None:
             # Initialize account data
             self._account_starting_capital = event.cash_balance
@@ -95,6 +102,8 @@ cdef class PerformanceAnalyzer:
         :param time: The timestamp for the returns entry.
         :param value: The return value to add.
         """
+        Condition.not_none(time, 'time')
+
         cdef date index_date = pd.to_datetime(time.date())
         if index_date not in self._returns:
             self._returns.loc[index_date] = 0.0
@@ -113,6 +122,10 @@ cdef class PerformanceAnalyzer:
         :param positions: The end of day positions.
         :param cash_balance: The end of day cash balance of the account.
         """
+        Condition.not_none(time, 'time')
+        Condition.not_none(positions, 'positions')
+        Condition.not_none(cash_balance, 'cash_balance')
+
         cdef date index_date = pd.to_datetime(time.date())
         if index_date not in self._positions:
             self._positions.loc[index_date] = 0
@@ -460,32 +473,29 @@ cdef class PerformanceAnalyzer:
 
         return [
             f"PNL:               {self.total_pnl()} {account_currency}",
-            f"PNL %:             {self._format_stat(self.total_pnl_percentage())}%",
+            f"PNL %:             {fast_round(self.total_pnl_percentage(), precision=2)}%",
             f"Max Winner:        {self.max_winner()} {account_currency}",
             f"Avg Winner:        {self.avg_winner()} {account_currency}",
             f"Min Winner:        {self.min_winner()} {account_currency}",
             f"Min Loser:         {self.min_loser()} {account_currency}",
             f"Avg Loser:         {self.avg_loser()} {account_currency}",
             f"Max Loser:         {self.max_loser()} {account_currency}",
-            f"Win Rate:          {self._format_stat(self.win_rate(), decimals=4)}",
+            f"Win Rate:          {fast_round(self.win_rate(), precision=2)}",
             f"Expectancy:        {self.expectancy()} {account_currency}",
-            f"Annual return:     {self._format_stat(self.annual_return() * 100)}%",
-            f"Cum returns:       {self._format_stat(self.cum_return() * 100)}%",
-            f"Max drawdown:      {self._format_stat(self.max_drawdown_return() * 100)}%",
-            f"Annual vol:        {self._format_stat(self.annual_volatility() * 100)}%",
-            f"Sharpe ratio:      {self._format_stat(self.sharpe_ratio())}",
-            f"Calmar ratio:      {self._format_stat(self.calmar_ratio())}",
-            f"Sortino ratio:     {self._format_stat(self.sortino_ratio())}",
-            f"Omega ratio:       {self._format_stat(self.omega_ratio())}",
-            f"Stability:         {self._format_stat(self.stability_of_timeseries())}",
-            f"Returns Mean:      {self._format_stat(self.returns_mean(), decimals=5)}",
-            f"Returns Variance:  {self._format_stat(self.returns_variance(), decimals=8)}",
-            f"Returns Skew:      {self._format_stat(self.returns_skew())}",
-            f"Returns Kurtosis:  {self._format_stat(self.returns_kurtosis())}",
-            f"Tail ratio:        {self._format_stat(self.returns_tail_ratio())}",
-            f"Alpha:             {self._format_stat(self.alpha())}",
-            f"Beta:              {self._format_stat(self.beta())}"
+            f"Annual return:     {fast_round(self.annual_return() * 100, precision=2)}%",
+            f"Cum returns:       {fast_round(self.cum_return() * 100, precision=2)}%",
+            f"Max drawdown:      {fast_round(self.max_drawdown_return() * 100, precision=2)}%",
+            f"Annual vol:        {fast_round(self.annual_volatility() * 100, precision=2)}%",
+            f"Sharpe ratio:      {fast_round(self.sharpe_ratio(), precision=2)}",
+            f"Calmar ratio:      {fast_round(self.calmar_ratio(), precision=2)}",
+            f"Sortino ratio:     {fast_round(self.sortino_ratio(), precision=2)}",
+            f"Omega ratio:       {fast_round(self.omega_ratio(), precision=2)}",
+            f"Stability:         {fast_round(self.stability_of_timeseries(), precision=2)}",
+            f"Returns Mean:      {fast_round(self.returns_mean(), precision=5)}",
+            f"Returns Variance:  {fast_round(self.returns_variance(), precision=8)}",
+            f"Returns Skew:      {fast_round(self.returns_skew(), precision=2)}",
+            f"Returns Kurtosis:  {fast_round(self.returns_kurtosis(), precision=2)}",
+            f"Tail ratio:        {fast_round(self.returns_tail_ratio(), precision=2)}",
+            f"Alpha:             {fast_round(self.alpha(), precision=2)}",
+            f"Beta:              {fast_round(self.beta(), precision=2)}"
         ]
-
-    cdef str _format_stat(self, double value, int decimals=2):
-        return f'{value:.{decimals}f}'

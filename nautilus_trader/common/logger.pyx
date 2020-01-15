@@ -48,9 +48,9 @@ cdef class LogMessage:
     Represents a log message including timestamp and log level.
     """
     def __init__(self,
-                 datetime timestamp,
+                 datetime timestamp not None,
                  LogLevel level,
-                 str text,
+                 str text not None,
                  long thread_id=0):
         """
         Initializes a new instance of the LogMessage class.
@@ -96,8 +96,8 @@ cdef class Logger:
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path='log/',
-                 Clock clock=LiveClock()):
+                 str log_file_path not None='log/',
+                 Clock clock not None=LiveClock()):
         """
         Initializes a new instance of the Logger class.
 
@@ -233,8 +233,8 @@ cdef class TestLogger(Logger):
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path='log/',
-                 Clock clock=TestClock()):
+                 str log_file_path not None='log/',
+                 Clock clock not None=TestClock()):
         """
         Initializes a new instance of the TestLogger class.
 
@@ -267,6 +267,8 @@ cdef class TestLogger(Logger):
         
         :param message: The log message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._log(message)
 
 
@@ -311,6 +313,8 @@ cdef class LoggerAdapter:
         
         :param message: The message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._send_to_logger(LogLevel.VERBOSE, message)
 
     cpdef void debug(self, str message) except *:
@@ -319,6 +323,8 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._send_to_logger(LogLevel.DEBUG, message)
 
     cpdef void info(self, str message) except *:
@@ -327,6 +333,8 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._send_to_logger(LogLevel.INFO, message)
 
     cpdef void warning(self, str message) except *:
@@ -335,6 +343,8 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._send_to_logger(LogLevel.WARNING, message)
 
     cpdef void error(self, str message) except *:
@@ -343,6 +353,8 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._send_to_logger(LogLevel.ERROR, message)
 
     cpdef void critical(self, str message) except *:
@@ -351,6 +363,8 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
+        Condition.not_none(message, 'message')
+
         self._send_to_logger(LogLevel.CRITICAL, message)
 
     cpdef void exception(self, ex) except *:
@@ -359,6 +373,8 @@ cdef class LoggerAdapter:
         
         :param ex: The exception to log.
         """
+        Condition.not_none(ex, 'ex')
+
         cdef str ex_string = f'{type(ex).__name__}({ex})\n'
         exc_type, exc_value, exc_traceback = sys.exc_info()
         stack_trace = traceback.format_exception(exc_type, exc_value, exc_traceback)
@@ -384,6 +400,8 @@ cdef class LoggerAdapter:
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:
+        Condition.not_none(logger, 'logger')
+
         logger.info("#---------------------------------------------------------------#")
         logger.info(f" Nautilus Trader - Algorithmic Trading Platform")
         logger.info(f" by Nautech Systems Pty Ltd. ")

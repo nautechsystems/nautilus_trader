@@ -60,4 +60,3 @@ cdef class PerformanceAnalyzer:
     cpdef dict get_performance_stats(self)
 
     cdef list get_performance_stats_formatted(self)
-    cdef str _format_stat(self, double value, int decimals=*)

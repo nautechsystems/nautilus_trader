@@ -14,11 +14,10 @@ cdef class ObjectCache:
     Provides an object cache with strings as keys.
     """
 
-    def __init__(self, type type_value, parser):
+    def __init__(self, type type_value not None, parser):
         """
         Initializes a new instance of the ObjectCache class.
         """
-        Condition.true(type_value is not None, 'type_value is not None')
         Condition.true(type_value is not type(None), 'type_value is not type(None)')
 
         self.type_key = str
@@ -35,6 +34,8 @@ cdef class ObjectCache:
         
         :return object.
         """
+        Condition.valid_string(key, 'key')
+
         parsed = self._cache.get(key, None)
 
         if not parsed:

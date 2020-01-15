@@ -255,6 +255,8 @@ cdef class Price(Decimal):
         :param value: The string value to parse.
         :return: Price.
         """
+        Condition.valid_string(value, 'value')
+
         return Price(float(value), precision=Decimal.precision_from_string(value))
 
     cpdef Price add(self, Decimal other):
@@ -325,6 +327,8 @@ cdef class Money(Decimal):
         :param value: The string value to parse.
         :return Money.
         """
+        Condition.valid_string(value, 'value')
+
         return Money(float(value))
 
     cpdef Money add(self, Money other):
@@ -363,10 +367,10 @@ cdef class Tick:
     """
 
     def __init__(self,
-                 Symbol symbol,
-                 Price bid,
-                 Price ask,
-                 datetime timestamp,
+                 Symbol symbol not None,
+                 Price bid not None,
+                 Price ask not None,
+                 datetime timestamp not None,
                  TickType tick_type=TickType.TRADE,
                  double bid_size=1.0,
                  double ask_size=1.0):
@@ -403,6 +407,9 @@ cdef class Tick:
         :param values: The tick values string.
         :return Tick.
         """
+        Condition.not_none(symbol, 'symbol')
+        Condition.valid_string(values, 'values')
+
         cdef list split_values = values.split(',', maxsplit=2)
         return Tick(
             symbol,
@@ -418,6 +425,8 @@ cdef class Tick:
         :param value: The tick value string to parse.
         :return Tick.
         """
+        Condition.valid_string(value, 'value')
+
         cdef list split_values = value.split(',', maxsplit=3)
         return Tick(
             Symbol.from_string(split_values[0]),
@@ -577,6 +586,8 @@ cdef class BarSpecification:
         :param value: The bar specification string to parse.
         :return BarSpecification.
         """
+        Condition.valid_string(value, 'value')
+
         cdef list split1 = value.split('-', maxsplit=2)
         cdef list split2 = split1[1].split('[', maxsplit=1)
         cdef str structure = split2[0]
@@ -685,8 +696,8 @@ cdef class BarType:
     """
 
     def __init__(self,
-                 Symbol symbol,
-                 BarSpecification bar_spec):
+                 Symbol symbol not None,
+                 BarSpecification bar_spec not None):
         """
         Initializes a new instance of the BarType class.
 
@@ -704,6 +715,8 @@ cdef class BarType:
         :param value: The bar type string to parse.
         :return BarType.
         """
+        Condition.valid_string(value, 'value')
+
         cdef list split_string = re.split(r'[.-]+', value)
         cdef str structure = split_string[3].split('[', maxsplit=1)[0]
         cdef str price_type = split_string[3].split('[', maxsplit=1)[1].strip(']')
@@ -855,6 +868,8 @@ cdef class Bar:
         :param value: The bar string to parse.
         :return Bar.
         """
+        Condition.valid_string(value, 'value')
+
         cdef list split_bar = value.split(',', maxsplit=5)
 
         return Bar(Price.from_string(split_bar[0]),
@@ -947,7 +962,7 @@ cdef class DataBar:
                  double low_price,
                  double close_price,
                  double volume,
-                 datetime timestamp):
+                 datetime timestamp not None):
         """
         Initializes a new instance of the DataBar class.
 
@@ -1016,22 +1031,22 @@ cdef class Instrument:
     """
 
     def __init__(self,
-                 Symbol symbol,
-                 str broker_symbol,
+                 Symbol symbol not None,
+                 str broker_symbol not None,
                  Currency base_currency,
                  SecurityType security_type,
                  int tick_precision,
-                 Decimal tick_size,
-                 Quantity round_lot_size,
+                 Decimal tick_size not None,
+                 Quantity round_lot_size not None,
                  int min_stop_distance_entry,
                  int min_stop_distance,
                  int min_limit_distance_entry,
                  int min_limit_distance,
-                 Quantity min_trade_size,
-                 Quantity max_trade_size,
-                 object rollover_interest_buy,
-                 object rollover_interest_sell,
-                 datetime timestamp):
+                 Quantity min_trade_size not None,
+                 Quantity max_trade_size not None,
+                 Decimal rollover_interest_buy not None,
+                 Decimal rollover_interest_sell not None,
+                 datetime timestamp not None):
         """
         Initializes a new instance of the Instrument class.
 

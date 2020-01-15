@@ -93,6 +93,8 @@ cdef class MsgPackSerializer:
         
         :return bytes.
         """
+        Condition.not_none(message, 'message')
+
         return msgpack.packb(message)
 
     @staticmethod
@@ -104,6 +106,8 @@ cdef class MsgPackSerializer:
         
         :return Dict.
         """
+        Condition.not_none(message_bytes, 'message_bytes')
+
         return msgpack.unpackb(message_bytes, raw=False)
 
     @staticmethod
@@ -117,6 +121,9 @@ cdef class MsgPackSerializer:
         
         :return Dict.
         """
+        Condition.not_none(message_bytes, 'message_bytes')
+        Condition.not_none(ignore, 'ignore')
+
         cdef dict unpacked_raw = msgpack.unpackb(message_bytes)
         cdef dict unpacked = {}
 
@@ -142,6 +149,8 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         :param query: The data query to serialize.
         :return bytes.
         """
+        Condition.not_none(query, 'query')
+
         return MsgPackSerializer.serialize(query)
 
     cpdef dict deserialize(self, bytes query_bytes):
@@ -151,6 +160,8 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         :param query_bytes: The data query bytes to deserialize.
         :return Dict.
         """
+        Condition.not_none(query_bytes, 'query_bytes')
+
         return MsgPackSerializer.deserialize(query_bytes)
 
 
@@ -165,7 +176,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         self.symbol_cache = ObjectCache(Symbol, Symbol.from_string)
 
-    cpdef bytes serialize(self, Order order):
+    cpdef bytes serialize(self, Order order):  # Can be None
         """
         Return the serialized MessagePack specification bytes from the given order.
 
@@ -237,6 +248,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :return bytes.
         :raises: RuntimeError: If the command cannot be serialized.
         """
+        Condition.not_none(command, 'command')
+
         cdef dict package = {
             TYPE: command.__class__.__name__,
             ID: command.id.value,
@@ -361,6 +374,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :return bytes.
         :raises: RuntimeError: If the event cannot be serialized.
         """
+        Condition.not_none(event, 'event')
+
         cdef dict package = {
             TYPE: event.__class__.__name__,
             ID: event.id.value,
@@ -652,6 +667,8 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         :return bytes.
         :raises RuntimeError: If the request cannot be serialized.
         """
+        Condition.not_none(request, 'request')
+
         cdef dict package = {
             TYPE: request.__class__.__name__,
             ID: request.id.value,
@@ -705,6 +722,8 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         :return bytes.
         :raises RuntimeError: If the response cannot be serialized.
         """
+        Condition.not_none(response, 'response')
+
         cdef dict package = {
             TYPE: response.__class__.__name__,
             ID: response.id.value,
@@ -784,6 +803,8 @@ cdef class MsgPackLogSerializer(LogSerializer):
         :param message: The message to serialize.
         :return bytes.
         """
+        Condition.not_none(message, 'message')
+
         cdef dict package = {
             TIMESTAMP: convert_datetime_to_string(message.timestamp),
             LOG_LEVEL: message.level_string(),
