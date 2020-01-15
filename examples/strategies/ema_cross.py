@@ -365,7 +365,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
 
         :param tick: The received tick.
         """
-        # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        self.log.info(f"Received Tick({tick})")  # For demonstration purposes
         self.spreads.append(tick.ask.as_double() - tick.bid.as_double())
 
     def on_bar(self, bar_type: BarType, bar: Bar):

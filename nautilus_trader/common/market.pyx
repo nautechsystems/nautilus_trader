@@ -29,6 +29,7 @@ cdef class TickDataWrangler:
     Provides a means of building lists of ticks from the given Pandas DataFrames
     of bid and ask data. Provided data can either be tick data or bar data.
     """
+
     def __init__(self,
                  Instrument instrument,
                  data_ticks: pd.DataFrame=None,
@@ -61,10 +62,10 @@ cdef class TickDataWrangler:
         self._symbol = instrument.symbol
         self._precision = instrument.tick_precision
 
-        self.ticks = []
+        self.tick_data = []
         self.resolution = BarStructure.UNKNOWN
 
-    cpdef void build(self):
+    cpdef void build(self, int symbol_indexer):
         """
         Return the built ticks from the held data.
 
@@ -72,9 +73,7 @@ cdef class TickDataWrangler:
         """
         if self._data_ticks is not None and len(self._data_ticks) > 0:
             # Build ticks from data
-            self.ticks = list(map(self._build_tick_from_values,
-                                  self._data_ticks.values,
-                                  pd.to_datetime(self._data_ticks.index)))
+            self.tick_data = self._data_ticks
             self.resolution = BarStructure.TICK
             return
 
@@ -148,9 +147,8 @@ cdef class TickDataWrangler:
         df_ticks_final.sort_index(axis=0, inplace=True)
 
         # Build ticks from data
-        self.ticks = list(map(self._build_tick_from_values_with_sizes,
-                              df_ticks_final.values,
-                              pd.to_datetime(df_ticks_final.index, utc=True)))
+        self.tick_data = df_ticks_final
+        self.tick_data['symbol'] = symbol_indexer
 
     cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
         """
@@ -477,7 +475,7 @@ cdef class BarBuilder:
         self._volume = 0
         self._use_previous_close = use_previous_close
 
-    cpdef void update(self, Tick tick):
+    cpdef void update(self, Tick tick) except *:
         """
         Update the builder with the given tick.
 
@@ -518,7 +516,7 @@ cdef class BarBuilder:
             close_price=self._close,
             volume=self._volume,
             timestamp=close_time,
-            checked=False  # Class logic will prevent invalid bars
+            checked=False  # Builder logic will prevent invalid bars
         )
 
         self._reset()

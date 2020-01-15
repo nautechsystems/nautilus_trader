@@ -28,10 +28,22 @@ cdef class BacktestDataContainer:
 
 
 cdef class BacktestDataClient(DataClient):
-    cdef readonly list ticks
+    cdef object _tick_data
+    cdef object _prices
+    cdef object _symbols
+    cdef object _volumes
+    cdef object _timestamps
+    cdef dict _symbol_index
+    cdef int _index
+    cdef int _index_last
+
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
     cdef readonly datetime max_timestamp
+    cdef readonly bint has_data
 
-    cpdef void process_tick(self, Tick tick)
-    cpdef void reset(self)
+    cpdef void setup_ticks(self, datetime start, datetime stop) except *
+    cdef Tick generate_tick(self)
+
+    cpdef void process_tick(self, Tick tick) except *
+    cpdef void reset(self) except *

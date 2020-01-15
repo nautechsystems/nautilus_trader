@@ -43,14 +43,13 @@ cdef class BacktestEngine:
     cdef readonly timedelta time_to_initialize
     cdef readonly int iteration
 
-    cpdef run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*)
-
+    cpdef void run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*) except *
     cpdef list get_log_store(self)
     cpdef void print_log_store(self)
     cpdef void reset(self)
     cpdef void dispose(self)
 
-    cdef void _backtest_memory(self)
+    #cdef void _backtest_memory(self)
     cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop)
     cdef void _backtest_footer(self, datetime run_started, datetime run_finished, datetime start, datetime stop)
     cdef void _change_clocks_and_loggers(self, list strategies)

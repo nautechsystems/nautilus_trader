@@ -25,10 +25,10 @@ cdef class TickDataWrangler:
     cdef dict _data_bars_ask
     cdef dict _data_bars_bid
 
-    cdef readonly ticks
+    cdef readonly tick_data
     cdef readonly BarStructure resolution
 
-    cpdef void build(self)
+    cpdef void build(self, int symbol_indexer)
     cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp)
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp)
 
@@ -76,7 +76,7 @@ cdef class BarBuilder:
     cdef long _volume
     cdef bint _use_previous_close
 
-    cpdef void update(self, Tick tick)
+    cpdef void update(self, Tick tick) except *
     cpdef Bar build(self, datetime close_time=*)
     cdef void _reset(self)
     cdef Price _get_price(self, Tick tick)
