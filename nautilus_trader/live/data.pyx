@@ -268,7 +268,7 @@ cdef class LiveDataClient(DataClient):
         cdef dict query = {
             DATA_TYPE: "Bar[]",
             SYMBOL: bar_type.symbol.value,
-            SPECIFICATION: str(bar_type.specification),
+            SPECIFICATION: bar_type.specification.to_string(),
             FROM_DATETIME: convert_datetime_to_string(from_datetime),
             TO_DATETIME: convert_datetime_to_string(to_datetime),
         }
@@ -374,7 +374,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         self._add_tick_handler(symbol, handler)
-        self._tick_sub_worker.subscribe(str(symbol))
+        self._tick_sub_worker.subscribe(symbol.to_string())
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable) except *:
         """
@@ -387,7 +387,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         self._add_bar_handler(bar_type, handler)
-        self._bar_sub_worker.subscribe(str(bar_type))
+        self._bar_sub_worker.subscribe(bar_type.to_string())
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable) except *:
         """
@@ -412,7 +412,7 @@ cdef class LiveDataClient(DataClient):
         """
         Condition.callable(handler, 'handler')
 
-        self._tick_sub_worker.unsubscribe(str(symbol))
+        self._tick_sub_worker.unsubscribe(symbol.to_string())
         self._remove_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable) except *:
@@ -425,7 +425,7 @@ cdef class LiveDataClient(DataClient):
         """
         Condition.callable(handler, 'handler')
 
-        self._bar_sub_worker.unsubscribe(str(bar_type))
+        self._bar_sub_worker.unsubscribe(bar_type.to_string())
         self._remove_bar_handler(bar_type, handler)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable) except *:

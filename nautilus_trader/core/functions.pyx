@@ -161,3 +161,19 @@ def max_in_dict(dict dictionary):
     :return The key.
     """
     return max(dictionary.items(), key=lambda x: x[1])[0]
+
+
+# Function only exists due to some limitation with Cython and closures created by the slice
+def slice_dataframe(dataframe, start, end) -> pd.DataFrame:
+    """
+    Return the dataframe sliced using the given arguments.
+
+    :param dataframe: The dataframe to slice.
+    :param start: The start of the slice.
+    :param end: The end of the slice.
+    :return: pd.DataFrame.
+    """
+    if dataframe is None:
+        return pd.DataFrame()
+
+    return dataframe[start:end]

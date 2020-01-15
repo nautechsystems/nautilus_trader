@@ -411,7 +411,7 @@ cdef class AtomicOrder:
 
         :return str.
         """
-        cdef str take_profit_price = 'NONE' if self.take_profit is None or self.take_profit.price is None else str(self.take_profit.price)
+        cdef str take_profit_price = 'NONE' if self.take_profit is None or self.take_profit.price is None else self.take_profit.price.to_string()
         return f"AtomicOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
 
     def __repr__(self) -> str:
