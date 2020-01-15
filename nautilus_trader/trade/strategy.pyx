@@ -311,7 +311,7 @@ cdef class TradingStrategy:
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
 
-    cpdef void handle_tick(self, Tick tick):
+    cpdef void handle_tick(self, Tick tick) except *:
         """"
         System method. Update the internal ticks with the given tick, update
         indicators for the symbol, then call on_tick() and pass the tick 
@@ -335,7 +335,7 @@ cdef class TradingStrategy:
             except Exception as ex:
                 self.log.exception(ex)
 
-    cpdef void handle_ticks(self, list ticks):
+    cpdef void handle_ticks(self, list ticks) except *:
         """
         System method. Handle the given list of ticks by handling each tick individually.
         """
@@ -343,7 +343,7 @@ cdef class TradingStrategy:
         for i in range(len(ticks)):
             self.handle_tick(ticks[i])
 
-    cpdef void handle_bar(self, BarType bar_type, Bar bar):
+    cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
         """"
         System method. Update the internal bars with the given bar, update 
         indicators for the bar type, then call on_bar() and pass the arguments 
@@ -368,7 +368,7 @@ cdef class TradingStrategy:
             except Exception as ex:
                 self.log.exception(ex)
 
-    cpdef void handle_bars(self, BarType bar_type, list bars):
+    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
         System method. Handle the given bar type and bars by handling 
         each bar individually.
@@ -379,7 +379,7 @@ cdef class TradingStrategy:
         for i in range(len(bars)):
             self.handle_bar(bar_type, bars[i])
 
-    cpdef void handle_instrument(self, Instrument instrument):
+    cpdef void handle_instrument(self, Instrument instrument) except *:
         """
         System method. Handle the given instrument.
         """
@@ -389,7 +389,7 @@ cdef class TradingStrategy:
             except Exception as ex:
                 self.log.exception(ex)
 
-    cpdef void handle_event(self, Event event):
+    cpdef void handle_event(self, Event event) except *:
         """
         Call on_event() and passes the event (if the strategy is running).
 
@@ -459,7 +459,7 @@ cdef class TradingStrategy:
 
         return self._data_client.get_instruments()
 
-    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
+    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None) except *:
         """
         Request the historical bars for the given parameters from the data service.
         Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
@@ -486,7 +486,7 @@ cdef class TradingStrategy:
 
         self._data_client.request_bars(bar_type, from_datetime, to_datetime, self.handle_bars)
 
-    cpdef void subscribe_ticks(self, Symbol symbol):
+    cpdef void subscribe_ticks(self, Symbol symbol) except *:
         """
         Subscribe to tick data for the given symbol.
 
@@ -499,7 +499,7 @@ cdef class TradingStrategy:
         self._data_client.subscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Subscribed to {symbol} tick data.")
 
-    cpdef void subscribe_bars(self, BarType bar_type):
+    cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
         Subscribe to bar data for the given bar type.
 
@@ -512,7 +512,7 @@ cdef class TradingStrategy:
         self._data_client.subscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Subscribed to {bar_type} bar data.")
 
-    cpdef void subscribe_instrument(self, Symbol symbol):
+    cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
         Subscribe to instrument data for the given symbol.
 
@@ -525,7 +525,7 @@ cdef class TradingStrategy:
         self._data_client.subscribe_instrument(symbol, self.handle_instrument)
         self.log.info(f"Subscribed to {symbol} instrument data.")
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol):
+    cpdef void unsubscribe_ticks(self, Symbol symbol) except *:
         """
         Unsubscribe from tick data for the given symbol.
 
@@ -538,7 +538,7 @@ cdef class TradingStrategy:
         self._data_client.unsubscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Unsubscribed from {symbol} tick data.")
 
-    cpdef void unsubscribe_bars(self, BarType bar_type):
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
         Unsubscribe from bar data for the given bar type.
 
@@ -551,7 +551,7 @@ cdef class TradingStrategy:
         self._data_client.unsubscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Unsubscribed from {bar_type} bar data.")
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol):
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
         Unsubscribe from instrument data for the given symbol.
 
@@ -947,7 +947,7 @@ cdef class TradingStrategy:
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
 
-    cpdef void start(self):
+    cpdef void start(self) except *:
         """
         Start the trade strategy and call on_start().
         """
@@ -971,7 +971,7 @@ cdef class TradingStrategy:
         self.update_state_log(self.time_now(), 'RUNNING')
         self.log.info(f"Running...")
 
-    cpdef void stop(self):
+    cpdef void stop(self) except *:
         """
         Stop the trade strategy and call on_stop().
         """
@@ -999,7 +999,7 @@ cdef class TradingStrategy:
         self.update_state_log(self.time_now(), 'STOPPED')
         self.log.info(f"Stopped.")
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the strategy by returning all stateful values to their
         initial value, the on_reset() implementation is then called. 
@@ -1047,7 +1047,7 @@ cdef class TradingStrategy:
 
         return {**state, **user_state}
 
-    cpdef void saved(self, datetime timestamp):
+    cpdef void saved(self, datetime timestamp) except *:
         """
         System Method: Add a SAVED state to the state log.
         
@@ -1055,7 +1055,7 @@ cdef class TradingStrategy:
         """
         self.update_state_log(timestamp, 'SAVED')
 
-    cpdef void load(self, dict state):
+    cpdef void load(self, dict state) except *:
         """
         Load the strategy state from the give state dictionary.
         
@@ -1090,7 +1090,7 @@ cdef class TradingStrategy:
 
         self.update_state_log(self.time_now(), 'LOADED')
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         """
         Dispose of the strategy to release system resources, then call on_dispose().
         """
@@ -1103,10 +1103,10 @@ cdef class TradingStrategy:
 
         self.log.info(f"Disposed.")
 
-    cpdef void update_state_log(self, datetime timestamp, str action):
+    cpdef void update_state_log(self, datetime timestamp, str action) except *:
         self._state_log.append(f'{format_zulu_datetime(timestamp)} {action}')
 
-    cpdef void account_inquiry(self):
+    cpdef void account_inquiry(self) except *:
         """
         Send an account inquiry command to the execution service.
         """
@@ -1123,7 +1123,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void submit_order(self, Order order, PositionId position_id):
+    cpdef void submit_order(self, Order order, PositionId position_id) except *:
         """
         Send a submit order command with the given order and position_id to the execution 
         service.
@@ -1147,7 +1147,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id):
+    cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id) except *:
         """
         Send a submit atomic order command with the given order and position_id to the 
         execution service.
@@ -1171,7 +1171,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price):
+    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price) except *:
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
@@ -1196,7 +1196,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void cancel_order(self, Order order, str cancel_reason='NONE'):
+    cpdef void cancel_order(self, Order order, str cancel_reason='NONE') except *:
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
@@ -1221,7 +1221,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void cancel_all_orders(self, str cancel_reason='CANCEL_ON_STOP'):
+    cpdef void cancel_all_orders(self, str cancel_reason='CANCEL_ON_STOP') except *:
         """
         Send a cancel order command for orders which are not completed in the
         order book with the given cancel_reason - to the execution engine.
@@ -1255,7 +1255,7 @@ cdef class TradingStrategy:
             self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute_command(command)
 
-    cpdef void flatten_position(self, PositionId position_id, Label label=Label('FLATTEN')):
+    cpdef void flatten_position(self, PositionId position_id, Label label=Label('FLATTEN')) except *:
         """
         Flatten the position corresponding to the given identifier by generating
         the required market order, and sending it to the execution service.
@@ -1288,7 +1288,7 @@ cdef class TradingStrategy:
         self.log.info(f"Flattening {position}...")
         self.submit_order(order, position_id)
 
-    cpdef void flatten_all_positions(self, Label label=Label('FLATTEN')):
+    cpdef void flatten_all_positions(self, Label label=Label('FLATTEN')) except *:
         """
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
@@ -1326,7 +1326,7 @@ cdef class TradingStrategy:
             self.log.info(f"Flattening {position}...")
             self.submit_order(order, position_id)
 
-    cdef void _flatten_on_sl_reject(self, OrderRejected event):
+    cdef void _flatten_on_sl_reject(self, OrderRejected event) except *:
         cdef Order order = self._exec_engine.database.get_order(event.order_id)
         cdef PositionId position_id = self._exec_engine.database.get_position_id(event.order_id)
 
@@ -1346,7 +1346,7 @@ cdef class TradingStrategy:
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
 
-    cpdef void change_clock(self, Clock clock):
+    cpdef void change_clock(self, Clock clock) except *:
         """
         Backtest only method. Change the strategies clock with the given clock.
         
@@ -1368,7 +1368,7 @@ cdef class TradingStrategy:
             clock=clock,
             initial_count=self.position_id_generator.count)
 
-    cpdef void change_guid_factory(self, GuidFactory guid_factory):
+    cpdef void change_guid_factory(self, GuidFactory guid_factory) except *:
         """
         Backtest only method. Change the strategies GUID factory with the given GUID factory.
         
@@ -1376,7 +1376,7 @@ cdef class TradingStrategy:
         """
         self.guid_factory = guid_factory
 
-    cpdef void change_logger(self, Logger logger):
+    cpdef void change_logger(self, Logger logger) except *:
         """
         Backtest only method. Change the strategies logger with the given logger.
         

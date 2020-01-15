@@ -56,7 +56,7 @@ cdef class LogStore:
         """
         self._message_bus.put(message)
 
-    cpdef void _consume_messages(self):
+    cpdef void _consume_messages(self) except *:
         cdef LogMessage message
         while True:
             message = self._message_bus.get()
@@ -111,7 +111,7 @@ cdef class LiveLogger(Logger):
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
-    cpdef void log(self, LogMessage message):
+    cpdef void log(self, LogMessage message) except *:
         """
         Log the given message.
 
@@ -119,7 +119,7 @@ cdef class LiveLogger(Logger):
         """
         self._message_bus.put(message)
 
-    cpdef void _consume_messages(self):
+    cpdef void _consume_messages(self) except *:
         cdef LogMessage message
         while True:
             message = self._message_bus.get()

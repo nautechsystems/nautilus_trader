@@ -137,13 +137,13 @@ cdef class ExecutionEngine:
     cdef readonly int event_count
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
-    cpdef void register_client(self, ExecutionClient exec_client)
-    cpdef void register_strategy(self, TradingStrategy strategy)
-    cpdef void deregister_strategy(self, TradingStrategy strategy)
-    cpdef void execute_command(self, Command command)
-    cpdef void handle_event(self, Event event)
-    cpdef void check_residuals(self)
-    cpdef void reset(self)
+    cpdef void register_client(self, ExecutionClient exec_client) except *
+    cpdef void register_strategy(self, TradingStrategy strategy) except *
+    cpdef void deregister_strategy(self, TradingStrategy strategy) except *
+    cpdef void execute_command(self, Command command) except *
+    cpdef void handle_event(self, Event event) except *
+    cpdef void check_residuals(self) except *
+    cpdef void reset(self) except *
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
     cpdef list registered_strategies(self)
@@ -151,18 +151,18 @@ cdef class ExecutionEngine:
     cpdef bint is_flat(self)
 
 #--------------------------------------------------------------------------------------------------"
-    cdef void _execute_command(self, Command command)
-    cdef void _handle_event(self, Event event)
-    cdef void _handle_order_cancel_reject(self, OrderCancelReject event)
-    cdef void _handle_order_event(self, OrderEvent event)
-    cdef void _handle_order_fill(self, OrderFillEvent event)
-    cdef void _handle_position_event(self, PositionEvent event)
-    cdef void _handle_account_event(self, AccountStateEvent event)
-    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event)
-    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event)
-    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event)
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id)
-    cdef void _reset(self)
+    cdef void _execute_command(self, Command command) except *
+    cdef void _handle_event(self, Event event) except *
+    cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
+    cdef void _handle_order_event(self, OrderEvent event) except *
+    cdef void _handle_order_fill(self, OrderFillEvent event) except *
+    cdef void _handle_position_event(self, PositionEvent event) except *
+    cdef void _handle_account_event(self, AccountStateEvent event) except *
+    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *
+    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event) except *
+    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *
+    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+    cdef void _reset(self) except *
 
 
 cdef class ExecutionClient:
@@ -183,4 +183,4 @@ cdef class ExecutionClient:
     cpdef void cancel_order(self, CancelOrder command) except *
     cpdef void reset(self) except *
 #------------------------------------------------------------------------------#
-    cdef void _reset(self)
+    cdef void _reset(self) except *

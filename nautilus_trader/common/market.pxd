@@ -78,7 +78,7 @@ cdef class BarBuilder:
 
     cpdef void update(self, Tick tick) except *
     cpdef Bar build(self, datetime close_time=*)
-    cdef void _reset(self)
+    cdef void _reset(self) except *
     cdef Price _get_price(self, Tick tick)
     cdef int _get_volume(self, Tick tick)
 

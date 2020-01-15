@@ -28,8 +28,8 @@ cdef class Portfolio:
     cdef readonly Money daily_pnl_realized
     cdef readonly Money total_pnl_realized
 
-    cpdef void update(self, PositionEvent event)
-    cpdef void reset(self)
+    cpdef void update(self, PositionEvent event) except *
+    cpdef void reset(self) except *
     cpdef set symbols_open(self)
     cpdef set symbols_closed(self)
     cpdef set symbols_all(self)
@@ -37,6 +37,6 @@ cdef class Portfolio:
     cpdef dict positions_closed(self, Symbol symbol=*)
     cpdef dict positions_all(self, Symbol symbol=*)
 
-    cdef void _handle_position_opened(self, PositionOpened event)
-    cdef void _handle_position_modified(self, PositionModified event)
-    cdef void _handle_position_closed(self, PositionClosed event)
+    cdef void _handle_position_opened(self, PositionOpened event) except *
+    cdef void _handle_position_modified(self, PositionModified event) except *
+    cdef void _handle_position_closed(self, PositionClosed event) except *

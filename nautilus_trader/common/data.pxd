@@ -29,21 +29,21 @@ cdef class DataClient:
     cdef readonly Venue venue
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
-    cpdef void connect(self)
-    cpdef void disconnect(self)
+    cpdef void connect(self) except *
+    cpdef void disconnect(self) except *
     cpdef void reset(self) except *
-    cpdef void dispose(self)
-    cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback)
-    cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback)
-    cpdef void request_instrument(self, Symbol symbol, callback)
-    cpdef void request_instruments(self, callback)
-    cpdef void subscribe_ticks(self, Symbol symbol, handler)
-    cpdef void subscribe_bars(self, BarType bar_type, handler)
-    cpdef void subscribe_instrument(self, Symbol symbol, handler)
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler)
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler)
-    cpdef void update_instruments(self)
+    cpdef void dispose(self) except *
+    cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback) except *
+    cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback) except *
+    cpdef void request_instrument(self, Symbol symbol, callback) except *
+    cpdef void request_instruments(self, callback) except *
+    cpdef void subscribe_ticks(self, Symbol symbol, handler) except *
+    cpdef void subscribe_bars(self, BarType bar_type, handler) except *
+    cpdef void subscribe_instrument(self, Symbol symbol, handler) except *
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler) except *
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler) except *
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler) except *
+    cpdef void update_instruments(self) except *
 # ------------------------------------------------------------------------------------------------ #
 
     cpdef datetime time_now(self)
@@ -51,19 +51,19 @@ cdef class DataClient:
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instruments(self)
     cpdef list instrument_symbols(self)
-    cpdef void register_strategy(self, TradingStrategy strategy)
+    cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
 
-    cdef void _self_generate_bars(self, BarType bar_type, handler)
-    cdef void _add_tick_handler(self, Symbol symbol, handler)
-    cdef void _add_bar_handler(self, BarType bar_type, handler)
-    cdef void _add_instrument_handler(self, Symbol symbol, handler)
-    cdef void _remove_tick_handler(self, Symbol symbol, handler)
-    cdef void _remove_bar_handler(self, BarType bar_type, handler)
-    cdef void _remove_instrument_handler(self, Symbol symbol, handler)
-    cpdef void _handle_tick(self, Tick tick)
-    cpdef void _handle_bar(self, BarType bar_type, Bar bar)
-    cpdef void _handle_instrument(self, Instrument instrument)
-    cpdef void _handle_instruments(self, list instruments)
+    cdef void _self_generate_bars(self, BarType bar_type, handler) except *
+    cdef void _add_tick_handler(self, Symbol symbol, handler) except *
+    cdef void _add_bar_handler(self, BarType bar_type, handler) except *
+    cdef void _add_instrument_handler(self, Symbol symbol, handler) except *
+    cdef void _remove_tick_handler(self, Symbol symbol, handler) except *
+    cdef void _remove_bar_handler(self, BarType bar_type, handler) except *
+    cdef void _remove_instrument_handler(self, Symbol symbol, handler) except *
+    cpdef void _handle_tick(self, Tick tick) except *
+    cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void _handle_instrument(self, Instrument instrument) except *
+    cpdef void _handle_instruments(self, list instruments) except *
     cpdef void _reset(self) except *

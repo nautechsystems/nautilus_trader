@@ -78,8 +78,8 @@ cdef class Position:
     cpdef Money total_pnl(self, Tick last )
 
     cdef void _update(self, OrderFillEvent event) except *
-    cdef void _handle_buy_order_fill(self, OrderFillEvent event)
-    cdef void _handle_sell_order_fill(self, OrderFillEvent event)
+    cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *
+    cdef void _handle_sell_order_fill(self, OrderFillEvent event) except *
     cdef double _calculate_average_price(self, dict fills, long total_quantity)
     cdef double _calculate_points(self, double open_price, double close_price)
     cdef double _calculate_return(self, double open_price, double close_price)

@@ -31,7 +31,7 @@ cdef class LiveDataClient(DataClient):
     cdef ObjectCache _cached_symbols
     cdef ObjectCache _cached_bar_types
 
-    cpdef void _handle_instruments_py(self, list instruments)
-    cpdef void _handle_tick_sub(self, str topic, bytes message)
-    cpdef void _handle_bar_sub(self, str topic, bytes message)
-    cpdef void _handle_inst_sub(self, str topic, bytes message)
+    cpdef void _handle_instruments_py(self, list instruments) except *
+    cpdef void _handle_tick_sub(self, str topic, bytes message) except *
+    cpdef void _handle_bar_sub(self, str topic, bytes message) except *
+    cpdef void _handle_inst_sub(self, str topic, bytes message) except *

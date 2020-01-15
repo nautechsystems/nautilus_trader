@@ -85,25 +85,25 @@ cdef class TradingStrategy:
     cpdef void register_indicator(self, data_source, indicator, update_method=*) except *
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
-    cpdef void handle_tick(self, Tick tick)
-    cpdef void handle_ticks(self, list ticks)
-    cpdef void handle_bar(self, BarType bar_type, Bar bar)
-    cpdef void handle_bars(self, BarType bar_type, list bars)
-    cpdef void handle_instrument(self, Instrument instrument)
-    cpdef void handle_event(self, Event event)
+    cpdef void handle_tick(self, Tick tick) except *
+    cpdef void handle_ticks(self, list ticks) except *
+    cpdef void handle_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void handle_bars(self, BarType bar_type, list bars) except *
+    cpdef void handle_instrument(self, Instrument instrument) except *
+    cpdef void handle_event(self, Event event) except *
 
 #-- DATA METHODS ----------------------------------------------------------------------------------#
     cpdef datetime time_now(self)
     cpdef list instrument_symbols(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef dict instruments_all(self)
-    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*)
-    cpdef void subscribe_ticks(self, Symbol symbol)
-    cpdef void subscribe_bars(self, BarType bar_type)
-    cpdef void subscribe_instrument(self, Symbol symbol)
-    cpdef void unsubscribe_ticks(self, Symbol symbol)
-    cpdef void unsubscribe_bars(self, BarType bar_type)
-    cpdef void unsubscribe_instrument(self, Symbol symbol)
+    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*) except *
+    cpdef void subscribe_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_bars(self, BarType bar_type) except *
+    cpdef void subscribe_instrument(self, Symbol symbol) except *
+    cpdef void unsubscribe_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
     cpdef bint has_ticks(self, Symbol symbol)
     cpdef bint has_bars(self, BarType bar_type)
     cpdef int tick_count(self, Symbol symbol)
@@ -147,26 +147,26 @@ cdef class TradingStrategy:
     cpdef int count_positions_total(self)
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
-    cpdef void start(self)
-    cpdef void stop(self)
-    cpdef void reset(self)
+    cpdef void start(self) except *
+    cpdef void stop(self) except *
+    cpdef void reset(self) except *
     cpdef dict save(self)
-    cpdef void saved(self, datetime timestamp)
-    cpdef void load(self, dict state)
-    cpdef void dispose(self)
-    cpdef void update_state_log(self, datetime timestamp, str action)
-    cpdef void account_inquiry(self)
-    cpdef void submit_order(self, Order order, PositionId position_id)
-    cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id)
-    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price)
-    cpdef void cancel_order(self, Order order, str cancel_reason=*)
-    cpdef void cancel_all_orders(self, str cancel_reason=*)
-    cpdef void flatten_position(self, PositionId position_id, Label label=*)
-    cpdef void flatten_all_positions(self, Label label=*)
+    cpdef void saved(self, datetime timestamp) except *
+    cpdef void load(self, dict state) except *
+    cpdef void dispose(self) except *
+    cpdef void update_state_log(self, datetime timestamp, str action) except *
+    cpdef void account_inquiry(self) except *
+    cpdef void submit_order(self, Order order, PositionId position_id) except *
+    cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id) except *
+    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price) except *
+    cpdef void cancel_order(self, Order order, str cancel_reason=*) except *
+    cpdef void cancel_all_orders(self, str cancel_reason=*) except *
+    cpdef void flatten_position(self, PositionId position_id, Label label=*) except *
+    cpdef void flatten_all_positions(self, Label label=*) except *
 
-    cdef void _flatten_on_sl_reject(self, OrderRejected event)
+    cdef void _flatten_on_sl_reject(self, OrderRejected event) except *
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
-    cpdef void change_clock(self, Clock clock)
-    cpdef void change_guid_factory(self, GuidFactory guid_factory)
-    cpdef void change_logger(self, Logger logger)
+    cpdef void change_clock(self, Clock clock) except *
+    cpdef void change_guid_factory(self, GuidFactory guid_factory) except *
+    cpdef void change_logger(self, Logger logger) except *

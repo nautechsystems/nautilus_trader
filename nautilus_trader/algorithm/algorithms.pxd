@@ -29,7 +29,7 @@ cdef class TrailingStopAlgorithm:
 cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
     cdef readonly Symbol symbol
 
-    cpdef void update(self, Tick tick)
+    cpdef void update(self, Tick tick) except *
     cpdef TrailingStopSignal calculate_buy(self, Tick tick)
     cpdef TrailingStopSignal calculate_sell(self, Tick tick)
 
@@ -37,7 +37,7 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
 cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
     cdef readonly BarType bar_type
 
-    cpdef void update(self, Bar bar)
+    cpdef void update(self, Bar bar) except *
     cpdef TrailingStopSignal calculate_buy(self, Bar bar)
     cpdef TrailingStopSignal calculate_sell(self, Bar bar)
 

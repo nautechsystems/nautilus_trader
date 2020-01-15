@@ -18,7 +18,7 @@ cdef class LogStore:
     cdef LogSerializer _serializer
 
     cpdef void store(self, LogMessage message)
-    cpdef void _consume_messages(self)
+    cpdef void _consume_messages(self) except *
 
 
 cdef class LiveLogger(Logger):
@@ -26,4 +26,4 @@ cdef class LiveLogger(Logger):
     cdef object _thread
     cdef LogStore _store
 
-    cpdef void _consume_messages(self)
+    cpdef void _consume_messages(self) except *

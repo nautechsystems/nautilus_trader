@@ -21,10 +21,10 @@ cdef class BacktestDataContainer:
     cdef readonly dict bars_bid
     cdef readonly dict bars_ask
 
-    cpdef void add_instrument(self, Instrument instrument)
-    cpdef void add_ticks(self, Symbol symbol, data)
-    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data)
-    cpdef void check_integrity(self)
+    cpdef void add_instrument(self, Instrument instrument) except *
+    cpdef void add_ticks(self, Symbol symbol, data) except *
+    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data) except *
+    cpdef void check_integrity(self) except *
 
 
 cdef class BacktestDataClient(DataClient):

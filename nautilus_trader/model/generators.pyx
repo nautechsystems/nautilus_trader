@@ -43,7 +43,7 @@ cdef class IdentifierGenerator:
         self.id_tag_strategy = id_tag_strategy
         self.count = initial_count
 
-    cpdef void set_count(self, int count):
+    cpdef void set_count(self, int count) except *:
         """
         Set the internal counter to the given count.
         
@@ -51,7 +51,7 @@ cdef class IdentifierGenerator:
         """
         self.count = count
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the identifier generator by setting all stateful values to their 
         default value.

@@ -56,17 +56,20 @@ cdef class Decimal:
         return Decimal(float(value), precision=Decimal.precision_from_string(value))
 
     @staticmethod
-    cdef int precision_from_string(str value):
+    cdef int precision_from_string(str value) except -1:
         """
         Return the decimal precision inferred from the number of digits after the decimal place.
 
         :param value: The string value to parse.
         :return: int.
         """
-        if PyUnicode_Contains(value, '.'):
-            return len(value.partition('.')[2])
-        else:
-            return 1
+        try:
+            if PyUnicode_Contains(value, '.'):
+                return len(value.partition('.')[2])
+            else:
+                return 1
+        except IndexError:
+            return -1
 
     cpdef double as_double(self):
         """

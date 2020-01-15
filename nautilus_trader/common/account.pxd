@@ -38,7 +38,7 @@ cdef class Account:
     cdef readonly datetime last_updated
 
     cpdef list get_events(self)
-    cpdef void apply(self, AccountStateEvent event)
+    cpdef void apply(self, AccountStateEvent event) except *
 
     cdef Money _calculate_free_equity(self)
 

@@ -18,7 +18,7 @@ from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
-from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose, order_purpose_to_string
+from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport (
@@ -261,7 +261,7 @@ cdef class Order:
         """
         return self._events.copy()
 
-    cpdef void apply(self, OrderEvent event):
+    cpdef void apply(self, OrderEvent event) except *:
         """
         Apply the given order event to the order.
 
@@ -319,15 +319,15 @@ cdef class Order:
             if self.state == OrderState.FILLED:
                 self._set_is_completed_true()
 
-    cdef void _set_is_working_true(self):
+    cdef void _set_is_working_true(self) except *:
         self.is_working = True
         self.is_completed = False
 
-    cdef void _set_is_completed_true(self):
+    cdef void _set_is_completed_true(self) except *:
         self.is_working = False
         self.is_completed = True
 
-    cdef void _set_filled_state(self):
+    cdef void _set_filled_state(self) except *:
         if self.filled_quantity < self.quantity:
             self.state = OrderState.PARTIALLY_FILLED
         elif self.filled_quantity == self.quantity:
@@ -335,7 +335,7 @@ cdef class Order:
         elif self.filled_quantity > self.quantity:
             self.state = OrderState.OVER_FILLED
 
-    cdef void _set_slippage(self):
+    cdef void _set_slippage(self) except *:
         if self.type not in PRICED_ORDER_TYPES:
             # Slippage only applicable to priced order types
             return
@@ -451,14 +451,6 @@ cdef class OrderFactory:
             clock=clock,
             initial_count=initial_count)
 
-    cpdef void set_count(self, int count):
-        """
-        System Method: Set the internal order_id generator count to the given count.
-
-        :param count: The count to set.
-        """
-        self._id_generator.set_count(count)
-
     cpdef int count(self):
         """
         System Method: Return the internal order_id generator count.
@@ -467,7 +459,15 @@ cdef class OrderFactory:
         """
         return self._id_generator.count
 
-    cpdef void reset(self):
+    cpdef void set_count(self, int count) except *:
+        """
+        System Method: Set the internal order_id generator count to the given count.
+
+        :param count: The count to set.
+        """
+        self._id_generator.set_count(count)
+
+    cpdef void reset(self) except *:
         """
         Reset the order factory by clearing all stateful values.
         """

@@ -153,7 +153,7 @@ cdef class LiveDataClient(DataClient):
         self._cached_symbols = ObjectCache(Symbol, Symbol.from_string)
         self._cached_bar_types = ObjectCache(BarType, BarType.from_string)
 
-    cpdef void connect(self):
+    cpdef void connect(self) except *:
         """
         Connect to the data service.
         """
@@ -164,7 +164,7 @@ cdef class LiveDataClient(DataClient):
         self._inst_req_worker.connect()
         self._inst_sub_worker.connect()
 
-    cpdef void disconnect(self):
+    cpdef void disconnect(self) except *:
         """
         Disconnect from the data service.
         """
@@ -186,7 +186,7 @@ cdef class LiveDataClient(DataClient):
         self._cached_bar_types.clear()
         self._reset()
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         """
         Disposes of the data client.
         """
@@ -197,7 +197,7 @@ cdef class LiveDataClient(DataClient):
         self._inst_req_worker.dispose()
         self._inst_sub_worker.dispose()
 
-    cpdef void register_strategy(self, TradingStrategy strategy):
+    cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
         Register the given trade strategy with the data client.
 
@@ -212,7 +212,7 @@ cdef class LiveDataClient(DataClient):
             Symbol symbol,
             datetime from_datetime,
             datetime to_datetime,
-            callback: Callable):
+            callback: Callable) except *:
         """
         Request ticks for the given symbol and query parameters.
 
@@ -253,7 +253,7 @@ cdef class LiveDataClient(DataClient):
             BarType bar_type,
             datetime from_datetime,
             datetime to_datetime,
-            callback: Callable):
+            callback: Callable) except *:
         """
         Request bars for the given bar type and query parameters.
 
@@ -290,7 +290,7 @@ cdef class LiveDataClient(DataClient):
 
         callback(received_bar_type, [Bar.from_string(values) for values in data[DATA]])
 
-    cpdef void request_instrument(self, Symbol symbol, callback: Callable):
+    cpdef void request_instrument(self, Symbol symbol, callback: Callable) except *:
         """
         Request the instrument for the given symbol.
 
@@ -322,7 +322,7 @@ cdef class LiveDataClient(DataClient):
 
         callback(instrument)
 
-    cpdef void request_instruments(self, callback: Callable):
+    cpdef void request_instruments(self, callback: Callable) except *:
         """
         Request all instrument for the data clients venue.
         
@@ -351,19 +351,19 @@ cdef class LiveDataClient(DataClient):
         cdef list instruments = [self._instrument_serializer.deserialize(inst) for inst in data[DATA]]
         callback(instruments)
 
-    cpdef void update_instruments(self):
+    cpdef void update_instruments(self) except *:
         """
         Update all instruments for the data clients venue.
         """
         self.request_instruments(self._handle_instruments_py)
 
-    cpdef void _handle_instruments_py(self, list instruments):
+    cpdef void _handle_instruments_py(self, list instruments) except *:
         # Method provides a Python wrapper for the callback
         # Handle all instruments individually
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable) except *:
         """
         Subscribe to live tick data for the given symbol and handler.
 
@@ -376,7 +376,7 @@ cdef class LiveDataClient(DataClient):
         self._add_tick_handler(symbol, handler)
         self._tick_sub_worker.subscribe(str(symbol))
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable) except *:
         """
         Subscribe to live bar data for the given bar type and handler.
 
@@ -389,7 +389,7 @@ cdef class LiveDataClient(DataClient):
         self._add_bar_handler(bar_type, handler)
         self._bar_sub_worker.subscribe(str(bar_type))
 
-    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable):
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable) except *:
         """
         Subscribe to live instrument data updates for the given symbol and handler.
 
@@ -402,7 +402,7 @@ cdef class LiveDataClient(DataClient):
         self._add_instrument_handler(symbol, handler)
         self._inst_sub_worker.subscribe(symbol.value)
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable) except *:
         """
         Unsubscribe from live tick data for the given symbol and handler.
 
@@ -415,7 +415,7 @@ cdef class LiveDataClient(DataClient):
         self._tick_sub_worker.unsubscribe(str(symbol))
         self._remove_tick_handler(symbol, handler)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable) except *:
         """
         Unsubscribe from live bar data for the given symbol and handler.
 
@@ -428,7 +428,7 @@ cdef class LiveDataClient(DataClient):
         self._bar_sub_worker.unsubscribe(str(bar_type))
         self._remove_bar_handler(bar_type, handler)
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable):
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable) except *:
         """
         Unsubscribe from live instrument data updates for the given symbol and handler.
 
@@ -441,14 +441,14 @@ cdef class LiveDataClient(DataClient):
         self._inst_sub_worker.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)
 
-    cpdef void _handle_tick_sub(self, str topic, bytes message):
+    cpdef void _handle_tick_sub(self, str topic, bytes message) except *:
         # Handle the given tick message published for the given topic
         self._handle_tick(Utf8TickSerializer.deserialize(self._cached_symbols.get(topic), message))
 
-    cpdef void _handle_bar_sub(self, str topic, bytes message):
+    cpdef void _handle_bar_sub(self, str topic, bytes message) except *:
         # Handle the given bar message published for the given topic
         self._handle_bar(self._cached_bar_types.get(topic), Utf8BarSerializer.deserialize(message))
 
-    cpdef void _handle_inst_sub(self, str topic, bytes message):
+    cpdef void _handle_inst_sub(self, str topic, bytes message) except *:
         # Handle the given instrument message published for the given topic
         self._handle_instrument(self._instrument_serializer.deserialize(message))

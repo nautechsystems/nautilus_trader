@@ -84,7 +84,7 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
         else:
             raise ValueError(f"order side {order.side} is unrecognized")
 
-    cpdef void update(self, Tick tick):
+    cpdef void update(self, Tick tick) except *:
         """
         Update the algorithm with the given tick.
         
@@ -133,7 +133,7 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
         else:
             raise ValueError(f"order side {order.side} is unrecognized")
 
-    cpdef void update(self, Bar bar):
+    cpdef void update(self, Bar bar) except *:
         """
         Update the algorithm with the given tick.
         
