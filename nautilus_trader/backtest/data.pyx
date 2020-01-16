@@ -167,12 +167,16 @@ cdef class BacktestDataClient(DataClient):
             self._symbol_index[counter] = symbol
             self._precision_index[counter] = instrument.tick_precision
             start = datetime.utcnow()
+
+            # Build data wrangler
             wrangler = TickDataWrangler(
                 instrument=instrument,
                 data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
                 data_bars_bid=None if symbol not in data.bars_bid else data.bars_bid[symbol],
                 data_bars_ask=None if symbol not in data.bars_ask else data.bars_ask[symbol])
+            # Build data
             wrangler.build(counter)
+
             tick_frames.append(wrangler.tick_data)
             counter += 1
             self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}')
