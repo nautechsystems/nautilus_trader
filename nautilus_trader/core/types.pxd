@@ -10,11 +10,11 @@
 cdef class ValidString:
     cdef readonly str value
 
-    cpdef str to_string(self)
+    cpdef str to_string(self, bint with_class=*)
 
 
 cdef class Identifier(ValidString):
-    cdef str _class_name
+    cdef str _id_type
 
     cpdef bint equals(self, Identifier other)
 

@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime, timedelta
 from typing import List, Callable
 
 from nautilus_trader.core.correctness cimport Condition, ConditionFailed
-from nautilus_trader.core.functions cimport with_utc_index
+from nautilus_trader.common.functions cimport with_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarType, BarSpecification, Instrument
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string

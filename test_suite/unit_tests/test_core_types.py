@@ -60,13 +60,19 @@ class ValidStringTests(unittest.TestCase):
         # Assert
         self.assertEqual("abc", value.to_string())
 
-    def test_str_returns_expected_string(self):
+    def test_str_returns_expected_strings(self):
         # Arrange
         value = ValidString("abc")
 
         # Act
+        result1 = str(value)
+        result2 = value.to_string()
+        result3 = value.to_string(with_class=True)
+
         # Assert
-        self.assertEqual("abc", str(value))
+        self.assertEqual("abc", result1)
+        self.assertEqual("abc", result2)
+        self.assertEqual("ValidString(abc)", result3)
 
     def test_repr_returns_expected_string(self):
         # Arrange

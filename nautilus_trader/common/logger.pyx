@@ -23,7 +23,7 @@ from nautilus_trader.__info__ import __version__
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_zulu_datetime
 from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
 from nautilus_trader.common.logger cimport LogLevel
 

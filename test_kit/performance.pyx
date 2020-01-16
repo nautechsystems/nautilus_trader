@@ -10,7 +10,7 @@ import math
 import timeit
 import inspect
 
-from nautilus_trader.core.functions cimport get_obj_size
+from nautilus_trader.common.functions cimport get_obj_size
 
 
 cdef int _MILLISECONDS_IN_SECOND = 1000

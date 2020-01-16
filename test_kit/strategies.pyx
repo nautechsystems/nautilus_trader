@@ -10,7 +10,7 @@ from collections import deque
 from datetime import timedelta
 from typing import Deque
 
-from nautilus_trader.core.functions cimport fast_mean
+from nautilus_trader.common.functions cimport fast_mean
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
 from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarType, Bar, Instrument

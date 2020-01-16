@@ -13,7 +13,7 @@ from typing import List, Dict, Deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.core.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide

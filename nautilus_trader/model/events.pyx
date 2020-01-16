@@ -10,7 +10,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
-from nautilus_trader.core.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_zulu_datetime
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
