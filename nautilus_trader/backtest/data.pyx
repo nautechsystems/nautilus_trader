@@ -37,10 +37,11 @@ cdef class BacktestDataContainer:
         """
         Initializes a new instance of the BacktestDataContainer class.
         """
-        self.instruments = {}
-        self.ticks = {}
-        self.bars_bid = {}
-        self.bars_ask = {}
+        self.symbols = set()   # type: Set[Instrument]
+        self.instruments = {}  # type: Dict[Symbol, Instrument]
+        self.ticks = {}        # type: Dict[Symbol, pd.DataFrame]
+        self.bars_bid = {}     # type: Dict[Symbol, Dict[BarStructure, pd.DataFrame]]
+        self.bars_ask = {}     # type: Dict[Symbol, Dict[BarStructure, pd.DataFrame]]
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
@@ -65,6 +66,7 @@ cdef class BacktestDataContainer:
         Condition.not_none(data, 'data')
         Condition.type(data, pd.DataFrame, 'data')
 
+        self.symbols.add(symbol)
         self.ticks[symbol] = data
         self.ticks = dict(sorted(self.ticks.items()))
 
@@ -81,6 +83,8 @@ cdef class BacktestDataContainer:
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(data, 'data')
         Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
+
+        self.symbols.add(symbol)
 
         if price_type == PriceType.BID:
             if symbol not in self.bars_bid:
@@ -103,11 +107,7 @@ cdef class BacktestDataContainer:
         :raises: AssertionFailed: If the any integrity check fails.
         """
         # Check there is the needed instrument for each data symbol
-        cdef set data_symbols = {symbol for symbol in self.ticks}  # type: Set[Symbol]
-        [data_symbols.add(symbol) for symbol in self.bars_bid]
-        [data_symbols.add(symbol) for symbol in self.bars_ask]
-
-        for symbol in data_symbols:
+        for symbol in self.symbols:
             assert(symbol in self.instruments, f'The needed instrument {symbol} was not provided.')
 
         # Check that all bar DataFrames for each symbol are of the same shape and index
@@ -170,8 +170,8 @@ cdef class BacktestDataClient(DataClient):
             wrangler = TickDataWrangler(
                 instrument=instrument,
                 data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
-                data_bars_bid=data.bars_bid[symbol],
-                data_bars_ask=data.bars_ask[symbol])
+                data_bars_bid=None if symbol not in data.bars_bid else data.bars_bid[symbol],
+                data_bars_ask=None if symbol not in data.bars_ask else data.bars_ask[symbol])
             wrangler.build(counter)
             tick_frames.append(wrangler.tick_data)
             counter += 1

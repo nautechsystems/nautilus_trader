@@ -16,6 +16,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 
 
 cdef class BacktestDataContainer:
+    cdef readonly set symbols
     cdef readonly dict instruments
     cdef readonly dict ticks
     cdef readonly dict bars_bid
