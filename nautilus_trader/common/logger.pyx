@@ -448,4 +448,3 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
         logger.info(f"numpy {np.__version__}")
         logger.info(f"scipy {scipy.__version__}")
         logger.info(f"pandas {pd.__version__}")
-        logger.info("#---------------------------------------------------------------#")

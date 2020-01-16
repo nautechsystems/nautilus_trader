@@ -253,9 +253,8 @@ cdef class TradingNode:
 
     cdef void _log_header(self) except *:
         nautilus_header(self._log)
-        self._log.info(f"redis v{redis.__version__}")
-        self._log.info(f"pymongo v{pymongo.__version__}")
-        self._log.info(f"pyzmq v{zmq.pyzmq_version()}")
-        self._log.info(f"msgpack v{msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
+        self._log.info(f"redis {redis.__version__}")
+        self._log.info(f"pymongo {pymongo.__version__}")
+        self._log.info(f"pyzmq {zmq.pyzmq_version()}")
+        self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
         self._log.info("#---------------------------------------------------------------#")
-        self._log.info("")
