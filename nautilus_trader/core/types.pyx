@@ -26,18 +26,6 @@ cdef class ValidString:
 
         self.value = value
 
-    cpdef bint equals(self, ValidString other):
-        """
-        Return a value indicating whether the given object is equal to this object.
-        
-        :param other: The other object to compare
-        :return bool.
-        """
-        if isinstance(other, self.__class__):
-            return self.value == other.value
-        else:
-            return False
-
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -53,7 +41,7 @@ cdef class ValidString:
         :param other: The other object.
         :return bool.
         """
-        return self.equals(other)
+        return self.value == other.value
 
     def __ne__(self, ValidString other) -> bool:
         """
@@ -62,7 +50,7 @@ cdef class ValidString:
         :param other: The other object.
         :return bool.
         """
-        return not self.equals(other)
+        return self.value != other.value
 
     def __lt__(self, ValidString other) -> bool:
         """
@@ -139,6 +127,16 @@ cdef class Identifier(ValidString):
         """
         # Condition: value checked in base class
         super().__init__(value)
+        self._class_name = self.__class__.__name__
+
+    cpdef bint equals(self, Identifier other):
+        """
+        Return a value indicating whether the given object is equal to this object.
+        
+        :param other: The other object to compare
+        :return bool.
+        """
+        return self._class_name == other._class_name and self.value == other.value
 
 
 cdef class GUID(Identifier):

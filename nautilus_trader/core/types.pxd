@@ -9,12 +9,14 @@
 
 cdef class ValidString:
     cdef readonly str value
-    cpdef bint equals(self, ValidString other)
+
     cpdef str to_string(self)
 
 
 cdef class Identifier(ValidString):
-    pass
+    cdef str _class_name
+
+    cpdef bint equals(self, Identifier other)
 
 
 cdef class GUID(Identifier):
