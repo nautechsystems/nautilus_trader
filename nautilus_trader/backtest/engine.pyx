@@ -296,7 +296,7 @@ cdef class BacktestEngine:
 
         cdef list log_store = self.test_logger.get_log_store()
         cdef str message
-        if len(log_store) == 0:
+        if not log_store:
             self.log.info("No log messages were stored.")
         else:
             for message in self.test_logger.get_log_store():

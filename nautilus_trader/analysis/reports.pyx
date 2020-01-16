@@ -98,7 +98,7 @@ cdef class ReportProvider:
 
         cdef list account_events = [self._account_state_to_dict(e) for e in events if start <= e.timestamp]
 
-        if len(account_events) == 0:
+        if not account_events:
             return pd.DataFrame()
 
         return pd.DataFrame(data=account_events).set_index('timestamp')

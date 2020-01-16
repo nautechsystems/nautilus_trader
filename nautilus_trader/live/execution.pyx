@@ -454,7 +454,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef list events = self._redis.lrange(name=self.key_orders + order_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
-        if len(events) == 0:
+        if not events:
             self._log.error(f"Cannot load Order(id={order_id.value}) from database (not found).")
             return None
 
@@ -478,7 +478,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
-        if len(events) == 0:
+        if not events:
             self._log.error(f"Cannot load Position(id={position_id.value}) from database (not found).")
             return None
 
