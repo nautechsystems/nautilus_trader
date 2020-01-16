@@ -47,7 +47,7 @@ Options.warning_errors = True
 Options.cimport_from_pyx = True
 
 # Write profiling hooks into methods (x2 overhead, use for profiling only)
-Profile_Hooks = True
+Profile_Hooks = False
 
 # Cython compiler directives
 compiler_directives = {
