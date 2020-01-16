@@ -87,11 +87,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             atr_period=20,
             sl_atr_multiple=2.0)]
 
-        fill_model = FillModel(
-            prob_fill_at_limit=0.2,
-            prob_fill_at_stop=0.95,
-            prob_slippage=0.5)
-
         config = BacktestConfig(
             exec_db_type='in-memory',
             bypass_logging=True,
@@ -100,8 +95,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=strategies,
-            fill_model=FillModel(),
-            config=config)
+            config=config,
+            fill_model=None)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
@@ -180,3 +175,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 15/01/20 17217162 function calls (16995851 primitive calls) in 18.981 seconds (refactor backtest execution)
         # 15/01/20 20534441 function calls (20313076 primitive calls) in 22.242 seconds (ticks now built on the fly to save memory)
         # 16/01/20 20535710 function calls (20314291 primitive calls) in 22.437 seconds (added None checks)
+        # 17/01/20 19195261 function calls (18974139 primitive calls) in 18.884 seconds (added fast_mean)

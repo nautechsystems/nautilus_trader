@@ -15,6 +15,7 @@ from datetime import timezone, timedelta
 
 from nautilus_trader.core.functions import (
     fast_round,
+    fast_mean,
     basis_points_as_percentage,
     format_bytes,
     pad_string,
@@ -43,6 +44,16 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual(1.001, result1)
         self.assertEqual(-0.02, result2)
         self.assertEqual(1.002, result3)
+
+    def test_fast_mean(self):
+        # Arrange
+        iterable = [0.0, 1.1, 2.2, 3.3, 4.4, 5.5]
+
+        # Act
+        result = fast_mean(iterable)
+
+        # Assert
+        self.assertEqual(2.75, result)
 
     def test_basis_points_as_percentage(self):
         # Arrange
