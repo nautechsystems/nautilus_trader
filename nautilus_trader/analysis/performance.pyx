@@ -184,13 +184,13 @@ cdef class PerformanceAnalyzer:
         """
         return self._equity_curve
 
-    cpdef Money total_pnl(self):
+    cpdef double total_pnl(self):
         """
         Return the total PNL for the portfolio.
         
-        :return Money. 
+        :return double. 
         """
-        return self._account_capital.subtract(self._account_starting_capital)
+        return self._account_capital.subtract(self._account_starting_capital).as_double()
 
     cpdef double total_pnl_percentage(self):
         """
@@ -203,53 +203,53 @@ cdef class PerformanceAnalyzer:
         cdef double difference = self._account_capital.as_double() - self._account_starting_capital.as_double()
         return (difference / self._account_starting_capital.as_double()) * 100
 
-    cpdef Money max_winner(self):
+    cpdef double max_winner(self):
         """
         Return the maximum winner for the portfolio.
         
-        :return Money.
+        :return double.
         """
-        return Money(self._equity_curve['pnl'].max())
+        return self._equity_curve['pnl'].max()
 
-    cpdef Money max_loser(self):
+    cpdef double max_loser(self):
         """
         Return the maximum loser for the portfolio.
         
-        :return Money.
+        :return double.
         """
-        return Money(self._equity_curve['pnl'].min())
+        return self._equity_curve['pnl'].min()
 
-    cpdef Money min_winner(self):
+    cpdef double min_winner(self):
         """
         Return the minimum winner for the portfolio.
         
-        :return Money.
+        :return double.
         """
-        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].min())
+        return self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].min()
 
-    cpdef Money min_loser(self):
+    cpdef double min_loser(self):
         """
         Return the minimum loser for the portfolio.
         
-        :return Money.
+        :return double.
         """
-        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].max())
+        return self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].max()
 
-    cpdef Money avg_winner(self):
+    cpdef double avg_winner(self):
         """
         Return the average winner for the portfolio.
         
-        :return Money.
+        :return double.
         """
-        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].mean())
+        return self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].mean()
 
-    cpdef Money avg_loser(self):
+    cpdef double avg_loser(self):
         """
         Return the average loser for the portfolio.
         
-        :return Money.
+        :return double.
         """
-        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].mean())
+        return self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].mean()
 
     cpdef double win_rate(self):
         """
@@ -257,12 +257,12 @@ cdef class PerformanceAnalyzer:
         
         :return double. 
         """
-        cdef object winners = self._equity_curve['pnl'][self._equity_curve['pnl'] > 0]
-        cdef object losers = self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0]
+        cdef list winners = list(self._equity_curve['pnl'][self._equity_curve['pnl'] > 0])
+        cdef list losers = list(self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0])
 
         return len(winners) / max(1.0, (len(winners) + len(losers)))
 
-    cpdef Money expectancy(self):
+    cpdef double expectancy(self):
         """
         Return the expectancy for the portfolio.
         
@@ -271,7 +271,7 @@ cdef class PerformanceAnalyzer:
         cdef double win_rate = self.win_rate()
         cdef double loss_rate = 1.0 - win_rate
 
-        return Money((self.avg_winner().as_double() * win_rate) - (-self.avg_loser().as_double() * loss_rate))
+        return (self.avg_winner() * win_rate) + (self.avg_loser() * loss_rate)
 
     cpdef double annual_return(self):
         """
@@ -438,14 +438,14 @@ cdef class PerformanceAnalyzer:
         :return Dict[str, double].
         """
         return {
-            'PNL': self.total_pnl().as_double(),
+            'PNL': self.total_pnl(),
             'PNL%': self.total_pnl_percentage(),
-            'MaxWinner': self.max_winner().as_double(),
-            'AvgWinner': self.avg_winner().as_double(),
-            'MinWinner': self.min_winner().as_double(),
-            'MinLoser': self.min_loser().as_double(),
-            'AvgLoser': self.avg_loser().as_double(),
-            'MaxLoser': self.max_loser().as_double(),
+            'MaxWinner': self.max_winner(),
+            'AvgWinner': self.avg_winner(),
+            'MinWinner': self.min_winner(),
+            'MinLoser': self.min_loser(),
+            'AvgLoser': self.avg_loser(),
+            'MaxLoser': self.max_loser(),
             'WinRate': self.win_rate(),
             'Expectancy': self.expectancy(),
             'AnnualReturn': self.annual_return(),
@@ -476,16 +476,16 @@ cdef class PerformanceAnalyzer:
         cdef str account_currency = currency_to_string(self._account.currency) if self._account is not None else '?'
 
         return [
-            f"PNL:               {self.total_pnl()} {account_currency}",
+            f"PNL:               {fast_round(self.total_pnl(), precision=2)} {account_currency}",
             f"PNL %:             {fast_round(self.total_pnl_percentage(), precision=2)}%",
-            f"Max Winner:        {self.max_winner()} {account_currency}",
-            f"Avg Winner:        {self.avg_winner()} {account_currency}",
-            f"Min Winner:        {self.min_winner()} {account_currency}",
-            f"Min Loser:         {self.min_loser()} {account_currency}",
-            f"Avg Loser:         {self.avg_loser()} {account_currency}",
-            f"Max Loser:         {self.max_loser()} {account_currency}",
+            f"Max Winner:        {fast_round(self.max_winner(), precision=2)} {account_currency}",
+            f"Avg Winner:        {fast_round(self.avg_winner(), precision=2)} {account_currency}",
+            f"Min Winner:        {fast_round(self.min_winner(), precision=2)} {account_currency}",
+            f"Min Loser:         {fast_round(self.min_loser(), precision=2)} {account_currency}",
+            f"Avg Loser:         {fast_round(self.avg_loser(), precision=2)} {account_currency}",
+            f"Max Loser:         {fast_round(self.max_loser(), precision=2)} {account_currency}",
             f"Win Rate:          {fast_round(self.win_rate(), precision=2)}",
-            f"Expectancy:        {self.expectancy()} {account_currency}",
+            f"Expectancy:        {fast_round(self.expectancy(), precision=2)} {account_currency}",
             f"Annual return:     {fast_round(self.annual_return() * 100, precision=2)}%",
             f"Cum returns:       {fast_round(self.cum_return() * 100, precision=2)}%",
             f"Max drawdown:      {fast_round(self.max_drawdown_return() * 100, precision=2)}%",
