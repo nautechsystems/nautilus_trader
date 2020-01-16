@@ -30,6 +30,7 @@ from nautilus_trader.core.functions cimport fast_round
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
 
 
@@ -60,10 +61,12 @@ cdef class PerformanceAnalyzer:
 
         self._account = account
 
+        cdef AccountStateEvent event
         for event in self._account.get_events():
             self.handle_transaction(event)
 
-        for position_id, position in positions.items():
+        cdef Position position
+        for position in positions.values():
             if position.is_closed:
                 self.add_return(position.closed_time, position.realized_return)
 
@@ -81,7 +84,7 @@ cdef class PerformanceAnalyzer:
             self._account_capital = event.cash_balance
             return  # No transaction to handle
 
-        if self._account_capital == event.cash_balance:
+        if self._account_capital.equals(event.cash_balance):
             return  # No transaction to handle
 
         # Calculate transaction data
@@ -95,16 +98,16 @@ cdef class PerformanceAnalyzer:
         self._equity_curve.loc[event.timestamp]['capital'] = self._account_capital.as_double()
         self._equity_curve.loc[event.timestamp]['pnl'] = pnl.as_double()
 
-    cpdef void add_return(self, datetime time, double value)  except *:
+    cpdef void add_return(self, datetime timestamp, double value)  except *:
         """
         Add return data to the analyzer.
         
-        :param time: The timestamp for the returns entry.
+        :param timestamp: The timestamp for the returns entry.
         :param value: The return value to add.
         """
-        Condition.not_none(time, 'time')
+        Condition.not_none(timestamp, 'time')
 
-        cdef date index_date = pd.to_datetime(time.date())
+        cdef date index_date = pd.to_datetime(timestamp.date())
         if index_date not in self._returns:
             self._returns.loc[index_date] = 0.0
 
@@ -130,6 +133,7 @@ cdef class PerformanceAnalyzer:
         if index_date not in self._positions:
             self._positions.loc[index_date] = 0
 
+        cdef Position position
         cdef str symbol
         cdef list columns
         for position in positions:
