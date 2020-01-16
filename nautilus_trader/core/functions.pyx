@@ -118,22 +118,13 @@ cpdef str format_zulu_datetime(datetime dt):
     :param dt: The datetime to format.
     :return str.
     """
-    cdef str formatted_dt = ''
-    cdef tuple dt_partitioned
-    cdef str end
+    cdef str tz_stripped = str(dt).rpartition('+')[0]
 
-    try:
-        formatted_dt = dt.isoformat(timespec='microseconds').partition('+')[0][:-3]
-    except TypeError as ex:
-        formatted_dt = dt.isoformat().partition('+')[0]
-    if not PyUnicode_Contains(formatted_dt, '.'):
-        return formatted_dt + '.000Z'
-    else:
-        dt_partitioned = formatted_dt.rpartition('.')
-        end = dt_partitioned[2]
-        if len(end) > 3:
-            end = end[:3]
-        return f'{dt_partitioned[0]}.{end}Z'
+    if not PyUnicode_Contains(tz_stripped, '.'):
+        return tz_stripped + '.000Z'
+
+    cdef tuple dt_partitioned = tz_stripped.rpartition('.')
+    return f'{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z'
 
 
 cpdef object with_utc_index(dataframe):
