@@ -350,7 +350,7 @@ cdef class IndicatorUpdater:
             else:
                 self._input_params.append(param_map[param])
 
-        if outputs is None or len(outputs) == 0:
+        if outputs is None or not outputs:
             self._outputs = ['value']
         else:
             self._outputs = outputs
