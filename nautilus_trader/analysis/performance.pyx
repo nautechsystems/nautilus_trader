@@ -11,19 +11,6 @@ import pandas as pd
 
 from cpython.datetime cimport date, datetime
 from scipy.stats import kurtosis, skew
-# from empyrical.stats import (
-#     annual_return,
-#     cum_returns_final,
-#     annual_volatility,
-#     sharpe_ratio,
-#     calmar_ratio,
-#     sortino_ratio,
-#     omega_ratio,
-#     stability_of_timeseries,
-#     max_drawdown,
-#     alpha,
-#     beta,
-#     tail_ratio)
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_round
@@ -32,6 +19,19 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
+from nautilus_trader.analysis.stats import (
+    annual_return,
+    cum_returns_final,
+    annual_volatility,
+    sharpe_ratio,
+    calmar_ratio,
+    sortino_ratio,
+    omega_ratio,
+    stability_of_timeseries,
+    max_drawdown,
+    alpha,
+    beta,
+    tail_ratio)
 
 
 cdef class PerformanceAnalyzer:
@@ -55,6 +55,9 @@ cdef class PerformanceAnalyzer:
     cpdef void calculate_statistics(self, Account account, dict positions)  except *:
         """
         Calculate performance metrics from the given data.
+        
+        :param account: The account for the calculations.
+        :param positions: The positions for the calculations.
         """
         Condition.not_none(account, 'account')
         Condition.not_none(positions, 'positions')
@@ -275,11 +278,12 @@ cdef class PerformanceAnalyzer:
 
     cpdef double annual_return(self):
         """
-        Get the annual return for the portfolio.
+        Determines the mean annual growth rate of returns. This is equivalent
+        to the compound annual growth rate.
         
         :return double.
         """
-        return 0.0 # annual_return(returns=self._returns)
+        return annual_return(returns=self._returns)
 
     cpdef double cum_return(self):
         """
@@ -287,7 +291,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # cum_returns_final(returns=self._returns)
+        return cum_returns_final(returns=self._returns)
 
     cpdef double max_drawdown_return(self):
         """
@@ -295,7 +299,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # max_drawdown(returns=self._returns)
+        return max_drawdown(returns=self._returns)
 
     cpdef double annual_volatility(self):
         """
@@ -303,7 +307,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # annual_volatility(returns=self._returns)
+        return annual_volatility(returns=self._returns)
 
     cpdef double sharpe_ratio(self):
         """
@@ -311,7 +315,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # sharpe_ratio(returns=self._returns)
+        return sharpe_ratio(returns=self._returns)
 
     cpdef double calmar_ratio(self):
         """
@@ -319,7 +323,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # calmar_ratio(returns=self._returns)
+        return calmar_ratio(returns=self._returns)
 
     cpdef double sortino_ratio(self):
         """
@@ -327,7 +331,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # sortino_ratio(returns=self._returns)
+        return sortino_ratio(returns=self._returns)
 
     cpdef double omega_ratio(self):
         """
@@ -335,7 +339,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # omega_ratio(returns=self._returns)
+        return omega_ratio(returns=self._returns)
 
     cpdef double stability_of_timeseries(self):
         """
@@ -343,7 +347,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # stability_of_timeseries(returns=self._returns)
+        return stability_of_timeseries(returns=self._returns)
 
     cpdef double returns_mean(self):
         """
@@ -383,7 +387,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # tail_ratio(self._returns)
+        return tail_ratio(self._returns)
 
     cpdef double alpha(self):
         """
@@ -391,7 +395,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return 0.0 # alpha(returns=self._returns, factor_returns=self._returns)
+        return alpha(returns=self._returns, factor_returns=self._returns)
 
     cpdef double beta(self):
         """
@@ -399,7 +403,7 @@ cdef class PerformanceAnalyzer:
     
         :return double.
         """
-        return 0.0 # beta(returns=self._returns, factor_returns=self._returns)
+        return beta(returns=self._returns, factor_returns=self._returns)
 
     cpdef dict get_performance_stats(self):
         """

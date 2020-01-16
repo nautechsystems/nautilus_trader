@@ -33,6 +33,8 @@ def check_file_headers(directories: List[str], to_lint: List[str], company_name:
             if file_extension in to_lint:
                 with open(file, 'r') as open_file:
                     source_code = (open_file.read())
+                    if source_code.startswith('# !linter_ignore'):
+                        continue
                     expected_file_name = file.split('/')[-1]
                     result = re.findall(r'\"(.+?)\"', source_code)
                     if not result:
