@@ -1,3 +1,1 @@
-unittest
-pytest>=5.0.0
 nautilus_indicators>=0.50
