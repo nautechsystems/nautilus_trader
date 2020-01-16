@@ -110,11 +110,11 @@ class TestFunctionsTests(unittest.TestCase):
         result5 = format_zulu_datetime(dt5)
 
         # Assert
-        self.assertEqual('1970-01-01T00:00:00.000Z', result1)
-        self.assertEqual('1970-01-01T00:00:00.000Z', result2)
-        self.assertEqual('1970-01-01T00:00:00.001Z', result3)
-        self.assertEqual('1970-01-01T00:00:01.000Z', result4)
-        self.assertEqual('1970-01-01T01:01:02.003Z', result5)
+        self.assertEqual('1970-01-01 00:00:00.000Z', result1)
+        self.assertEqual('1970-01-01 00:00:00.000Z', result2)
+        self.assertEqual('1970-01-01 00:00:00.001Z', result3)
+        self.assertEqual('1970-01-01 00:00:01.000Z', result4)
+        self.assertEqual('1970-01-01 01:01:02.003Z', result5)
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
