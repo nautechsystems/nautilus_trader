@@ -94,6 +94,7 @@ cdef class BacktestEngine:
             clock=self.test_clock)
 
         nautilus_header(self.log)
+        self.log.info("#---------------------------------------------------------------#")
         self.log.info("Building engine...")
 
         if config.exec_db_type == 'in-memory':
