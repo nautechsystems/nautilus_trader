@@ -41,7 +41,7 @@ cdef class LiveDataClient(DataClient):
     """
 
     def __init__(self,
-                 zmq_context: zmq.Context,
+                 zmq_context not None: zmq.Context,
                  Venue venue not None,
                  str service_name not None='NautilusData',
                  str service_address not None='localhost',
