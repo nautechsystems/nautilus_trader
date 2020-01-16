@@ -6,12 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
-
 from collections import deque
 from datetime import timedelta
 from typing import Deque
 
+from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
 from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarType, Bar, Instrument
@@ -377,7 +376,7 @@ cdef class EMACross(TradingStrategy):
             return  # Wait for ticks...
 
         # Calculate average spread
-        cdef double average_spread = np.mean(self.spreads)
+        cdef double average_spread = fast_mean(self.spreads)
         cdef double liquidity_ratio
 
         # Check market liquidity

@@ -45,16 +45,18 @@ cdef class BacktestEngine:
                  BacktestDataContainer data not None,
                  list strategies not None: List[TradingStrategy],
                  BacktestConfig config not None=BacktestConfig(),
-                 FillModel fill_model not None=FillModel()):
+                 FillModel fill_model=None):
         """
         Initializes a new instance of the BacktestEngine class.
 
         :param data: The data for the backtest engine.
         :param strategies: The initial strategies for the backtest engine.
         :param config: The configuration for the backtest engine.
-        :param fill_model: The initial fill model for the backtest engine.
+        :param fill_model: The optional initial fill model for the backtest engine.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
+        if fill_model is None:
+            fill_model = FillModel()
         Condition.list_type(strategies, TradingStrategy, 'strategies')
 
         self.trader_id = TraderId('BACKTESTER', '000')

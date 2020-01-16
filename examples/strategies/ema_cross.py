@@ -6,12 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
-
 from collections import deque
 from datetime import timedelta
 from typing import Dict
 
+from nautilus_trader.core.functions import fast_mean
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, Currency, SecurityType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
@@ -125,7 +124,7 @@ class EMACrossPy(TradingStrategy):
             return  # Wait for ticks...
 
         # Calculate average spread
-        average_spread = np.mean(self.spreads)
+        average_spread = fast_mean(self.spreads)
 
         # Check market liquidity
         if average_spread == 0.0:
@@ -388,7 +387,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
             return  # Wait for ticks...
 
         # Calculate average spread
-        average_spread = np.mean(self.spreads)
+        average_spread = fast_mean(self.spreads)
 
         # Check market liquidity
         if average_spread == 0.0:

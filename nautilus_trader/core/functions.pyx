@@ -28,6 +28,20 @@ cpdef double fast_round(double value, int precision):
     return round(value * power) / power
 
 
+cpdef double fast_mean(iterable):
+    """
+    Return the average value of the iterable.
+    
+    :param iterable: The iterable to evaluate.
+    :return: double.
+    """
+    cdef double total = 0.0
+    cdef int length = len(iterable)
+    for i in range(length):
+        total += iterable[i]
+    return total / length
+
+
 cpdef double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
