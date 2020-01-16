@@ -133,7 +133,7 @@ cdef class BacktestDataClient(DataClient):
     """
 
     def __init__(self,
-                 Venue venue,
+                 Venue venue not None,
                  BacktestDataContainer data not None,
                  TestClock clock not None,
                  Logger logger not None):
