@@ -185,6 +185,7 @@ cdef class BacktestDataClient(DataClient):
         # Merge and sort all ticks
         self._tick_data = pd.concat(tick_frames)
         self._tick_data.sort_index(axis=0, inplace=True)
+        print(self._tick_data.head())
 
         # Set min and max timestamps
         self.min_timestamp = self._tick_data.index.min()
