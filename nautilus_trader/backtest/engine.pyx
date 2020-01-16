@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_obj_size
+from nautilus_trader.common.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_obj_size
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick

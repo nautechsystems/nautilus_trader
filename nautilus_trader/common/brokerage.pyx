@@ -12,7 +12,7 @@ import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport basis_points_as_percentage
+from nautilus_trader.common.functions cimport basis_points_as_percentage
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Decimal, Money, Quantity, Price

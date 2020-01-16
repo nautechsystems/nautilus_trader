@@ -10,8 +10,8 @@ from collections import deque
 from datetime import timedelta
 from typing import Dict
 
-from nautilus_trader.core.functions import fast_mean
 from nautilus_trader.core.message import Event
+from nautilus_trader.common.functions import fast_mean
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, Currency, SecurityType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol

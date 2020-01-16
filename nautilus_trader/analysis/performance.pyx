@@ -13,7 +13,7 @@ from cpython.datetime cimport date, datetime
 from scipy.stats import kurtosis, skew
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_round
+from nautilus_trader.common.functions cimport fast_round
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent

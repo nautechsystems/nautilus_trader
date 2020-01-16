@@ -26,13 +26,16 @@ cdef class ValidString:
 
         self.value = value
 
-    cpdef str to_string(self):
+    cpdef str to_string(self, bint with_class=False):
         """
         Return the string representation of this object.
         
         :return: str.
         """
-        return self.value
+        if with_class:
+            return f'{self.__class__.__name__}({self.value})'
+        else:
+            return self.value
 
     def __eq__(self, ValidString other) -> bool:
         """
@@ -127,7 +130,7 @@ cdef class Identifier(ValidString):
         """
         # Condition: value checked in base class
         super().__init__(value)
-        self._class_name = self.__class__.__name__
+        self._id_type = self.__class__.__name__
 
     cpdef bint equals(self, Identifier other):
         """
@@ -136,7 +139,9 @@ cdef class Identifier(ValidString):
         :param other: The other object to compare
         :return bool.
         """
-        return self._class_name == other._class_name and self.value == other.value
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
+        return self._id_type == other._id_type and self.value == other.value
 
 
 cdef class GUID(Identifier):
