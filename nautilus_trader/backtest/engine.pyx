@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_obj_size
+from nautilus_trader.common.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_size_of
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
@@ -349,7 +349,7 @@ cdef class BacktestEngine:
         self.log.info(f"RAM-Total: {ram_total_mb:,} MB")
         self.log.info(f"RAM-Used:  {ram_used__mb:,} MB ({round(100.0 - ram_avail_pc, 2)}%)")
         self.log.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc}%)")
-        self.log.info(f"Data size: {format_bytes(get_obj_size(self.data_client))}")
+        self.log.info(f"Data size: {format_bytes(get_size_of(self.data_client))}")
 
     cdef void _backtest_header(
             self,

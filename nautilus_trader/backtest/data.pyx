@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import gc
 import numpy as np
 import pandas as pd
 
@@ -15,6 +16,7 @@ from pandas import DatetimeIndex
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions import slice_dataframe
+from nautilus_trader.common.functions cimport get_size_of, format_bytes
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.tick_type cimport TickType
@@ -126,6 +128,13 @@ cdef class BacktestDataContainer:
                 assert(dataframe.shape == shapes[structure], f'{dataframe} shape is not equal.')
                 assert(dataframe.index == indexs[structure], f'{dataframe} index is not equal.')
 
+    cpdef long total_data_size(self):
+        cdef long size = 0
+        size += get_size_of(self.ticks)
+        size += get_size_of(self.bars_bid)
+        size += get_size_of(self.bars_ask)
+        return size
+
 
 cdef class BacktestDataClient(DataClient):
     """
@@ -186,6 +195,9 @@ cdef class BacktestDataClient(DataClient):
             self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
                            f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 
+            # Dump data artifacts
+            del wrangler
+
         # Merge and sort all ticks
         self._tick_data = pd.concat(tick_frames)
         self._tick_data.sort_index(axis=0, inplace=True)
@@ -205,6 +217,9 @@ cdef class BacktestDataClient(DataClient):
         self._log.info(f"Prepared {len(self._tick_data):,} ticks total in "
                        f"{round((datetime.utcnow() - timing_start_total).total_seconds(), 2)}s.")
 
+        # Garbage collection
+        gc.collect()
+
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
         Setup tick data for a backtest run.
@@ -215,19 +230,10 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(start, 'start')
         Condition.not_none(stop, 'stop')
 
-        self._log.info(f"Slicing tick data stream from {start} to {stop}...")
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
-
-        self._log.info(f"Generating symbol stream...")
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
-
-        self._log.info(f"Generating price stream...")
         self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
-
-        self._log.info(f"Generating volume stream...")
         self._volumes = data_slice[['bid_size', 'ask_size']].to_numpy(dtype=np.double)
-
-        self._log.info(f"Generating timestamp stream...")
         self._timestamps = data_slice.index
 
         self._index = 0
@@ -235,6 +241,12 @@ cdef class BacktestDataClient(DataClient):
         self.has_data = True
         self._clock.set_time(start)
 
+        cdef long total_size = 0
+        total_size += get_size_of(self._symbols)
+        total_size += get_size_of(self._prices)
+        total_size += get_size_of(self._volumes)
+        total_size += get_size_of(self._timestamps)
+        self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
     cdef Tick generate_tick(self):
         """

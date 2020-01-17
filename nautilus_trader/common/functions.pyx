@@ -52,7 +52,7 @@ cpdef double basis_points_as_percentage(double basis_points):
     return basis_points * 0.0001
 
 
-cdef long get_obj_size(obj):
+cdef long get_size_of(obj):
     cdef set marked = {id(obj)}
     obj_q = [obj]
     cdef long size = 0
