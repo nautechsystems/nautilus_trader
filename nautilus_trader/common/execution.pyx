@@ -1130,6 +1130,9 @@ cdef class ExecutionEngine:
         Reset the execution engine by clearing all stateful values.
         """
         self.database.reset()
+        self.account = self.database.get_account(self.account_id)
+        self.command_count = 0
+        self.event_count = 0
 
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
