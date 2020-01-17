@@ -71,7 +71,7 @@ cdef class Portfolio:
         """
         Reset the portfolio by returning all stateful values to their initial value.
         """
-        self._log.info(f"Resetting...")
+        self._log.debug(f"Resetting...")
 
         self._positions_open.clear()
         self._positions_closed.clear()

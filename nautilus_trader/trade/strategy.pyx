@@ -1057,6 +1057,7 @@ cdef class TradingStrategy:
             return
 
         self.log.debug(f"Resetting...")
+
         self.order_factory.reset()
         self.position_id_generator.reset()
         self._ticks.clear()

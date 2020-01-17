@@ -187,10 +187,16 @@ cdef class Trader:
             return
 
         self._log.debug("Resetting...")
+
         for strategy in self.strategies:
             strategy.reset()
 
         self.portfolio.reset()
+        self.analyzer.reset()
+        self.started_datetimes = []  # type: List[datetime]
+        self.stopped_datetimes = []  # type: List[datetime]
+        self.is_running = False
+
         self._log.info("Reset.")
 
     cpdef void dispose(self) except *:
