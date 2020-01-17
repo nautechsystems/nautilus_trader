@@ -185,7 +185,6 @@ cdef class BacktestDataClient(DataClient):
         # Merge and sort all ticks
         self._tick_data = pd.concat(tick_frames)
         self._tick_data.sort_index(axis=0, inplace=True)
-        print(self._tick_data.head())
 
         # Set min and max timestamps
         self.min_timestamp = self._tick_data.index.min()
@@ -209,11 +208,21 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(start, 'start')
         Condition.not_none(stop, 'stop')
 
+        self._log.debug(f"Slicing tick data from {start} to {stop}...")
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
+
+        self._log.debug(f"Generating symbol index...")
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
+
+        self._log.debug(f"Generating prices...")
         self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
+
+        self._log.debug(f"Generating volumes...")
         self._volumes = data_slice[['bid_size', 'ask_size']].to_numpy(dtype=np.double)
+
+        self._log.debug(f"Generating timestamps...")
         self._timestamps = data_slice.index
+
         self._index = 0
         self._index_last = len(data_slice) - 1
         self.has_data = True
