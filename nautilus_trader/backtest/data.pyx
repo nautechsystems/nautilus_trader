@@ -159,11 +159,14 @@ cdef class BacktestDataClient(DataClient):
         self._precision_index = {}
 
         # Prepare data
-        self._log.info(f"Preparing data...")
         cdef list tick_frames = []
         self.execution_resolutions = []
 
+        timing_start_total = datetime.utcnow()
         for symbol, instrument in self._instruments.items():
+            self._log.info(f"Preparing {symbol} data...")
+            timing_start = datetime.utcnow()
+
             self._symbol_index[counter] = symbol
             self._precision_index[counter] = instrument.tick_precision
 
@@ -173,12 +176,15 @@ cdef class BacktestDataClient(DataClient):
                 data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
                 data_bars_bid=None if symbol not in data.bars_bid else data.bars_bid[symbol],
                 data_bars_ask=None if symbol not in data.bars_ask else data.bars_ask[symbol])
+
             # Build data
             wrangler.build(counter)
-
             tick_frames.append(wrangler.tick_data)
             counter += 1
+
             self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}')
+            self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
+                           f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 
         # Merge and sort all ticks
         self._tick_data = pd.concat(tick_frames)
@@ -196,6 +202,9 @@ cdef class BacktestDataClient(DataClient):
         self._index_last = len(self._tick_data) - 1
         self.has_data = False
 
+        self._log.info(f"Prepared {len(self._tick_data):,} ticks total in "
+                       f"{round((datetime.utcnow() - timing_start_total).total_seconds(), 2)}s.")
+
     cpdef void setup_ticks(self, datetime start, datetime stop) except *:
         """
         Setup tick data for a backtest run.
@@ -206,20 +215,19 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(start, 'start')
         Condition.not_none(stop, 'stop')
 
-        timing_start = datetime.utcnow()
-        self._log.debug(f"Slicing tick data stream from {start} to {stop}...")
+        self._log.info(f"Slicing tick data stream from {start} to {stop}...")
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
 
-        self._log.debug(f"Generating symbol stream...")
+        self._log.info(f"Generating symbol stream...")
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
 
-        self._log.debug(f"Generating price stream...")
+        self._log.info(f"Generating price stream...")
         self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
 
-        self._log.debug(f"Generating volume stream...")
+        self._log.info(f"Generating volume stream...")
         self._volumes = data_slice[['bid_size', 'ask_size']].to_numpy(dtype=np.double)
 
-        self._log.debug(f"Generating timestamp stream...")
+        self._log.info(f"Generating timestamp stream...")
         self._timestamps = data_slice.index
 
         self._index = 0
@@ -227,7 +235,6 @@ cdef class BacktestDataClient(DataClient):
         self.has_data = True
         self._clock.set_time(start)
 
-        self._log.info(f"Prepared {len(self._timestamps):,} ticks total in {round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 
     cdef Tick generate_tick(self):
         """
