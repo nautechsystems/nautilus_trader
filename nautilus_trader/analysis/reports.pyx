@@ -130,5 +130,5 @@ cdef class ReportProvider:
 
     cdef dict _account_state_to_dict(self, AccountStateEvent event):
         return {'timestamp': event.timestamp,
-                'cash_balance': event.cash_balance,
-                'margin_used': event.margin_used_maintenance}
+                'cash_balance': event.cash_balance.as_decimal(),
+                'margin_used': event.margin_used_maintenance.as_decimal()}
