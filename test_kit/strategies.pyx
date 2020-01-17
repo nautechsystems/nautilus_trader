@@ -329,11 +329,6 @@ cdef class EMACross(TradingStrategy):
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
 
-        # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
-        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
-        self.register_indicator(self.bar_type, self.atr, self.atr.update)
-
         self.position_sizer = FixedRiskSizer(self.instrument)
 
     cpdef void on_start(self):
@@ -346,6 +341,11 @@ cdef class EMACross(TradingStrategy):
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
+
+        # Register the indicators for updating
+        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
+        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
+        self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
     cpdef void on_tick(self, Tick tick):
         """
@@ -367,6 +367,8 @@ cdef class EMACross(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
+        self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
+
         # Check if indicators ready
         if not self.indicators_initialized():
             return  # Wait for indicators to warm up...
@@ -385,7 +387,7 @@ cdef class EMACross(TradingStrategy):
         else:
             liquidity_ratio = self.atr.value / average_spread
             if liquidity_ratio < 2.0:
-                self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
+                self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
         cdef Price price_entry
@@ -528,8 +530,10 @@ cdef class EMACross(TradingStrategy):
         reset logic such as clearing the internally held bars, ticks and resetting
         all indicators.
         """
-        # Put custom code to be run on a strategy reset here (or pass)
-        pass
+        self.spreads.clear()
+        self.fast_ema.reset()
+        self.slow_ema.reset()
+        self.atr.reset()
 
     cpdef dict on_save(self):
         return {}

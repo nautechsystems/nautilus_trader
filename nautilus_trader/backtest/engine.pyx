@@ -215,7 +215,9 @@ cdef class BacktestEngine:
         if strategies:
             Condition.not_empty(strategies, 'strategies')
             Condition.list_type(strategies, TradingStrategy, 'strategies')
-        # ---------------------------------------------------------------------#
+
+        # Reset engine to fresh state (in case already run)
+        self.reset()
 
         cdef datetime run_started = self.clock.time_now()
 
@@ -318,7 +320,8 @@ cdef class BacktestEngine:
         - ExecutionClient
         - Trader (including all strategies)
         """
-        self.log.info(f"Resetting...")
+        self.log.debug(f"Resetting...")
+
         self.iteration = 0
         self.data_client.reset()
         self.exec_db.reset()
@@ -329,6 +332,7 @@ cdef class BacktestEngine:
         self.trader.reset()
         self.logger.clear_log_store()
         self.test_logger.clear_log_store()
+
         self.log.info("Reset.")
 
     cpdef void dispose(self) except *:
@@ -387,10 +391,10 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
         self.log.info(f"Elapsed time:   {run_finished - run_started}")
         self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
-        self.log.info(f"Iterations: {self.iteration}")
-        self.log.info(f"Total events: {self.exec_engine.event_count}")
-        self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total()}")
-        self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total()}")
+        self.log.info(f"Iterations: {self.iteration:,}")
+        self.log.info(f"Total events: {self.exec_engine.event_count:,}")
+        self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total():,}")
+        self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total():,}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string(format_commas=True)

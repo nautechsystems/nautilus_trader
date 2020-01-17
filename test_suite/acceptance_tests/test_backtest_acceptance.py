@@ -85,7 +85,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.assertEqual(558, strategies[0].fast_ema.count)
         self.assertEqual(-524.54, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
-    def test_can_reset_and_rerun_ema_cross_strategy_returns_identical_performance(self):
+    def test_can_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
         strategies = [EMACross(instrument=self.usdjpy,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
@@ -99,17 +99,16 @@ class BacktestAcceptanceTests(unittest.TestCase):
         stop = datetime(2013, 1, 3, 0, 0, 0, 0)
 
         self.engine.run(start, stop, strategies=strategies)
+        result1 = self.engine.analyzer.get_performance_stats()
 
         # Act
-        result1 = self.engine.analyzer.get_returns()
-
-        self.engine.reset()
         self.engine.run(start, stop)
-
-        result2 = self.engine.analyzer.get_returns()
+        result2 = self.engine.analyzer.get_performance_stats()
 
         # Assert
-        self.assertEqual(all(result1), all(result2))
+        print(result1)
+        print(result2)
+        self.assertEqual(result1, result2)
 
     def test_can_run_multiple_strategies(self):
         # Arrange

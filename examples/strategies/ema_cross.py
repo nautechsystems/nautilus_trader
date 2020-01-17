@@ -72,11 +72,6 @@ class EMACrossPy(TradingStrategy):
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
 
-        # Register the indicators for updating
-        self.register_indicator(data_source=self.bar_type, indicator=self.fast_ema, update_method=self.fast_ema.update)
-        self.register_indicator(data_source=self.bar_type, indicator=self.slow_ema, update_method=self.slow_ema.update)
-        self.register_indicator(data_source=self.bar_type, indicator=self.atr, update_method=self.atr.update)
-
     def on_start(self):
         """
         This method is called when self.start() is called, and after internal start logic.
@@ -88,10 +83,18 @@ class EMACrossPy(TradingStrategy):
         self.SL_buffer = self.instrument.tick_size * 10.0
         self.position_sizer = FixedRiskSizer(self.instrument)
 
+        # Request historical data
         self.request_bars(self.bar_type)
+
+        # Subscribe to live data
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
+
+        # Register the indicators for updating
+        self.register_indicator(data_source=self.bar_type, indicator=self.fast_ema, update_method=self.fast_ema.update)
+        self.register_indicator(data_source=self.bar_type, indicator=self.slow_ema, update_method=self.slow_ema.update)
+        self.register_indicator(data_source=self.bar_type, indicator=self.atr, update_method=self.atr.update)
 
     def on_tick(self, tick: Tick):
         """
@@ -132,7 +135,7 @@ class EMACrossPy(TradingStrategy):
         else:
             liquidity_ratio = self.atr.value / average_spread
             if liquidity_ratio < 2.0:
-                self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
+                self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
@@ -395,7 +398,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         else:
             liquidity_ratio = self.atr.value / average_spread
             if liquidity_ratio < 2.0:
-                self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
+                self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
         if self.count_orders_working() == 0 and self.is_flat():
@@ -525,7 +528,10 @@ class EMACrossMarketEntryPy(TradingStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        pass
+        self.spreads.clear()
+        self.fast_ema.reset()
+        self.slow_ema.reset()
+        self.atr.reset()
 
     def on_save(self) -> Dict:
         # Put custom state to be saved here (or return empty dictionary)

@@ -161,14 +161,15 @@ cdef class BacktestDataClient(DataClient):
 
         # Check data integrity
         data.check_integrity()
-
-        # Prepare instruments
-        for instrument in data.instruments.values():
-            self._handle_instrument(instrument)
+        self._data = data
 
         cdef int counter = 0
         self._symbol_index = {}
         self._precision_index = {}
+
+        # Prepare instruments
+        for instrument in self._data.instruments.values():
+            self._handle_instrument(instrument)
 
         # Prepare data
         cdef list tick_frames = []
@@ -185,9 +186,9 @@ cdef class BacktestDataClient(DataClient):
             # Build data wrangler
             wrangler = TickDataWrangler(
                 instrument=instrument,
-                data_ticks=None if symbol not in data.ticks else data.ticks[symbol],
-                data_bars_bid=None if symbol not in data.bars_bid else data.bars_bid[symbol],
-                data_bars_ask=None if symbol not in data.bars_ask else data.bars_ask[symbol])
+                data_ticks=None if symbol not in self._data.ticks else self._data.ticks[symbol],
+                data_bars_bid=None if symbol not in self._data.bars_bid else self._data.bars_bid[symbol],
+                data_bars_ask=None if symbol not in self._data.bars_ask else self._data.bars_ask[symbol])
 
             # Build data
             wrangler.build(counter)
@@ -233,6 +234,11 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(start, 'start')
         Condition.not_none(stop, 'stop')
 
+        # Prepare instruments
+        for instrument in self._data.instruments.values():
+            self._handle_instrument(instrument)
+
+        # Build tick data stream
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
         self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
@@ -269,7 +275,7 @@ cdef class BacktestDataClient(DataClient):
             ask_size=self._volumes[self._index][1])
 
         self._index += 1
-        if self._index >= self._index_last:
+        if self._index > self._index_last:
             self.has_data = False
 
         return tick
@@ -290,15 +296,17 @@ cdef class BacktestDataClient(DataClient):
         """
         Reset the client to its initial state.
         """
-        self._log.info(f"Resetting...")
+        self._log.debug(f"Resetting...")
+
         self._prices = None
         self._symbols = None
         self._volumes = None
         self._timestamps = None
         self._index = 0
         self._index_last = len(self._tick_data) - 1
-        self.has_data = True
+        self.has_data = False
         self._reset()
+
         self._log.info("Reset.")
 
     cpdef void dispose(self) except *:

@@ -127,10 +127,13 @@ cdef class ExecutionDatabase:
 
     cdef void _reset(self) except *:
         # Reset the class to its initial state
+        self._log.debug(f"Resetting...")
+
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
-        self._log.debug(f"Reset.")
+
+        self._log.info(f"Reset.")
 
 
 # -- QUERIES -------------------------------------------------------------------------------------"
@@ -527,6 +530,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._strategies.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
+        self._index_broker_position.clear()
         self._index_position_strategy.clear()
         self._index_position_orders.clear()
         self._index_strategy_orders.clear()

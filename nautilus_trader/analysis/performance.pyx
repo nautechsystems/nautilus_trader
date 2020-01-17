@@ -150,6 +150,9 @@ cdef class PerformanceAnalyzer:
         """
         Reset the analyzer by returning all stateful values to their initial value.
         """
+        self._account = None
+        self._account_starting_capital = None
+        self._account_capital = None
         self._returns = pd.Series()
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['amount'])
@@ -480,16 +483,16 @@ cdef class PerformanceAnalyzer:
         cdef str account_currency = currency_to_string(self._account.currency) if self._account is not None else '?'
 
         return [
-            f"PNL:               {fast_round(self.total_pnl(), precision=2)} {account_currency}",
+            f"PNL:               {fast_round(self.total_pnl(), precision=2):,} {account_currency}",
             f"PNL %:             {fast_round(self.total_pnl_percentage(), precision=2)}%",
-            f"Max Winner:        {fast_round(self.max_winner(), precision=2)} {account_currency}",
-            f"Avg Winner:        {fast_round(self.avg_winner(), precision=2)} {account_currency}",
-            f"Min Winner:        {fast_round(self.min_winner(), precision=2)} {account_currency}",
-            f"Min Loser:         {fast_round(self.min_loser(), precision=2)} {account_currency}",
-            f"Avg Loser:         {fast_round(self.avg_loser(), precision=2)} {account_currency}",
-            f"Max Loser:         {fast_round(self.max_loser(), precision=2)} {account_currency}",
+            f"Max Winner:        {fast_round(self.max_winner(), precision=2):,} {account_currency}",
+            f"Avg Winner:        {fast_round(self.avg_winner(), precision=2):,} {account_currency}",
+            f"Min Winner:        {fast_round(self.min_winner(), precision=2):,} {account_currency}",
+            f"Min Loser:         {fast_round(self.min_loser(), precision=2):,} {account_currency}",
+            f"Avg Loser:         {fast_round(self.avg_loser(), precision=2):,} {account_currency}",
+            f"Max Loser:         {fast_round(self.max_loser(), precision=2):,} {account_currency}",
             f"Win Rate:          {fast_round(self.win_rate(), precision=2)}",
-            f"Expectancy:        {fast_round(self.expectancy(), precision=2)} {account_currency}",
+            f"Expectancy:        {fast_round(self.expectancy(), precision=2):,} {account_currency}",
             f"Annual return:     {fast_round(self.annual_return() * 100, precision=2)}%",
             f"Cum returns:       {fast_round(self.cum_return() * 100, precision=2)}%",
             f"Max drawdown:      {fast_round(self.max_drawdown_return() * 100, precision=2)}%",

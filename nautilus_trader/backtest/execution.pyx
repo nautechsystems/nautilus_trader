@@ -147,6 +147,82 @@ cdef class BacktestExecClient(ExecutionClient):
         self._min_stops = min_stops
         self._min_limits = min_limits
 
+    cdef dict _build_current_bid_rates(self):
+        """
+        Return the current currency bid rates in the markets.
+        
+        :return: Dict[Symbol, double].
+        """
+        cdef Symbol symbol
+        cdef Tick tick
+        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
+
+    cdef dict _build_current_ask_rates(self):
+        """
+        Return the current currency ask rates in the markets.
+        
+        :return: Dict[Symbol, double].
+        """
+        cdef Symbol symbol
+        cdef Tick tick
+        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
+
+    cpdef void check_residuals(self) except *:
+        """
+        Check for any residual objects and log warnings if any are found.
+        """
+        for order_list in self._atomic_child_orders.values():
+            for order in order_list:
+                self._log.warning(f"Residual child-order {order}")
+
+        for order_id in self._oco_orders.values():
+            self._log.warning(f"Residual OCO {order_id}")
+
+    cpdef void reset(self) except *:
+        """
+        Return the client to its initial state preserving tick data.
+        """
+        self._log.debug(f"Resetting...")
+
+        self._reset()
+        self.day_number = 0
+        self.account_capital = self.starting_capital
+        self.account_cash_start_day = self.account_capital
+        self.account_cash_activity_day = Money.zero()
+        self._account = Account(self.reset_account_event())
+        self.total_commissions = Money.zero()
+        self.total_rollover = Money.zero()
+
+        self._market = {}               # type: Dict[Symbol, Tick]
+        self._working_orders = {}       # type: Dict[OrderId, Order]
+        self._atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
+        self._oco_orders = {}           # type: Dict[OrderId, OrderId]
+
+        self._log.info("Reset.")
+
+    cpdef void dispose(self) except *:
+        """
+        TBD.
+        """
+        pass
+
+    cdef AccountStateEvent reset_account_event(self):
+        """
+        Resets the account.
+        """
+        return AccountStateEvent(
+            self._exec_engine.account_id,
+            self.account_currency,
+            self.starting_capital,
+            self.starting_capital,
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Decimal.zero(),
+            ValidString('N'),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
     cpdef datetime time_now(self):
         """
         Return the current time for the execution client.
@@ -414,78 +490,6 @@ cdef class BacktestExecClient(ExecutionClient):
                 event_timestamp=self._clock.time_now())
 
             self._exec_engine.handle_event(account_event)
-
-    cpdef void check_residuals(self) except *:
-        """
-        Check for any residual objects and log warnings if any are found.
-        """
-        for order_list in self._atomic_child_orders.values():
-            for order in order_list:
-                self._log.warning(f"Residual child-order {order}")
-
-        for order_id in self._oco_orders.values():
-            self._log.warning(f"Residual OCO {order_id}")
-
-    cpdef void reset(self) except *:
-        """
-        Return the client to its initial state preserving tick data.
-        """
-        self._log.info(f"Resetting...")
-        self._reset()
-        self.day_number = 0
-        self.account_capital = self.starting_capital
-        self.account_cash_start_day = self.account_capital
-        self.account_cash_activity_day = Money.zero()
-        self._account = Account(self.reset_account_event())
-        self.total_commissions = Money.zero()
-        self._working_orders = {}       # type: Dict[OrderId, Order]
-        self._atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
-        self._oco_orders = {}           # type: Dict[OrderId, OrderId]
-
-        self._log.info("Reset.")
-
-    cpdef void dispose(self) except *:
-        """
-        TBD.
-        """
-        pass
-
-    cdef AccountStateEvent reset_account_event(self):
-        """
-        Resets the account.
-        """
-        return AccountStateEvent(
-            self._exec_engine.account_id,
-            self.account_currency,
-            self.starting_capital,
-            self.starting_capital,
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal.zero(),
-            ValidString('N'),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
-    cdef dict _build_current_bid_rates(self):
-        """
-        Return the current currency bid rates in the markets.
-        
-        :return: Dict[Symbol, double].
-        """
-        cdef Symbol symbol
-        cdef Tick tick
-        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
-
-    cdef dict _build_current_ask_rates(self):
-        """
-        Return the current currency ask rates in the markets.
-        
-        :return: Dict[Symbol, double].
-        """
-        cdef Symbol symbol
-        cdef Tick tick
-        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
 
 
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #

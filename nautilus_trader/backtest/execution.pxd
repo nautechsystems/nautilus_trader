@@ -59,6 +59,12 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _set_slippages(self) except *
     cdef void _set_min_distances(self) except *
+    cdef dict _build_current_bid_rates(self)
+    cdef dict _build_current_ask_rates(self)
+
+    cpdef void check_residuals(self) except *
+    cpdef void reset(self) except *
+    cdef AccountStateEvent reset_account_event(self)
     cpdef datetime time_now(self)
     cpdef void register_exec_db(self, ExecutionDatabase exec_db) except *
     cpdef void change_fill_model(self, FillModel fill_model) except *
@@ -66,12 +72,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
-    cpdef void check_residuals(self) except *
-    cpdef void reset(self) except *
 
-    cdef AccountStateEvent reset_account_event(self)
-    cdef dict _build_current_bid_rates(self)
-    cdef dict _build_current_ask_rates(self)
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
     cdef bint _check_valid_price(self, Order order, Tick current_market, bint reject=*)

@@ -30,6 +30,7 @@ cdef class BacktestDataContainer:
 
 
 cdef class BacktestDataClient(DataClient):
+    cdef BacktestDataContainer _data
     cdef object _tick_data
     cdef unsigned short[:] _symbols
     cdef double[:, :] _prices
