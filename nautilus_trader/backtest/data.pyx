@@ -6,6 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: boundscheck=False
+# cython: wraparound=False
+
 import gc
 import numpy as np
 import pandas as pd
