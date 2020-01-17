@@ -8,15 +8,21 @@
 
 import numpy as np
 import unittest
+import uuid
 
+from nautilus_trader.core.types import GUID
+from nautilus_trader.core.message import Message, MessageType
 from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.common.functions import fast_mean
 
 from test_kit.performance import PerformanceProfiler
+from test_kit.stubs import UNIX_EPOCH
 
 
 _AUDUSD = Symbol('AUDUSD', Venue('IDEALPRO'))
 _TEST_LIST = [0.0, 1.1, 2.2, 3.3, 4.4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+_MESSAGE = Message(MessageType.COMMAND, GUID(uuid.uuid4()), UNIX_EPOCH)
 
 
 class Experiments:
@@ -40,6 +46,14 @@ class Experiments:
     @staticmethod
     def fast_mean():
         x = fast_mean(_TEST_LIST)
+
+    @staticmethod
+    def is_instance():
+        x = isinstance(_MESSAGE, SubmitOrder)
+
+    @staticmethod
+    def is_message_type():
+        x = 0 == _MESSAGE.message_type
 
 
 class ExperimentsPerformanceTests(unittest.TestCase):
@@ -68,3 +82,13 @@ class ExperimentsPerformanceTests(unittest.TestCase):
         result = PerformanceProfiler.profile_function(Experiments.fast_mean, 3, 10000)
         # ~53ms (53677μs) minimum of 3 runs @ 1,000,000 iterations each run.
         self.assertTrue(result < 0.01)
+
+    def test_is_instance(self):
+        result = PerformanceProfiler.profile_function(Experiments.is_instance, 3, 100000)
+        # ~53ms (53677μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        self.assertTrue(result < 0.1)
+
+    def test_is_message_type(self):
+        result = PerformanceProfiler.profile_function(Experiments.is_message_type, 3, 100000)
+        # ~53ms (53677μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        self.assertTrue(result < 0.1)
