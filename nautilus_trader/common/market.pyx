@@ -74,6 +74,14 @@ cdef class TickDataWrangler:
         if self._data_ticks is not None and len(self._data_ticks) > 0:
             # Build ticks from data
             self.tick_data = self._data_ticks
+            self.tick_data['symbol'] = symbol_indexer
+
+            if 'bid_size' not in self.tick_data.columns:
+                self.tick_data['bid_size'] = 1.0
+
+            if 'ask_size' not in self.tick_data.columns:
+                self.tick_data['ask_size'] = 1.0
+
             self.resolution = BarStructure.TICK
             return
 
