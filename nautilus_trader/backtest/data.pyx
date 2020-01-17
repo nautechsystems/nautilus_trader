@@ -202,6 +202,7 @@ cdef class BacktestDataClient(DataClient):
             del wrangler
 
         # Merge and sort all ticks
+        self._log.info(f"Merging tick data stream...")
         self._tick_data = pd.concat(tick_frames)
         self._tick_data.sort_index(axis=0, inplace=True)
 
