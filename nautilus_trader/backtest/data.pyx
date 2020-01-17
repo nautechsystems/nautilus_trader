@@ -205,7 +205,7 @@ cdef class BacktestDataClient(DataClient):
         self._log.info(f"Prepared {len(self._tick_data):,} ticks total in "
                        f"{round((datetime.utcnow() - timing_start_total).total_seconds(), 2)}s.")
 
-    cpdef void setup_ticks(self, datetime start, datetime stop) except *:
+    cpdef void setup(self, datetime start, datetime stop) except *:
         """
         Setup tick data for a backtest run.
 
