@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import uuid
-
 from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer as TimerThread
@@ -16,6 +14,7 @@ from typing import List, Dict, Callable
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.clock cimport TestTimer
+from nautilus_trader.common.guid cimport TestGuidFactory, LiveGuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.events cimport TimeEvent
@@ -53,17 +52,18 @@ cdef class Timer:
         self.stop_time = stop_time
         self.expired = False
 
-    cpdef TimeEvent iterate_event(self, datetime now):
+    cpdef TimeEvent iterate_event(self, GUID event_id, datetime now):
         """
         Returns the next iterated time event and checks if the timer is now expired.
         
+        :param event_id: The event identifier for the time event.
         :param now: The datetime now (UTC).
         
         :return TimeEvent.
         """
         Condition.not_none(now, 'now')
 
-        cdef TimeEvent event = TimeEvent(self.label, GUID(uuid.uuid4()), self.next_time)
+        cdef TimeEvent event = TimeEvent(self.label, event_id, self.next_time)
 
         self.next_time += self.interval
         if self.stop_time and now >= self.stop_time:
@@ -131,6 +131,7 @@ cdef class TestTimer(Timer):
         # Condition: stop_time checked in base class
 
         super().__init__(label, interval, start_time, stop_time)
+        self._guid_factory = TestGuidFactory()
 
     cpdef list advance(self, datetime to_time):
         """
@@ -145,7 +146,7 @@ cdef class TestTimer(Timer):
 
         cdef list time_events = []  # type: List[TimeEvent]
         while not self.expired and to_time >= self.next_time:
-            time_events.append(self.iterate_event(self.next_time))
+            time_events.append(self.iterate_event(self._guid_factory.generate(), self.next_time))
 
         return time_events
 
@@ -218,11 +219,14 @@ cdef class Clock:
     The base class for all clocks. All times are timezone aware UTC.
     """
 
-    def __init__(self):
+    def __init__(self, GuidFactory guid_factory):
         """
         Initializes a new instance of the Clock class.
+
+        :param guid_factory: The guid factory for producing time events.
         """
         self._log = None
+        self._guid_factory = guid_factory
         self._timers = {}    # type: Dict[Label, Timer]
         self._handlers = {}  # type: Dict[Label, Callable]
         self._default_handler = None
@@ -439,7 +443,7 @@ cdef class TestClock(Clock):
 
         :param initial_time: The initial time for the clock.
         """
-        super().__init__()
+        super().__init__(TestGuidFactory())
         self._time = initial_time
         self._pending_events = {}  # type: Dict[TimeEvent, Callable]
         self.is_test_clock = True
@@ -515,6 +519,12 @@ cdef class LiveClock(Clock):
     Provides a clock for live trading. All times are timezone aware UTC.
     """
 
+    def __init__(self):
+        """
+        Initializes a new instance of the LiveClock class.
+        """
+        super().__init__(LiveGuidFactory())
+
     cpdef datetime time_now(self):
         """
         Return the current datetime of the clock (UTC).
@@ -540,7 +550,8 @@ cdef class LiveClock(Clock):
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
         cdef datetime now = self.time_now()
-        self._handle_time_event(timer.iterate_event(now))
+        cdef TimeEvent event = timer.iterate_event(self._guid_factory.generate(), now)
+        self._handle_time_event(event)
 
         if timer.expired:
             self._remove_timer(timer)

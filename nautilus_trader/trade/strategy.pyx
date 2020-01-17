@@ -90,7 +90,8 @@ cdef class TradingStrategy:
         self.order_factory = OrderFactory(
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
-            clock=self.clock)
+            clock=self.clock,
+            guid_factory=self.guid_factory)
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
@@ -1434,6 +1435,7 @@ cdef class TradingStrategy:
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
             clock=clock,
+            guid_factory=self.guid_factory,
             initial_count=self.order_factory.count())
 
         self.position_id_generator = PositionIdGenerator(

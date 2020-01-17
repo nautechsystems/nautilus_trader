@@ -176,4 +176,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 15/01/20 20534441 function calls (20313076 primitive calls) in 22.242 seconds (ticks now built on the fly to save memory)
         # 16/01/20 20535710 function calls (20314291 primitive calls) in 22.437 seconds (added None checks)
         # 17/01/20 19195261 function calls (18974139 primitive calls) in 18.884 seconds (added fast_mean)
-        # 18/01/20 19205785 function calls (18984394 primitive calls) in 18.964 seconds (remove wraparaound, noncheck, add c rand)
+        # 18/01/20 19205785 function calls (18984394 primitive calls) in 18.964 seconds (remove wrapaound, noncheck, add c rand)

@@ -8,7 +8,9 @@
 
 from cpython.datetime cimport datetime, timedelta
 
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.guid cimport GuidFactory, TestGuidFactory
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.events cimport TimeEvent
 
@@ -21,11 +23,13 @@ cdef class Timer:
     cdef readonly datetime stop_time
     cdef readonly expired
 
-    cpdef TimeEvent iterate_event(self, datetime now)
+    cpdef TimeEvent iterate_event(self, GUID event_id, datetime now)
     cpdef void cancel(self) except *
 
 
 cdef class TestTimer(Timer):
+    cdef TestGuidFactory _guid_factory
+
     cpdef list advance(self, datetime to_time)
 
 
@@ -39,6 +43,7 @@ cdef class LiveTimer(Timer):
 
 cdef class Clock:
     cdef LoggerAdapter _log
+    cdef GuidFactory _guid_factory
     cdef dict _timers
     cdef dict _handlers
     cdef object _default_handler
