@@ -84,11 +84,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.LIMIT,
             Quantity(100000),
-            UNIX_EPOCH,
-            Price(1.00000, 5),
+            price=Price(1.00000, 5),
             label=None,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH)
+            expire_time=UNIX_EPOCH,
+            init_id=GUID(uuid.uuid4()),
+            timestamp=UNIX_EPOCH)
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -107,9 +108,10 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             Quantity(100000),
-            UNIX_EPOCH,
-            Price(1.00000, 5),
-            Label('S1_SL'))
+            price=Price(1.00000, 5),
+            label=Label('S1_SL'),
+            init_id=GUID(uuid.uuid4()),
+            timestamp=UNIX_EPOCH)
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -128,11 +130,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             Quantity(100000),
-            UNIX_EPOCH,
-            Price(1.00000, 5),
+            price=Price(1.00000, 5),
             label=None,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH)
+            expire_time=UNIX_EPOCH,
+            init_id=GUID(uuid.uuid4()),
+            timestamp=UNIX_EPOCH)
 
         # Act
         serialized = self.serializer.serialize(order)

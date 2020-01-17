@@ -9,7 +9,6 @@
 import unittest
 import uuid
 
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.types import GUID, ValidString
@@ -36,6 +35,8 @@ from nautilus_trader.model.identifiers import (
     PositionIdBroker)
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import Order, OrderFactory
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.guid import TestGuidFactory
 
 from test_kit.stubs import TestStubs
 
@@ -52,7 +53,8 @@ class OrderTests(unittest.TestCase):
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
-            clock=TestClock())
+            clock=TestClock(),
+            guid_factory=TestGuidFactory())
 
     def test_market_order_with_quantity_zero_raises_exception(self):
         # Arrange
@@ -65,6 +67,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.MARKET,
             Quantity(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
     def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(self):
@@ -78,6 +81,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.LIMIT,
             Quantity(100000),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH,
             price=Price(1.00000, 5),
             time_in_force=TimeInForce.GTD,
@@ -94,6 +98,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.MARKET,
             Quantity(100000),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH,
             price=Price(1.00000, 5))
 
@@ -108,6 +113,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.STOP_MARKET,
             Quantity(100000),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
     def test_stop_order_with_zero_price_input_raises_exception(self):
@@ -121,6 +127,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.STOP_MARKET,
             Quantity(100000),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH,
             price=None)
 

@@ -197,8 +197,9 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             ORDER_PURPOSE: order_purpose_to_string(order.purpose),
             TIME_IN_FORCE: time_in_force_to_string(order.time_in_force),
             EXPIRE_TIME: convert_datetime_to_string(order.expire_time),
+            INIT_ID: order.init_id.value,
             TIMESTAMP: convert_datetime_to_string(order.timestamp),
-            INIT_ID: order.init_id.value})
+        })
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
@@ -220,12 +221,13 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                      order_side=order_side_from_string(unpacked[ORDER_SIDE]),
                      order_type=order_type_from_string(unpacked[ORDER_TYPE]),
                      quantity=Quantity(unpacked[QUANTITY]),
-                     timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]),
                      price=convert_string_to_price(unpacked[PRICE]),
                      label=convert_string_to_label(unpacked[LABEL]),
                      order_purpose=order_purpose_from_string(unpacked[ORDER_PURPOSE]),
                      time_in_force=time_in_force_from_string(unpacked[TIME_IN_FORCE]),
-                     expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]))
+                     expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]),
+                     init_id=GUID(UUID(unpacked[INIT_ID])),
+                     timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]))
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):

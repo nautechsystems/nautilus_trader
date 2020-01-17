@@ -146,7 +146,8 @@ cdef class Identifier(ValidString):
 
 cdef class GUID(Identifier):
     """
-    Represents a globally unique identifier.
+    Represents a globally unique identifier which is synonymous with UUID
+    (universally unique identifier).
     """
 
     def __init__(self, value: UUID):

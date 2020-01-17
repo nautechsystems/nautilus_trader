@@ -14,7 +14,6 @@ from typing import Set, List
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.types cimport GUID
-from nautilus_trader.common.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
@@ -37,6 +36,8 @@ from nautilus_trader.model.events cimport (
 from nautilus_trader.model.identifiers cimport Label, Symbol, IdTag, OrderId, ExecutionId
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
+from nautilus_trader.common.functions cimport format_zulu_datetime
+from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 
 
 # Order types which require a price to be valid
@@ -58,13 +59,13 @@ cdef class Order:
                  OrderSide order_side,
                  OrderType order_type,  # 'type' hides keyword
                  Quantity quantity not None,
+                 GUID init_id not None,
                  datetime timestamp not None,
                  Price price=None,
                  Label label=None,
                  OrderPurpose order_purpose=OrderPurpose.NONE,
                  TimeInForce time_in_force=TimeInForce.DAY,
-                 datetime expire_time=None,
-                 GUID init_id=None):
+                 datetime expire_time=None):
         """
         Initializes a new instance of the Order class.
 
@@ -73,13 +74,13 @@ cdef class Order:
         :param order_side: The order side.
         :param order_type: The order type.
         :param quantity: The order quantity (> 0).
+        :param init_id: The order initialization event identifier.
         :param timestamp: The order initialization timestamp.
         :param price: The order price (must be None for non-priced orders).
         :param label: The optional order label / secondary identifier.
         :param order_purpose: The specified order purpose (default=NONE).
         :param time_in_force: The order time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
-        :param init_id: The order initialization event identifier.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the order side is UNKNOWN.
         :raises ConditionFailed: If the order type should not have a price and the price is not None.
@@ -121,7 +122,7 @@ cdef class Order:
         self.average_price = None           # Can be None
         self.slippage = Decimal.zero()
         self.state = OrderState.INITIALIZED
-        self.init_id = GUID(uuid.uuid4()) if init_id is None else init_id
+        self.init_id = init_id
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
         self.is_working = False
@@ -436,6 +437,7 @@ cdef class OrderFactory:
                  IdTag id_tag_trader not None,
                  IdTag id_tag_strategy not None,
                  Clock clock not None=LiveClock(),
+                 GuidFactory guid_factory not None=LiveGuidFactory(),
                  int initial_count=0):
         """
         Initializes a new instance of the OrderFactory class.
@@ -448,6 +450,7 @@ cdef class OrderFactory:
         Condition.not_negative_int(initial_count, 'initial_count')
 
         self._clock = clock
+        self._guid_factory = guid_factory
         self._id_generator = OrderIdGenerator(
             id_tag_trader=id_tag_trader,
             id_tag_strategy=id_tag_strategy,
@@ -502,12 +505,13 @@ cdef class OrderFactory:
             order_side,
             OrderType.MARKET,
             quantity,
-            self._clock.time_now(),
             price=None,
             label=label,
             order_purpose=order_purpose,
             time_in_force=TimeInForce.DAY,
-            expire_time=None)
+            expire_time=None,
+            init_id=self._guid_factory.generate(),
+            timestamp=self._clock.time_now())
 
     cpdef Order limit(
             self,
@@ -543,12 +547,13 @@ cdef class OrderFactory:
             order_side,
             OrderType.LIMIT,
             quantity,
-            self._clock.time_now(),
-            price,
-            label,
-            order_purpose,
-            time_in_force,
-            expire_time)
+            price=price,
+            label=label,
+            order_purpose=order_purpose,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._guid_factory.generate(),
+            timestamp=self._clock.time_now())
 
     cpdef Order stop_market(
             self,
@@ -584,12 +589,13 @@ cdef class OrderFactory:
             order_side,
             OrderType.STOP_MARKET,
             quantity,
-            self._clock.time_now(),
-            price,
-            label,
-            order_purpose,
-            time_in_force,
-            expire_time)
+            price=price,
+            label=label,
+            order_purpose=order_purpose,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._guid_factory.generate(),
+            timestamp=self._clock.time_now())
 
     cpdef Order stop_limit(
             self,
@@ -625,12 +631,13 @@ cdef class OrderFactory:
             order_side,
             OrderType.STOP_LIMIT,
             quantity,
-            self._clock.time_now(),
-            price,
-            label,
-            order_purpose,
-            time_in_force,
-            expire_time)
+            price=price,
+            label=label,
+            order_purpose=order_purpose,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._guid_factory.generate(),
+            timestamp=self._clock.time_now())
 
     cpdef Order market_if_touched(
             self,
@@ -666,12 +673,13 @@ cdef class OrderFactory:
             order_side,
             OrderType.MIT,
             quantity,
-            self._clock.time_now(),
-            price,
-            label,
-            order_purpose,
-            time_in_force,
-            expire_time)
+            price=price,
+            label=label,
+            order_purpose=order_purpose,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._guid_factory.generate(),
+            timestamp=self._clock.time_now())
 
     cpdef Order fill_or_kill(
             self,
@@ -699,12 +707,13 @@ cdef class OrderFactory:
             order_side,
             OrderType.MARKET,
             quantity,
-            self._clock.time_now(),
             price=None,
             label=label,
             order_purpose=order_purpose,
             time_in_force=TimeInForce.FOC,
-            expire_time=None)
+            expire_time=None,
+            init_id=self._guid_factory.generate(),
+            timestamp=self._clock.time_now())
 
     cpdef Order immediate_or_cancel(
             self,
@@ -732,12 +741,13 @@ cdef class OrderFactory:
             order_side,
             OrderType.MARKET,
             quantity,
-            self._clock.time_now(),
             price=None,
             label=label,
             order_purpose=order_purpose,
             time_in_force=TimeInForce.IOC,
-            expire_time=None)
+            expire_time=None,
+            init_id=self._guid_factory.generate(),
+            timestamp=self._clock.time_now())
 
     cpdef AtomicOrder atomic_market(
             self,

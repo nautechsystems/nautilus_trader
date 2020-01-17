@@ -60,7 +60,7 @@ cdef class LiveGuidFactory(GuidFactory):
 
     cpdef GUID generate(self):
         """
-        Return a generated GUID.
+        Return a generated UUID1.
 
         :return GUID.
         """

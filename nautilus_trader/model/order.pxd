@@ -15,7 +15,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized
 from nautilus_trader.model.identifiers cimport (
@@ -28,6 +27,8 @@ from nautilus_trader.model.identifiers cimport (
     ExecutionId,
     PositionIdBroker)
 from nautilus_trader.model.generators cimport OrderIdGenerator
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
 
 
 cdef class Order:
@@ -89,6 +90,7 @@ cdef class AtomicOrder:
 
 cdef class OrderFactory:
     cdef Clock _clock
+    cdef GuidFactory _guid_factory
     cdef OrderIdGenerator _id_generator
 
     cpdef int count(self)
