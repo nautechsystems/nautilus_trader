@@ -6,6 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: boundscheck=False
+# cython: wraparound=False
+
 import datetime as dt
 import pytz
 

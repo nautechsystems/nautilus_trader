@@ -6,9 +6,16 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import random
-
 from nautilus_trader.core.correctness cimport Condition
+
+
+# C Standard Library
+cdef extern from "stdlib.h":
+    double drand48()  # Returns a double in range [0,1)
+    void srand48(long int seedval)
+
+cdef extern from "time.h":
+    long int time(int)
 
 
 cdef class FillModel:
@@ -37,11 +44,13 @@ cdef class FillModel:
         Condition.in_range(prob_slippage, 0.0, 1.0, 'prob_slippage')
         if random_seed is not None:
             Condition.type(random_seed, int, 'random_seed')
+        else:
+            random_seed = 42
 
         self.prob_fill_at_limit = prob_fill_at_limit
         self.prob_fill_at_stop = prob_fill_at_stop
         self.prob_slippage = prob_slippage
-        random.seed(random_seed)
+        srand48(random_seed)
 
     cpdef bint is_limit_filled(self):
         """
@@ -77,4 +86,4 @@ cdef class FillModel:
         elif probability == 1.0:
             return True
         else:
-            return probability >= random.random()
+            return probability >= drand48()
