@@ -217,8 +217,7 @@ cdef class BacktestDataClient(DataClient):
         self._log.info(f"Prepared {len(self._tick_data):,} ticks total in "
                        f"{round((datetime.utcnow() - timing_start_total).total_seconds(), 2)}s.")
 
-        # Garbage collection
-        gc.collect()
+        gc.collect()  # Garbage collection
 
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
@@ -239,7 +238,6 @@ cdef class BacktestDataClient(DataClient):
         self._index = 0
         self._index_last = len(data_slice) - 1
         self.has_data = True
-        self._clock.set_time(start)
 
         cdef long total_size = 0
         total_size += get_size_of(self._symbols)
