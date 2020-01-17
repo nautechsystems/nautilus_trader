@@ -10,10 +10,10 @@ import unittest
 
 from datetime import datetime
 
-from nautilus_trader.model.enums import BarStructure, PriceType
+from nautilus_trader.common.logger import LogLevel
+from nautilus_trader.model.enums import BarStructure, PriceType, Currency
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.engine import BacktestEngine
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
@@ -32,11 +32,25 @@ class BacktestAcceptanceTests(unittest.TestCase):
         data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
         data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
+        config = BacktestConfig(
+            exec_db_type='in-memory',
+            exec_db_flush=False,
+            frozen_account=False,
+            starting_capital=1000000,
+            account_currency=Currency.USD,
+            short_term_interest_csv_path='default',
+            commission_rate_bp=0.20,
+            bypass_logging=True,
+            level_console=LogLevel.INFO,
+            level_file=LogLevel.DEBUG,
+            level_store=LogLevel.WARNING,
+            log_thread=False,
+            log_to_file=False)
+
         self.engine = BacktestEngine(
             data=data,
             strategies=[EmptyStrategy('000')],
-            config=BacktestConfig(),
-            fill_model=FillModel())
+            config=config)
 
     def tearDown(self):
         self.engine.dispose()
@@ -50,7 +64,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2039, self.engine.iteration)
+        self.assertEqual(2040, self.engine.iteration)
 
     def test_can_reset_engine(self):
         # Arrange
@@ -82,8 +96,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert
-        self.assertEqual(558, strategies[0].fast_ema.count)
-        self.assertEqual(-524.54, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(559, strategies[0].fast_ema.count)
+        self.assertEqual(-341.32, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_can_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -136,5 +150,5 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert
-        self.assertEqual(558, strategies[0].fast_ema.count)
-        self.assertEqual(558, strategies[1].fast_ema.count)
+        self.assertEqual(559, strategies[0].fast_ema.count)
+        self.assertEqual(559, strategies[1].fast_ema.count)
