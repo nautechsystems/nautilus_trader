@@ -44,7 +44,7 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly datetime max_timestamp
     cdef readonly bint has_data
 
-    cpdef void setup_ticks(self, datetime start, datetime stop) except *
+    cpdef void setup(self, datetime start, datetime stop) except *
     cdef Tick generate_tick(self)
 
     cpdef void process_tick(self, Tick tick) except *

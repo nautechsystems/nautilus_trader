@@ -236,10 +236,10 @@ cdef class BacktestEngine:
         assert(self.exec_client.time_now() == start)
 
         # Setup data
-        self.data_client.setup_ticks(start, stop)
+        self.data_client.setup(start, stop)
 
         # Setup new fill model
-        if fill_model:
+        if fill_model is not None:
             self.exec_client.change_fill_model(fill_model)
 
         # Setup new strategies
