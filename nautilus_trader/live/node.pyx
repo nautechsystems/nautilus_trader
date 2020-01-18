@@ -182,7 +182,7 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
-        Condition.equals(self.trader_id, self.trader.id, 'trader_id', 'trader.id')
+        Condition.equal(self.trader_id, self.trader.id, 'trader_id', 'trader.id')
 
         self._check_residuals_delay = config_trader['check_residuals_delay']
         self._load_strategy_state = config_strategy['load_state']

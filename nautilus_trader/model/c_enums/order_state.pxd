@@ -8,6 +8,7 @@
 
 
 cpdef enum OrderState:
+    UNDEFINED = -1,  # Invalid value
     INITIALIZED = 0,
     INVALID = 1,
     DENIED = 2,
@@ -47,6 +48,8 @@ cdef inline str order_state_to_string(int value):
         return 'PARTIALLY_FILLED'
     elif value == 11:
         return 'FILLED'
+    else:
+        return 'UNDEFINED'
 
 
 cdef inline OrderState order_state_from_string(str value):
@@ -74,3 +77,5 @@ cdef inline OrderState order_state_from_string(str value):
         return OrderState.PARTIALLY_FILLED
     elif value == 'FILLED':
         return OrderState.FILLED
+    else:
+        return OrderState.UNDEFINED

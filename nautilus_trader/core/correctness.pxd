@@ -16,6 +16,8 @@ cdef class Condition:
     @staticmethod
     cdef void true(bint predicate, str description) except *
     @staticmethod
+    cdef void false(bint predicate, str description) except *
+    @staticmethod
     cdef void none(object argument, str param) except *
     @staticmethod
     cdef void not_none(object argument, str param) except *
@@ -28,7 +30,11 @@ cdef class Condition:
     @staticmethod
     cdef void callable_or_none(object argument, str param) except *
     @staticmethod
-    cdef void equals(object argument1, object argument2, str param1, str param2) except *
+    cdef void equal(object argument1, object argument2, str param1, str param2) except *
+    @staticmethod
+    cdef void equal_length(object collection1, object collection2, str param1, str param2) except *
+    @staticmethod
+    cdef void not_equal(object argument1, object argument2, str param1, str param2) except *
     @staticmethod
     cdef void list_type(list list, type expected_type, str param) except *
     @staticmethod
@@ -38,11 +44,9 @@ cdef class Condition:
     @staticmethod
     cdef void not_in(object element, object collection, str param1, str param2) except *
     @staticmethod
-    cdef void not_empty(object collection, str param) except *
-    @staticmethod
     cdef void empty(object collection, str param) except *
     @staticmethod
-    cdef void equal_length(object collection1, object collection2, str param1, str param2) except *
+    cdef void not_empty(object collection, str param) except *
     @staticmethod
     cdef void positive(double value, str param) except *
     @staticmethod

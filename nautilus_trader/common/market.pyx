@@ -63,7 +63,7 @@ cdef class TickDataWrangler:
         self._precision = instrument.tick_precision
 
         self.tick_data = []
-        self.resolution = BarStructure.UNKNOWN
+        self.resolution = BarStructure.UNDEFINED
 
     cpdef void build(self, int symbol_indexer):
         """

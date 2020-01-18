@@ -117,11 +117,12 @@ cdef class Order:
         ------
         ConditionFailed
             If the quantities value is not positive (> 0).
-            If the order_side is UNKNOWN.
+            If the order_side is UNDEFINED.
             If the order_type should not have a price and the price is not None.
             If the order_type should have a price and the price is None.
             If the time_in_force is GTD and the expire_time is None.
         """
+        Condition.true(order_side != OrderSide.UNDEFINED, 'order_side != OrderSide.UNDEFINED')
         Condition.positive_int(quantity.value, 'quantity')
 
         # For orders which require a price
@@ -308,9 +309,9 @@ cdef class Order:
         :raises ConditionFailed: If the order account_id is not None and is not equal to the event.account_id.
         """
         Condition.not_none(event, 'event')
-        Condition.equals(self.id, event.order_id, 'id', 'event.order_id')
+        Condition.equal(self.id, event.order_id, 'id', 'event.order_id')
         if self.account_id is not None:
-            Condition.equals(self.account_id, event.account_id, 'account_id', 'event.account_id')
+            Condition.equal(self.account_id, event.account_id, 'account_id', 'event.account_id')
 
         # Update events
         self._events.append(event)

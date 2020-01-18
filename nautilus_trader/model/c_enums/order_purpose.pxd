@@ -8,6 +8,7 @@
 
 
 cpdef enum OrderPurpose:
+    UNDEFINED = -1,  # Invalid value
     NONE = 0,
     ENTRY = 1,
     EXIT = 2,
@@ -27,7 +28,7 @@ cdef inline str order_purpose_to_string(int value):
     elif value == 4:
         return 'TAKE_PROFIT'
     else:
-        return 'NONE'
+        return 'UNDEFINED'
 
 
 cdef inline OrderPurpose order_purpose_from_string(str value):
@@ -42,4 +43,4 @@ cdef inline OrderPurpose order_purpose_from_string(str value):
     elif value == 'TAKE_PROFIT':
         return OrderPurpose.TAKE_PROFIT
     else:
-        return OrderPurpose.NONE
+        return OrderPurpose.UNDEFINED

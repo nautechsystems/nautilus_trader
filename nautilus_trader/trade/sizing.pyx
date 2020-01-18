@@ -32,7 +32,7 @@ cdef class PositionSizer:
         :raises ConditionFailed: If the instruments symbol does not equal the held instrument symbol.
         """
         Condition.not_none(instrument, 'instrument')
-        Condition.equals(self.instrument.symbol, instrument.symbol, 'instrument.symbol', 'instrument.symbol')
+        Condition.equal(self.instrument.symbol, instrument.symbol, 'instrument.symbol', 'instrument.symbol')
 
         self.instrument = instrument
 

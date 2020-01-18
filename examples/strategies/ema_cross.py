@@ -236,7 +236,7 @@ class EMACrossPy(TradingStrategy):
 
         :param instrument: The received instrument.
         """
-        if self.instrument.symbol.equals(instrument.symbol):
+        if self.instrument.symbol.equal(instrument.symbol):
             self.instrument = instrument
 
         self.log.info(f"Updated instrument {instrument}.")
@@ -494,7 +494,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
 
         :param instrument: The received instrument.
         """
-        if self.instrument.symbol.equals(instrument.symbol):
+        if self.instrument.symbol.equal(instrument.symbol):
             self.instrument = instrument
 
         self.log.info(f"Updated instrument {instrument}.")

@@ -12,7 +12,7 @@ from nautilus_trader.core.types cimport GUID
 
 
 cpdef enum MessageType:
-    UNKNOWN = -1,
+    UNDEFINED = -1,  # Invalid value
     MESSAGE = 0
     COMMAND = 1,
     EVENT = 2,
