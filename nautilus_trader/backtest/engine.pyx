@@ -214,9 +214,6 @@ cdef class BacktestEngine:
             Condition.not_empty(strategies, 'strategies')
             Condition.list_type(strategies, TradingStrategy, 'strategies')
 
-        # Reset engine to fresh state (in case already run)
-        self.reset()
-
         cdef datetime run_started = self.clock.time_now()
 
         # Setup logging
@@ -228,6 +225,9 @@ cdef class BacktestEngine:
 
         self._backtest_header(run_started, start, stop)
         self.log.info(f"Setting up backtest...")
+
+        # Reset engine to fresh state (in case already run)
+        self.reset()
 
         # Setup clocks
         self.test_clock.set_time(start)
