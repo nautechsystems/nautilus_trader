@@ -8,7 +8,7 @@
 
 
 cpdef enum TimeInForce:
-    UNKNOWN = -1,
+    UNDEFINED = -1,  # Invalid value
     DAY = 0,
     GTC = 1,
     IOC = 2,
@@ -28,7 +28,7 @@ cdef inline str time_in_force_to_string(int value):
     elif value == 4:
         return 'GTD'
     else:
-        return 'UNKNOWN'
+        return 'UNDEFINED'
 
 
 cdef inline TimeInForce time_in_force_from_string(str value):
@@ -43,4 +43,4 @@ cdef inline TimeInForce time_in_force_from_string(str value):
     elif value == 'GTD':
         return TimeInForce.GTD
     else:
-        return TimeInForce.UNKNOWN
+        return TimeInForce.UNDEFINED

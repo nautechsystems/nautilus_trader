@@ -104,7 +104,7 @@ cdef class Account:
         :param event: The account event to apply.
         """
         Condition.not_none(event, 'event')
-        Condition.equals(self.id, event.account_id, 'id', 'event.account_id')
+        Condition.equal(self.id, event.account_id, 'id', 'event.account_id')
 
         self._events.append(event)
         self.event_count += 1

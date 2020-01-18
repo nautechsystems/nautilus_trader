@@ -34,6 +34,18 @@ cdef class Condition:
             raise ConditionFailed(f"The condition predicate \'{description}\' was False")
 
     @staticmethod
+    cdef void false(bint predicate, str description) except *:
+        """
+        Check the condition predicate is False.
+
+        :param predicate: The condition predicate to check.
+        :param description: The description of the condition predicate.
+        :raises ConditionFailed: If the condition predicate is True.
+        """
+        if predicate:
+            raise ConditionFailed(f"The condition predicate \'{description}\' was True")
+
+    @staticmethod
     cdef void none(object argument, str param) except *:
         """
         Check the argument is None.
@@ -81,7 +93,7 @@ cdef class Condition:
         :raises ConditionFailed: If the object is not None and not of the expected type.
         """
         if argument is None:
-            return
+            return  # Check passes
 
         Condition.type(argument, expected, param)
 
@@ -112,10 +124,9 @@ cdef class Condition:
         Condition.callable(argument, param)
 
     @staticmethod
-    cdef void equals(object object1, object object2, str param1, str param2) except *:
+    cdef void equal(object object1, object object2, str param1, str param2) except *:
         """
         Check the objects are equal.
-        Note: The given objects must implement the cdef .equals() method.
 
         :param object1: The first object to check.
         :param object2: The second object to check.
@@ -123,8 +134,44 @@ cdef class Condition:
         :param param2: The first objects parameter name.
         :raises ConditionFailed: If the objects are not equal.
         """
-        if not object1.equals(object2):
+        if not object1 == object2:
             raise ConditionFailed(f"The \'{param1}\' {type(object1)} was not equal to the \'{param2}\' {type(object2)}")
+
+    @staticmethod
+    cdef void equal_length(
+            object collection1,
+            object collection2,
+            str param1,
+            str param2) except *:
+        """
+        Check the array like objects have equal lengths.
+
+        :param collection1: The first collection to check.
+        :param collection2: The second collection to check.
+        :param param1: The first collections parameter name.
+        :param param2: The second collections parameter name.
+        :raises ConditionFailed: If the collection lengths are not equal.
+        """
+        Condition.not_none(collection1, param1)
+        Condition.not_none(collection2, param2)
+
+        if len(collection1) != len(collection2):
+            raise ConditionFailed(
+                f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
+
+    @staticmethod
+    cdef void not_equal(object object1, object object2, str param1, str param2) except *:
+        """
+        Check the objects are not equal.
+
+        :param object1: The first object to check.
+        :param object2: The second object to check.
+        :param param1: The first objects parameter name.
+        :param param2: The first objects parameter name.
+        :raises ConditionFailed: If the objects are equal.
+        """
+        if not object1 != object2:
+            raise ConditionFailed(f"The \'{param1}\' {type(object1)} was equal to the \'{param2}\' {type(object2)}")
 
     @staticmethod
     cdef void list_type(list list, type expected_type, str param) except *:
@@ -221,28 +268,6 @@ cdef class Condition:
 
         if collection:
             raise ConditionFailed(f"The \'{param}\' collection was not empty")
-
-    @staticmethod
-    cdef void equal_length(
-            object collection1,
-            object collection2,
-            str param1,
-            str param2) except *:
-        """
-        Check the collections have equal lengths.
-
-        :param collection1: The first collection to check.
-        :param collection2: The second collection to check.
-        :param param1: The first collections parameter name.
-        :param param2: The second collections parameter name.
-        :raises ConditionFailed: If the collection lengths are not equal.
-        """
-        Condition.not_none(collection1, param1)
-        Condition.not_none(collection2, param2)
-
-        if len(collection1) != len(collection2):
-            raise ConditionFailed(
-                f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
 
     @staticmethod
     cdef void positive(double value, str param) except *:
@@ -355,6 +380,10 @@ class PyCondition:
         Condition.true(predicate, description)
 
     @staticmethod
+    def false(predicate, description):
+        Condition.false(predicate, description)
+
+    @staticmethod
     def none(argument, param):
         Condition.none(argument, param)
 
@@ -379,8 +408,16 @@ class PyCondition:
         Condition.callable_or_none(argument, param)
 
     @staticmethod
-    def equals(argument1, argument2, param1, param2):
-        Condition.equals(argument1, argument2, param1, param2)
+    def equal(argument1, argument2, param1, param2):
+        Condition.equal(argument1, argument2, param1, param2)
+
+    @staticmethod
+    def equal_length(collection1, collection2, param1, param2):
+        Condition.equal_length(collection1, collection2, param1, param2)
+
+    @staticmethod
+    def not_equal(argument1, argument2, param1, param2):
+        Condition.not_equal(argument1, argument2, param1, param2)
 
     @staticmethod
     def list_type(list, expected_type, param):
@@ -405,10 +442,6 @@ class PyCondition:
     @staticmethod
     def empty(argument, param):
         Condition.empty(argument, param)
-
-    @staticmethod
-    def equal_length(collection1, collection2, param1, param2):
-        Condition.equal_length(collection1, collection2, param1, param2)
 
     @staticmethod
     def positive(value, param):

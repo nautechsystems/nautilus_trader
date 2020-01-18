@@ -8,7 +8,7 @@
 
 
 cpdef enum BarStructure:
-    UNKNOWN = -1,
+    UNDEFINED = -1,  # Invalid value
     TICK = 0,
     TICK_IMBALANCE = 1,
     VOLUME = 2,
@@ -43,7 +43,7 @@ cdef inline str bar_structure_to_string(int value):
     elif value == 9:
         return 'DAY'
     else:
-        return 'UNKNOWN'
+        return 'UNDEFINED'
 
 
 cdef inline BarStructure bar_structure_from_string(str value):
@@ -68,4 +68,4 @@ cdef inline BarStructure bar_structure_from_string(str value):
     elif value == 'DAY':
         return BarStructure.DAY
     else:
-        return BarStructure.UNKNOWN
+        return BarStructure.UNDEFINED

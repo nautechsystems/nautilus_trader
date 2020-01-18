@@ -8,7 +8,7 @@
 
 
 cpdef enum PriceType:
-    UNKNOWN = -1,
+    UNDEFINED = -1,  # Invalid value
     BID = 0,
     ASK = 1,
     MID = 2,
@@ -25,7 +25,7 @@ cdef inline str price_type_to_string(int value):
     elif value == 3:
         return 'LAST'
     else:
-        return 'UNKNOWN'
+        return 'UNDEFINED'
 
 
 cdef inline PriceType price_type_from_string(str value):
@@ -38,4 +38,4 @@ cdef inline PriceType price_type_from_string(str value):
     elif value == "LAST":
         return PriceType.LAST
     else:
-        return PriceType.UNKNOWN
+        return PriceType.UNDEFINED

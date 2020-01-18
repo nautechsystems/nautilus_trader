@@ -8,7 +8,7 @@
 
 
 cpdef enum Currency:
-    UNKNOWN = -1,
+    UNDEFINED = -1,  # Invalid value
     AUD = 36,
     CAD = 124,
     CHF = 756,
@@ -79,7 +79,7 @@ cdef inline str currency_to_string(int value):
     elif value == 710:
         return 'ZAR'
     else:
-        return 'UNKNOWN'
+        return 'UNDEFINED'
 
 
 cdef inline Currency currency_from_string(str value):
@@ -128,4 +128,4 @@ cdef inline Currency currency_from_string(str value):
     elif value == 'ZAR':
         return Currency.ZAR
     else:
-        return Currency.UNKNOWN
+        return Currency.UNDEFINED

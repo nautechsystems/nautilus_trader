@@ -8,31 +8,29 @@
 
 
 cpdef enum TickType:
-    UNKNOWN = -1,
-    QUOTE = 0,
-    TRADE = 1,
+    UNDEFINED = -1,  # Invalid value
+    TRADE = 0,
+    QUOTE = 1,
     OPEN_INTEREST = 2,
 
 
 cdef inline str tick_type_to_string(int value):
     if value == 0:
-        return 'QUOTE'
-    elif value == 1:
         return 'TRADE'
+    elif value == 1:
+        return 'QUOTE'
     elif value == 2:
         return 'OPEN_INTEREST'
     else:
-        return 'UNKNOWN'
+        return 'UNDEFINED'
 
 
 cdef inline TickType tick_type_from_string(str value):
-    if value == "QUOTE":
-        return TickType.QUOTE
-    elif value == "TRADE":
+    if value == "TRADE":
         return TickType.TRADE
+    elif value == "QUOTE":
+        return TickType.QUOTE
     elif value == "OPEN_INTEREST":
         return TickType.OPEN_INTEREST
-    elif value == "UNKNOWN":
-        return TickType.UNKNOWN
     else:
-        return TickType.UNKNOWN
+        return TickType.UNDEFINED
