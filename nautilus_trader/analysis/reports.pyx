@@ -110,8 +110,8 @@ cdef class ReportProvider:
                 'side': order_side_to_string(order.side),
                 'type': order_type_to_string(order.type),
                 'quantity': order.quantity.value,
-                'avg_price': order.average_price,
-                'slippage': order.slippage,
+                'avg_price': order.average_price.as_double(),
+                'slippage': order.slippage.as_double(),
                 'timestamp': order.last_event.timestamp}
 
     cdef dict _position_to_dict(self, Position position):
