@@ -45,6 +45,7 @@ cdef class TradingStrategy:
     cdef readonly bint flatten_on_stop
     cdef readonly bint flatten_on_sl_reject
     cdef readonly bint cancel_all_orders_on_stop
+    cdef readonly bint propagate_exceptions
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
 

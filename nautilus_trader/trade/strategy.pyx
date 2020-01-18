@@ -21,7 +21,9 @@ from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
-from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport (
+Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+)
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -32,7 +34,9 @@ from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+from nautilus_trader.model.commands cimport (
+AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+)
 
 
 cdef class TradingStrategy:
@@ -49,7 +53,8 @@ cdef class TradingStrategy:
                  int bar_capacity=1000,
                  Clock clock not None=LiveClock(),
                  GuidFactory guid_factory not None=LiveGuidFactory(),
-                 Logger logger=None):
+                 Logger logger=None,
+                 bint propagate_exceptions=True):
         """
         Initializes a new instance of the TradingStrategy class.
 
@@ -61,6 +66,7 @@ cdef class TradingStrategy:
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
+        :param propagate_exceptions: If exceptions thrown in handling methods should be re-raised.
         :raises ConditionFailed: If the order_id_tag is not a valid string.
         :raises ConditionFailed: If the tick_capacity is not positive (> 0).
         :raises ConditionFailed: If the bar_capacity is not positive (> 0).
@@ -81,10 +87,11 @@ cdef class TradingStrategy:
         self.clock.register_logger(self.log)
         self.clock.register_default_handler(self.handle_event)
 
-        # Order management flags
+        # Management flags
         self.flatten_on_stop = flatten_on_stop
         self.flatten_on_sl_reject = flatten_on_sl_reject
         self.cancel_all_orders_on_stop = cancel_all_orders_on_stop
+        self.propagate_exceptions = propagate_exceptions
 
         # Order / Position components
         self.order_factory = OrderFactory(
@@ -345,6 +352,8 @@ cdef class TradingStrategy:
                 self.on_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
+                if self.propagate_exceptions:
+                    raise ex  # Re-raise
 
     cpdef void handle_ticks(self, list ticks) except *:
         """
@@ -383,6 +392,8 @@ cdef class TradingStrategy:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
+                if self.propagate_exceptions:
+                    raise ex  # Re-raise
 
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
@@ -409,6 +420,8 @@ cdef class TradingStrategy:
                 self.on_instrument(instrument)
             except Exception as ex:
                 self.log.exception(ex)
+                if self.propagate_exceptions:
+                    raise ex  # Re-raise
 
     cpdef void handle_event(self, Event event) except *:
         """
@@ -433,6 +446,8 @@ cdef class TradingStrategy:
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
+                if self.propagate_exceptions:
+                    raise ex  # Re-raise
 
 
 #-- DATA METHODS ----------------------------------------------------------------------------------#
