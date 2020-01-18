@@ -27,7 +27,7 @@ class BacktestLoadersTests(unittest.TestCase):
         self.assertEqual('AUD/USD', instrument.broker_symbol)
         self.assertEqual(5, instrument.tick_precision)
         self.assertEqual(Decimal(0.00001, 5), instrument.tick_size)
-        self.assertEqual(36, instrument.base_currency)
+        self.assertEqual(840, instrument.quote_currency)
 
     def test_default_fx_with_3_dp_returns_expected_instrument(self):
         # Arrange
@@ -41,4 +41,4 @@ class BacktestLoadersTests(unittest.TestCase):
         self.assertEqual('USD/JPY', instrument.broker_symbol)
         self.assertEqual(3, instrument.tick_precision)
         self.assertEqual(Decimal(0.001, 3), instrument.tick_size)
-        self.assertEqual(840, instrument.base_currency)
+        self.assertEqual(392, instrument.quote_currency)

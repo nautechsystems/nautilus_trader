@@ -373,7 +373,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
         cdef double exchange_rate = self.exchange_calculator.get_rate(
-            from_currency=instrument.base_currency,
+            from_currency=instrument.quote_currency,
             to_currency=self._account.currency,
             price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
             bid_rates=self._build_current_bid_rates(),
@@ -785,7 +785,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.side,
             order.quantity,
             fill_price,
-            self.instruments[order.symbol].base_currency,
+            self.instruments[order.symbol].quote_currency,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())

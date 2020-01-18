@@ -189,7 +189,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         return BsonSerializer.serialize({
             SYMBOL: instrument.symbol.value,
             BROKER_SYMBOL: instrument.broker_symbol,
-            BASE_CURRENCY: currency_to_string(instrument.base_currency),
+            QUOTE_CURRENCY: currency_to_string(instrument.quote_currency),
             SECURITY_TYPE: security_type_to_string(instrument.security_type),
             TICK_PRECISION: instrument.tick_precision,
             TICK_SIZE: str(instrument.tick_size),
@@ -219,7 +219,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         return Instrument(
             symbol=Symbol.from_string(deserialized[SYMBOL]),
             broker_symbol=deserialized[BROKER_SYMBOL],
-            base_currency=currency_from_string(deserialized[BASE_CURRENCY]),
+            quote_currency=currency_from_string(deserialized[QUOTE_CURRENCY]),
             security_type=security_type_from_string(deserialized[SECURITY_TYPE]),
             tick_precision=deserialized[TICK_PRECISION],
             tick_size=Decimal.from_string_to_decimal(str(deserialized[TICK_SIZE])),

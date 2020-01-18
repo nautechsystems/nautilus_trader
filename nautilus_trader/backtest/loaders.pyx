@@ -91,7 +91,7 @@ cdef class InstrumentLoader:
         return Instrument(
             symbol=symbol,
             broker_symbol=symbol.code[:3] + '/' + symbol.code[3:],
-            base_currency=base_currency,
+            quote_currency=quote_currency,
             security_type=SecurityType.FOREX,
             tick_precision=tick_precision,
             tick_size=Decimal(1 / (10 ** tick_precision), tick_precision),

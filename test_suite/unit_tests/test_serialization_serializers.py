@@ -856,7 +856,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         instrument = Instrument(
             symbol=Symbol('AUDUSD', Venue('FXCM')),
             broker_symbol='AUD/USD',
-            base_currency=Currency.USD,
+            quote_currency=Currency.USD,
             security_type=SecurityType.FOREX,
             tick_precision=5,
             tick_size=Decimal(0.00001, 5),
@@ -880,7 +880,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         self.assertEqual(instrument.id, deserialized.id)
         self.assertEqual(instrument.symbol, deserialized.symbol)
         self.assertEqual(instrument.broker_symbol, deserialized.broker_symbol)
-        self.assertEqual(instrument.base_currency, deserialized.base_currency)
+        self.assertEqual(instrument.quote_currency, deserialized.quote_currency)
         self.assertEqual(instrument.security_type, deserialized.security_type)
         self.assertEqual(instrument.tick_precision, deserialized.tick_precision)
         self.assertEqual(instrument.tick_size, deserialized.tick_size)
