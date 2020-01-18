@@ -110,7 +110,7 @@ cdef class ReportProvider:
                 'side': order_side_to_string(order.side),
                 'type': order_type_to_string(order.type),
                 'quantity': order.quantity.value,
-                'avg_price': order.average_price.as_double(),
+                'avg_price': 'None' if order.average_price is None else order.average_price.as_double(),
                 'slippage': order.slippage.as_double(),
                 'timestamp': order.last_event.timestamp}
 
@@ -126,10 +126,10 @@ cdef class ReportProvider:
                 'avg_close_price': position.average_close_price,
                 'realized_points': position.realized_points,
                 'realized_return': position.realized_return,
-                'realized_pnl': position.realized_pnl.as_decimal(),
+                'realized_pnl': position.realized_pnl.as_double(),
                 'currency': currency_to_string(position.base_currency)}
 
     cdef dict _account_state_to_dict(self, AccountStateEvent event):
         return {'timestamp': event.timestamp,
-                'cash_balance': event.cash_balance.as_decimal(),
-                'margin_used': event.margin_used_maintenance.as_decimal()}
+                'cash_balance': event.cash_balance.as_double(),
+                'margin_used': event.margin_used_maintenance.as_double()}
