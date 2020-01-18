@@ -177,3 +177,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 16/01/20 20535710 function calls (20314291 primitive calls) in 22.437 seconds (added None checks)
         # 17/01/20 19195261 function calls (18974139 primitive calls) in 18.884 seconds (added fast_mean)
         # 18/01/20 18445489 function calls (18224098 primitive calls) in 19.319 seconds (remove wrapaound, noncheck, add c rand, improve uuids)
+        # 19/01/20 15425161 function calls (15197349 primitive calls) in 16.827 seconds (use memory views)
