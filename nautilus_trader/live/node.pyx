@@ -41,6 +41,7 @@ cdef class TradingNode:
     cdef LiveLogger _logger
     cdef LogStore _log_store
     cdef LoggerAdapter _log
+    cdef Venue _venue
     cdef object _zmq_context
     cdef ExecutionDatabase _exec_db
     cdef LiveExecutionEngine _exec_engine
@@ -114,9 +115,9 @@ cdef class TradingNode:
         self._log_header()
         self._log.info("Starting...")
 
+        self._venue = Venue(config_data['venue'])
         self._data_client = LiveDataClient(
             zmq_context=self._zmq_context,
-            venue=Venue(config_data['venue']),
             service_name=config_data['service_name'],
             service_address=config_data['service_address'],
             tick_rep_port=config_data['tick_rep_port'],
@@ -207,7 +208,7 @@ cdef class TradingNode:
         """
         self._data_client.connect()
         self._exec_client.connect()
-        self._data_client.update_instruments()
+        self._data_client.update_instruments(self._venue)
 
         account_inquiry = AccountInquiry(
             trader_id=self.trader_id,

@@ -47,7 +47,6 @@ class TraderTests(unittest.TestCase):
         account_id = TestStubs.account_id()
 
         data_client = BacktestDataClient(
-            venue=Venue('FXCM'),
             data=data,
             clock=clock,
             logger=logger)

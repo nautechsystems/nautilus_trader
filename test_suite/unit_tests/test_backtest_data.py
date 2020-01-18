@@ -13,7 +13,6 @@ from pandas import Timestamp
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
 
 from test_kit.data import TestDataProvider
@@ -37,7 +36,6 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_initialize_client_with_data(self):
         # Arrange
         client = BacktestDataClient(
-            venue=Venue('FXCM'),
             data=self.data,
             clock=self.test_clock,
             logger=TestLogger())

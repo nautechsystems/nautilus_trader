@@ -51,7 +51,6 @@ class BacktestExecClientTests(unittest.TestCase):
         self.logger = TestLogger()
 
         self.data_client = DataClient(
-            venue=Venue('FXCM'),
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)

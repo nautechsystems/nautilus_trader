@@ -26,8 +26,6 @@ cdef class DataClient:
     cdef dict _instrument_handlers
     cdef dict _instruments
 
-    cdef readonly Venue venue
-
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
@@ -36,14 +34,14 @@ cdef class DataClient:
     cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback) except *
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback) except *
     cpdef void request_instrument(self, Symbol symbol, callback) except *
-    cpdef void request_instruments(self, callback) except *
+    cpdef void request_instruments(self, Venue venue, callback) except *
     cpdef void subscribe_ticks(self, Symbol symbol, handler) except *
     cpdef void subscribe_bars(self, BarType bar_type, handler) except *
     cpdef void subscribe_instrument(self, Symbol symbol, handler) except *
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler) except *
     cpdef void unsubscribe_bars(self, BarType bar_type, handler) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler) except *
-    cpdef void update_instruments(self) except *
+    cpdef void update_instruments(self, Venue venue) except *
 # ------------------------------------------------------------------------------------------------ #
 
     cpdef datetime time_now(self)
