@@ -96,7 +96,8 @@ cdef class ReportProvider:
         if end is None:
             end = events[-1].timestamp
 
-        cdef list account_events = [self._account_state_to_dict(e) for e in events if start <= e.timestamp]
+        cdef list account_events = [self._account_state_to_dict(e) for e in events
+                                    if start <= e.timestamp <= end]
 
         if not account_events:
             return pd.DataFrame()
