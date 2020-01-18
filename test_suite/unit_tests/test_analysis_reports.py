@@ -37,7 +37,7 @@ class ReportProviderTests(unittest.TestCase):
             id_tag_strategy=IdTag('001'),
             clock=TestClock())
 
-    def test_can_produce_orders_report(self):
+    def test_generate_orders_report(self):
         # Arrange
         report_provider = ReportProvider()
         order1 = self.order_factory.limit(
@@ -81,10 +81,11 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
-        self.assertEqual(0.80011, report.iloc[0]['avg_price'].as_double())
-        self.assertEqual(Decimal(0.00001, 5), report.iloc[0]['slippage'])
+        self.assertEqual(0.80011, report.iloc[0]['avg_price'])
+        self.assertEqual(0.00001, report.iloc[0]['slippage'])
+        self.assertEqual('None', report.iloc[1]['avg_price'])
 
-    def test_can_produce_order_fills_report(self):
+    def test_generate_order_fills_report(self):
         # Arrange
         report_provider = ReportProvider()
         order1 = self.order_factory.limit(
@@ -121,6 +122,7 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_order_fills_report(orders)
 
         # Assert
+        # print(report.iloc[0])
         self.assertEqual(1, len(report))
         self.assertEqual('order_id', report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
@@ -128,10 +130,10 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
-        self.assertAlmostEqual(0.80011, report.iloc[0]['avg_price'].as_double())
-        self.assertEqual(Decimal(0.00001, 5), report.iloc[0]['slippage'])
+        self.assertAlmostEqual(0.80011, report.iloc[0]['avg_price'])
+        self.assertEqual(0.00001, report.iloc[0]['slippage'])
 
-    def test_can_produce_trades_report(self):
+    def test_generate_trades_report(self):
         # Arrange
         report_provider = ReportProvider()
 
@@ -145,7 +147,7 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_positions_report(positions)
 
         # Assert
-        print(report.iloc[0])
+        # print(report.iloc[0])
         self.assertEqual(2, len(report))
         self.assertEqual('position_id', report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
