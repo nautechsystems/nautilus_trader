@@ -362,7 +362,8 @@ cdef class BacktestEngine:
         self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
+        for resolution in self.data_client.execution_resolutions:
+            self.log.info(f"Execution resolution: {resolution}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
