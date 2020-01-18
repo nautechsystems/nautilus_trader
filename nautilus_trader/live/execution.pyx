@@ -508,10 +508,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
         for order_id, order in self.get_orders_working().items():
-            self._log.warning(f"Residual working {order}")
+            self._log.warning(f"Residual {order}")
 
         for position_id, position in self.get_positions_open().items():
-            self._log.warning(f"Residual open {position}")
+            self._log.warning(f"Residual {position}")
 
     cpdef void reset(self) except *:
         """
@@ -728,7 +728,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
-            self._log.warning(f"Cannot get Position for {order_id} (no matching PositionId found in database).")
+            self._log.warning(f"Cannot get Position for {order_id.to_string(with_class=True)} (no matching PositionId found in database).")
             return None
 
         return self._cached_positions.get(position_id)
@@ -744,7 +744,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
         if position_id_bytes is None:
-            self._log.warning(f"Cannot get PositionId for {order_id} (no matching PositionId found in database).")
+            self._log.warning(f"Cannot get PositionId for {order_id.to_string(with_class=True)} "
+                              f"(no matching PositionId found in database).")
             return position_id_bytes
 
         return PositionId(position_id_bytes.decode(UTF8))
@@ -760,7 +761,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id_broker.value)
         if position_id_bytes is None:
-            self._log.warning(f"Cannot get PositionId for {position_id_broker} (no matching PositionId found in database).")
+            self._log.warning(f"Cannot get PositionId for {position_id_broker.to_string(with_class=True)} (no matching PositionId found in database).")
             return position_id_bytes
 
         return PositionId(position_id_bytes.decode(UTF8))

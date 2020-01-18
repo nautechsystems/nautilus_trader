@@ -518,10 +518,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     # noinspection PyUnresolvedReferences
     cpdef void check_residuals(self) except *:
         for order_id, order in self.get_orders_working().items():
-            self._log.warning(f"Residual working {order}.")
+            self._log.warning(f"Residual {order}.")
 
         for position_id, position in self.get_positions_open().items():
-            self._log.warning(f"Residual open {position}.")
+            self._log.warning(f"Residual {position}.")
 
     cpdef void reset(self) except *:
         # Reset the execution database by clearing all stateful values
