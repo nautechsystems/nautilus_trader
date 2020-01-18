@@ -121,7 +121,6 @@ cdef class BacktestEngine:
 
         self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.data_client = BacktestDataClient(
-            venue=Venue('BACKTEST'),
             data=data,
             clock=self.test_clock,
             logger=self.test_logger)
@@ -388,7 +387,8 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
         self.log.info(f"Elapsed time:   {run_finished - run_started}")
-        self.log.info(f"Execution resolutions: {self.data_client.execution_resolutions}")
+        for resolution in self.data_client.execution_resolutions:
+            self.log.info(f"Execution resolution: {resolution}")
         self.log.info(f"Iterations: {self.iteration:,}")
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")
         self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total():,}")

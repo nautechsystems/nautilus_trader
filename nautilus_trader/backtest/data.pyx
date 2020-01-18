@@ -145,19 +145,17 @@ cdef class BacktestDataClient(DataClient):
     """
 
     def __init__(self,
-                 Venue venue not None,
                  BacktestDataContainer data not None,
                  TestClock clock not None,
                  Logger logger not None):
         """
         Initializes a new instance of the BacktestDataClient class.
 
-        :param venue: The venue for the data client.
         :param data: The data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         """
-        super().__init__(venue, clock, TestGuidFactory(), logger)
+        super().__init__(clock, TestGuidFactory(), logger)
 
         # Check data integrity
         data.check_integrity()
@@ -390,18 +388,19 @@ cdef class BacktestDataClient(DataClient):
 
         callback(self._instruments[symbol])
 
-    cpdef void request_instruments(self, callback: Callable) except *:
+    cpdef void request_instruments(self, Venue venue, callback: Callable) except *:
         """
-        Request all instrument for the data clients venue.
+        Request all instrument for given venue.
         
+        :param venue: The venue for the request.
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
         Condition.callable(callback, 'callback')
 
-        self._log.info(f"Requesting all instruments for the {self.venue} ...")
+        self._log.info(f"Requesting all instruments for the {venue} ...")
 
-        callback([instrument for instrument in self._instruments.values()])
+        callback(self.get_instruments())
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable) except *:
         """
@@ -488,9 +487,9 @@ cdef class BacktestDataClient(DataClient):
         self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "
                        f"(a backtest data client will not update an instrument).")
 
-    cpdef void update_instruments(self) except *:
+    cpdef void update_instruments(self, Venue venue) except *:
         """
         Update all instruments from the database.
         """
-        self._log.info(f"Simulated update all instruments for the {self.venue} venue "
+        self._log.info(f"Simulated update all instruments for the {venue} venue "
                        f"(a backtest data client already has all instruments needed).")

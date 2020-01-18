@@ -15,12 +15,7 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport (
-    Symbol,
-    TraderId,
-    StrategyId,
-    OrderId,
-    PositionId,
-    Label)
+Symbol, Venue, TraderId, StrategyId, OrderId, PositionId, Label)
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -97,7 +92,7 @@ cdef class TradingStrategy:
     cpdef datetime time_now(self)
     cpdef list instrument_symbols(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
-    cpdef dict instruments_all(self)
+    cpdef dict get_instruments(self)
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*) except *
     cpdef void subscribe_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *

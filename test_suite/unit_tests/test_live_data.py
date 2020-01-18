@@ -45,7 +45,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_publisher = MockPublisher(zmq_context=self.zmq_context, port=55504, logger=self.logger)
         self.inst_publisher = MockPublisher(zmq_context=self.zmq_context, port=55506, logger=self.logger)
 
-        self.data_client = LiveDataClient(venue=Venue('FXCM'), zmq_context=zmq.Context(), logger=self.logger)
+        self.data_client = LiveDataClient(zmq_context=zmq.Context(), logger=self.logger)
 
     # Fixture Tear Down
     def tearDown(self):
@@ -312,7 +312,7 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.request_instruments(data_receiver.store)
+        self.data_client.request_instruments(Venue('FXCM'), data_receiver.store)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]

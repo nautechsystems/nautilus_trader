@@ -34,19 +34,16 @@ cdef class DataClient:
     """
 
     def __init__(self,
-                 Venue venue not None,
                  Clock clock not None,
                  GuidFactory guid_factory not None,
                  Logger logger not None):
         """
         Initializes a new instance of the DataClient class.
 
-        :param venue: The venue for the data client.
         :param clock: The clock for the component.
         :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component.
         """
-        self.venue = venue
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
@@ -87,7 +84,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void request_instruments(self, callback: Callable) except *:
+    cpdef void request_instruments(self, Venue venue, callback: Callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -115,7 +112,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_instruments(self) except *:
+    cpdef void update_instruments(self, Venue venue) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 # ------------------------------------------------------------------------------------------------ #
@@ -172,11 +169,11 @@ cdef class DataClient:
 
     cpdef dict get_instruments(self):
         """
-        Return a dictionary of all instruments held by the data client.
+        Return a dictionary of all instruments for the given venue.
         
         :return Dict[Symbol, Instrument].
         """
-        return self._instruments.copy()
+        return {instrument.symbol: instrument for instrument in self._instruments}
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """

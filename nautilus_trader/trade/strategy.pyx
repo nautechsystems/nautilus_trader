@@ -22,7 +22,7 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
 from nautilus_trader.model.identifiers cimport (
-Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+Symbol, Venue, Label, TraderId, StrategyId, OrderId, PositionId
 )
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
@@ -485,9 +485,9 @@ cdef class TradingStrategy:
 
         return self._data_client.get_instrument(symbol)
 
-    cpdef dict instruments_all(self):
+    cpdef dict get_instruments(self):
         """
-        Return a dictionary of all instruments held by the data client.
+        Return a dictionary of all instruments for the given venue (if found).
         
         :return Dict[Symbol, Instrument].
         """

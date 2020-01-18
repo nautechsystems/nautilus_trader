@@ -42,7 +42,6 @@ cdef class LiveDataClient(DataClient):
 
     def __init__(self,
                  zmq_context not None: zmq.Context,
-                 Venue venue not None,
                  str service_name not None='NautilusData',
                  str service_address not None='localhost',
                  int tick_rep_port=55501,
@@ -91,7 +90,7 @@ cdef class LiveDataClient(DataClient):
         Condition.valid_port(inst_rep_port, 'inst_rep_port')
         Condition.valid_port(inst_pub_port, 'inst_pub_port')
 
-        super().__init__(venue, clock, guid_factory, logger)
+        super().__init__(clock, guid_factory, logger)
         self._zmq_context = zmq_context
 
         self._tick_req_worker = RequestWorker(
@@ -331,10 +330,11 @@ cdef class LiveDataClient(DataClient):
 
         callback(instrument)
 
-    cpdef void request_instruments(self, callback: Callable) except *:
+    cpdef void request_instruments(self, Venue venue, callback: Callable) except *:
         """
-        Request all instrument for the data clients venue.
+        Request all instrument for given venue.
         
+        :param venue: The venue for the request.
         :param callback: The callback for the response.
         :raises ConditionFailed: If the callback is not of type Callable.
         """
@@ -342,10 +342,10 @@ cdef class LiveDataClient(DataClient):
 
         cdef dict query = {
             DATA_TYPE: "Instrument[]",
-            VENUE: self.venue.value,
+            VENUE: venue.value,
         }
 
-        self._log.info(f"Requesting all instruments for {self.venue} ...")
+        self._log.info(f"Requesting all instruments for {venue} ...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
@@ -360,11 +360,11 @@ cdef class LiveDataClient(DataClient):
         cdef list instruments = [self._instrument_serializer.deserialize(inst) for inst in data[DATA]]
         callback(instruments)
 
-    cpdef void update_instruments(self) except *:
+    cpdef void update_instruments(self, Venue venue) except *:
         """
         Update all instruments for the data clients venue.
         """
-        self.request_instruments(self._handle_instruments_py)
+        self.request_instruments(venue, self._handle_instruments_py)
 
     cpdef void _handle_instruments_py(self, list instruments) except *:
         # Method provides a Python wrapper for the callback
