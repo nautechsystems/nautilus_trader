@@ -33,9 +33,8 @@ cdef class BacktestDataClient(DataClient):
     cdef BacktestDataContainer _data
     cdef object _tick_data
     cdef unsigned short[:] _symbols
-    cdef double[:, :] _prices
-    cdef double[:, :] _volumes
-    cdef object _timestamps
+    cdef double[:, :] _price_volume
+    cdef datetime[:] _timestamps
     cdef dict _symbol_index
     cdef dict _precision_index
     cdef int _index

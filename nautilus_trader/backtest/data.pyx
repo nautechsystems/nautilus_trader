@@ -211,9 +211,8 @@ cdef class BacktestDataClient(DataClient):
         self.min_timestamp = self._tick_data.index.min()
         self.max_timestamp = self._tick_data.index.max()
 
-        self._prices = None
         self._symbols = None
-        self._volumes = None
+        self._price_volume = None
         self._timestamps = None
         self._index = 0
         self._index_last = len(self._tick_data) - 1
@@ -241,9 +240,8 @@ cdef class BacktestDataClient(DataClient):
         # Build tick data stream
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
         self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
-        self._prices = data_slice[['bid', 'ask']].to_numpy(dtype=np.double)
-        self._volumes = data_slice[['bid_size', 'ask_size']].to_numpy(dtype=np.double)
-        self._timestamps = data_slice.index
+        self._price_volume = data_slice[['bid', 'ask', 'bid_size', 'ask_size']].to_numpy(dtype=np.double)
+        self._timestamps = np.asarray([<datetime>dt for dt in data_slice.index])
 
         self._index = 0
         self._index_last = len(data_slice) - 1
@@ -251,8 +249,7 @@ cdef class BacktestDataClient(DataClient):
 
         cdef long total_size = 0
         total_size += get_size_of(self._symbols)
-        total_size += get_size_of(self._prices)
-        total_size += get_size_of(self._volumes)
+        total_size += get_size_of(self._price_volume)
         total_size += get_size_of(self._timestamps)
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
@@ -264,15 +261,16 @@ cdef class BacktestDataClient(DataClient):
         """
         cdef int symbol_indexer = self._symbols[self._index]
         cdef int precision = self._precision_index[symbol_indexer]
+        cdef double[:] values = self._price_volume[self._index]
 
         cdef Tick tick = Tick(
             symbol=self._symbol_index[symbol_indexer],
-            bid=Price(self._prices[self._index][0], precision),
-            ask=Price(self._prices[self._index][1], precision),
+            bid=Price(values[0], precision),
+            ask=Price(values[1], precision),
             timestamp=self._timestamps[self._index],
             tick_type=TickType.TRADE,
-            bid_size=self._volumes[self._index][0],
-            ask_size=self._volumes[self._index][1])
+            bid_size=values[2],
+            ask_size=values[3])
 
         self._index += 1
         if self._index > self._index_last:
@@ -298,9 +296,8 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.debug(f"Resetting...")
 
-        self._prices = None
         self._symbols = None
-        self._volumes = None
+        self._price_volume = None
         self._timestamps = None
         self._index = 0
         self._index_last = len(self._tick_data) - 1

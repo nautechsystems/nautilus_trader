@@ -7,20 +7,24 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import os
 import unittest
 
+ABS_PATH = os.path.dirname(os.path.abspath(__file__))
 
 TEST_DIRECTORIES = [
-    'test_suite/unit_tests',
-    'test_suite/integration_tests',
-    'test_suite/performance_tests',
-    'test_suite/acceptance_tests'
+     ABS_PATH + '/test_suite/unit_tests',
+     ABS_PATH + '/test_suite/integration_tests',
+     ABS_PATH + '/test_suite/performance_tests',
+     ABS_PATH + '/test_suite/acceptance_tests'
 ]
 
 loader = unittest.TestLoader()
 runner = unittest.TextTestRunner()
 
+
 if __name__ == "__main__":
     for directory in TEST_DIRECTORIES:
+        print(directory)
         tests = loader.discover(directory)
         runner.run(tests)
