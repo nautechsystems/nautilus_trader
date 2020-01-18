@@ -144,7 +144,7 @@ cdef class RolloverInterestCalculator:
         """
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(timestamp, 'timestamp')
-        Condition.true(len(symbol.code) == 6, 'len(symbol) == 6')
+        Condition.equal(len(symbol.code), 6, 'len(symbol)', '6')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
         cdef Currency quote_currency = currency_from_string(symbol.code[3:])

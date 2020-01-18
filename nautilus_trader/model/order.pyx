@@ -122,7 +122,10 @@ cdef class Order:
             If the order_type should have a price and the price is None.
             If the time_in_force is GTD and the expire_time is None.
         """
-        Condition.true(order_side != OrderSide.UNDEFINED, 'order_side != OrderSide.UNDEFINED')
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'OrderSide.UNDEFINED')
+        Condition.not_equal(order_type, OrderType.UNDEFINED, 'order_type', 'OrderType.UNDEFINED')
+        Condition.not_equal(order_purpose, OrderPurpose.UNDEFINED, 'order_purpose', 'OrderPurpose.UNDEFINED')
+        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, 'time_in_force', 'TimeInForce.UNDEFINED')
         Condition.positive_int(quantity.value, 'quantity')
 
         # For orders which require a price
@@ -133,6 +136,7 @@ cdef class Order:
             Condition.none(price, 'price')
 
         if time_in_force == TimeInForce.GTD:
+            # Must have an expire time
             Condition.not_none(expire_time, 'expire_time')
 
         self._execution_ids = set()         # type: Set[ExecutionId]
