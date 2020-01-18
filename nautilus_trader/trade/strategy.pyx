@@ -1232,7 +1232,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price) except *:
+    cpdef void modify_order(self, Order order, Quantity new_quantity=None, Price new_price=None) except *:
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
@@ -1242,11 +1242,20 @@ cdef class TradingStrategy:
         :param new_price: The new price for the given order.
         """
         Condition.not_none(order, 'order')
-        # TODO: Check if both None etc
 
         if not self.is_exec_engine_registered:
             self.log.error("Cannot send command ModifyOrder (execution engine not registered).")
             return
+
+        if new_quantity is None and new_price is None:
+            self.log.error("Cannot send command ModifyOrder (both new_quantity and new_price were None).")
+            return
+
+        if new_quantity is None:
+            new_quantity = order.quantity
+
+        if new_price is None:
+            new_price = order.price
 
         cdef ModifyOrder command = ModifyOrder(
             self.trader_id,

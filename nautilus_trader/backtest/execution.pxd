@@ -66,7 +66,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void reset(self) except *
     cdef AccountStateEvent reset_account_event(self)
     cpdef datetime time_now(self)
-    cpdef void register_exec_db(self, ExecutionDatabase exec_db) except *
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)

@@ -127,29 +127,3 @@ cdef class Account:
 
     cdef Money _calculate_free_equity(self):
         return Money(max((self.cash_balance.as_double() - (self.margin_used_maintenance.as_double() + self.margin_used_liquidation.as_double())), 0))
-
-
-cdef class NullAccount(Account):
-    """
-    Represents a null un-initialized brokerage account.
-    """
-
-    def __init__(self, datetime time_now not None):
-        """
-        Initializes a new instance of the NullAccount class.
-
-        :param: time_now: The creation datetime.
-        """
-        cdef AccountStateEvent event = AccountStateEvent(
-            AccountId('NULL', '000', AccountType.SIMULATED),
-            Currency.USD,
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal.zero(),
-            ValidString('N'),
-            GUID(uuid.uuid4()),
-            time_now)
-        super().__init__(event)

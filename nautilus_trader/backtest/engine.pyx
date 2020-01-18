@@ -152,10 +152,8 @@ cdef class BacktestEngine:
             logger=self.test_logger)
 
         self.exec_engine.register_client(self.exec_client)
-        self.exec_client.register_exec_db(self.exec_db)
 
         self._change_clocks_and_loggers(strategies)
-
         self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.trader = Trader(
             trader_id=self.trader_id,

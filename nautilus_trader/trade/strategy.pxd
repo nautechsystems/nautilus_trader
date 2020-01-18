@@ -158,7 +158,7 @@ cdef class TradingStrategy:
     cpdef void account_inquiry(self) except *
     cpdef void submit_order(self, Order order, PositionId position_id) except *
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id) except *
-    cpdef void modify_order(self, Order order, Quantity new_quantity, Price new_price) except *
+    cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order, str cancel_reason=*) except *
     cpdef void cancel_all_orders(self, str cancel_reason=*) except *
     cpdef void flatten_position(self, PositionId position_id, Label label=*) except *
