@@ -98,7 +98,7 @@ cdef class BacktestEngine:
             clock=self.test_clock)
 
         nautilus_header(self.log)
-        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("=================================================================")
         self.log.info("Building engine...")
 
         if config.exec_db_type == 'in-memory':
@@ -295,9 +295,9 @@ cdef class BacktestEngine:
         Print the contents of the test loggers store to the console.
         """
         self.log.info("")
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#-------------------------- LOG STORE --------------------------#")
-        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("=================================================================")
+        self.log.info(" LOG STORE")
+        self.log.info("=================================================================")
 
         cdef list log_store = self.test_logger.get_log_store()
         cdef str message
@@ -340,9 +340,9 @@ cdef class BacktestEngine:
         self.trader.dispose()
 
     cdef void _backtest_memory(self) except *:
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#----------------------- MEMORY USAGE --------------------------#")
-        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("=================================================================")
+        self.log.info(" MEMORY USAGE")
+        self.log.info("=================================================================")
         ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
         ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
         ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
@@ -357,9 +357,9 @@ cdef class BacktestEngine:
             datetime run_started,
             datetime start,
             datetime stop) except *:
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#----------------------- BACKTEST RUN --------------------------#")
-        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("=================================================================")
+        self.log.info(" BACKTEST RUN")
+        self.log.info("=================================================================")
         self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
@@ -369,7 +369,7 @@ cdef class BacktestEngine:
         else:
             currency = currency_to_string(self.config.account_currency)
             self.log.info(f"Account balance (starting): {self.config.starting_capital.to_string(format_commas=True)} {currency}")
-        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("=================================================================")
 
     cdef void _backtest_footer(
             self,
@@ -380,9 +380,9 @@ cdef class BacktestEngine:
         cdef str account_currency = currency_to_string(self.config.account_currency)
         cdef int account_starting_length = len(self.config.starting_capital.to_string(format_commas=True))
 
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
-        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("=================================================================")
+        self.log.info(" BACKTEST DIAGNOSTICS")
+        self.log.info("=================================================================")
         self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
         self.log.info(f"Run finished:   {format_zulu_datetime(run_finished)}")
         self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
@@ -405,10 +405,11 @@ cdef class BacktestEngine:
         self.log.info(f"Rollover interest (total):  {rollover_interest} {account_currency}")
         self.log.info("")
 
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
-        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("=================================================================")
+        self.log.info(" PERFORMANCE STATISTICS")
+        self.log.info("=================================================================")
         self.log.info("Calculating statistics...")
+        self.log.info("")
         self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.database.get_positions())
 
         for statistic in self.analyzer.get_performance_stats_formatted():

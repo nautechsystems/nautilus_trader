@@ -20,24 +20,16 @@ from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.analysis.stats import (
-    annual_return,
-    cum_returns_final,
-    annual_volatility,
-    sharpe_ratio,
-    calmar_ratio,
-    sortino_ratio,
-    omega_ratio,
-    stability_of_timeseries,
-    max_drawdown,
-    alpha,
-    beta,
-    tail_ratio)
+    annual_return, cum_returns_final, annual_volatility, sharpe_ratio,
+    calmar_ratio, sortino_ratio, omega_ratio, stability_of_timeseries,
+    max_drawdown, alpha, beta, tail_ratio
+)
 
 
 cdef class PerformanceAnalyzer:
     """
-    Provides a performance analyzer for tracking and generating performance metrics
-    and statistics.
+    Provides a performance analyzer for tracking and generating performance
+    metrics and statistics.
     """
 
     def __init__(self):
