@@ -55,7 +55,7 @@ from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInte
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
-from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
+from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.models cimport FillModel
 
@@ -111,7 +111,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_activity_day = Money.zero()
 
         self._account = Account(self.reset_account_event())
-        self.exec_db = None
+        self.exec_db = exec_engine.database
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
@@ -189,7 +189,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money.zero()
-        self._account = Account(self.reset_account_event())
         self.total_commissions = Money.zero()
         self.total_rollover = Money.zero()
 
@@ -230,14 +229,6 @@ cdef class BacktestExecClient(ExecutionClient):
         :return: datetime.
         """
         return self._clock.time_now()
-
-    cpdef void register_exec_db(self, ExecutionDatabase exec_db) except *:
-        """
-        Register the given execution database with the client.
-        """
-        Condition.not_none(exec_db, 'exec_db')
-
-        self.exec_db = exec_db
 
     cpdef void connect(self) except *:
         """

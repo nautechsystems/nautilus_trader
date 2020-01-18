@@ -1065,6 +1065,7 @@ cdef class ExecutionEngine:
     cpdef void register_client(self, ExecutionClient exec_client) except *:
         """
         Register the given execution client with the execution engine.
+
         :param exec_client: The execution client to register.
         """
         Condition.not_none(exec_client, 'exec_client')
@@ -1130,7 +1131,7 @@ cdef class ExecutionEngine:
         Reset the execution engine by clearing all stateful values.
         """
         self.database.reset()
-        self.account = self.database.get_account(self.account_id)
+
         self.command_count = 0
         self.event_count = 0
 

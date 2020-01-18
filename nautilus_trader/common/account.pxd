@@ -41,7 +41,3 @@ cdef class Account:
     cpdef void apply(self, AccountStateEvent event) except *
 
     cdef Money _calculate_free_equity(self)
-
-
-cdef class NullAccount(Account):
-    pass
