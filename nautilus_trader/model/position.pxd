@@ -41,7 +41,7 @@ cdef class Position:
     cdef readonly OrderId last_order_id
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
-    cdef readonly Currency base_currency
+    cdef readonly Currency quote_currency
     cdef readonly OrderSide entry_direction
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time

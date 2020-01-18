@@ -110,7 +110,7 @@ cdef class Instrument:
     cdef readonly InstrumentId id
     cdef readonly Symbol symbol
     cdef readonly str broker_symbol
-    cdef readonly Currency base_currency
+    cdef readonly Currency quote_currency
     cdef readonly SecurityType security_type
     cdef readonly int tick_precision
     cdef readonly Decimal tick_size

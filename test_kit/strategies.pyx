@@ -407,7 +407,7 @@ cdef class EMACross(TradingStrategy):
                     quote_currency = currency_from_string(self.instrument.symbol.code[3:])
                     exchange_rate = self.xrate_for_account(quote_currency)
                 else:
-                    exchange_rate = self.xrate_for_account(self.instrument.base_currency)
+                    exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
 
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,
@@ -444,7 +444,7 @@ cdef class EMACross(TradingStrategy):
                     quote_currency = currency_from_string(self.instrument.symbol.code[3:])
                     exchange_rate = self.xrate_for_account(quote_currency)
                 else:
-                    exchange_rate = self.xrate_for_account(self.instrument.base_currency)
+                    exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
 
                 position_size = self.position_sizer.calculate(
                     equity=self.account().free_equity,

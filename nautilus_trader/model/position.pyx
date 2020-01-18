@@ -44,7 +44,7 @@ cdef class Position:
         self.last_order_id = event.order_id
         self.last_execution_id = event.execution_id
         self.symbol = event.symbol
-        self.base_currency = event.transaction_currency
+        self.quote_currency = event.transaction_currency
         self.entry_direction = event.order_side
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
