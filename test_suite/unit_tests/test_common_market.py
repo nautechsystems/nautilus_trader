@@ -189,7 +189,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1000, ema.count)
-        self.assertEqual(1.9838849991174994, ema.value)
+        self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_update_indicator_with_data_bars(self):
         # Arrange
@@ -205,7 +205,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1000, ema.count)
-        self.assertEqual(1.9838849991174994, ema.value)
+        self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_build_features_from_bars(self):
         # Arrange
@@ -221,7 +221,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         # Assert
         self.assertTrue('value' in result)
         self.assertEqual(1000, len(result['value']))
-        self.assertEqual(1.9838849991174994, ema.value)
+        self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_build_features_from_data_bars(self):
         # Arrange
@@ -237,7 +237,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         # Assert
         self.assertTrue('value' in result)
         self.assertEqual(1000, len(result['value']))
-        self.assertEqual(1.9838849991174994, ema.value)
+        self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_update_ema_indicator(self):
         # Arrange
@@ -257,7 +257,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         result = ema.value
 
         # Assert
-        self.assertEqual(1.0000300407409668, result)
+        self.assertEqual(1.00003, result)
 
     def test_can_update_atr_indicator(self):
         # Arrange
@@ -277,7 +277,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         result = atr.value
 
         # Assert
-        self.assertEqual(2.002716064453125e-05, result)
+        self.assertEqual(2.0000000000131024e-05, result)
 
 
 class BarBuilderTests(unittest.TestCase):
