@@ -6,13 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import uuid
-
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID
-from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountStateEvent
-from nautilus_trader.model.objects cimport Decimal, Money
+from nautilus_trader.model.objects cimport Money
 
 
 cdef class Account:

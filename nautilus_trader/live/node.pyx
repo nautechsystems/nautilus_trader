@@ -257,4 +257,4 @@ cdef class TradingNode:
         self._log.info(f"pymongo {pymongo.__version__}")
         self._log.info(f"pyzmq {zmq.pyzmq_version()}")
         self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
-        self._log.info("#---------------------------------------------------------------#")
+        self._log.info("=================================================================")
