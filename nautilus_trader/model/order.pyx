@@ -6,7 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import uuid
+"""
+Defines the main Order object, AtomicOrder representing parent and child orders
+and an OrderFactory for more convenient creation of order objects.
+"""
 
 from cpython.datetime cimport datetime
 from typing import Set, List
@@ -51,6 +54,15 @@ cdef set PRICED_ORDER_TYPES = {
 cdef class Order:
     """
     Represents an order for a financial market instrument.
+
+    Attributes
+    ----------
+    order_id : OrderId
+        The unique user identifier for the order.
+    id_broker : OrderIdBroker
+        The unique broker identifier for the order.
+
+    TODO: Numpy style docstrings
     """
 
     def __init__(self,
@@ -69,23 +81,46 @@ cdef class Order:
         """
         Initializes a new instance of the Order class.
 
-        :param order_id: The order_id.
-        :param symbol: The order symbol.
-        :param order_side: The order side.
-        :param order_type: The order type.
-        :param quantity: The order quantity (> 0).
-        :param init_id: The order initialization event identifier.
-        :param timestamp: The order initialization timestamp.
-        :param price: The order price (must be None for non-priced orders).
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The specified order purpose (default=NONE).
-        :param time_in_force: The order time in force (default=DAY).
-        :param expire_time: The optional order expire time (for GTD orders).
-        :raises ConditionFailed: If the order quantity is not positive (> 0).
-        :raises ConditionFailed: If the order side is UNKNOWN.
-        :raises ConditionFailed: If the order type should not have a price and the price is not None.
-        :raises ConditionFailed: If the order type should have a price and the price is None.
-        :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
+        Parameters
+        ----------
+        order_id : OrderId
+            The order unique identifier.
+        symbol : Symbol
+            The order symbol identifier.
+        order_side : OrderSide (enum)
+            The order side (BUY or SELL).
+        order_type : OrderType (enum)
+            The order type.
+        quantity : Quantity
+            The order quantity (> 0).
+        init_id : GUID
+            The order initialization event identifier.
+        timestamp : datetime
+            The order initialization timestamp.
+        price : Price, optional
+            The order price - must be None for non-priced orders.
+            (default=None).
+        label : Label, optional
+            The order label / secondary identifier
+            (default=None).
+        order_purpose : OrderPurpose (enum)
+            The specified order purpose.
+            (default=OrderPurpose.NONE).
+        time_in_force : TimeInForce (enum), optional
+            The order time in force.
+            (default=TimeInForce.DAY).
+        expire_time : datetime, optional
+            The order expiry time with the broker - for GTD orders only.
+            (default=None).
+
+        Raises
+        ------
+        ConditionFailed
+            If the quantities value is not positive (> 0).
+            If the order_side is UNKNOWN.
+            If the order_type should not have a price and the price is not None.
+            If the order_type should have a price and the price is None.
+            If the time_in_force is GTD and the expire_time is None.
         """
         Condition.positive_int(quantity.value, 'quantity')
 

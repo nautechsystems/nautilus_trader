@@ -15,8 +15,16 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string, bar_structure_from_string
-from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string, price_type_from_string
+from nautilus_trader.model.c_enums.bar_structure cimport (
+    BarStructure,
+    bar_structure_to_string,
+    bar_structure_from_string
+)
+from nautilus_trader.model.c_enums.price_type cimport (
+    PriceType,
+    price_type_to_string,
+    price_type_from_string
+)
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Venue
@@ -27,14 +35,27 @@ cdef Quantity _ZERO_QUANTITY = Quantity()
 cdef class Quantity:
     """
     Represents a quantity with non-negative integer value.
+
+    Attributes
+    ----------
+    value : int
+        The absolute value of the quantity.
     """
 
     def __init__(self, long value=0):
         """
         Initializes a new instance of the Quantity class.
 
-        :param value: The value of the quantity (>= 0).
-        :raises ConditionFailed: If the value is negative (< 0).
+        Parameters
+        ----------
+        value : long
+            The value of the quantity (>= 0).
+
+        Raises
+        ------
+        ConditionFailed
+            If the value is negative (< 0).
+
         """
         Condition.not_negative_int(value, 'value')
 
@@ -43,18 +64,28 @@ cdef class Quantity:
     @staticmethod
     cdef Quantity zero():
         """
-        Return a quantity of zero.
-        
-        :return Quantity.
+        Returns
+        -------
+        Quantity
+            A quantity of zero.
+
         """
         return _ZERO_QUANTITY
 
     cpdef bint equals(self, Quantity other):
         """
-        Return a value indicating whether this object is equal to (==) the given object.
+        Check if this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Quantity
+            The other quantity to equal.
+        
+        Returns
+        -------
+        bool
+            True if the other quantity is equal, else False.
+            
         """
         return self.value == other.value
 
@@ -62,8 +93,15 @@ cdef class Quantity:
         """
         Return the formatted string representation of this object.
         
-        :param format_commas: If the string should be formatted with commas separating thousands.
-        :return: str.
+        Parameters
+        ----------
+        format_commas : bool 
+            If the string should be formatted with commas separating thousands.
+        
+        Returns
+        -------
+        str
+        
         """
         if format_commas:
             return f'{self.value:,}'

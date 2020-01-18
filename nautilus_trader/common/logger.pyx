@@ -401,7 +401,7 @@ cdef class LoggerAdapter:
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:
         Condition.not_none(logger, 'logger')
-
+        print('')  # New line to begin
         logger.info("=================================================================")
         logger.info(f" NAUTILUS TRADER - Algorithmic Trading Platform")
         logger.info(f" by Nautech Systems Pty Ltd. ")

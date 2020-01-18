@@ -182,6 +182,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price(1.00000, 5), order2.price)
         self.assertEqual(Price(1.00000, 5), order3.price)
         self.assertEqual(Price(1.00001, 5), order4.price)
+        print(help(Order))
 
     def test_can_initialize_buy_market_order(self):
         # Arrange
