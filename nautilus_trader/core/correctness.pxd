@@ -32,13 +32,11 @@ cdef class Condition:
     @staticmethod
     cdef void equal(object argument1, object argument2, str param1, str param2) except *
     @staticmethod
-    cdef void equal_length(object collection1, object collection2, str param1, str param2) except *
-    @staticmethod
     cdef void not_equal(object argument1, object argument2, str param1, str param2) except *
     @staticmethod
-    cdef void list_type(list list, type expected_type, str param) except *
+    cdef void list_type(list argument, type expected_type, str param) except *
     @staticmethod
-    cdef void dict_types(dict dictionary, type key_type, type value_type, str param) except *
+    cdef void dict_types(dict argument, type key_type, type value_type, str param) except *
     @staticmethod
     cdef void is_in(object element, object collection, str param1, str param2) except *
     @staticmethod

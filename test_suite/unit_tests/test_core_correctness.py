@@ -146,22 +146,6 @@ class ConditionTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_equal_length_when_args_not_equal_lengths_raises_condition_failed(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(ConditionFailed, PyCondition.equal_length, [1], [1, 2], "1", "2")
-        self.assertRaises(ConditionFailed, PyCondition.equal_length, [1], [1, 2], "1", "2")
-
-    def test_condition_equal_length_when_args_are_equal_lengths_does_nothing(self):
-        # Arrange
-        # Act
-        PyCondition.equal_length([1], [1], "collection1", "collection2")
-        PyCondition.equal_length([1, 2, 3], [1, 2, 3], "collection1", "collection2")
-
-        # Assert
-        self.assertTrue(True)  # ConditionFailed not raised
-
     def test_condition_not_equal_when_args_not_equal_raises_condition_failed(self):
         # Arrange
         # Act

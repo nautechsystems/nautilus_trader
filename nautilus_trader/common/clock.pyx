@@ -61,6 +61,7 @@ cdef class Timer:
         
         :return TimeEvent.
         """
+        Condition.not_none(event_id, 'event_id')
         Condition.not_none(now, 'now')
 
         cdef TimeEvent event = TimeEvent(self.label, event_id, self.next_time)

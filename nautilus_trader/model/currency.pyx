@@ -42,7 +42,7 @@ cdef class ExchangeRateCalculator:
         """
         Condition.not_none(bid_rates, 'bid_rates')
         Condition.not_none(ask_rates, 'ask_rates')
-        Condition.equal_length(bid_rates, ask_rates, 'bid_rates', 'ask_rates')
+        Condition.equal(len(bid_rates), len(ask_rates), 'len(bid_rates)', 'len(ask_rates)')
 
         if from_currency == to_currency:
             return 1.0  # No exchange necessary

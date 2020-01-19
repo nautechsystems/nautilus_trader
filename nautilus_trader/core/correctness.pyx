@@ -135,29 +135,8 @@ cdef class Condition:
         :raises ConditionFailed: If the objects are not equal.
         """
         if not object1 == object2:
-            raise ConditionFailed(f"The \'{param1}\' {type(object1)} was not equal to the \'{param2}\' {type(object2)}")
-
-    @staticmethod
-    cdef void equal_length(
-            object collection1,
-            object collection2,
-            str param1,
-            str param2) except *:
-        """
-        Check the array like objects have equal lengths.
-
-        :param collection1: The first collection to check.
-        :param collection2: The second collection to check.
-        :param param1: The first collections parameter name.
-        :param param2: The second collections parameter name.
-        :raises ConditionFailed: If the collection lengths are not equal.
-        """
-        Condition.not_none(collection1, param1)
-        Condition.not_none(collection2, param2)
-
-        if len(collection1) != len(collection2):
-            raise ConditionFailed(
-                f"The length of \'{param1}\' was not equal to \'{param2}\', lengths were {len(collection1)} and {len(collection2)}")
+            raise ConditionFailed(f"The \'{param1}\' {type(object1)} of {object1} "
+                                  f"was not equal to the \'{param2}\' {type(object2)} of {object2}")
 
     @staticmethod
     cdef void not_equal(object object1, object object2, str param1, str param2) except *:
@@ -171,39 +150,40 @@ cdef class Condition:
         :raises ConditionFailed: If the objects are equal.
         """
         if not object1 != object2:
-            raise ConditionFailed(f"The \'{param1}\' {type(object1)} was equal to the \'{param2}\' {type(object2)}")
+            raise ConditionFailed(f"The \'{param1}\' {type(object1)} of {object1} "
+                                  f"was equal to the \'{param2}\' {type(object2)} of {object1}")
 
     @staticmethod
-    cdef void list_type(list list, type expected_type, str param) except *:
+    cdef void list_type(list argument, type expected_type, str param) except *:
         """
         Check the list only contains types of the given expected type.
 
-        :param list: The list to check.
+        :param argument: The list to check.
         :param expected_type: The expected element type (if not empty).
         :param param: The lists parameter name.
         :raises ConditionFailed: If the list is not empty and contains a type other than the expected type.
         """
-        Condition.not_none(list, param)
+        Condition.not_none(argument, param)
 
-        for element in list:
+        for element in argument:
             if not isinstance(element, expected_type):
                 raise ConditionFailed(f"The \'{param}\' list contained an element with a type other than {expected_type}, was {type(element)}")
 
     @staticmethod
-    cdef void dict_types(dict dictionary, type key_type, type value_type, str param) except *:
+    cdef void dict_types(dict argument, type key_type, type value_type, str param) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
-        :param dictionary: The dictionary to check.
+        :param argument: The dictionary to check.
         :param key_type: The expected type of the keys (if not empty).
         :param value_type: The expected type of the values (if not empty).
         :param param: The dictionaries parameter name.
         :raises ConditionFailed: If the dictionary is not empty and contains a key type other than the key_type.
         :raises ConditionFailed: If the dictionary is not empty and contains a value type other than the value_type.
         """
-        Condition.not_none(dictionary, param)
+        Condition.not_none(argument, param)
 
-        for key, value in dictionary.items():
+        for key, value in argument.items():
             if not isinstance(key, key_type):
                 raise ConditionFailed(f"The \'{param}\' dictionary contained a key type other than {key_type}, was {type(key)}")
             if not isinstance(value, value_type):
@@ -410,10 +390,6 @@ class PyCondition:
     @staticmethod
     def equal(argument1, argument2, param1, param2):
         Condition.equal(argument1, argument2, param1, param2)
-
-    @staticmethod
-    def equal_length(collection1, collection2, param1, param2):
-        Condition.equal_length(collection1, collection2, param1, param2)
 
     @staticmethod
     def not_equal(argument1, argument2, param1, param2):
