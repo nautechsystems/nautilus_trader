@@ -14,7 +14,7 @@ from typing import Callable
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 
-cdef str UTF8 = 'utf-8'
+cdef str _UTF8 = 'utf-8'
 
 
 cdef class MQWorker:
@@ -58,6 +58,8 @@ cdef class MQWorker:
         self._service_address = f'tcp://{service_address}:{service_port}'
         self._zmq_context = zmq_context
         self._zmq_socket = self._zmq_context.socket(zmq_socket_type)
+        # noinspection PyUnresolvedReferences
+        # zmq references
         self._zmq_socket.setsockopt(zmq.LINGER, 0)
         self._log = LoggerAdapter(worker_name, logger)
         self._cycles = 0
@@ -117,6 +119,8 @@ cdef class RequestWorker(MQWorker):
         Condition.valid_port(service_port, 'service_port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
+        # noinspection PyUnresolvedReferences
+        # zmq references
         super().__init__(
             worker_name,
             service_name,
@@ -182,6 +186,8 @@ cdef class SubscriberWorker(MQWorker):
         Condition.valid_port(service_port, 'port')
         Condition.callable(handler, 'handler')
 
+        # noinspection PyUnresolvedReferences
+        # zmq references
         super().__init__(
             worker_name,
             service_name,
@@ -202,7 +208,9 @@ cdef class SubscriberWorker(MQWorker):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
+        # noinspection PyUnresolvedReferences
+        # zmq references
+        self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(_UTF8))
         self._log.debug(f"Subscribed to topic {topic}.")
 
     cpdef void unsubscribe(self, str topic) except *:
@@ -213,7 +221,9 @@ cdef class SubscriberWorker(MQWorker):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
+        # noinspection PyUnresolvedReferences
+        # zmq references
+        self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(_UTF8))
         self._log.debug(f"Unsubscribed from topic {topic}.")
 
     cpdef void _consume_messages(self) except *:
@@ -223,7 +233,7 @@ cdef class SubscriberWorker(MQWorker):
         cdef bytes body
         while True:
             self._cycles += 1
-            topic = self._zmq_socket.recv().decode(UTF8)
+            topic = self._zmq_socket.recv().decode(_UTF8)
             body = self._zmq_socket.recv()
 
             self._log.verbose(f"[{self._cycles}]<-- topic={topic}, message={body}")

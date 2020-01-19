@@ -37,10 +37,10 @@ cdef str _ENDC = '\033[0m'
 cdef str _BOLD = '\033[1m'
 cdef str _UNDERLINE = '\033[4m'
 
-RECV = '<--'
-SENT = '-->'
-CMD = '[CMD]'
-EVT = '[EVT]'
+_RECV = '<--'
+_SENT = '-->'
+_CMD = '[CMD]'
+_EVT = '[EVT]'
 
 
 cdef class LogMessage:
