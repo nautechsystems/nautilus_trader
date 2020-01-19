@@ -504,15 +504,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Deleted Strategy(id={strategy.id.value}).")
 
-    # noinspection PyUnresolvedReferences
-    cpdef void check_residuals(self) except *:
-        # Check for any residual active orders and log warnings if any are found
-        for order_id, order in self.get_orders_working().items():
-            self._log.warning(f"Residual {order}")
-
-        for position_id, position in self.get_positions_open().items():
-            self._log.warning(f"Residual {position}")
-
     cpdef void reset(self) except *:
         """
         Reset the execution database by clearing the cache.

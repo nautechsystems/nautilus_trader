@@ -114,8 +114,12 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void check_residuals(self) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        # Check for any residual active orders and log warnings if any are found
+        for order_id, order in self.get_orders_working().items():
+            self._log.warning(f"Residual {order}")
+
+        for position_id, position in self.get_positions_open().items():
+            self._log.warning(f"Residual {position}")
 
     cpdef void reset(self) except *:
         # Raise exception if not overridden in implementation
@@ -514,14 +518,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             del self._index_strategy_positions[strategy.id]
 
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
-
-    # noinspection PyUnresolvedReferences
-    cpdef void check_residuals(self) except *:
-        for order_id, order in self.get_orders_working().items():
-            self._log.warning(f"Residual {order}.")
-
-        for position_id, position in self.get_positions_open().items():
-            self._log.warning(f"Residual {position}.")
 
     cpdef void reset(self) except *:
         # Reset the execution database by clearing all stateful values

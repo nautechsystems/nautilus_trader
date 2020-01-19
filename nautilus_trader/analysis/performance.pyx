@@ -231,7 +231,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].max()
+        return self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0].max()
 
     cpdef double avg_winner(self):
         """
@@ -239,7 +239,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0].mean()
+        return self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].mean()
 
     cpdef double avg_loser(self):
         """
@@ -255,7 +255,7 @@ cdef class PerformanceAnalyzer:
         
         :return double. 
         """
-        cdef list winners = list(self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0])
+        cdef list winners = list(self._equity_curve['pnl'][self._equity_curve['pnl'] > 0])
         cdef list losers = list(self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0])
 
         return len(winners) / max(1.0, (len(winners) + len(losers)))
