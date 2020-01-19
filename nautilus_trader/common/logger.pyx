@@ -27,7 +27,7 @@ from nautilus_trader.common.functions cimport format_zulu_datetime
 from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
 from nautilus_trader.common.logger cimport LogLevel
 
-
+# Private constants
 cdef str _HEADER = '\033[95m'
 cdef str _OK_BLUE = '\033[94m'
 cdef str _OK_GREEN = '\033[92m'
@@ -37,10 +37,11 @@ cdef str _ENDC = '\033[0m'
 cdef str _BOLD = '\033[1m'
 cdef str _UNDERLINE = '\033[4m'
 
-_RECV = '<--'
-_SENT = '-->'
-_CMD = '[CMD]'
-_EVT = '[EVT]'
+# Public constants
+RECV = '<--'
+SENT = '-->'
+CMD = '[CMD]'
+EVT = '[EVT]'
 
 
 cdef class LogMessage:
