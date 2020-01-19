@@ -271,7 +271,7 @@ cdef class Position:
         # Set quantities
         self.relative_quantity = self._buy_quantity - self._sell_quantity
         self.quantity = Quantity(abs(self.relative_quantity))
-        if self.quantity > self.peak_quantity:
+        if self.quantity.value > self.peak_quantity.value:
             self.peak_quantity = self.quantity
 
         # Set state

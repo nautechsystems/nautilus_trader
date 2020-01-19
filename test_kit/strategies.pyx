@@ -367,7 +367,7 @@ cdef class EMACross(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
+        # self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
         # Check if indicators ready
         if not self.indicators_initialized():
