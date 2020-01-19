@@ -137,7 +137,7 @@ class TraderTests(unittest.TestCase):
                       EmptyStrategy('000')]
 
         # Act
-        self.assertRaises(RuntimeError, self.trader.initialize_strategies, strategies)
+        self.assertRaises(ValueError, self.trader.initialize_strategies, strategies)
 
     def test_can_start_a_trader(self):
         # Arrange

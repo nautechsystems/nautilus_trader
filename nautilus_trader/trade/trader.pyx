@@ -97,8 +97,8 @@ cdef class Trader:
             if strategy.id not in strategy_ids:
                 strategy_ids.add(strategy.id)
             else:
-                raise RuntimeError(f'The strategy_id {strategy.id} was not unique '
-                                   f'(duplicate strategy_ids).')
+                raise ValueError(f'The strategy_id {strategy.id} was not unique '
+                                 f'(duplicate strategy_ids).')
 
         # Dispose of current strategies
         for strategy in self.strategies:

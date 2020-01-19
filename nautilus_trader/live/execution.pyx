@@ -1058,7 +1058,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             elif message.message_type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
-                raise RuntimeError(f"Invalid message type on queue ({repr(message)}).")
+                raise TypeError(f"Invalid message type on queue ({repr(message)}).")
 
 
 cdef class LiveExecClient(ExecutionClient):

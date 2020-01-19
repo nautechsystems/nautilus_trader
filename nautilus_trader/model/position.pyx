@@ -259,14 +259,14 @@ cdef class Position:
         return self.realized_pnl.add(self.unrealized_pnl(last))
 
     cdef void _update(self, OrderFillEvent event) except *:
+        Condition.not_equal(event.order_side, OrderSide.UNDEFINED, 'event.order_side', 'UNDEFINED')
+
         self._fill_prices[event.order_id] = event.average_price
 
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
-        elif event.order_side == OrderSide.SELL:
+        else: # event.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(event)
-        else:
-            raise RuntimeError(f"Cannot update position (event order side invalid {event.order_side})")
 
         # Set quantities
         self.relative_quantity = self._buy_quantity - self._sell_quantity

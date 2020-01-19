@@ -62,7 +62,6 @@ cdef class Order:
     id_broker : OrderIdBroker
         The unique broker identifier for the order.
 
-    TODO: Numpy style docstrings
     """
 
     def __init__(self,
