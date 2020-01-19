@@ -259,8 +259,6 @@ cdef class Position:
         return self.realized_pnl.add(self.unrealized_pnl(last))
 
     cdef void _update(self, OrderFillEvent event) except *:
-        Condition.not_equal(event.order_side, OrderSide.UNDEFINED, 'event.order_side', 'UNDEFINED')
-
         self._fill_prices[event.order_id] = event.average_price
 
         if event.order_side == OrderSide.BUY:
