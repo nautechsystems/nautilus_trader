@@ -61,6 +61,7 @@ cdef class AccountStateEvent(Event):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        Condition.not_equal(currency, Currency.UNDEFINED, 'currency', 'UNDEFINED')
         Condition.not_negative(margin_ratio.as_double(), 'margin_ratio')
 
         super().__init__(event_id, event_timestamp)
@@ -417,7 +418,7 @@ cdef class OrderAccepted(OrderEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
-                f"label={self.label.value})")
+                f"label={self.label})")
 
 
 cdef class OrderWorking(OrderEvent):
@@ -458,6 +459,8 @@ cdef class OrderWorking(OrderEvent):
         :param event_timestamp: The event timestamp.
         :param expire_time: The optional event order expire time (for GTD orders).
         """
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'UNDEFINED')
+        Condition.not_equal(order_type, OrderType.UNDEFINED, 'order_type', 'UNDEFINED')
         Condition.type_or_none(expire_time, datetime, 'expire_time')
 
         super().__init__(order_id,
@@ -759,6 +762,8 @@ cdef class OrderFilled(OrderFillEvent):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'UNDEFINED')
+
         super().__init__(account_id,
                          order_id,
                          execution_id,
@@ -1042,7 +1047,7 @@ cdef class TimeEvent(Event):
         :return str.
         """
         return (f"{self.__class__.__name__}("
-                f"label={self.label.value}, "
+                f"label={self.label}, "
                 f"timestamp={self.timestamp})")
 
     def __repr__(self) -> str:

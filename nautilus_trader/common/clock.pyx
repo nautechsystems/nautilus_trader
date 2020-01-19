@@ -93,7 +93,7 @@ cdef class Timer:
         :return str.
         """
         return (f"Timer("
-                f"label={self.label.value}, "
+                f"label={self.label}, "
                 f"interval={self.interval}, "
                 f"start_time={self.start_time}, "
                 f"next_time={self.next_time}, "

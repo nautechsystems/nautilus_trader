@@ -251,7 +251,7 @@ cdef class Order:
 
         :return str.
         """
-        cdef str label = '' if self.label is None else f'label={self.label.value}, '
+        cdef str label = '' if self.label is None else f'label={self.label}, '
         return (f"Order("
                 f"id={self.id.value}, "
                 f"state={order_state_to_string(self.state)}, "

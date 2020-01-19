@@ -206,7 +206,7 @@ cdef class LiveDataClient(DataClient):
 
         strategy.register_data_client(self)
 
-        self._log.info(f"Registered strategy {strategy} with the data client.")
+        self._log.info(f"Registered strategy {strategy}.")
 
     cpdef void request_ticks(
             self,
