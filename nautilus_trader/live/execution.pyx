@@ -43,23 +43,23 @@ from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
-cdef str UTF8 = 'utf-8'
+cdef str _UTF8 = 'utf-8'
 
-cdef str INDEX = 'Index'
-cdef str TRADER = 'Trader'
-cdef str CONFIG = 'Config'
-cdef str ACCOUNTS = 'Accounts'
-cdef str ORDER = 'Order'
-cdef str ORDERS = 'Orders'
-cdef str BROKER = 'BrokerId'
-cdef str POSITION = 'Position'
-cdef str POSITIONS = 'Positions'
-cdef str STRATEGY = 'Strategy'
-cdef str STRATEGIES = 'Strategies'
-cdef str WORKING = 'Working'
-cdef str COMPLETED = 'Completed'
-cdef str OPEN = 'Open'
-cdef str CLOSED = 'Closed'
+cdef str _INDEX = 'Index'
+cdef str _TRADER = 'Trader'
+cdef str _CONFIG = 'Config'
+cdef str _ACCOUNTS = 'Accounts'
+cdef str _ORDER = 'Order'
+cdef str _ORDERS = 'Orders'
+cdef str _BROKER = 'BrokerId'
+cdef str _POSITION = 'Position'
+cdef str _POSITIONS = 'Positions'
+cdef str _STRATEGY = 'Strategy'
+cdef str _STRATEGIES = 'Strategies'
+cdef str _WORKING = 'Working'
+cdef str _COMPLETED = 'Completed'
+cdef str _OPEN = 'Open'
+cdef str _CLOSED = 'Closed'
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
@@ -93,24 +93,24 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader                   = f'{TRADER}-{trader_id.value}'
-        self.key_accounts                 = f'{self.key_trader}:{ACCOUNTS}:'
-        self.key_orders                   = f'{self.key_trader}:{ORDERS}:'
-        self.key_positions                = f'{self.key_trader}:{POSITIONS}:'
-        self.key_strategies               = f'{self.key_trader}:{STRATEGIES}:'
-        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER}{POSITION}'      # HASH
-        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER}{STRATEGY}'      # HASH
-        self.key_index_broker_position    = f'{self.key_trader}:{INDEX}:{BROKER}{POSITION}'     # HASH
-        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION}{STRATEGY}'   # HASH
-        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION}{ORDERS}:'    # SET
-        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY}{ORDERS}:'    # SET
-        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY}{POSITIONS}:' # SET
-        self.key_index_orders             = f'{self.key_trader}:{INDEX}:{ORDERS}'               # SET
-        self.key_index_orders_working     = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'     # SET
-        self.key_index_orders_completed   = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'   # SET
-        self.key_index_positions          = f'{self.key_trader}:{INDEX}:{POSITIONS}'            # SET
-        self.key_index_positions_open     = f'{self.key_trader}:{INDEX}:{POSITIONS}:{OPEN}'     # SET
-        self.key_index_positions_closed   = f'{self.key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'   # SET
+        self.key_trader                   = f'{_TRADER}-{trader_id.value}'
+        self.key_accounts                 = f'{self.key_trader}:{_ACCOUNTS}:'
+        self.key_orders                   = f'{self.key_trader}:{_ORDERS}:'
+        self.key_positions                = f'{self.key_trader}:{_POSITIONS}:'
+        self.key_strategies               = f'{self.key_trader}:{_STRATEGIES}:'
+        self.key_index_order_position     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_POSITION}'      # HASH
+        self.key_index_order_strategy     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}'      # HASH
+        self.key_index_broker_position    = f'{self.key_trader}:{_INDEX}:{_BROKER}{_POSITION}'     # HASH
+        self.key_index_position_strategy  = f'{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}'   # HASH
+        self.key_index_position_orders    = f'{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:'    # SET
+        self.key_index_strategy_orders    = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:'    # SET
+        self.key_index_strategy_positions = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:' # SET
+        self.key_index_orders             = f'{self.key_trader}:{_INDEX}:{_ORDERS}'               # SET
+        self.key_index_orders_working     = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_WORKING}'     # SET
+        self.key_index_orders_completed   = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_COMPLETED}'   # SET
+        self.key_index_positions          = f'{self.key_trader}:{_INDEX}:{_POSITIONS}'            # SET
+        self.key_index_positions_open     = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}'     # SET
+        self.key_index_positions_closed   = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}'   # SET
 
         # Serializers
         self._command_serializer = command_serializer
@@ -151,7 +151,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef AccountId account_id
         cdef Account account
         for key_bytes in account_keys:
-            account_id = AccountId.from_string(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
+            account_id = AccountId.from_string(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             account = self.load_account(account_id)
 
             if account:
@@ -175,7 +175,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef OrderId order_id
         cdef Order order
         for key_bytes in order_keys:
-            order_id = OrderId(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
+            order_id = OrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             order = self.load_order(order_id)
 
             if order:
@@ -200,7 +200,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef Position position
 
         for key_bytes in position_keys:
-            position_id = PositionId(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
+            position_id = PositionId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             position = self.load_position(position_id)
 
             if position:
@@ -528,13 +528,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info('Flushed database.')
 
     cdef set _decode_set_to_order_ids(self, set original):
-        return {OrderId(element.decode(UTF8)) for element in original}
+        return {OrderId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_position_ids(self, set original):
-        return {PositionId(element.decode(UTF8)) for element in original}
+        return {PositionId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_strategy_ids(self, list original):
-        return {StrategyId.from_string(element.decode(UTF8).rsplit(':', 2)[1]) for element in original}
+        return {StrategyId.from_string(element.decode(_UTF8).rsplit(':', 2)[1]) for element in original}
 
 # -- QUERIES --------------------------------------------------------------------------------------"
 
@@ -632,7 +632,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(order_id, 'order_id')
 
-        return StrategyId.from_string(self._redis.hget(name=self.key_index_order_strategy, key=order_id.value).decode(UTF8))
+        return StrategyId.from_string(self._redis.hget(name=self.key_index_order_strategy, key=order_id.value).decode(_UTF8))
 
     cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
         """
@@ -643,7 +643,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position_id, 'position_id')
 
-        return StrategyId.from_string(self._redis.hget(name=self.key_index_position_strategy, key=position_id.value).decode(UTF8))
+        return StrategyId.from_string(self._redis.hget(name=self.key_index_position_strategy, key=position_id.value).decode(_UTF8))
 
     cpdef Order get_order(self, OrderId order_id):
         """
@@ -748,7 +748,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                               f"(no matching PositionId found in database).")
             return position_id_bytes
 
-        return PositionId(position_id_bytes.decode(UTF8))
+        return PositionId(position_id_bytes.decode(_UTF8))
 
     cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker):
         """
@@ -764,7 +764,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.warning(f"Cannot get PositionId for {position_id_broker.to_string(with_class=True)} (no matching PositionId found in database).")
             return position_id_bytes
 
-        return PositionId(position_id_bytes.decode(UTF8))
+        return PositionId(position_id_bytes.decode(_UTF8))
 
     cpdef dict get_positions(self, StrategyId strategy_id=None):
         """
