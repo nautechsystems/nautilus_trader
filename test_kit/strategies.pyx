@@ -511,10 +511,7 @@ cdef class EMACross(TradingStrategy):
         :param event: The received event.
         """
         # Put custom code for event handling here (or pass)
-        if isinstance(event, OrderRejected):
-            position = self.position_for_order(event.order_id)
-            if position is not None and position.is_open:
-                self.flatten_position(position.id)
+        pass
 
     cpdef void on_stop(self):
         """

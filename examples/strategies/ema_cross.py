@@ -250,10 +250,7 @@ class EMACrossPy(TradingStrategy):
         :param event: The received event.
         """
         # Put custom code for event handling here (or pass)
-        if isinstance(event, OrderRejected):
-            position = self.position_for_order(event.order_id)
-            if position is not None and position.is_open:
-                self.flatten_position(position.id)
+        pass
 
     def on_stop(self):
         """
@@ -379,7 +376,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
+        # self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
         # Check if indicators ready
         if not self.indicators_initialized():
@@ -508,10 +505,7 @@ class EMACrossMarketEntryPy(TradingStrategy):
         :param event: The received event.
         """
         # Put custom code for event handling here (or pass)
-        if isinstance(event, OrderRejected):
-            position = self.position_for_order(event.order_id)
-            if position is not None and position.is_open:
-                self.flatten_position(position.id)
+        pass
 
     def on_stop(self):
         """
