@@ -232,6 +232,7 @@ cdef class Clock:
         self._default_handler = None
 
         self.next_event_time = None
+        self.next_event_label = None
         self.has_timers = False
         self.is_logger_registered = False
         self.is_default_handler_registered = False
@@ -390,9 +391,8 @@ cdef class Clock:
             timer.cancel()
             if self.is_logger_registered:
                 self._log.info(f"Cancelled Timer(label={timer.label.value}).")
-
-        self._handlers.pop(label, None)
-        self._update_timing()
+            self._handlers.pop(label, None)
+            self._update_timing(timer)
 
     cpdef void cancel_all_timers(self) except *:
         """
@@ -415,15 +415,14 @@ cdef class Clock:
     cdef void _add_timer(self, Timer timer, handler) except *:
         self._timers[timer.label] = timer
         self._handlers[timer.label] = handler
-        self._update_timing()
+        self._update_timing(timer)
 
     cdef void _remove_timer(self, Timer timer) except *:
         self._timers.pop(timer.label, None)
         self._handlers.pop(timer.label, None)
-        self._update_timing()
+        self._update_timing(timer)
 
-    cdef void _update_timing(self) except *:
-        cdef Timer timer
+    cdef void _update_timing(self, Timer timer) except *:
         if self._timers:
             self.next_event_time = sorted(timer.next_time for timer in self._timers.values())[0]
             self.has_timers = True
@@ -478,15 +477,20 @@ cdef class TestClock(Clock):
             return # No timer events to iterate
 
         # Iterate timers
+        cdef list timers_to_remove = []
         cdef TestTimer timer
         cdef TimeEvent event
-        for timer in self._timers.copy().values():  # To avoid resize during loop
+        for timer in self._timers.values():
             for event in timer.advance(to_time):
                 self._pending_events[event] = self._handlers[timer.label]
+                self._update_timing(timer)
             if timer.expired:
-                self._remove_timer(timer)
+                timers_to_remove.append(timer)
 
-        self._update_timing()
+        # Remove expired timers
+        for timer in timers_to_remove:
+            self._remove_timer(timer)
+
         self._time = to_time
 
     cpdef dict pop_events(self):
@@ -557,7 +561,7 @@ cdef class LiveClock(Clock):
             self._remove_timer(timer)
         else:  # Continue timing
             timer.repeat(now)
-            self._update_timing()
+            self._update_timing(timer)
 
     cdef void _handle_time_event(self, TimeEvent event) except *:
         handler = self._handlers.get(event.label)

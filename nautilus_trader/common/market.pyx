@@ -607,7 +607,7 @@ cdef class BarAggregator:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void _handle_bar(self, Bar bar) except *:
-        self._log.debug(f"Built {self.bar_type} Bar({bar})")
+        # self._log.debug(f"Built {self.bar_type} Bar({bar})")
         self._handler.handle(self.bar_type, bar)
 
 

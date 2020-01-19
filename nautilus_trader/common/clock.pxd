@@ -49,6 +49,7 @@ cdef class Clock:
     cdef object _default_handler
 
     cdef readonly datetime next_event_time
+    cdef readonly Label next_event_label
     cdef readonly bint has_timers
     cdef readonly bint is_test_clock
     cdef readonly bint is_logger_registered
@@ -67,7 +68,7 @@ cdef class Clock:
     cdef object _get_timer(self, Label label, timedelta interval, datetime now, datetime start_time, datetime stop_time)
     cdef void _add_timer(self, Timer timer, handler) except *
     cdef void _remove_timer(self, Timer timer) except *
-    cdef void _update_timing(self) except *
+    cdef void _update_timing(self, Timer timer) except *
 
 
 cdef class TestClock(Clock):

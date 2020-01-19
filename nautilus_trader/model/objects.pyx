@@ -16,15 +16,9 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.bar_structure cimport (
-    BarStructure,
-    bar_structure_to_string,
-    bar_structure_from_string
-)
+    BarStructure, bar_structure_to_string, bar_structure_from_string)
 from nautilus_trader.model.c_enums.price_type cimport (
-    PriceType,
-    price_type_to_string,
-    price_type_from_string
-)
+    PriceType, price_type_to_string, price_type_from_string)
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Venue
@@ -940,7 +934,7 @@ cdef class Bar:
                 f"{self.low},"
                 f"{self.close},"
                 f"{self.volume},"
-                f"{self.timestamp.isoformat()}")
+                f"{self.timestamp}")
 
     def __eq__(self, Bar other) -> bool:
         """
