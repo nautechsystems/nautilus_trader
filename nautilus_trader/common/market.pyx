@@ -18,8 +18,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_s
 from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarType, BarSpecification, Instrument
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.identifiers cimport Label
-from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport TimeEventHandler, Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 
@@ -693,12 +692,11 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update(tick)
 
-        cdef TimeEvent event
+        cdef TimeEventHandler event_handler
         if self._clock.is_test_clock:
             if self._clock.next_event_time <= tick.timestamp:
-                self._clock.advance_time(tick.timestamp)
-                for event, handler in self._clock.pop_events().items():
-                    handler(event)
+                for event_handler in self._clock.advance_time(tick.timestamp):
+                    event_handler.handle()
                 self.next_close = self._clock.next_event_time
 
     cpdef void _build_event(self, TimeEvent event) except *:

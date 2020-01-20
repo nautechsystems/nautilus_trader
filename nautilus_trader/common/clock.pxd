@@ -15,8 +15,16 @@ from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.events cimport TimeEvent
 
 
+cdef class TimeEventHandler:
+    cdef readonly TimeEvent event
+    cdef object handler
+
+    cdef void handle(self) except *
+
+
 cdef class Timer:
     cdef readonly Label label
+    cdef readonly object callback
     cdef readonly timedelta interval
     cdef readonly datetime start_time
     cdef readonly datetime next_time
@@ -34,7 +42,6 @@ cdef class TestTimer(Timer):
 
 
 cdef class LiveTimer(Timer):
-    cdef object _function
     cdef object _internal
 
     cpdef void repeat(self, datetime now) except *
@@ -46,11 +53,12 @@ cdef class Clock:
     cdef GuidFactory _guid_factory
     cdef dict _timers
     cdef dict _handlers
+    cdef Timer[:] _stack
     cdef object _default_handler
 
+    cdef readonly int timer_count
     cdef readonly datetime next_event_time
     cdef readonly Label next_event_label
-    cdef readonly bint has_timers
     cdef readonly bint is_test_clock
     cdef readonly bint is_logger_registered
     cdef readonly bint is_default_handler_registered
@@ -65,10 +73,11 @@ cdef class Clock:
     cpdef void cancel_timer(self, Label label) except *
     cpdef void cancel_all_timers(self) except *
 
-    cdef object _get_timer(self, Label label, timedelta interval, datetime now, datetime start_time, datetime stop_time)
+    cdef object _get_timer(self, Label label, callback, timedelta interval, datetime now, datetime start_time, datetime stop_time)
     cdef void _add_timer(self, Timer timer, handler) except *
     cdef void _remove_timer(self, Timer timer) except *
-    cdef void _update_timing(self, Timer timer) except *
+    cdef void _update_stack(self)
+    cdef void _update_timing(self) except *
 
 
 cdef class TestClock(Clock):
@@ -76,8 +85,7 @@ cdef class TestClock(Clock):
     cdef dict _pending_events
 
     cpdef void set_time(self, datetime to_time) except *
-    cpdef void advance_time(self, datetime to_time) except *
-    cpdef dict pop_events(self)
+    cpdef list advance_time(self, datetime to_time)
 
 
 cdef class LiveClock(Clock):

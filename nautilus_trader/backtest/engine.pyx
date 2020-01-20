@@ -10,7 +10,7 @@ import psutil
 import pytz
 
 from cpython.datetime cimport datetime
-from typing import List, Dict, Callable
+from typing import List, Tuple, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_size_of
@@ -18,8 +18,8 @@ from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
 from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.model.identifiers cimport Venue, TraderId, AccountId
-from nautilus_trader.common.clock cimport LiveClock, TestClock
+from nautilus_trader.model.identifiers cimport TraderId, AccountId
+from nautilus_trader.common.clock cimport LiveClock, TestClock, TimeEventHandler
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -252,21 +252,21 @@ cdef class BacktestEngine:
         cdef Tick tick
         cdef TradingStrategy strategy
         cdef TimeEvent event
-        cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
+        cdef list time_events = []  # type: List[TimeEventHandler]
+        cdef TimeEventHandler event_handler
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self.data_client.has_data:
             tick = self.data_client.generate_tick()
             for strategy in self.trader.strategies:
-                if strategy.clock.has_timers:
-                    strategy.clock.advance_time(tick.timestamp)
-                    time_events.update(strategy.clock.pop_events())
+                if strategy.clock.timer_count > 0:
+                    time_events += strategy.clock.advance_time(tick.timestamp)
                 else:
                     strategy.clock.set_time(tick.timestamp)
             if time_events:
-                for event, handler in dict(sorted(time_events.items())).items():
-                    self.test_clock.set_time(event.timestamp)
-                    handler(event)
+                for event_handler in sorted(time_events):
+                    self.test_clock.set_time(event_handler.event.timestamp)
+                    event_handler.handle()
                 time_events.clear()
             self.test_clock.set_time(tick.timestamp)
             self.exec_client.process_tick(tick)

@@ -49,8 +49,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
-        cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
-        s = pstats.Stats("Profile.prof")
+        stats_file = 'perf_stats_backtest_run_empty.prof'
+        cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
+        s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
         self.assertTrue(True)
@@ -68,6 +69,45 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 31/07/19   13792 function calls   (13610 primitive calls) in 2.037 seconds (performance check)
         # 21/08/19   15311 function calls   (15117 primitive calls) in 2.156 seconds (performance check)
         # 14/01/20   20964 function calls   (20758 primitive calls) in 0.695 seconds (performance check)
+
+    def test_run_for_tick_processing(self):
+        # Arrange
+        usdjpy = TestStubs.instrument_usdjpy()
+
+        data = BacktestDataContainer()
+        data.add_instrument(usdjpy)
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+
+        strategies = [EMACross(
+            instrument=usdjpy,
+            bar_spec=TestStubs.bar_spec_1min_bid(),
+            risk_bp=10,
+            fast_ema=10,
+            slow_ema=20,
+            atr_period=20,
+            sl_atr_multiple=2.0)]
+
+        config = BacktestConfig(
+            exec_db_type='in-memory',
+            bypass_logging=True,
+            console_prints=False)
+
+        engine = BacktestEngine(
+            data=data,
+            strategies=strategies,
+            config=config,
+            fill_model=None)
+
+        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+        stats_file = 'perf_stats_tick_processing.prof'
+        cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
+        s = pstats.Stats(stats_file)
+        s.strip_dirs().sort_stats("time").print_stats()
+
+        self.assertTrue(True)
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange
@@ -101,8 +141,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
-        cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
-        s = pstats.Stats("Profile.prof")
+        stats_file = 'perf_stats_backtest_run_ema.prof'
+        cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
+        s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
         self.assertTrue(True)
@@ -178,3 +219,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 17/01/20 19195261 function calls (18974139 primitive calls) in 18.884 seconds (added fast_mean)
         # 19/01/20 15425161 function calls (15197349 primitive calls) in 16.827 seconds (use memory views)
         # 19/01/20 15230115 function calls (15002375 primitive calls) in 15.535 seconds (remove redundant prints)
+        # 20/01/20 15230117 function calls (15002377 primitive calls) in 13.824 seconds (remove clock bottleneck)
