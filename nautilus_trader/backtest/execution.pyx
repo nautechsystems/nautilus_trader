@@ -297,7 +297,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderId order_id
         cdef Order order
         cdef Instrument instrument
-        for order_id, order in self._working_orders.copy().items():  # Copies dict to avoid resize during loop
+        for order in self._working_orders.copy().values():  # Copies list to avoid resize during loop
             if not order.symbol.equals(tick.symbol):
                 continue  # Order is for a different symbol
             if order.state != OrderState.WORKING:

@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import numpy as np
+
 from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer as TimerThread
@@ -23,6 +25,72 @@ from nautilus_trader.model.events cimport TimeEvent
 _UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 
 
+cdef class TimeEventHandler:
+    """
+    Represents a bundled event and handler.
+    """
+
+    def __init__(self, TimeEvent event not None, handler not None):
+        self.event = event
+        self.handler = handler
+
+    cdef void handle(self) except *:
+        self.handler(self.event)
+
+    def __eq__(self, TimeEventHandler other) -> bool:
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.event.timestamp == other.event.timestamp
+
+    def __ne__(self, TimeEventHandler other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to (!=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.event.timestamp != other.event.timestamp
+
+    def __lt__(self, TimeEventHandler other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.event.timestamp < other.event.timestamp
+
+    def __le__(self, TimeEventHandler other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.event.timestamp <= other.event.timestamp
+
+    def __gt__(self, TimeEventHandler other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.event.timestamp > other.event.timestamp
+
+    def __ge__(self, TimeEventHandler other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+
+
 cdef class Timer:
     """
     The base class for all timers.
@@ -30,6 +98,7 @@ cdef class Timer:
 
     def __init__(self,
                  Label label not None,
+                 callback not None,
                  timedelta interval not None,
                  datetime start_time not None,
                  datetime stop_time=None):
@@ -37,15 +106,18 @@ cdef class Timer:
         Initializes a new instance of the Timer class.
 
         :param label: The label for the timer.
+        :param callback: The function to call at the next time.
         :param interval: The time interval for the timer (not negative).
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
+        Condition.callable(callback, 'function')
         Condition.positive(interval.total_seconds(), 'interval')
         if stop_time:
             Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
 
         self.label = label
+        self.callback = callback
         self.interval = interval
         self.start_time = start_time
         self.next_time = start_time + interval
@@ -117,6 +189,7 @@ cdef class TestTimer(Timer):
 
     def __init__(self,
                  Label label not None,
+                 callback not None,
                  timedelta interval not None,
                  datetime start_time not None,
                  datetime stop_time=None):
@@ -128,10 +201,11 @@ cdef class TestTimer(Timer):
         :param start_time: The stop datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
-        # Condition: interval checked in base class
-        # Condition: stop_time checked in base class
+        # Condition.is_callable(callback) checked in base class
+        # Condition.positive(interval) checked in base class
+        # Condition.true(start_time + interval <= stop_time) checked in base class
 
-        super().__init__(label, interval, start_time, stop_time)
+        super().__init__(label, callback, interval, start_time, stop_time)
         self._guid_factory = TestGuidFactory()
 
     cpdef list advance(self, datetime to_time):
@@ -165,7 +239,7 @@ cdef class LiveTimer(Timer):
 
     def __init__(self,
                  Label label not None,
-                 function not None,
+                 callback not None,
                  timedelta interval not None,
                  datetime now not None,
                  datetime start_time not None,
@@ -174,20 +248,19 @@ cdef class LiveTimer(Timer):
         Initializes a new instance of the LiveTimer class.
 
         :param label: The label for the timer.
-        :param function: The function to call at the next time.
+        :param callback: The function to call at the next time.
         :param interval: The time interval for the timer.
         :param now: The datetime now (UTC).
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         :raises ConditionFailed: If the function is not of type Callable.
         """
-        Condition.callable(function, 'function')
-        # Condition: interval checked in base class
-        # Condition: stop_time checked in base class
+        # Condition.is_callable(callback) checked in base class
+        # Condition.positive(interval) checked in base class
+        # Condition.true(start_time + interval <= stop_time) checked in base class
 
-        super().__init__(label, interval, start_time, stop_time)
+        super().__init__(label, callback, interval, start_time, stop_time)
 
-        self._function = function
         self._internal = self._start_timer(now)
 
     cpdef void repeat(self, datetime now) except *:
@@ -207,7 +280,7 @@ cdef class LiveTimer(Timer):
     cdef object _start_timer(self, datetime now):
         timer = TimerThread(
             interval=(self.next_time - now).total_seconds(),
-            function=self._function,
+            function=self.callback,
             args=[self])
         timer.daemon = True
         timer.start()
@@ -230,11 +303,12 @@ cdef class Clock:
         self._guid_factory = guid_factory
         self._timers = {}    # type: Dict[Label, Timer]
         self._handlers = {}  # type: Dict[Label, Callable]
+        self._stack = None
         self._default_handler = None
 
+        self.timer_count = 0
         self.next_event_time = None
         self.next_event_label = None
-        self.has_timers = False
         self.is_logger_registered = False
         self.is_default_handler_registered = False
 
@@ -310,13 +384,14 @@ cdef class Clock:
         if handler is None:
             handler = self._default_handler
         Condition.not_in(label, self._timers, 'label', 'timers')
-        Condition.not_in(label, self._handlers, 'label', 'handlers')
+        Condition.not_in(label, self._handlers, 'label', 'timers')
         cdef datetime now = self.time_now()
         Condition.true(alert_time >= now, 'alert_time >= time_now()')
         Condition.callable(handler, 'handler')
 
         cdef Timer timer = self._get_timer(
             label=label,
+            callback=handler,
             interval=alert_time - now,
             now=now,
             start_time=now,
@@ -355,7 +430,7 @@ cdef class Clock:
         if handler is None:
             handler = self._default_handler
         Condition.not_in(label, self._timers, 'label', 'timers')
-        Condition.not_in(label, self._handlers, 'label', 'handlers')
+        Condition.not_in(label, self._handlers, 'label', 'timers')
         Condition.true(interval.total_seconds() > 0, 'interval positive')
         Condition.callable(handler, 'handler')
         cdef datetime now = self.time_now()
@@ -368,6 +443,7 @@ cdef class Clock:
         cdef Timer timer = self._get_timer(
             label=label,
             interval=interval,
+            callback=handler,
             now=now,
             start_time=start_time,
             stop_time=stop_time)
@@ -384,7 +460,7 @@ cdef class Clock:
         """
         Condition.not_none(label, 'label')
 
-        timer = self._timers.pop(label, None)
+        cdef Timer timer = self._timers.pop(label, None)
         if timer is None:
             if self.is_logger_registered:
                 self._log.warning(f"Cannot cancel timer (no timer found with label '{label.value}').")
@@ -393,7 +469,7 @@ cdef class Clock:
             if self.is_logger_registered:
                 self._log.info(f"Cancelled Timer(label={timer.label.value}).")
             self._handlers.pop(label, None)
-            self._update_timing(timer)
+            self._remove_timer(timer)
 
     cpdef void cancel_all_timers(self) except *:
         """
@@ -406,6 +482,7 @@ cdef class Clock:
     cdef object _get_timer(
             self,
             Label label,
+            callback,
             timedelta interval,
             datetime now,
             datetime start_time,
@@ -416,20 +493,36 @@ cdef class Clock:
     cdef void _add_timer(self, Timer timer, handler) except *:
         self._timers[timer.label] = timer
         self._handlers[timer.label] = handler
-        self._update_timing(timer)
+        self._update_stack()
+        self._update_timing()
 
     cdef void _remove_timer(self, Timer timer) except *:
         self._timers.pop(timer.label, None)
         self._handlers.pop(timer.label, None)
-        self._update_timing(timer)
+        self._update_stack()
+        self._update_timing()
 
-    cdef void _update_timing(self, Timer timer) except *:
-        if self._timers:
-            self.next_event_time = sorted(timer.next_time for timer in self._timers.values())[0]
-            self.has_timers = True
-        else:
+    cdef void _update_stack(self):
+        self.timer_count = len(self._timers)
+        self._stack = np.asarray(list(self._timers.values()))
+
+    cdef void _update_timing(self) except *:
+        if self.timer_count == 0:
             self.next_event_time = None
-            self.has_timers = False
+            return
+        elif self.timer_count == 1:
+            self.next_event_time = self._stack[0].next_time
+            return
+
+        cdef datetime next_time = self._stack[0].next_time
+        cdef datetime observed
+        cdef int i
+        for i in range(self.timer_count - 1):
+            observed = self._stack[i + 1].next_time
+            if observed < next_time:
+                next_time = observed
+
+        self.next_event_time = next_time
 
 
 cdef class TestClock(Clock):
@@ -445,7 +538,6 @@ cdef class TestClock(Clock):
         """
         super().__init__(TestGuidFactory())
         self._time = initial_time
-        self._pending_events = {}  # type: Dict[TimeEvent, Callable]
         self.is_test_clock = True
 
     cpdef datetime time_now(self):
@@ -466,7 +558,7 @@ cdef class TestClock(Clock):
 
         self._time = to_time
 
-    cpdef void advance_time(self, datetime to_time) except *:
+    cpdef list advance_time(self, datetime to_time):
         """
         Iterates the clocks time to the given datetime.
 
@@ -474,46 +566,37 @@ cdef class TestClock(Clock):
         """
         Condition.not_none(to_time, 'to_time')
 
-        if not self.has_timers or to_time < self.next_event_time:
-            return # No timer events to iterate
+        if self.timer_count == 0 or to_time < self.next_event_time:
+            return []  # No timer events to iterate
 
-        # Iterate timers
-        cdef list timers_to_remove = []
+        # Iterate timer events
         cdef TestTimer timer
         cdef TimeEvent event
-        for timer in self._timers.values():
+        cdef list events = []
+        for timer in self._stack:
             for event in timer.advance(to_time):
-                self._pending_events[event] = self._handlers[timer.label]
-                self._update_timing(timer)
-            if timer.expired:
-                timers_to_remove.append(timer)
+                events.append(TimeEventHandler(event, timer.callback))
 
         # Remove expired timers
-        for timer in timers_to_remove:
-            self._remove_timer(timer)
+        for timer in self._stack:
+            if timer.expired:
+                self._remove_timer(timer)
 
+        self._update_timing()
         self._time = to_time
-
-    cpdef dict pop_events(self):
-        """
-        Return a sorted dictionary of pending time events and their handlers.
-
-        :return: Dict[TimeEvent, Handler].
-        """
-        cdef dict events = dict(sorted(self._pending_events.items()))
-        self._pending_events = {}  # type: Dict[TimeEvent, Callable]
-
         return events
 
     cdef object _get_timer(
             self,
             Label label,
+            callback,
             timedelta interval,
             datetime now,
             datetime start_time,
             datetime stop_time):
         return TestTimer(
             label=label,
+            callback=callback,
             interval=interval,
             start_time=start_time,
             stop_time=stop_time)
@@ -541,13 +624,14 @@ cdef class LiveClock(Clock):
     cdef object _get_timer(
             self,
             Label label,
+            callback,
             timedelta interval,
             datetime now,
             datetime start_time,
             datetime stop_time):
         return LiveTimer(
             label=label,
-            function=self._raise_time_event,
+            callback=self._raise_time_event,
             interval=interval,
             now=now,
             start_time=start_time,
@@ -562,7 +646,7 @@ cdef class LiveClock(Clock):
             self._remove_timer(timer)
         else:  # Continue timing
             timer.repeat(now)
-            self._update_timing(timer)
+            self._update_timing()
 
     cdef void _handle_time_event(self, TimeEvent event) except *:
         handler = self._handlers.get(event.label)

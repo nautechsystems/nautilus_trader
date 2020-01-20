@@ -25,8 +25,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.tick_type cimport TickType
 from nautilus_trader.model.objects cimport Instrument, Price, Tick, BarType
 from nautilus_trader.model.identifiers cimport Symbol, Venue
-from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.clock cimport TimeEventHandler, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.data cimport DataClient
@@ -320,14 +319,12 @@ cdef class BacktestDataClient(DataClient):
 
         self._handle_tick(tick)
 
-        if self._clock.has_timers and tick.timestamp < self._clock.next_event_time:
+        if self._clock.timer_count == 0 or tick.timestamp < self._clock.next_event_time:
             return  # No events to handle yet
 
-        self._clock.advance_time(tick.timestamp)
-
-        cdef TimeEvent event
-        for event, handler in self._clock.pop_events().items():
-            handler(event)
+        cdef TimeEventHandler event_handler
+        for event_handler in self._clock.advance_time(tick.timestamp):
+            event_handler.handle()
 
     cpdef void request_ticks(
             self,

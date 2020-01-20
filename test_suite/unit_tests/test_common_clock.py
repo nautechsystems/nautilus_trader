@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.core.types import GUID
-from nautilus_trader.common.clock import LiveClock, TestClock
+from nautilus_trader.common.clock import TimeEventHandler, LiveClock, TestClock
 from nautilus_trader.common.logger import LoggerAdapter, TestLogger
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.model.events import TimeEvent
@@ -317,13 +317,12 @@ class TestClockTests(unittest.TestCase):
 
         # Act
         self.clock.set_time_alert(label, alert_time)
-        self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=200))
-        events = self.clock.pop_events()
+        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=200))
 
         # Assert
         self.assertEqual([], self.clock.get_timer_labels())
         self.assertEqual(1, len(events))
-        self.assertEqual(TimeEvent, type(list(events.items())[0][0]))
+        self.assertEqual(TimeEventHandler, type(events[0]))
 
     def test_can_cancel_time_alert(self):
         # Arrange
@@ -348,8 +347,7 @@ class TestClockTests(unittest.TestCase):
         # Act
         self.clock.set_time_alert(Label('TEST_ALERT1'), alert_time1)
         self.clock.set_time_alert(Label('TEST_ALERT2'), alert_time2)
-        self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
-        events = self.clock.pop_events()
+        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
 
         # Assert
         self.assertEqual([], self.clock.get_timer_labels())
@@ -365,13 +363,12 @@ class TestClockTests(unittest.TestCase):
             interval=timedelta(milliseconds=100),
             start_time=None,
             stop_time=None)
-        self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
-        events = self.clock.pop_events()
+        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
         self.assertEqual(4, len(events))
-        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=timezone.utc), list(events.keys())[3].timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=timezone.utc), events[3].event.timestamp)
 
     def test_can_set_timer(self):
         # Arrange
@@ -384,8 +381,7 @@ class TestClockTests(unittest.TestCase):
             interval=interval,
             start_time=None,
             stop_time=None)
-        self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
-        events = self.clock.pop_events()
+        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
@@ -401,8 +397,7 @@ class TestClockTests(unittest.TestCase):
             label=label,
             interval=interval,
             stop_time=self.clock.time_now() + timedelta(milliseconds=300))
-        self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
-        events = self.clock.pop_events()
+        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
 
         # Assert
         self.assertEqual([], self.clock.get_timer_labels())
@@ -437,8 +432,7 @@ class TestClockTests(unittest.TestCase):
             start_time=self.clock.time_now(),
             stop_time=None)
 
-        self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
-        events = self.clock.pop_events()
+        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
 
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
@@ -481,8 +475,7 @@ class TestClockTests(unittest.TestCase):
             start_time=self.clock.time_now(),
             stop_time=None)
 
-        self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=500))
-        events = self.clock.pop_events()
+        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=500))
 
         # Assert
         self.assertEqual(10, len(events))
