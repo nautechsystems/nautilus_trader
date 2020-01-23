@@ -275,7 +275,7 @@ cdef class Price(Decimal):
         :raises ConditionFailed: If the precision is not positive (> 0).
         """
         Condition.not_negative(value, 'value')
-        # Condition: precision checked in base class
+
         super().__init__(value, precision)
 
     @staticmethod

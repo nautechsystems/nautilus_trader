@@ -201,11 +201,8 @@ cdef class TestTimer(Timer):
         :param start_time: The stop datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
-        # Condition.is_callable(callback) checked in base class
-        # Condition.positive(interval) checked in base class
-        # Condition.true(start_time + interval <= stop_time) checked in base class
-
         super().__init__(label, callback, interval, start_time, stop_time)
+
         self._guid_factory = TestGuidFactory()
 
     cpdef list advance(self, datetime to_time):
@@ -255,10 +252,6 @@ cdef class LiveTimer(Timer):
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         :raises ConditionFailed: If the function is not of type Callable.
         """
-        # Condition.is_callable(callback) checked in base class
-        # Condition.positive(interval) checked in base class
-        # Condition.true(start_time + interval <= stop_time) checked in base class
-
         super().__init__(label, callback, interval, start_time, stop_time)
 
         self._internal = self._start_timer(now)
