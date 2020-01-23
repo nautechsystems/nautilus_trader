@@ -29,7 +29,7 @@ cdef class PositionSizer:
         Update the internal instrument with the given instrument.
         
         :param instrument: The instrument for update.
-        :raises ConditionFailed: If the instruments symbol does not equal the held instrument symbol.
+        :raises ValueError: If the instruments symbol does not equal the held instrument symbol.
         """
         Condition.not_none(instrument, 'instrument')
         Condition.equal(self.instrument.symbol, instrument.symbol, 'instrument.symbol', 'instrument.symbol')
@@ -60,11 +60,11 @@ cdef class PositionSizer:
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
-        :raises ConditionFailed: If the risk_bp is not positive (> 0).
-        :raises ConditionFailed: If the exchange_rate is not positive (> 0).
-        :raises ConditionFailed: If the commission_rate is negative (< 0).
-        :raises ConditionFailed: If the units is not positive (> 0).
-        :raises ConditionFailed: If the unit_batch_size is not positive (> 0).
+        :raises ValueError: If the risk_bp is not positive (> 0).
+        :raises ValueError: If the exchange_rate is not positive (> 0).
+        :raises ValueError: If the commission_rate is negative (< 0).
+        :raises ValueError: If the units is not positive (> 0).
+        :raises ValueError: If the unit_batch_size is not positive (> 0).
         
         :return Quantity.
         """
@@ -135,11 +135,11 @@ cdef class FixedRiskSizer(PositionSizer):
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
-        :raises ConditionFailed: If the risk_bp is not positive (> 0).
-        :raises ConditionFailed: If the exchange_rate is not positive (> 0).
-        :raises ConditionFailed: If the commission_rate is negative (< 0).
-        :raises ConditionFailed: If the units is not positive (> 0).
-        :raises ConditionFailed: If the unit_batch_size is not positive (> 0).
+        :raises ValueError: If the risk_bp is not positive (> 0).
+        :raises ValueError: If the exchange_rate is not positive (> 0).
+        :raises ValueError: If the commission_rate is negative (< 0).
+        :raises ValueError: If the units is not positive (> 0).
+        :raises ValueError: If the unit_batch_size is not positive (> 0).
         
         :return Quantity.
         """

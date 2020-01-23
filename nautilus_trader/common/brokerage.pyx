@@ -140,7 +140,7 @@ cdef class RolloverInterestCalculator:
         :param symbol: The forex currency symbol for the calculation.
         :param timestamp: The timestamp for the calculation.
         :return: double.
-        :raises ConditionFailed: If the symbol.code length is not == 6.
+        :raises ValueError: If the symbol.code length is not == 6.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(timestamp, 'timestamp')

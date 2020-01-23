@@ -12,7 +12,6 @@ import time
 
 from datetime import datetime, timezone, timedelta
 
-from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.portfolio import Portfolio
@@ -176,7 +175,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, strategy.bars, bar_type)
+        self.assertRaises(ValueError, strategy.bars, bar_type)
 
     def test_can_get_bars(self):
         # Arrange
@@ -204,7 +203,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, strategy.bar, unknown_bar_type, 0)
+        self.assertRaises(ValueError, strategy.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
         # Arrange
@@ -264,7 +263,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, strategy.tick, AUDUSD_FXCM, 0)
+        self.assertRaises(ValueError, strategy.tick, AUDUSD_FXCM, 0)
 
     def test_can_get_last_tick(self):
         strategy = TradingStrategy(order_id_tag='001')

@@ -50,8 +50,8 @@ cdef class BacktestConfig:
         :param log_thread: The boolean flag indicating whether log messages should log the thread.
         :param log_to_file: The boolean flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :raises ConditionFailed: If the starting capital is not positive (> 0).
-        :raises ConditionFailed: If the commission_rate is negative (< 0).
+        :raises ValueError: If the starting capital is not positive (> 0).
+        :raises ValueError: If the commission_rate is negative (< 0).
         """
         Condition.valid_string(exec_db_type, 'exec_db_type')
         Condition.positive_int(starting_capital, 'starting_capital')

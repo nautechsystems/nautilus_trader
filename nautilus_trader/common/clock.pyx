@@ -250,7 +250,7 @@ cdef class LiveTimer(Timer):
         :param now: The datetime now (UTC).
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
-        :raises ConditionFailed: If the function is not of type Callable.
+        :raises TypeError: If the function is not of type Callable.
         """
         super().__init__(label, callback, interval, start_time, stop_time)
 
@@ -348,7 +348,7 @@ cdef class Clock:
         Register the given handler as the clocks default handler.
         
         :param handler: The handler to register (must be Callable).
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises TypeError: If the handler is not of type Callable.
         """
         Condition.callable(handler, 'handler')
 
@@ -367,10 +367,10 @@ cdef class Clock:
         :param label: The label for the alert (must be unique for this clock).
         :param alert_time: The time for the alert.
         :param handler: The optional handler to receive time events (must be Callable).
-        :raises ConditionFailed: If the label is not unique for this clock.
-        :raises ConditionFailed: If the alert_time is not >= the clocks current time.
-        :raises ConditionFailed: If the handler is not of type Callable or None.
-        :raises ConditionFailed: If the handler is None and no default handler is registered.
+        :raises ValueError: If the label is not unique for this clock.
+        :raises ValueError: If the alert_time is not >= the clocks current time.
+        :raises TypeError: If the handler is not of type Callable or None.
+        :raises ValueError: If the handler is None and no default handler is registered.
         """
         Condition.not_none(label, 'label')
         Condition.not_none(alert_time, 'alert_time')
@@ -411,12 +411,12 @@ cdef class Clock:
         :param start_time: The optional start time for the timer (if None then starts immediately).
         :param stop_time: The optional stop time for the timer (if None then repeats indefinitely).
         :param handler: The optional handler to receive time events (must be Callable or None).
-        :raises ConditionFailed: If the label is not unique for this clock.
-        :raises ConditionFailed: If the interval is not positive (> 0).
-        :raises ConditionFailed: If the stop_time is not None and stop_time < time_now.
-        :raises ConditionFailed: If the stop_time is not None and start_time + interval > stop_time.
-        :raises ConditionFailed: If the handler is not of type Callable or None.
-        :raises ConditionFailed: If the handler is None and no default handler is registered.
+        :raises ValueError: If the label is not unique for this clock.
+        :raises ValueError: If the interval is not positive (> 0).
+        :raises ValueError: If the stop_time is not None and stop_time < time_now.
+        :raises ValueError: If the stop_time is not None and start_time + interval > stop_time.
+        :raises TypeError: If the handler is not of type Callable or None.
+        :raises ValueError: If the handler is None and no default handler is registered.
         """
         Condition.not_none(label, 'label')
         Condition.not_none(interval, 'interval')

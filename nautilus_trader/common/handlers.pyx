@@ -22,7 +22,7 @@ cdef class Handler:
         Initializes a new instance of the TickHandler class.
 
         :param handler: The callable handler.
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises TypeError: If the handler is not of type Callable.
         """
         Condition.callable(handler, 'handler')
 

@@ -89,7 +89,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
-        :raises ConditionFailed: If the instruments list contains a type other than Instrument.
+        :raises ValueError: If the instruments list contains a type other than Instrument.
         """
         Condition.dict_types(instruments, Symbol, Instrument, 'instruments')
 

@@ -44,11 +44,11 @@ cdef class Trader:
         :param clock: The clock for the trader.
         :param guid_factory: The guid_factory for the trader.
         :param logger: The logger for the trader.
-        :raises ConditionFailed: If the strategies is None.
-        :raises ConditionFailed: If the strategies list is empty.
-        :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
-        :raises ConditionFailed: If the trader_id is not equal to the exec_engine.trader_id.
-        :raises ConditionFailed: If the account_id is not equal to the exec_engine.account_id.
+        :raises ValueError: If the strategies is None.
+        :raises ValueError: If the strategies list is empty.
+        :raises TypeError: If the strategies list contains a type other than TradingStrategy.
+        :raises ValueError: If the trader_id is not equal to the exec_engine.trader_id.
+        :raises ValueError: If the account_id is not equal to the exec_engine.account_id.
         """
         Condition.equal(trader_id, exec_engine.trader_id, 'trader_id', 'exec_engine.trader_id')
         Condition.equal(account_id, exec_engine.account_id, 'account_id', 'exec_engine.account_id')
@@ -76,9 +76,9 @@ cdef class Trader:
         Change strategies with the given list of trading strategies.
         
         :param strategies: The list of strategies to load into the trader.
-        :raises ConditionFailed: If the strategies is None.
-        :raises ConditionFailed: If the strategies list is empty.
-        :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
+        :raises ValueError: If the strategies is None.
+        :raises ValueError: If the strategies list is empty.
+        :raises TypeError: If the strategies list contains a type other than TradingStrategy.
         """
         Condition.not_empty(strategies, 'strategies')
         Condition.list_type(strategies, TradingStrategy, 'strategies')

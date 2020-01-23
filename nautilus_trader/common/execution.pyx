@@ -321,7 +321,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Add the given account to the execution database.
 
         :param account: The account to add.
-        :raises ConditionFailed: If the account_id is already contained in the cached_accounts.
+        :raises ValueError: If the account_id is already contained in the cached_accounts.
         """
         Condition.not_none(account, 'account')
         Condition.not_in(account.id, self._cached_accounts, 'account.id', 'cached_accounts')
@@ -338,10 +338,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order: The order to add.
         :param strategy_id: The strategy_id to index for the order.
         :param position_id: The position_id to index for the order.
-        :raises ConditionFailed: If the order_id is already contained in the cached_orders.
-        :raises ConditionFailed: If the order_id is already contained in the index_orders.
-        :raises ConditionFailed: If the order_id is already contained in the index_order_strategy.
-        :raises ConditionFailed: If the order_id is already contained in the index_order_position.
+        :raises ValueError: If the order_id is already contained in the cached_orders.
+        :raises ValueError: If the order_id is already contained in the index_orders.
+        :raises ValueError: If the order_id is already contained in the index_order_strategy.
+        :raises ValueError: If the order_id is already contained in the index_order_position.
         """
         Condition.not_none(order, 'order')
         Condition.not_none(strategy_id, 'strategy_id')
@@ -389,10 +389,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :param position: The position to add.
         :param strategy_id: The strategy_id to associate with the position.
-        :raises ConditionFailed: If the position.id is already contained in the cached_positions.
-        :raises ConditionFailed: If the position.id_broker is already contained in the index_broker_position.
-        :raises ConditionFailed: If the position.id is already contained in the index_positions.
-        :raises ConditionFailed: If the position.id is already contained in the index_positions_open.
+        :raises ValueError: If the position.id is already contained in the cached_positions.
+        :raises ValueError: If the position.id_broker is already contained in the index_broker_position.
+        :raises ValueError: If the position.id is already contained in the index_positions.
+        :raises ValueError: If the position.id is already contained in the index_positions_open.
         """
         Condition.not_none(position, 'position')
         Condition.not_none(strategy_id, 'strategy_id')
@@ -504,7 +504,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Delete the given strategy from the execution database.
 
         :param strategy: The strategy to deregister.
-        :raises ConditionFailed: If the strategy is not contained in the strategies.
+        :raises ValueError: If the strategy is not contained in the strategies.
         """
         Condition.not_none(strategy, 'strategy')
         Condition.is_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
@@ -1035,7 +1035,7 @@ cdef class ExecutionEngine:
         :param clock: The clock for the engine.
         :param guid_factory: The guid_factory for the engine.
         :param logger: The logger for the engine.
-        :raises ConditionFailed: If the trader_id is not equal to the database.trader_id.
+        :raises ValueError: If the trader_id is not equal to the database.trader_id.
         """
         Condition.equal(trader_id, database.trader_id, 'trader_id', 'database.trader_id')
 
@@ -1074,7 +1074,7 @@ cdef class ExecutionEngine:
         Register the given strategy with the execution engine.
 
         :param strategy: The strategy to register.
-        :raises ConditionFailed: If the strategy is already registered with the execution engine.
+        :raises ValueError: If the strategy is already registered with the execution engine.
         """
         Condition.not_none(strategy, 'strategy')
         Condition.not_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')
@@ -1088,7 +1088,7 @@ cdef class ExecutionEngine:
         Deregister the given strategy with the execution engine.
         
         :param strategy: The strategy to deregister.
-        :raises ConditionFailed: If the strategy is not registered with the execution client.
+        :raises ValueError: If the strategy is not registered with the execution client.
         """
         Condition.not_none(strategy, 'strategy')
         Condition.is_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')

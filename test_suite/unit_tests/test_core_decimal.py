@@ -9,7 +9,6 @@
 import decimal
 import unittest
 
-from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.decimal import Decimal
 
 
@@ -64,8 +63,8 @@ class DecimalTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, Decimal, 1.00000, 0)
-        self.assertRaises(ConditionFailed, Decimal, 1.00000, -1)
+        self.assertRaises(ValueError, Decimal, 1.00000, 0)
+        self.assertRaises(ValueError, Decimal, 1.00000, -1)
 
     def test_decimal_addition(self):
         # Arrange

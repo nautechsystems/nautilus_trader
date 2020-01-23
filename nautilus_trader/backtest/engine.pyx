@@ -53,7 +53,7 @@ cdef class BacktestEngine:
         :param config: The optional configuration for the backtest engine (if None will be default).
         :param fill_model: The optional initial fill model for the backtest engine
         (if None then no probabilistic fills).
-        :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
+        :raises TypeError: If the strategies list contains a type other than TradingStrategy.
         """
         if config is None:
             config = BacktestConfig()
@@ -187,9 +187,9 @@ cdef class BacktestEngine:
         :param fill_model: The optional fill model change for the backtest run (if None will use previous).
         :param strategies: The optional strategies change for the backtest run (if None will use previous).
         :param print_log_store: If the log store should be printed at the end of the run.
-        :raises: ConditionFailed: If the stop is >= the start datetime.
-        :raises: ConditionFailed: If the fill_model is a type other than FillModel or None.
-        :raises: ConditionFailed: If the strategies contains a type other than TradingStrategy.
+        :raises: ValueError: If the stop is >= the start datetime.
+        :raises: ValueError: If the fill_model is a type other than FillModel or None.
+        :raises: ValueError: If the strategies contains a type other than TradingStrategy.
         """
         # Setup start datetime
         if start is None:

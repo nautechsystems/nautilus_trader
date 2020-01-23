@@ -207,7 +207,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         :param order_bytes: The bytes to deserialize.
         :return Order.
-        :raises ConditionFailed: If the event_bytes is empty.
+        :raises ValueError: If the event_bytes is empty.
         """
         Condition.not_empty(order_bytes, 'order_bytes')
 
@@ -297,7 +297,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         :param command_bytes: The command to deserialize.
         :return Command.
-        :raises ConditionFailed: If the command_bytes is empty.
+        :raises ValueError: If the command_bytes is empty.
         :raises RuntimeError: If the command cannot be deserialized.
         """
         Condition.not_empty(command_bytes, 'command_bytes')
@@ -494,7 +494,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         :param event_bytes: The bytes to deserialize.
         :return Event.
-        :raises ConditionFailed: If the event_bytes is empty.
+        :raises ValueError: If the event_bytes is empty.
         :raises RuntimeError: If the event cannot be deserialized.
         """
         Condition.not_empty(event_bytes, 'event_bytes')
