@@ -76,7 +76,7 @@ cdef class Clock:
     cdef object _get_timer(self, Label label, callback, timedelta interval, datetime now, datetime start_time, datetime stop_time)
     cdef void _add_timer(self, Timer timer, handler) except *
     cdef void _remove_timer(self, Timer timer) except *
-    cdef void _update_stack(self)
+    cdef void _update_stack(self) except *
     cdef void _update_timing(self) except *
 
 
