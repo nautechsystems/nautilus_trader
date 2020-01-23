@@ -180,7 +180,7 @@ cdef class DataClient:
         Return the instrument corresponding to the given symbol (if found).
 
         :param symbol: The symbol of the instrument to return.
-        :raises ConditionFailed: If the instrument is not found.
+        :raises ValueError: If the instrument is not found.
         :return Instrument.
         """
         Condition.is_in(symbol, self._instruments, 'symbol', 'instruments')

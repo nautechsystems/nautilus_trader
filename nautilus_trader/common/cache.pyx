@@ -29,7 +29,7 @@ cdef class IdentifierCache:
         
         :param value: The value to be parsed to a trader_id.
         :return: TraderId or None.
-        :raises: ConditionFailed: If the string is invalid.
+        :raises: ValueError: If the string is invalid.
         """
         Condition.valid_string(value, 'value')
 
@@ -41,7 +41,7 @@ cdef class IdentifierCache:
         
         :param value: The value to be parsed to a account_id.
         :return: AccountId or None.
-        :raises: ConditionFailed: If the string is invalid.
+        :raises: ValueError: If the string is invalid.
         """
         Condition.valid_string(value, 'value')
 
@@ -53,7 +53,7 @@ cdef class IdentifierCache:
         
         :param value: The value to be parsed to a strategy_id.
         :return: StrategyId or None.
-        :raises: ConditionFailed: If the string is invalid.
+        :raises: ValueError: If the string is invalid.
         """
         Condition.valid_string(value, 'value')
 
@@ -65,7 +65,7 @@ cdef class IdentifierCache:
         
         :param value: The value to be parsed to a symbol.
         :return: Symbol or None.
-        :raises: ConditionFailed: If the string is invalid.
+        :raises: ValueError: If the string is invalid.
         """
         Condition.valid_string(value, 'value')
 

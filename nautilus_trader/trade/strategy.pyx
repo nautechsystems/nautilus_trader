@@ -67,9 +67,9 @@ cdef class TradingStrategy:
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
         :param propagate_exceptions: If exceptions thrown in handling methods should be re-raised.
-        :raises ConditionFailed: If the order_id_tag is not a valid string.
-        :raises ConditionFailed: If the tick_capacity is not positive (> 0).
-        :raises ConditionFailed: If the bar_capacity is not positive (> 0).
+        :raises ValueError: If the order_id_tag is not a valid string.
+        :raises ValueError: If the tick_capacity is not positive (> 0).
+        :raises ValueError: If the bar_capacity is not positive (> 0).
         """
         Condition.valid_string(order_id_tag, 'order_id_tag')
         Condition.positive_int(tick_capacity, 'tick_capacity')
@@ -307,7 +307,7 @@ cdef class TradingStrategy:
         :param data_source: The data source for updates.
         :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
-        :raises ConditionFailed: If the update_method is not of type Callable.
+        :raises ValueError: If the update_method is not of type Callable.
         """
         Condition.not_none(data_source, 'data_source')
         Condition.not_none(indicator, 'indicator')
@@ -465,7 +465,7 @@ cdef class TradingStrategy:
         Return a list of all instrument symbols held by the data client.
         
         :return List[Instrument].
-        :raises ConditionFailed: If the strategy has not been registered with a data client.
+        :raises ValueError: If the strategy has not been registered with a data client.
         """
         Condition.not_none(self._data_client, 'data_client')
 
@@ -477,7 +477,7 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol of the instrument to return.
         :return Instrument or None.
-        :raises ConditionFailed: If strategy has not been registered with a data client.
+        :raises ValueError: If strategy has not been registered with a data client.
         """
         if not self.is_data_client_registered:
             self.log.error("Cannot get instrument (data client not registered).")
@@ -505,7 +505,7 @@ cdef class TradingStrategy:
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param to_datetime: The datetime to which the historical bars should be downloaded.
-        :raises ConditionFailed: If the from_datetime is not None and not less than to_datetime.
+        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
         """
         Condition.not_none(bar_type, 'bar_type')
 
@@ -644,7 +644,7 @@ cdef class TradingStrategy:
         
         :param symbol: The tick symbol to count.
         :return int.
-        :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
+        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
@@ -657,7 +657,7 @@ cdef class TradingStrategy:
         
         :param bar_type: The bar type to count.
         :return int.
-        :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
@@ -670,7 +670,7 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks to get.
         :return List[Tick].
-        :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
+        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
@@ -683,7 +683,7 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to get.
         :return List[Bar].
-        :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
@@ -697,7 +697,7 @@ cdef class TradingStrategy:
         :param symbol: The symbol for the tick to get.
         :param index: The index for the tick to get.
         :return Tick.
-        :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
+        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
         Condition.not_none(symbol, 'symbol')
@@ -712,7 +712,7 @@ cdef class TradingStrategy:
         :param bar_type: The bar type to get.
         :param index: The index for the bar to get.
         :return Bar.
-        :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
         """
         Condition.not_none(bar_type, 'bar_type')
@@ -751,7 +751,7 @@ cdef class TradingStrategy:
         Return the account for the strategy.
         
         :return: Account.
-        :raises: ConditionFailed: If the execution engine is not registered.
+        :raises: ValueError: If the execution engine is not registered.
         """
         Condition.true(self.is_exec_engine_registered, 'is_execution_engine_registered')
 
@@ -762,7 +762,7 @@ cdef class TradingStrategy:
         Return the portfolio for the strategy.
         
         :return: Portfolio.
-        :raises: ConditionFailed: If the execution engine is not registered.
+        :raises: ValueError: If the execution engine is not registered.
         """
         Condition.true(self.is_exec_engine_registered, 'is_execution_engine_registered')
 
@@ -783,7 +783,7 @@ cdef class TradingStrategy:
 
         :param market_position: The market position to flatten.
         :return OrderSide.
-        :raises ConditionFailed: If the given market position is FLAT.
+        :raises ValueError: If the given market position is FLAT.
         """
         if market_position is MarketPosition.LONG:
             return OrderSide.SELL
@@ -1291,8 +1291,8 @@ cdef class TradingStrategy:
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ConditionFailed: If the strategy has not been registered with an execution client.
-        :raises ConditionFailed: If the cancel_reason is not a valid string.
+        :raises ValueError: If the strategy has not been registered with an execution client.
+        :raises ValueError: If the cancel_reason is not a valid string.
         """
         Condition.not_none(order, 'order')
         Condition.not_none(cancel_reason, 'cancel_reason')  # Can be empty string
@@ -1318,7 +1318,7 @@ cdef class TradingStrategy:
         order book with the given cancel_reason - to the execution engine.
 
         :param cancel_reason: The reason for cancellation (default='NONE').
-        :raises ConditionFailed: If the cancel_reason is not a valid string.
+        :raises ValueError: If the cancel_reason is not a valid string.
         """
         Condition.not_none(cancel_reason, 'cancel_reason')  # Can be empty string
 
@@ -1356,7 +1356,7 @@ cdef class TradingStrategy:
 
         :param position_id: The position_id to flatten.
         :param label: The label for the flattening order.
-        :raises ConditionFailed: If the position_id is not found in the position book.
+        :raises ValueError: If the position_id is not found in the position book.
         """
         Condition.not_none(position_id, 'position_id')
         Condition.not_none(label, 'label')

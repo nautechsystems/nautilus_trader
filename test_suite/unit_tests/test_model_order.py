@@ -9,7 +9,6 @@
 import unittest
 import uuid
 
-from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import (
@@ -60,7 +59,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ConditionFailed,
+            ValueError,
             Order,
             OrderId('O-123456'),
             AUDUSD_FXCM,
@@ -74,7 +73,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ConditionFailed,
+            ValueError,
             Order,
             OrderId('O-123456'),
             AUDUSD_FXCM,
@@ -91,7 +90,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ConditionFailed,
+            ValueError,
             Order,
             OrderId('O-123456'),
             AUDUSD_FXCM,
@@ -106,7 +105,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ConditionFailed,
+            ValueError,
             Order,
             OrderId('O-123456'),
             AUDUSD_FXCM,
@@ -120,7 +119,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ConditionFailed,
+            ValueError,
             Order,
             OrderId('O-123456'),
             AUDUSD_FXCM,

@@ -67,7 +67,7 @@ cdef class TradingNode:
 
         :param config_path: The path to the config file.
         :param strategies: The list of strategies for the internal Trader.
-        :raises ConditionFailed: If the config_path is not a valid string.
+        :raises ValueError: If the config_path is not a valid string.
         """
         if strategies is None:
             strategies = []

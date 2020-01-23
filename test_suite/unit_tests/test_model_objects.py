@@ -8,7 +8,6 @@
 
 import unittest
 
-from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
@@ -25,7 +24,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, Quantity, -1)
+        self.assertRaises(ValueError, Quantity, -1)
 
     def test_quantity_initialized_with_valid_inputs(self):
         # Arrange
@@ -129,7 +128,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, Price, -1.0, 2)
+        self.assertRaises(ValueError, Price, -1.0, 2)
 
     def test_price_str(self):
         # Arrange

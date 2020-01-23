@@ -74,13 +74,13 @@ cdef class LiveDataClient(DataClient):
         :param data_serializer: The data serializer for the component.
         :param data_serializer: The instrument serializer for the component.
         :param logger: The logger for the component.
-        :raises ConditionFailed: If the service_address is not a valid string.
-        :raises ConditionFailed: If the tick_req_port is not in range [0, 65535].
-        :raises ConditionFailed: If the tick_sub_port is not in range [0, 65535].
-        :raises ConditionFailed: If the bar_req_port is not in range [0, 65535].
-        :raises ConditionFailed: If the bar_sub_port is not in range [0, 65535].
-        :raises ConditionFailed: If the inst_req_port is not in range [0, 65535].
-        :raises ConditionFailed: If the inst_sub_port is not in range [0, 65535].
+        :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the tick_req_port is not in range [0, 65535].
+        :raises ValueError: If the tick_sub_port is not in range [0, 65535].
+        :raises ValueError: If the bar_req_port is not in range [0, 65535].
+        :raises ValueError: If the bar_sub_port is not in range [0, 65535].
+        :raises ValueError: If the inst_req_port is not in range [0, 65535].
+        :raises ValueError: If the inst_sub_port is not in range [0, 65535].
         """
         Condition.valid_string(service_address, 'service_address')
         Condition.valid_port(tick_rep_port, 'tick_rep_port')
@@ -221,7 +221,7 @@ cdef class LiveDataClient(DataClient):
         :param from_datetime: The from date time for the request.
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
-        :raises ConditionFailed: If the callback is not of type Callable.
+        :raises ValueError: If the callback is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(from_datetime, 'from_datetime')
@@ -265,7 +265,7 @@ cdef class LiveDataClient(DataClient):
         :param from_datetime: The from date time for the request.
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
-        :raises ConditionFailed: If the callback is not of type Callable.
+        :raises ValueError: If the callback is not of type Callable.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_none(from_datetime, 'from_datetime')
@@ -303,7 +303,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
-        :raises ConditionFailed: If the callback is not of type Callable.
+        :raises ValueError: If the callback is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(callback, 'callback')
@@ -336,7 +336,7 @@ cdef class LiveDataClient(DataClient):
         
         :param venue: The venue for the request.
         :param callback: The callback for the response.
-        :raises ConditionFailed: If the callback is not of type Callable.
+        :raises ValueError: If the callback is not of type Callable.
         """
         Condition.callable(callback, 'callback')
 
@@ -378,7 +378,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises ValueError: If the handler is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
@@ -392,7 +392,7 @@ cdef class LiveDataClient(DataClient):
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises ValueError: If the handler is not of type Callable.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
@@ -406,7 +406,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The instrument symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises ValueError: If the handler is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
@@ -420,7 +420,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises ValueError: If the handler is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
@@ -434,7 +434,7 @@ cdef class LiveDataClient(DataClient):
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises ValueError: If the handler is not of type Callable.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
@@ -448,7 +448,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The instrument symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises ValueError: If the handler is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')

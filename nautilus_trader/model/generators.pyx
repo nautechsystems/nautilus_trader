@@ -31,8 +31,8 @@ cdef class IdentifierGenerator:
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
         :param initial_count: The initial count for the generator.
-        :raises ConditionFailed: If the prefix is not a valid string.
-        :raises ConditionFailed: If the initial count is negative (< 0).
+        :raises ValueError: If the prefix is not a valid string.
+        :raises ValueError: If the initial count is negative (< 0).
         """
         Condition.valid_string(prefix, 'prefix')
         Condition.not_negative_int(initial_count, 'initial_count')
@@ -105,7 +105,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         :param id_tag_strategy: The order_id tag for the strategy.
         :param clock: The clock for the component.
         :param initial_count: The initial count for the generator.
-        :raises ConditionFailed: If the initial count is negative (< 0).
+        :raises ValueError: If the initial count is negative (< 0).
         """
         super().__init__('O',
                          id_tag_trader,
@@ -139,7 +139,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         :param id_tag_strategy: The position_id tag for the strategy.
         :param clock: The clock for the component.
         :param initial_count: The initial count for the generator.
-        :raises ConditionFailed: If the initial count is negative (< 0).
+        :raises ValueError: If the initial count is negative (< 0).
         """
         super().__init__('P',
                          id_tag_trader,

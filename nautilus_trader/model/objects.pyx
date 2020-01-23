@@ -47,7 +47,7 @@ cdef class Quantity:
 
         Raises
         ------
-        ConditionFailed
+        ValueError
             If the value is negative (< 0).
 
         """
@@ -271,8 +271,8 @@ cdef class Price(Decimal):
 
         :param value: The value of the price (>= 0).
         :param precision: The decimal precision of the price (> 0).
-        :raises ConditionFailed: If the value is negative (< 0).
-        :raises ConditionFailed: If the precision is not positive (> 0).
+        :raises ValueError: If the value is negative (< 0).
+        :raises ValueError: If the precision is not positive (> 0).
         """
         Condition.not_negative(value, 'value')
 
@@ -296,7 +296,7 @@ cdef class Price(Decimal):
         Return a new price by adding the given decimal to this price.
 
         :param other: The other price to add (precision must be <= this decimals precision).
-        :raises ConditionFailed: If the precision of the given decimal is not <= this precision.
+        :raises ValueError: If the precision of the given decimal is not <= this precision.
         :return Price.
         """
         Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
@@ -308,8 +308,8 @@ cdef class Price(Decimal):
         Return a new price by subtracting the decimal price from this price.
 
         :param other: The other decimal to subtract (precision must be <= this decimals precision).
-        :raises ConditionFailed: If price precision is < the other decimal precision.
-        :raises ConditionFailed: If value of the other decimal is greater than this price.
+        :raises ValueError: If price precision is < the other decimal precision.
+        :raises ValueError: If value of the other decimal is greater than this price.
         :return Price.
         """
         Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
@@ -369,7 +369,7 @@ cdef class Money(Decimal):
 
         :param other: The other money to add.
         :return Price.
-        :raises ConditionFailed: If the precision of the prices are not equal.
+        :raises ValueError: If the precision of the prices are not equal.
         """
         return Money(self._value + other._value)
 
@@ -379,7 +379,7 @@ cdef class Money(Decimal):
 
         :param other: The other price to subtract.
         :return Price.
-        :raises ConditionFailed: If the precision of the prices are not equal.
+        :raises ValueError: If the precision of the prices are not equal.
         """
         return Money(self._value - other._value)
 
@@ -416,8 +416,8 @@ cdef class Tick:
         :param tick_type: The tick type (default=TRADE).
         :param bid_size: The tick bid size (default=1.0).
         :param ask_size: The tick ask size (default=1.0).
-        :raises ConditionFailed: If the bid_size is negative (< 0).
-        :raises ConditionFailed: If the ask_size is negative (< 0).
+        :raises ValueError: If the bid_size is negative (< 0).
+        :raises ValueError: If the ask_size is negative (< 0).
         """
         Condition.not_negative(bid_size, 'bid_size')
         Condition.not_negative(ask_size, 'ask_size')
@@ -599,8 +599,8 @@ cdef class BarSpecification:
         :param step: The bar step (> 0).
         :param structure: The bar structure.
         :param price_type: The bar price type.
-        :raises ConditionFailed: If the step is not positive (> 0).
-        :raises ConditionFailed: If the price type is LAST.
+        :raises ValueError: If the step is not positive (> 0).
+        :raises ValueError: If the price type is LAST.
         """
         Condition.positive_int(step, 'step')
         Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
@@ -872,10 +872,10 @@ cdef class Bar:
         :param volume: The bars volume (>= 0).
         :param timestamp: The bars timestamp (UTC).
         :param check: If the bar parameters should be checked valid.
-        :raises ConditionFailed: If check and the volume is negative (< 0).
-        :raises ConditionFailed: If check and the high_price is not >= low_price.
-        :raises ConditionFailed: If check and the high_price is not >= close_price.
-        :raises ConditionFailed: If check and the low_price is not <= close_price.
+        :raises ValueError: If check and the volume is negative (< 0).
+        :raises ValueError: If check and the high_price is not >= low_price.
+        :raises ValueError: If check and the high_price is not >= close_price.
+        :raises ValueError: If check and the low_price is not <= close_price.
         """
         Condition.not_negative(volume, 'volume')
 

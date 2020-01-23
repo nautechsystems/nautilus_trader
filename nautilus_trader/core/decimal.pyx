@@ -27,7 +27,7 @@ cdef class Decimal:
 
         :param value: The value of the decimal.
         :param precision: The precision of the decimal (> 0).
-        :raises ConditionFailed: If the precision is not positive (> 0).
+        :raises ValueError: If the precision is not positive (> 0).
         """
         Condition.positive_int(precision, 'precision')
 

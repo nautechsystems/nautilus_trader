@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+
 cdef class Decimal:
     cdef double _power
     cdef double _value

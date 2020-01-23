@@ -29,7 +29,7 @@ cdef class Symbol(Identifier):
 
         :param code: The symbols code identifier value.
         :param venue: The symbols venue.
-        :raises ConditionFailed: If the code is not a valid string.
+        :raises ValueError: If the code is not a valid string.
         """
         Condition.valid_string(code, 'code')
         assert code.isupper()  # Design time check
@@ -81,7 +81,7 @@ cdef class Venue(Identifier):
         Initializes a new instance of the Venue class.
 
         :param name: The venue name identifier value.
-        :raises ConditionFailed: If the name is not a valid string.
+        :raises ValueError: If the name is not a valid string.
         """
         super().__init__(name.upper())
 
@@ -97,7 +97,7 @@ cdef class Exchange(Venue):
         Initializes a new instance of the Exchange class.
 
         :param name: The exchange name identifier value.
-        :raises ConditionFailed: If the name is not a valid string.
+        :raises ValueError: If the name is not a valid string.
         """
         super().__init__(name.upper())
 
@@ -113,7 +113,7 @@ cdef class Brokerage(Identifier):
         Initializes a new instance of the Brokerage class.
 
         :param name: The brokerage name identifier value.
-        :raises ConditionFailed: If the name is not a valid string.
+        :raises ValueError: If the name is not a valid string.
         """
         super().__init__(name.upper())
 
@@ -128,7 +128,7 @@ cdef class Label(Identifier):
         Initializes a new instance of the Label class.
 
         :param value: The label identifier value.
-        :raises ConditionFailed: If the value is not a valid string.
+        :raises ValueError: If the value is not a valid string.
         """
         super().__init__(value)
 
@@ -143,7 +143,7 @@ cdef class IdTag(Identifier):
         Initializes a new instance of the IdTag class.
 
         :param value: The identifier tag value.
-        :raises ConditionFailed: If the value is not a valid string.
+        :raises ValueError: If the value is not a valid string.
         """
         super().__init__(value)
 
@@ -160,8 +160,8 @@ cdef class TraderId(Identifier):
 
         :param name: The trader name identifier value.
         :param order_id_tag: The trader order_id tag value.
-        :raises ConditionFailed: If the name is not a valid string.
-        :raises ConditionFailed: If the order_id_tag is not a valid string.
+        :raises ValueError: If the name is not a valid string.
+        :raises ValueError: If the order_id_tag is not a valid string.
         """
         Condition.valid_string(name, 'name')
         Condition.valid_string(order_id_tag, 'order_id_tag')
@@ -223,8 +223,8 @@ cdef class StrategyId(Identifier):
 
         :param name: The strategy name identifier value.
         :param order_id_tag: The strategy order_id tag value.
-        :raises ConditionFailed: If the name is not a valid string.
-        :raises ConditionFailed: If the order_id_tag is not a valid string.
+        :raises ValueError: If the name is not a valid string.
+        :raises ValueError: If the order_id_tag is not a valid string.
         """
         Condition.valid_string(name, 'name')
         Condition.valid_string(order_id_tag, 'order_id_tag')
@@ -286,8 +286,8 @@ cdef class AccountId(Identifier):
         :param broker: The broker identifier value.
         :param account_number: The account number identifier value.
         :param account_number: The account type.
-        :raises ConditionFailed: If the broker is not a valid string.
-        :raises ConditionFailed: If the account_number is not a valid string.
+        :raises ValueError: If the broker is not a valid string.
+        :raises ValueError: If the account_number is not a valid string.
         """
         Condition.valid_string(broker, 'broker')
         Condition.valid_string(account_number, 'account_number')

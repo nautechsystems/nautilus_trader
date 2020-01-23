@@ -12,7 +12,7 @@ import pandas as pd
 from cpython.datetime cimport datetime, timedelta
 from typing import List, Callable
 
-from nautilus_trader.core.correctness cimport Condition, ConditionFailed
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions cimport with_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.objects cimport Price, Tick, Bar, DataBar, BarType, BarSpecification, Instrument
@@ -41,10 +41,10 @@ cdef class TickDataWrangler:
         :param data_ticks: The optional pd.DataFrame containing the tick data.
         :param data_bars_bid: The optional dictionary containing the bars bid data.
         :param data_bars_ask: The optional dictionary containing the bars ask data.
-        :raises: ConditionFailed: If the tick_data is a type other than None or DataFrame.
-        :raises: ConditionFailed: If the bid_data is a type other than None or Dict.
-        :raises: ConditionFailed: If the ask_data is a type other than None or Dict.
-        :raises: ConditionFailed: If the tick_data is None and the bars data is None.
+        :raises: ValueError: If the tick_data is a type other than None or DataFrame.
+        :raises: ValueError: If the bid_data is a type other than None or Dict.
+        :raises: ValueError: If the ask_data is a type other than None or Dict.
+        :raises: ValueError: If the tick_data is None and the bars data is None.
         """
         Condition.type_or_none(data_ticks, pd.DataFrame, 'tick_data')
         Condition.type_or_none(data_bars_bid, dict, 'bid_data')
@@ -196,9 +196,9 @@ cdef class BarDataWrangler:
         :param precision: The decimal precision for bar prices (>= 0).
         :param data: The the bars market data.
         :param volume_multiple: The volume multiple for the builder (> 0).
-        :raises: ConditionFailed: If the decimal_precision is negative (< 0).
-        :raises: ConditionFailed: If the volume_multiple is not positive (> 0).
-        :raises: ConditionFailed: If the data is a type other than DataFrame.
+        :raises: ValueError: If the decimal_precision is negative (< 0).
+        :raises: ValueError: If the volume_multiple is not positive (> 0).
+        :raises: ValueError: If the data is a type other than DataFrame.
         """
         Condition.not_negative_int(precision, 'precision')
         Condition.positive_int(volume_multiple, 'volume_multiple')
@@ -326,7 +326,7 @@ cdef class IndicatorUpdater:
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
-        :raises ConditionFailed: If the input_method is not of type Callable or None.
+        :raises TypeError: If the input_method is not of type Callable or None.
         """
         Condition.callable_or_none(input_method, 'input_method')
 
@@ -647,7 +647,7 @@ cdef class TickBarAggregator(BarAggregator):
         if self._builder.count == self.step:
             try:
                 bar = self._builder.build()
-            except ConditionFailed as ex:
+            except ValueError as ex:
                 # Bar was somehow malformed
                 self._log.exception(ex)
                 return
@@ -703,7 +703,7 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef Bar bar
         try:
             bar = self._builder.build(event.timestamp)
-        except ConditionFailed as ex:
+        except ValueError as ex:
             # Bar was somehow malformed
             self._log.exception(ex)
             return

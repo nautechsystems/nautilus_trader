@@ -35,8 +35,8 @@ cdef class LogStore:
         :param trader_id: The trader_id.
         :param host: The redis host to connect to.
         :param port: The redis port to connect to.
-        :raises ConditionFailed: If the redis_host is not a valid string.
-        :raises ConditionFailed: If the redis_port is not in range [0, 65535].
+        :raises ValueError: If the redis_host is not a valid string.
+        :raises ValueError: If the redis_port is not in range [0, 65535].
         """
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
@@ -94,8 +94,8 @@ cdef class LiveLogger(Logger):
         :param log_to_file: If log messages should write to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :param clock: The clock for the logger.
-        :raises ConditionFailed: If the name is not a valid string.
-        :raises ConditionFailed: If the log_file_path is not a valid string.
+        :raises ValueError: If the name is not a valid string.
+        :raises ValueError: If the log_file_path is not a valid string.
         """
         super().__init__(name,
                          bypass_logging,

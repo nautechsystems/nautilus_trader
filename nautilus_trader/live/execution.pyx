@@ -84,8 +84,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param command_serializer: The command serializer for database transactions.
         :param event_serializer: The event serializer for database transactions.
         :param option_load_cache: The option flag to load caches from Redis on instantiation.
-        :raises ConditionFailed: If the host is not a valid string.
-        :raises ConditionFailed: If the port is not in range [0, 65535].
+        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the port is not in range [0, 65535].
         """
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
@@ -213,7 +213,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Add the given account to the execution database.
 
         :param account: The account to add.
-        :raises ConditionFailed: If the account_id is already contained in the cached_accounts.
+        :raises ValueError: If the account_id is already contained in the cached_accounts.
         """
         Condition.not_none(account, 'account')
         Condition.not_in(account.id, self._cached_accounts, 'account.id', 'cached_accounts')
@@ -239,7 +239,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order: The order to add.
         :param strategy_id: The strategy_id to index for the order.
         :param position_id: The position_id to index for the order.
-        :raises ConditionFailed: If the order_id is already contained in the cached_orders.
+        :raises ValueError: If the order_id is already contained in the cached_orders.
         """
         Condition.not_none(order, 'order')
         Condition.not_none(strategy_id, 'strategy_id')
@@ -284,7 +284,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         
         :param position: The position to add.
         :param strategy_id: The strategy_id to associate with the position.
-        :raises ConditionFailed: If the position_id is already contained in the cached_positions.
+        :raises ValueError: If the position_id is already contained in the cached_positions.
         """
         Condition.not_none(position, 'position')
         Condition.not_none(strategy_id, 'strategy_id')
@@ -1086,11 +1086,11 @@ cdef class LiveExecClient(ExecutionClient):
         :param event_serializer: The event serializer for the client.
 
         :param logger: The logger for the component (can be None).
-        :raises ConditionFailed: If the service_name is not a valid string.
-        :raises ConditionFailed: If the service_address is not a valid string.
-        :raises ConditionFailed: If the events_topic is not a valid string.
-        :raises ConditionFailed: If the commands_port is not in range [0, 65535].
-        :raises ConditionFailed: If the events_port is not in range [0, 65535].
+        :raises ValueError: If the service_name is not a valid string.
+        :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the events_topic is not a valid string.
+        :raises ValueError: If the commands_port is not in range [0, 65535].
+        :raises ValueError: If the events_port is not in range [0, 65535].
         """
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')

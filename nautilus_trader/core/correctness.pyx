@@ -6,13 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+"""
+Defines static condition checks similar to the design by contract philosophy to
+help ensure software correctness.
+"""
+
 from cpython.object cimport PyCallable_Check
-
-
-cdef class ConditionFailed(Exception):
-    """
-    Represents a failed condition check.
-    """
 
 
 cdef class Condition:
@@ -21,336 +20,732 @@ cdef class Condition:
     A condition is a predicate which must be true just prior to the execution
     of some section of code - for correct behaviour as per the design specification.
     """
+
     @staticmethod
-    cdef void true(bint predicate, str description) except *:
+    cdef void true(bint predicate, str description, ex_type=None) except *:
         """
         Check the condition predicate is True.
 
-        :param predicate: The condition predicate to check.
-        :param description: The description of the condition predicate.
-        :raises ConditionFailed: If the condition predicate is False.
-        """
-        if not predicate:
-            raise ConditionFailed(f"The condition predicate \'{description}\' was False")
+        Parameters
+        ----------
+        predicate : bool
+            The condition predicate to check.
+        description : str
+            The description of the condition predicate.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-    @staticmethod
-    cdef void false(bint predicate, str description) except *:
-        """
-        Check the condition predicate is False.
+        Raises
+        -------
+        ValueError
+            If the condition predicate is False.
 
-        :param predicate: The condition predicate to check.
-        :param description: The description of the condition predicate.
-        :raises ConditionFailed: If the condition predicate is True.
         """
         if predicate:
-            raise ConditionFailed(f"The condition predicate \'{description}\' was True")
+            return  # Check passed
+
+        cdef str ex_message = f"The condition predicate \'{description}\' was False"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void none(object argument, str param) except *:
+    cdef void false(bint predicate, str description, ex_type=None) except *:
+        """
+        Check the condition predicate is False.
+        
+        Parameters
+        ----------
+        predicate : bool
+            The condition predicate to check.
+        description : str
+            The description of the condition predicate.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
+
+        Raises
+        -------
+        ValueError
+            If the condition predicate is True.
+
+        """
+        if not predicate:
+            return  # Check passed
+
+        cdef str ex_message = f"The condition predicate \'{description}\' was True"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
+
+    @staticmethod
+    cdef void none(object argument, str param, ex_type=None) except *:
         """
         Check the argument is None.
+        
+        Parameters
+        ----------
+        argument : object
+            The argument to check.
+        param : str
+            The arguments parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The argument to check.
-        :param param: The arguments parameter name.
-        :raises ConditionFailed: If the argument is not None.
+        Raises
+        -------
+        ValueError
+            If the argument is not None.
+
         """
-        if argument is not None:
-            raise ConditionFailed(f"The \'{param}\' argument was not None")
+        if argument is None:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' argument was not None"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void not_none(object argument, str param) except *:
+    cdef void not_none(object argument, str param, ex_type=None) except *:
         """
         Check the argument is not None.
+        
+        Parameters
+        ----------
+        argument : object
+            The argument to check.
+        param : str
+            The arguments parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The argument to check.
-        :param param: The arguments parameter name.
-        :raises ConditionFailed: If the argument is None.
+        Raises
+        -------
+        ValueError
+            If the argument is None.
+
         """
-        if argument is None:
-            raise ConditionFailed(f"The \'{param}\' argument was None")
+        if argument is not None:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' argument was None"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void type(object argument, object expected, str param) except *:
+    cdef void type(object argument, object expected, str param, ex_type=None) except *:
         """
         Check the argument is of the specified type.
+        
+        Parameters
+        ----------
+        argument : object
+            The object to check.
+        expected : object
+            The expected class type.
+        param : str
+            The arguments parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The object to check.
-        :param expected: The expected class type.
-        :param param: The arguments parameter name.
-        :raises ConditionFailed: If the object is not of the expected type.
+        Raises
+        -------
+        TypeError
+            If the object is not of the expected type.
+
         """
-        if not isinstance(argument, expected):
-            raise ConditionFailed(f"The \'{param}\' argument was not of type {expected}, was {type(argument)}")
+        if isinstance(argument, expected):
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' argument was not of type {expected}, was {type(argument)}"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise TypeError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void type_or_none(object argument, object expected, str param) except *:
+    cdef void type_or_none(object argument, object expected, str param, ex_type=None) except *:
         """
         Check the argument is of the specified type, or is None.
+        
+        Parameters
+        ----------
+        argument : object
+            The object to check.
+        expected : object
+            The expected class type (if not None).
+        param : str
+            The arguments parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The object to check.
-        :param expected: The expected class type (if not None).
-        :param param: The arguments parameter name.
-        :raises ConditionFailed: If the object is not None and not of the expected type.
+        Raises
+        -------
+        TypeError
+            If the object is not None and not of the expected type.
+
         """
         if argument is None:
-            return  # Check passes
+            return  # Check passed
 
-        Condition.type(argument, expected, param)
+        Condition.type(argument, expected, param, ex_type)
 
     @staticmethod
-    cdef void callable(object argument, str param) except *:
+    cdef void callable(object argument, str param, ex_type=None) except *:
         """
         Check the object is callable.
+        
+        Parameters
+        ----------
+        argument : object
+            The object to check.
+        param : str
+            The objects parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The object to check.
-        :param param: The objects parameter name.
-        :raises ConditionFailed: If the argument is not callable.
+        Raises
+        -------
+        TypeError
+            If the argument is not callable.
+
         """
-        if not PyCallable_Check(argument):
-            raise ConditionFailed(f"The \'{param}\' object was not callable.")
+        if PyCallable_Check(argument):
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' object was not callable."
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise TypeError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void callable_or_none(object argument, str param) except *:
+    cdef void callable_or_none(object argument, str param, ex_type=None) except *:
         """
         Check the object is callable or None.
+        
+        Parameters
+        ----------
+        argument : object
+            The object to check.
+        param : str
+            The objects parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The object to check.
-        :param param: The objects parameter name.
-        :raises ConditionFailed: If the argument is not None and not callable.
+        Raises
+        -------
+        TypeError
+            If the argument is not None and not callable.
+
         """
         if argument is None:
-            return
+            return  # Check passed
 
-        Condition.callable(argument, param)
+        Condition.callable(argument, param, ex_type)
 
     @staticmethod
-    cdef void equal(object object1, object object2, str param1, str param2) except *:
+    cdef void equal(object object1, object object2, str param1, str param2, ex_type=None) except *:
         """
         Check the objects are equal.
+        
+        Parameters
+        ----------
+        object1 : object
+            The first object to check.
+        object2 : object
+            The second object to check.
+        param1 : str
+            The first objects parameter name.
+        param2 : str
+            The second objects parameter name.
+        ex_type : type(Exception), optional
+            The optional custom exception type to be raised on a failed check.
 
-        :param object1: The first object to check.
-        :param object2: The second object to check.
-        :param param1: The first objects parameter name.
-        :param param2: The first objects parameter name.
-        :raises ConditionFailed: If the objects are not equal.
+        Raises
+        -------
+        ValueError
+            If the objects are not equal.
+
         """
-        if not object1 == object2:
-            raise ConditionFailed(f"The \'{param1}\' {type(object1)} of {object1} "
-                                  f"was not equal to the \'{param2}\' {type(object2)} of {object2}")
+        if object1 == object2:
+            return  # Check passed
+
+        cdef str ex_message = (f"The \'{param1}\' {type(object1)} of {object1} "
+                               f"was not equal to the \'{param2}\' {type(object2)} of {object2}")
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void not_equal(object object1, object object2, str param1, str param2) except *:
+    cdef void not_equal(object object1, object object2, str param1, str param2, ex_type=None) except *:
         """
         Check the objects are not equal.
+        
+        Parameters
+        ----------
+        object1 : object
+            The first object to check.
+        object2 : object
+            The second object to check.
+        param1 : str
+            The first objects parameter name.
+        param2 : str
+            The second objects parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param object1: The first object to check.
-        :param object2: The second object to check.
-        :param param1: The first objects parameter name.
-        :param param2: The first objects parameter name.
-        :raises ConditionFailed: If the objects are equal.
+        Raises
+        -------
+        ValueError
+            If the objects are equal.
+
         """
-        if not object1 != object2:
-            raise ConditionFailed(f"The \'{param1}\' {type(object1)} of {object1} "
-                                  f"was equal to the \'{param2}\' {type(object2)} of {object1}")
+        if object1 != object2:
+            return  # Check passed
+
+        cdef str ex_message = (f"The \'{param1}\' {type(object1)} of {object1} "
+                               f"was equal to the \'{param2}\' {type(object2)} of {object1}")
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void list_type(list argument, type expected_type, str param) except *:
+    cdef void list_type(list argument, type expected_type, str param, ex_type=None) except *:
         """
         Check the list only contains types of the given expected type.
 
-        :param argument: The list to check.
-        :param expected_type: The expected element type (if not empty).
-        :param param: The lists parameter name.
-        :raises ConditionFailed: If the list is not empty and contains a type other than the expected type.
-        """
-        Condition.not_none(argument, param)
+        Parameters
+        ----------
+        argument : list
+            The list to check.          
+        expected_type : type
+            The expected element type (if not empty).
+        param : str
+            The lists parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        for element in argument:
-            if not isinstance(element, expected_type):
-                raise ConditionFailed(f"The \'{param}\' list contained an element with a type other than {expected_type}, was {type(element)}")
+        Raises
+        -------
+        TypeError
+             If the list is not empty and contains a type other than the expected type.
+
+        """
+        Condition.not_none(argument, param, ex_type)
+
+        if all(isinstance(element, expected_type) for element in argument):
+            return  # Check passed
+
+        cdef str ex_message = (f"The \'{param}\' collection contained an element with a type other " 
+                               f"than {expected_type}, was {type(argument)}")
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise TypeError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void dict_types(dict argument, type key_type, type value_type, str param) except *:
+    cdef void dict_types(dict argument, type key_type, type value_type, str param, ex_type=None) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
+        
+        Parameters
+        ----------
+        argument : dict
+            The dictionary to check.
+        key_type : type
+            The expected type of the keys (if not empty).
+        value_type : type
+            The expected type of the values (if not empty).
+        param : str
+            The dictionaries parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The dictionary to check.
-        :param key_type: The expected type of the keys (if not empty).
-        :param value_type: The expected type of the values (if not empty).
-        :param param: The dictionaries parameter name.
-        :raises ConditionFailed: If the dictionary is not empty and contains a key type other than the key_type.
-        :raises ConditionFailed: If the dictionary is not empty and contains a value type other than the value_type.
+        Raises
+        -------
+        TypeError
+            If the dictionary is not empty and contains a key type other than the key_type.
+            If the dictionary is not empty and contains a value type other than the value_type.
+
         """
-        Condition.not_none(argument, param)
-
-        for key, value in argument.items():
-            if not isinstance(key, key_type):
-                raise ConditionFailed(f"The \'{param}\' dictionary contained a key type other than {key_type}, was {type(key)}")
-            if not isinstance(value, value_type):
-                raise ConditionFailed(f"The \'{param}\' dictionary contained a value type other than {value_type}, was {type(value)}")
+        Condition.not_none(argument, param, ex_type)
+        Condition.list_type(list(argument.keys()), key_type, param + ' keys', ex_type)
+        Condition.list_type(list(argument.values()), value_type, param + ' values', ex_type)
 
     @staticmethod
-    cdef void is_in(object element, object collection, str param1, str param2) except *:
+    cdef void is_in(object element, object collection, str param1, str param2, ex_type=None) except *:
         """
         Check the element is contained within the specified collection.
-    
-        :param element: The element to check.
-        :param collection: The collection to check.
-        :param param1: The elements parameter name.
-        :param param2: The collections name.
-        :raises ConditionFailed: If the element is not contained in the collection.
-        """
-        Condition.not_none(collection, param2)
+        
+        Parameters
+        ----------
+        element : object
+            The element to check.
+        collection : iterable
+            The collection to check.
+        param1 : str
+            The elements parameter name.
+        param2 : str
+            The collections name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        if element not in collection:
-            raise ConditionFailed(f"The \'{param1}\' {element} was not contained in the {param2} collection")
+        Raises
+        -------
+        ValueError
+            If the element is not contained in the collection.
 
-    @staticmethod
-    cdef void not_in(object element, object collection, str param1, str param2) except *:
         """
-        Check the element is not contained within the specified collection.
-    
-        :param element: The element to check.
-        :param collection: The collection to check.
-        :param param1: The element name.
-        :param param2: The collections parameter name.
-        :raises ConditionFailed: If the element is already contained in the collection.
-        """
-        Condition.not_none(collection, param2)
+        Condition.not_none(collection, param2, ex_type)
 
         if element in collection:
-            raise ConditionFailed(f"The \'{param1}\' {element} was already contained in the \'{param2}\' collection")
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param1}\' {element} was not contained in the {param2} collection"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void not_empty(object collection, str param) except *:
+    cdef void not_in(object element, object collection, str param1, str param2, ex_type=None) except *:
+        """
+        Check the element is not contained within the specified collection.
+        
+        Parameters
+        ----------
+        element : object
+            The element to check.
+        collection : iterable
+            The collection to check.
+        param1 : str
+            The elements parameter name.
+        param2 : str
+            The collections name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
+
+        Raises
+        -------
+        ValueError
+            If the element is contained in the collection.
+
+        """
+        Condition.not_none(collection, param2, ex_type)
+
+        if element not in collection:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param1}\' {element} was already contained in the \'{param2}\' collection"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
+
+    @staticmethod
+    cdef void not_empty(object collection, str param, ex_type=None) except *:
         """
         Check the collection is not empty.
+        
+        Parameters
+        ----------
+        collection : iterable
+            The collection to check.
+        param : str
+            The collections parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param collection: The collection to check.
-        :param param: The collections parameter name.
-        :raises ConditionFailed: If the collection is empty.
+        Raises
+        -------
+        ValueError
+             If the collection is empty.
+
+        """
+        Condition.not_none(collection, param, ex_type)
+
+        if collection:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' collection was empty"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
+
+    @staticmethod
+    cdef void empty(object collection, str param, ex_type=None) except *:
+        """
+        Check the collection is empty.
+        
+        Parameters
+        ----------
+        collection : iterable
+            The collection to check.
+        param : str
+            The collections parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
+
+        Raises
+        -------
+        ValueError
+             If the collection is not empty.
+
         """
         Condition.not_none(collection, param)
 
         if not collection:
-            raise ConditionFailed(f"The \'{param}\' collection was empty")
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' collection was not empty"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void empty(object collection, str param) except *:
-        """
-        Check the collection is empty.
-
-        :param collection: The collection to check.
-        :param param: The collections parameter name.
-        :raises ConditionFailed: If the collection is not empty.
-        """
-        Condition.not_none(collection, param)
-
-        if collection:
-            raise ConditionFailed(f"The \'{param}\' collection was not empty")
-
-    @staticmethod
-    cdef void positive(double value, str param) except *:
+    cdef void positive(double value, str param, ex_type=None) except *:
         """
         Check the real number value is positive (> 0).
+        
+        Parameters
+        ----------
+        value : scalar
+            The value to check.
+        param : str
+            The name of the values parameter.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param value: The value to check.
-        :param param: The name of the values parameter.
-        :raises ConditionFailed: If the value is not positive (> 0).
+        Raises
+        -------
+        ValueError
+             If the value is not positive (> 0).
+
         """
-        if value <= 0.:
-            raise ConditionFailed(f"The \'{param}\' was not a positive real, was {value}")
+        if value > 0:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' was not a positive real, was {value}"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void positive_int(int value, str param) except *:
+    cdef void positive_int(int value, str param, ex_type=None) except *:
         """
         Check the integer value is a positive integer (> 0).
+        
+        Parameters
+        ----------
+        value : int
+            The value to check.
+        param : str
+            The name of the values parameter.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param value: The value to check.
-        :param param: The name of the values parameter.
-        :raises ConditionFailed: If the value is not positive (> 0).
+        Raises
+        -------
+        ValueError
+             If the value is not positive (> 0).
+
         """
-        if value <= 0:
-            raise ConditionFailed(f"The \'{param}\' was not a positive integer, was {value}")
+        if value > 0:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' was not a positive integer, was {value}"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void not_negative(double value, str param) except *:
+    cdef void not_negative(double value, str param, ex_type=None) except *:
         """
         Check the real number value is not negative (< 0).
+        
+        Parameters
+        ----------
+        value : scalar
+            The value to check.
+        param : str
+            The name of the values parameter.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param value: The value to check.
-        :param param: The name of the values parameter.
-        :raises ConditionFailed: If the value is a negative integer (< 0).
+        Raises
+        -------
+        ValueError
+              If the value is negative (< 0).
+
         """
-        if value < 0.:
-            raise ConditionFailed(f"The \'{param}\' was a negative real, was {value}")
+        if value >= 0.0:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' was a negative real, was {value}"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void not_negative_int(int value, str param) except *:
+    cdef void not_negative_int(int value, str param, ex_type=None) except *:
         """
         Check the integer value is not negative (< 0).
+        
+        Parameters
+        ----------
+        value : int
+            The value to check.
+        param : str
+            The name of the values parameter.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param value: The value to check.
-        :param param: The name of the values parameter.
-        :raises ConditionFailed: If the value is a negative integer (< 0).
+        Raises
+        -------
+        ValueError
+              If the value is negative (< 0).
+
         """
-        if value < 0:
-            raise ConditionFailed(f"The \'{param}\' was a negative integer, was {value}")
+        if value >= 0:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' was a negative integer, was {value}"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void in_range(double value, double start, double end, str param) except *:
+    cdef void in_range(double value, double start, double end, str param, ex_type=None) except *:
         """
         Check the real number value is within the specified range (inclusive).
+        
+        Parameters
+        ----------
+        value : scalar
+            The value to check.
+        start : scalar
+            The start of the range.
+        end : scalar
+            The end of the range.
+        param : str
+            The name of the values parameter.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param value: The value to check.
-        :param start: The start of the range.
-        :param end: The end of the range.
-        :param param: The name of the values parameter.
-        :raises ConditionFailed: If the value is not in the inclusive range.
+        Raises
+        -------
+        ValueError
+              If the value is not within the range inclusive of the end points.
+
         """
-        if value < start or value > end:
-            raise ConditionFailed(f"The \'{param}\' was out of range [{start}-{end}], was {value}")
+        if start <= value <= end:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' was out of range [{start}-{end}], was {value}"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void in_range_int(int value, int start, int end, str param) except *:
+    cdef void in_range_int(int value, int start, int end, str param, ex_type=None) except *:
         """
         Check the integer value is within the specified range (inclusive).
+        
+        Parameters
+        ----------
+        value : int
+            The value to check.
+        start : int
+            The start of the range.
+        end : int
+            The end of the range.
+        param : str
+            The name of the values parameter.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param value: The value to check.
-        :param start: The start of the range.
-        :param end: The end of the range.
-        :param param: The name of the values parameter.
-        :raises ConditionFailed: If the value is not in the inclusive range.
+        Raises
+        -------
+        ValueError
+              If the value is not within the range inclusive of the end points.
+
         """
-        if value < start or value > end:
-            raise ConditionFailed(f"The \'{param}\' was out of range [{start}-{end}], was {value}")
+        if start <= value <= end:
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' was out of range [{start}-{end}], was {value}"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void valid_string(str argument, str param) except *:
+    cdef void valid_string(str argument, str param, ex_type=None) except *:
         """
-        Check the string argument is not None, empty or whitespace.
+        Check the string argument is valid (not None, empty or whitespace).
+        
+        Parameters
+        ----------
+        argument : str
+            The string argument to check.
+        param : str
+            The arguments parameter name.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param argument: The string argument to check.
-        :param param: The arguments parameter name.
-        :raises ConditionFailed: If the string argument is None, empty or whitespace.
+        Raises
+        -------
+        ValueError
+              If the string argument is None, empty or whitespace.
+
         """
-        Condition.not_none(argument, param)
+        Condition.not_none(argument, param, ex_type)
 
-        if argument == '':
-            raise ConditionFailed(f"The \'{param}\' string argument was empty")
-        if argument.isspace():
-            raise ConditionFailed(f"The \'{param}\' string argument was whitespace")
+        if argument != '' and not argument.isspace():
+            return  # Check passed
+
+        cdef str ex_message = f"The \'{param}\' string argument was invalid, was \'{argument}\'"
+        if ex_type is None or not isinstance(ex_type, type(Exception)):
+                raise ValueError(ex_message)
+        else:
+            raise ex_type(ex_message)
 
     @staticmethod
-    cdef void valid_port(int value, str param) except *:
+    cdef void valid_port(int value, str param, ex_type=None) except *:
         """
         Check the port integer value is valid in range [0, 65535].
+        
+        Parameters
+        ----------
+        value : int
+            The port value to check.
+        param : str
+            The name of the ports parameter.
+        ex_type : type(Exception), optional
+            The custom exception type to be raised on a failed check.
 
-        :param value: The integer value to check.
-        :param param: The name of the ports parameter.
-        :raises ConditionFailed: If the value is not in range [0, 65535].
+        Raises
+        -------
+        ValueError
+              If the value is not in range [0, 65535].
+
         """
-        Condition.in_range_int(value, 0, 65535, param)
+        Condition.in_range_int(value, 0, 65535, param, ex_type)
 
 
 class PyCondition:
