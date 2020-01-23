@@ -536,8 +536,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return Order.
         """
-        # Condition: all arguments checked in order
-
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -578,8 +576,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
-        # Condition: all arguments checked in order
-
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -620,8 +616,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
-        # Condition: all arguments checked in order
-
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -662,8 +656,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
-        # Condition: all arguments checked in order
-
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -704,8 +696,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return Order.
         """
-        # Condition: all arguments checked in order
-
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -738,8 +728,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return Order.
         """
-        # Condition: all arguments checked in order
-
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -772,8 +760,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return Order.
         """
-        # Condition: all arguments checked in order
-
         return Order(
             self._id_generator.generate(),
             symbol,
@@ -808,8 +794,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the quantity is not positive (> 0).
         :return AtomicOrder.
         """
-        # Condition: all arguments checked in order
-
         cdef Label entry_label = None
         if label is not None:
             entry_label = Label(label.value + '_E')
@@ -855,8 +839,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return AtomicOrder.
         """
-        # Condition: all arguments checked in order
-
         cdef Label entry_label = None
         if label is not None:
             entry_label = Label(label.value + '_E')
@@ -904,8 +886,6 @@ cdef class OrderFactory:
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         :return AtomicOrder.
         """
-        # Condition: all arguments checked in order
-
         cdef Label entry_label = None
         if label is not None:
             entry_label = Label(label.value + '_E')

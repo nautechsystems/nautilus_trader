@@ -83,7 +83,6 @@ cdef class Venue(Identifier):
         :param name: The venue name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
-        # Condition: name checked in base class
         super().__init__(name.upper())
 
 
@@ -100,7 +99,6 @@ cdef class Exchange(Venue):
         :param name: The exchange name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
-        # Condition: name checked in base class
         super().__init__(name.upper())
 
 
@@ -117,7 +115,6 @@ cdef class Brokerage(Identifier):
         :param name: The brokerage name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
-        # Condition: name checked in base class
         super().__init__(name.upper())
 
 
@@ -133,7 +130,6 @@ cdef class Label(Identifier):
         :param value: The label identifier value.
         :raises ConditionFailed: If the value is not a valid string.
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -149,7 +145,6 @@ cdef class IdTag(Identifier):
         :param value: The identifier tag value.
         :raises ConditionFailed: If the value is not a valid string.
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -350,7 +345,6 @@ cdef class AccountNumber(Identifier):
 
         :param value: The value of the account number.
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -366,7 +360,6 @@ cdef class AtomicOrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
         Condition.true(value.startswith('AO-'), f'value must begin with \'AO-\', was {value}.')
@@ -384,7 +377,6 @@ cdef class OrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
         Condition.true(value.startswith('O-'), f'value must begin with \'O-\', was {value}.')
@@ -401,7 +393,6 @@ cdef class OrderIdBroker(Identifier):
 
         :param value: The broker order identifier value.
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -417,7 +408,6 @@ cdef class PositionId(Identifier):
 
         :param value: The position identifier value.
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
         Condition.true(value.startswith('P-'), f' value must begin with \'P-\', was {value}.')
@@ -434,7 +424,6 @@ cdef class ExecutionId(Identifier):
 
         :param value: The execution identifier value.
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -449,7 +438,6 @@ cdef class PositionIdBroker(Identifier):
 
         :param value: The broker position identifier value.
         """
-        # Condition: value checked in base class
         super().__init__(value)
 
 
@@ -465,5 +453,4 @@ cdef class InstrumentId(Identifier):
 
         :param value: The instrument identifier value.
         """
-        # Condition: value checked in base class
         super().__init__(value)
