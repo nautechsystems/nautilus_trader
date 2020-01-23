@@ -10,7 +10,7 @@ import psutil
 import pytz
 
 from cpython.datetime cimport datetime
-from typing import List, Tuple, Callable
+from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_size_of
