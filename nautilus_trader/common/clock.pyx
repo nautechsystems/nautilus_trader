@@ -495,9 +495,13 @@ cdef class Clock:
         self._update_stack()
         self._update_timing()
 
-    cdef void _update_stack(self):
+    cdef void _update_stack(self) except *:
         self.timer_count = len(self._timers)
-        self._stack = np.asarray(list(self._timers.values()))
+
+        if self.timer_count > 0:
+            self._stack = np.asarray(list(self._timers.values()))
+        else:
+            self._stack = None
 
     cdef void _update_timing(self) except *:
         if self.timer_count == 0:
