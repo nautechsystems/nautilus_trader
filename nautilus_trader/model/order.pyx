@@ -117,6 +117,9 @@ cdef class Order:
         ValueError
             If the quantities value is not positive (> 0).
             If the order_side is UNDEFINED.
+            If the order_type is UNDEFINED.
+            If the order_purpose is UNDEFINED.
+            If the time_in_force is UNDEFINED.
             If the order_type should not have a price and the price is not None.
             If the order_type should have a price and the price is None.
             If the time_in_force is GTD and the expire_time is None.

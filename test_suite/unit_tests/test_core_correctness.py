@@ -13,6 +13,12 @@ from nautilus_trader.core.correctness import PyCondition
 
 class ConditionTests(unittest.TestCase):
 
+    def test_can_raise_custom_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, PyCondition.true, False, "predicate", RuntimeError)
+
     def test_condition_true_when_predicate_false_raises_condition_failed(self):
         # Arrange
         # Act
