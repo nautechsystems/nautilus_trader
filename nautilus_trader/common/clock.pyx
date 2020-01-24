@@ -130,6 +130,8 @@ cdef class Timer:
 
         :param event_id: The identifier for the time event.
         """
+        Condition.not_none(event_id, 'event_id')
+
         return TimeEvent(self.label, event_id, self.next_time)
 
     cpdef void iterate_next_time(self, datetime now) except *:
