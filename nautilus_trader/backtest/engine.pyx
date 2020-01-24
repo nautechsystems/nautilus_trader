@@ -409,7 +409,7 @@ cdef class BacktestEngine:
         self.log.info("")
         self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.database.get_positions())
 
-        for statistic in self.analyzer.get_performance_stats_formatted():
+        for statistic in self.analyzer.get_performance_stats_formatted(self.exec_engine.account.currency):
             self.log.info(statistic)
 
     cdef void _change_clocks_and_loggers(self, list strategies) except *:
