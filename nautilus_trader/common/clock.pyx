@@ -136,13 +136,15 @@ cdef class Timer:
         Condition.not_none(event_id, 'event_id')
         Condition.not_none(now, 'now')
 
-        cdef TimeEvent event = TimeEvent(self.label, event_id, self.next_time)
+        # Capture event time
+        cdef datetime event_time = self.next_time
 
+        # Then iterate the next time and check if expired
         self.next_time += self.interval
         if self.stop_time and now >= self.stop_time:
             self.expired = True
 
-        return event
+        return TimeEvent(self.label, event_id, event_time)
 
     cpdef void cancel(self) except *:
         """
@@ -564,6 +566,7 @@ cdef class TestClock(Clock):
         Condition.not_none(to_time, 'to_time')
 
         if self.timer_count == 0 or to_time < self.next_event_time:
+            self._time = to_time
             return []  # No timer events to iterate
 
         # Iterate timer events
