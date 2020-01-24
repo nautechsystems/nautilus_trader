@@ -259,15 +259,11 @@ cdef class BacktestEngine:
         while self.data_client.has_data:
             tick = self.data_client.generate_tick()
             for strategy in self.trader.strategies:
-                if strategy.clock.timer_count > 0:
-                    time_events += strategy.clock.advance_time(tick.timestamp)
-                else:
-                    strategy.clock.set_time(tick.timestamp)
-            if time_events:
-                for event_handler in sorted(time_events):
-                    self.test_clock.set_time(event_handler.event.timestamp)
-                    event_handler.handle()
-                time_events.clear()
+                time_events += strategy.clock.advance_time(tick.timestamp)
+            for event_handler in sorted(time_events):
+                self.test_clock.set_time(event_handler.event.timestamp)
+                event_handler.handle()
+            time_events.clear()
             self.test_clock.set_time(tick.timestamp)
             self.exec_client.process_tick(tick)
             self.data_client.process_tick(tick)
