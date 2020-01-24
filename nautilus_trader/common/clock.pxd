@@ -31,7 +31,8 @@ cdef class Timer:
     cdef readonly datetime stop_time
     cdef readonly expired
 
-    cpdef TimeEvent iterate_event(self, GUID event_id, datetime now)
+    cpdef TimeEvent pop_event(self, GUID event_id)
+    cpdef void iterate_next_time(self, datetime now) except *
     cpdef void cancel(self) except *
 
 

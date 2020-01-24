@@ -124,27 +124,25 @@ cdef class Timer:
         self.stop_time = stop_time
         self.expired = False
 
-    cpdef TimeEvent iterate_event(self, GUID event_id, datetime now):
+    cpdef TimeEvent pop_event(self, GUID event_id):
         """
-        Returns the next iterated time event and checks if the timer is now expired.
-        
-        :param event_id: The event identifier for the time event.
+        Returns a generated time event with the given identifier.
+
+        :param event_id: The identifier for the time event.
+        """
+        return TimeEvent(self.label, event_id, self.next_time)
+
+    cpdef void iterate_next_time(self, datetime now) except *:
+        """
+        Iterates the timers next time and checks if the timer is now expired.
+
         :param now: The datetime now (UTC).
-        
-        :return TimeEvent.
         """
-        Condition.not_none(event_id, 'event_id')
         Condition.not_none(now, 'now')
 
-        # Capture event time
-        cdef datetime event_time = self.next_time
-
-        # Then iterate the next time and check if expired
         self.next_time += self.interval
         if self.stop_time and now >= self.stop_time:
             self.expired = True
-
-        return TimeEvent(self.label, event_id, event_time)
 
     cpdef void cancel(self) except *:
         """
@@ -220,7 +218,8 @@ cdef class TestTimer(Timer):
 
         cdef list time_events = []  # type: List[TimeEvent]
         while not self.expired and to_time >= self.next_time:
-            time_events.append(self.iterate_event(self._guid_factory.generate(), self.next_time))
+            time_events.append(self.pop_event(self._guid_factory.generate()))
+            self.iterate_next_time(self.next_time)
 
         return time_events
 
@@ -639,7 +638,8 @@ cdef class LiveClock(Clock):
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
         cdef datetime now = self.time_now()
-        cdef TimeEvent event = timer.iterate_event(self._guid_factory.generate(), now)
+        cdef TimeEvent event = timer.pop_event(self._guid_factory.generate())
+        timer.iterate_next_time(now)
         self._handle_time_event(event)
 
         if timer.expired:
