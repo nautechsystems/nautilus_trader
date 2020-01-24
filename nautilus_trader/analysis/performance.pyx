@@ -36,13 +36,11 @@ cdef class PerformanceAnalyzer:
         """
         Initializes a new instance of the PerformanceAnalyzer class.
         """
-        self._account = None
         self._account_starting_capital = None
         self._account_capital = None
         self._returns = pd.Series()
         self._positions = pd.DataFrame(columns=['cash'])
-        self._transactions = pd.DataFrame(columns=['amount'])
-        self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
+        self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
 
     cpdef void calculate_statistics(self, Account account, dict positions)  except *:
         """
@@ -54,18 +52,16 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(account, 'account')
         Condition.not_none(positions, 'positions')
 
-        self._account = account
-
         cdef AccountStateEvent event
-        for event in self._account.get_events():
-            self.handle_transaction(event)
+        for event in account.get_events():
+            self.add_transaction(event)
 
         cdef Position position
         for position in positions.values():
             if position.is_closed:
                 self.add_return(position.closed_time, position.realized_return)
 
-    cpdef void handle_transaction(self, AccountStateEvent event)  except *:
+    cpdef void add_transaction(self, AccountStateEvent event)  except *:
         """
         Handle the transaction associated with the given account event.
 
@@ -87,11 +83,11 @@ cdef class PerformanceAnalyzer:
         self._account_capital = event.cash_balance
 
         # Set index if it does not exist
-        if event.timestamp not in self._equity_curve:
-            self._equity_curve.loc[event.timestamp] = 0
+        if event.timestamp not in self._transactions:
+            self._transactions.loc[event.timestamp] = 0
 
-        self._equity_curve.loc[event.timestamp]['capital'] = self._account_capital.as_double()
-        self._equity_curve.loc[event.timestamp]['pnl'] = pnl.as_double()
+        self._transactions.loc[event.timestamp]['capital'] = self._account_capital.as_double()
+        self._transactions.loc[event.timestamp]['pnl'] = pnl.as_double()
 
     cpdef void add_return(self, datetime timestamp, double value)  except *:
         """
@@ -142,13 +138,11 @@ cdef class PerformanceAnalyzer:
         """
         Reset the analyzer by returning all stateful values to their initial value.
         """
-        self._account = None
         self._account_starting_capital = None
         self._account_capital = None
         self._returns = pd.Series()
         self._positions = pd.DataFrame(columns=['cash'])
-        self._transactions = pd.DataFrame(columns=['amount'])
-        self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
+        self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
 
     cpdef object get_returns(self):
         """
@@ -180,7 +174,7 @@ cdef class PerformanceAnalyzer:
         
         :return Pandas.DataFrame.
         """
-        return self._equity_curve
+        return self._transactions['capital']
 
     cpdef double total_pnl(self):
         """
@@ -207,7 +201,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'].max()
+        return self._transactions['pnl'].max()
 
     cpdef double max_loser(self):
         """
@@ -215,7 +209,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'].min()
+        return self._transactions['pnl'].min()
 
     cpdef double min_winner(self):
         """
@@ -223,7 +217,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].min()
+        return self._transactions['pnl'][self._transactions['pnl'] > 0].min()
 
     cpdef double min_loser(self):
         """
@@ -231,7 +225,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0].max()
+        return self._transactions['pnl'][self._transactions['pnl'] <= 0].max()
 
     cpdef double avg_winner(self):
         """
@@ -239,7 +233,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'][self._equity_curve['pnl'] > 0].mean()
+        return self._transactions['pnl'][self._transactions['pnl'] > 0].mean()
 
     cpdef double avg_loser(self):
         """
@@ -247,7 +241,7 @@ cdef class PerformanceAnalyzer:
         
         :return double.
         """
-        return self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0].mean()
+        return self._transactions['pnl'][self._transactions['pnl'] <= 0].mean()
 
     cpdef double win_rate(self):
         """
@@ -255,8 +249,8 @@ cdef class PerformanceAnalyzer:
         
         :return double. 
         """
-        cdef list winners = list(self._equity_curve['pnl'][self._equity_curve['pnl'] > 0])
-        cdef list losers = list(self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0])
+        cdef list winners = list(self._transactions['pnl'][self._transactions['pnl'] > 0])
+        cdef list losers = list(self._transactions['pnl'][self._transactions['pnl'] <= 0])
 
         return len(winners) / max(1.0, (len(winners) + len(losers)))
 
@@ -465,26 +459,26 @@ cdef class PerformanceAnalyzer:
             'Beta': self.beta()
         }
 
-    cdef list get_performance_stats_formatted(self):
+    cdef list get_performance_stats_formatted(self, Currency account_currency):
         """
         Return the performance statistics from the last backtest run formatted 
         for printing in the backtest run footer.
         
         :return List[str].
         """
-        cdef str account_currency = currency_to_string(self._account.currency) if self._account is not None else '?'
+        cdef str currency = currency_to_string(account_currency)
 
         return [
-            f"PNL:               {fast_round(self.total_pnl(), precision=2):,} {account_currency}",
+            f"PNL:               {fast_round(self.total_pnl(), precision=2):,} {currency}",
             f"PNL %:             {fast_round(self.total_pnl_percentage(), precision=2)}%",
-            f"Max Winner:        {fast_round(self.max_winner(), precision=2):,} {account_currency}",
-            f"Avg Winner:        {fast_round(self.avg_winner(), precision=2):,} {account_currency}",
-            f"Min Winner:        {fast_round(self.min_winner(), precision=2):,} {account_currency}",
-            f"Min Loser:         {fast_round(self.min_loser(), precision=2):,} {account_currency}",
-            f"Avg Loser:         {fast_round(self.avg_loser(), precision=2):,} {account_currency}",
-            f"Max Loser:         {fast_round(self.max_loser(), precision=2):,} {account_currency}",
+            f"Max Winner:        {fast_round(self.max_winner(), precision=2):,} {currency}",
+            f"Avg Winner:        {fast_round(self.avg_winner(), precision=2):,} {currency}",
+            f"Min Winner:        {fast_round(self.min_winner(), precision=2):,} {currency}",
+            f"Min Loser:         {fast_round(self.min_loser(), precision=2):,} {currency}",
+            f"Avg Loser:         {fast_round(self.avg_loser(), precision=2):,} {currency}",
+            f"Max Loser:         {fast_round(self.max_loser(), precision=2):,} {currency}",
             f"Win Rate:          {fast_round(self.win_rate(), precision=2)}",
-            f"Expectancy:        {fast_round(self.expectancy(), precision=2):,} {account_currency}",
+            f"Expectancy:        {fast_round(self.expectancy(), precision=2):,} {currency}",
             f"Annual return:     {fast_round(self.annual_return() * 100, precision=2)}%",
             f"Cum returns:       {fast_round(self.cum_return() * 100, precision=2)}%",
             f"Max drawdown:      {fast_round(self.max_drawdown_return() * 100, precision=2)}%",

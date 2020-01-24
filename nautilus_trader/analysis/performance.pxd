@@ -8,22 +8,21 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.common.account cimport Account
 
 
 cdef class PerformanceAnalyzer:
-    cdef Account _account
     cdef Money _account_starting_capital
     cdef Money _account_capital
     cdef object _returns
     cdef object _positions
     cdef object _transactions
-    cdef object _equity_curve
 
     cpdef void calculate_statistics(self, Account account, dict positions) except *
-    cpdef void handle_transaction(self, AccountStateEvent event)  except *
+    cpdef void add_transaction(self, AccountStateEvent event)  except *
     cpdef void add_return(self, datetime time, double value)  except *
     cpdef void add_positions(self, datetime time, list positions, Money cash_balance)  except *
     cpdef void reset(self)  except *
@@ -59,4 +58,4 @@ cdef class PerformanceAnalyzer:
     cpdef double beta(self)
     cpdef dict get_performance_stats(self)
 
-    cdef list get_performance_stats_formatted(self)
+    cdef list get_performance_stats_formatted(self, Currency account_currency)
