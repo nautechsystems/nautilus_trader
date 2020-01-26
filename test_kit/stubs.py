@@ -40,20 +40,11 @@ from nautilus_trader.model.identifiers import (
     ExecutionId,
     PositionIdBroker)
 from nautilus_trader.model.generators import PositionIdGenerator
-from nautilus_trader.model.order import Order, OrderFactory
+from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import (
     AccountStateEvent,
-    OrderInitialized,
-    OrderSubmitted,
-    OrderAccepted,
-    OrderRejected,
     OrderWorking,
-    OrderExpired,
-    OrderModified,
-    OrderCancelled,
-    OrderCancelReject,
-    OrderPartiallyFilled,
     OrderFilled,
     PositionOpened,
     PositionModified,
