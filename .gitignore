@@ -11,6 +11,7 @@
 .cache
 .git
 .idea
+.prof
 .pytest_cache
 __pycache__
 /build
