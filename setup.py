@@ -59,7 +59,10 @@ compiler_directives = {
 
 
 # Linting source code (throws exceptions on failures)
-check_file_headers(directories=DIRECTORIES_ALL, to_lint=['.py', '.pyx', '.pxd'], company_name=AUTHOR)
+check_file_headers(
+    directories=DIRECTORIES_ALL,
+    to_lint=['.py', '.pyx', '.pxd'],
+    company_name=AUTHOR)
 
 packages = [module for module in setuptools.find_packages(exclude=PACKAGE_EXCLUSIONS)]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}

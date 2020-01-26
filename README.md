@@ -10,13 +10,13 @@
 
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
-### Installation
+## Installation
 First make sure all required packages are installed (as found in the `setup.py` requirements).
 Then install via pip by running the below command;
 
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
-### Development
+## Development
 [Development Documentation](docs/development)
 
 To run the tests, first compile the C extensions for the package;
@@ -25,7 +25,7 @@ To run the tests, first compile the C extensions for the package;
 
 All tests can be run via the `run_tests.py` script, or through pytest.
 
-### Support
+## Support
 Please direct all questions, comments or bug reports to info@nautechsystems.io
 
 ![Alt text](docs/artwork/cython-logo-small.png "cython")

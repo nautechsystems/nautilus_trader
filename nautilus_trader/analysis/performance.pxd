@@ -22,10 +22,10 @@ cdef class PerformanceAnalyzer:
     cdef object _transactions
 
     cpdef void calculate_statistics(self, Account account, dict positions) except *
-    cpdef void add_transaction(self, AccountStateEvent event)  except *
-    cpdef void add_return(self, datetime time, double value)  except *
-    cpdef void add_positions(self, datetime time, list positions, Money cash_balance)  except *
-    cpdef void reset(self)  except *
+    cpdef void add_transaction(self, AccountStateEvent event) except *
+    cpdef void add_return(self, datetime time, double value) except *
+    cpdef void add_positions(self, datetime time, list positions, Money cash_balance) except *
+    cpdef void reset(self) except *
     cpdef object get_returns(self)
     cpdef object get_positions(self)
     cpdef object get_transactions(self)

@@ -42,7 +42,7 @@ cdef class PerformanceAnalyzer:
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
 
-    cpdef void calculate_statistics(self, Account account, dict positions)  except *:
+    cpdef void calculate_statistics(self, Account account, dict positions) except *:
         """
         Calculate performance metrics from the given data.
         
@@ -61,7 +61,7 @@ cdef class PerformanceAnalyzer:
             if position.is_closed:
                 self.add_return(position.closed_time, position.realized_return)
 
-    cpdef void add_transaction(self, AccountStateEvent event)  except *:
+    cpdef void add_transaction(self, AccountStateEvent event) except *:
         """
         Handle the transaction associated with the given account event.
 
@@ -89,7 +89,7 @@ cdef class PerformanceAnalyzer:
         self._transactions.loc[event.timestamp]['capital'] = self._account_capital.as_double()
         self._transactions.loc[event.timestamp]['pnl'] = pnl.as_double()
 
-    cpdef void add_return(self, datetime timestamp, double value)  except *:
+    cpdef void add_return(self, datetime timestamp, double value) except *:
         """
         Add return data to the analyzer.
         
@@ -108,7 +108,7 @@ cdef class PerformanceAnalyzer:
             self,
             datetime time,
             list positions,
-            Money cash_balance)  except *:
+            Money cash_balance) except *:
         """
         Add end of day positions data to the analyzer.
 
@@ -134,7 +134,7 @@ cdef class PerformanceAnalyzer:
                 self._positions[symbol] = 0
             self._positions.loc[index_date][symbol] += position.relative_quantity
 
-    cpdef void reset(self)  except *:
+    cpdef void reset(self) except *:
         """
         Reset the analyzer by returning all stateful values to their initial value.
         """
@@ -180,7 +180,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the total PNL for the portfolio.
         
-        :return double. 
+        :return double.
         """
         return self._account_capital.subtract(self._account_starting_capital).as_double()
 
@@ -188,7 +188,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the percentage change of the total PNL for the portfolio.
         
-        :return double. 
+        :return double.
         """
         if self._account_starting_capital == Money.zero():  # Protect divide by zero
             return 0.0
@@ -247,7 +247,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the win rate (after commissions) for the portfolio.
         
-        :return double. 
+        :return double.
         """
         cdef list winners = list(self._transactions['pnl'][self._transactions['pnl'] > 0])
         cdef list losers = list(self._transactions['pnl'][self._transactions['pnl'] <= 0])
@@ -258,7 +258,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the expectancy for the portfolio.
         
-        :return double. 
+        :return double.
         """
         cdef double win_rate = self.win_rate()
         cdef double loss_rate = 1.0 - win_rate
@@ -317,7 +317,7 @@ cdef class PerformanceAnalyzer:
     cpdef double sortino_ratio(self):
         """
         Get the sortino ratio for the portfolio.
-        
+
         :return double.
         """
         return sortino_ratio(returns=self._returns)
@@ -325,7 +325,7 @@ cdef class PerformanceAnalyzer:
     cpdef double omega_ratio(self):
         """
         Get the omega ratio for the portfolio.
-        
+
         :return double.
         """
         return omega_ratio(returns=self._returns)
@@ -333,7 +333,7 @@ cdef class PerformanceAnalyzer:
     cpdef double stability_of_timeseries(self):
         """
         Get the stability of time series for the portfolio.
-        
+
         :return double.
         """
         return stability_of_timeseries(returns=self._returns)
@@ -341,7 +341,7 @@ cdef class PerformanceAnalyzer:
     cpdef double returns_mean(self):
         """
         Get the returns mean for the portfolio.
-        
+
         :return double.
         """
         return np.mean(self._returns)
@@ -349,7 +349,7 @@ cdef class PerformanceAnalyzer:
     cpdef double returns_variance(self):
         """
         Get the returns variance for the portfolio.
-        
+
         :return double.
         """
         return np.var(self._returns)
@@ -357,7 +357,7 @@ cdef class PerformanceAnalyzer:
     cpdef double returns_skew(self):
         """
         Get the returns skew for the portfolio.
-        
+
         :return double.
         """
         return skew(self._returns)
@@ -365,7 +365,7 @@ cdef class PerformanceAnalyzer:
     cpdef double returns_kurtosis(self):
         """
         Get the returns kurtosis for the portfolio.
-        
+
         :return double.
         """
         return kurtosis(self._returns)
@@ -373,7 +373,7 @@ cdef class PerformanceAnalyzer:
     cpdef double returns_tail_ratio(self):
         """
         Get the returns tail ratio for the portfolio.
-        
+
         :return double.
         """
         return tail_ratio(self._returns)
@@ -381,7 +381,7 @@ cdef class PerformanceAnalyzer:
     cpdef double alpha(self):
         """
         Get the alpha for the portfolio.
-        
+
         :return double.
         """
         return alpha(returns=self._returns, factor_returns=self._returns)
@@ -389,7 +389,7 @@ cdef class PerformanceAnalyzer:
     cpdef double beta(self):
         """
         Get the beta for the portfolio.
-    
+
         :return double.
         """
         return beta(returns=self._returns, factor_returns=self._returns)
