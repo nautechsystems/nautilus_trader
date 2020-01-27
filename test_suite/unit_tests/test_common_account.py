@@ -16,9 +16,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.identifiers import Brokerage, AccountNumber, AccountId
 from nautilus_trader.common.account import Account
-from test_kit.stubs import TestStubs
-
-UNIX_EPOCH = TestStubs.unix_epoch()
+from test_kit.stubs import UNIX_EPOCH
 
 
 class AccountTests(unittest.TestCase):

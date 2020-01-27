@@ -17,16 +17,20 @@ cdef class PositionSizer:
             self,
             Money equity,
             double risk_bp,
-            Price price_entry,
-            Price price_stop_loss,
+            Price entry,
+            Price stop_loss,
             double exchange_rate=*,
             double commission_rate_bp=*,
             int hard_limit=*,
             int units=*,
             int unit_batch_size=*)
 
-    cdef int _calculate_risk_ticks(self, Price entry, Price stop_loss)
-    cdef Money _calculate_riskable_money(self, Money equity, double risk_bp, double commission_rate_bp, double exchange_rate)
+    cdef double _calculate_risk_ticks(self, double entry, double stop_loss)
+    cdef double _calculate_riskable_money(
+            self,
+            double equity,
+            double risk_bp,
+            double commission_rate_bp)
 
 
 cdef class FixedRiskSizer(PositionSizer):

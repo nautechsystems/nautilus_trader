@@ -25,8 +25,6 @@ from nautilus_trader.network.requests import *
 from nautilus_trader.network.responses import *
 from test_kit.stubs import *
 
-UNIX_EPOCH = TestStubs.unix_epoch()
-
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
 

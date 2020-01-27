@@ -9,7 +9,6 @@
 import uuid
 import zmq
 
-from cpython.datetime cimport datetime
 from threading import Thread
 from zmq import Context
 
@@ -24,10 +23,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.network.responses cimport MessageReceived
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
-from test_kit.stubs import TestStubs
-
-cdef datetime UNIX_EPOCH = TestStubs.unix_epoch()
-cdef str UTF8 = 'utf-8'
+from test_kit.stubs import UNIX_EPOCH
 
 
 cdef class ObjectStorer:
@@ -165,7 +161,7 @@ cdef class MockServer:
         if len(self._responses) > self._cycles:
             response = self._responses[self._cycles]
         else:
-            response = "OK".encode(UTF8)
+            response = "OK".encode('utf-8')
 
         while True:
             message = self._socket.recv()
@@ -211,7 +207,7 @@ cdef class MockPublisher:
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
-        self._socket.send_multipart([topic.encode(UTF8), message])
+        self._socket.send_multipart([topic.encode('utf-8'), message])
         self._cycles += 1
         self._log.debug(f"Publishing[{self._cycles}] topic={topic}, message={message}")
 

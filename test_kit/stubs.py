@@ -52,27 +52,13 @@ from nautilus_trader.model.events import (
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 
 
 class TestStubs:
-
-    @staticmethod
-    def unix_epoch(offset_mins: int=0) -> datetime:
-        """
-        Generate a stub datetime based on the given offset from Unix epoch time.
-
-        Unix time (also known as POSIX time or epoch time) is a system for
-        describing instants in time, defined as the number of seconds that have
-        elapsed since 00:00:00 Coordinated Universal Time (UTC), on Thursday,
-        1 January 1970, minus the number of leap seconds which have taken place
-        since then.
-
-        :return The unix epoch datetime plus any offset.
-        """
-        return UNIX_EPOCH + timedelta(minutes=offset_mins)
 
     @staticmethod
     def symbol_audusd_fxcm() -> Symbol:

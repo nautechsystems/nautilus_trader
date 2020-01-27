@@ -11,7 +11,7 @@ import datetime
 
 from nautilus_trader.model.objects import Quantity, Money, Price
 from nautilus_trader.common.brokerage import CommissionCalculator, RolloverInterestCalculator
-from test_kit.stubs import TestStubs
+from test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -90,7 +90,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         calculator = RolloverInterestCalculator()
 
         # Act
-        rate = calculator.calc_overnight_rate(AUDUSD_FXCM, TestStubs.unix_epoch())
+        rate = calculator.calc_overnight_rate(AUDUSD_FXCM, UNIX_EPOCH)
 
         # Assert
         self.assertEqual(-8.52054794520548e-05, rate)

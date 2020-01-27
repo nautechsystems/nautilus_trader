@@ -19,7 +19,6 @@ from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 

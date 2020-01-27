@@ -14,9 +14,7 @@ from nautilus_trader.model.identifiers import Label
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import LogLevel, LoggerAdapter, TestLogger
 from test_kit.performance import PerformanceProfiler
-from test_kit.stubs import TestStubs
-
-UNIX_EPOCH = TestStubs.unix_epoch()
+from test_kit.stubs import UNIX_EPOCH
 
 clock = TestClock()
 

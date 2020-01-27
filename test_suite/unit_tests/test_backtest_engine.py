@@ -20,7 +20,6 @@ from test_kit.strategies import EmptyStrategy, TickTock
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 

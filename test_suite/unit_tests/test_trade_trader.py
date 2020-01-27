@@ -26,7 +26,6 @@ from test_kit.strategies import EmptyStrategy
 from test_kit.stubs import TestStubs
 from test_kit.data import TestDataProvider
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 
 

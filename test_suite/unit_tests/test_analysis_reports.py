@@ -12,7 +12,6 @@ import uuid
 from datetime import timedelta
 
 from nautilus_trader.core.types import GUID
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.objects import Quantity, Price
@@ -20,9 +19,8 @@ from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId,
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.analysis.reports import ReportProvider
-from test_kit.stubs import TestStubs
+from test_kit.stubs import TestStubs, UNIX_EPOCH
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 

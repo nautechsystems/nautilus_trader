@@ -19,13 +19,12 @@ from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.responses import DataResponse
 from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper, BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
-from test_kit.stubs import TestStubs
+from test_kit.stubs import TestStubs, UNIX_EPOCH
 from test_kit.mocks import ObjectStorer, MockPublisher, MockServer
 
 UTF8 = 'utf-8'
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
-UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 class LiveDataClientTests(unittest.TestCase):

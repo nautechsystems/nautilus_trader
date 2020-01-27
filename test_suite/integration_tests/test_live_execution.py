@@ -22,7 +22,6 @@ from nautilus_trader.live.execution import RedisExecutionDatabase
 from test_kit.stubs import TestStubs
 from test_kit.strategies import EmptyStrategy
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 # Requirements:

@@ -14,10 +14,8 @@ from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
 from nautilus_trader.common.logger import LogMessage, LogLevel
 from nautilus_trader.live.logger import LogStore
 
+from test_kit.stubs import UNIX_EPOCH
 
-from test_kit.stubs import TestStubs
-
-UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 
