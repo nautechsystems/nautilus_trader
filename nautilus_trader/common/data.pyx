@@ -21,11 +21,11 @@ from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
 cdef list _TIME_BARS = [
-        BarStructure.SECOND,
-        BarStructure.MINUTE,
-        BarStructure.HOUR,
-        BarStructure.DAY,
-    ]
+    BarStructure.SECOND,
+    BarStructure.MINUTE,
+    BarStructure.HOUR,
+    BarStructure.DAY,
+]
 
 
 cdef class DataClient:
@@ -192,7 +192,7 @@ cdef class DataClient:
             if bar_type.specification.structure == BarStructure.TICK:
                 aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
             elif bar_type.specification.structure in _TIME_BARS:
-                aggregator = TimeBarAggregator(bar_type,  self._handle_bar, self._clock, self._log.get_logger())
+                aggregator = TimeBarAggregator(bar_type, self._handle_bar, self._clock, self._log.get_logger())
             self._bar_aggregators[bar_type] = aggregator
             self.subscribe_ticks(bar_type.symbol, aggregator.update)
 
