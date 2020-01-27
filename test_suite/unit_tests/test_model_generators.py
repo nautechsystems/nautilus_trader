@@ -8,9 +8,9 @@
 
 import unittest
 
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId
 from nautilus_trader.model.generators import OrderIdGenerator, PositionIdGenerator
+from nautilus_trader.common.clock import TestClock
 
 
 class OrderIdGeneratorTests(unittest.TestCase):

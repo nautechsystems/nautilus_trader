@@ -11,13 +11,13 @@ import time
 import zmq
 
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.guid import LiveGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.execution import LiveExecutionEngine, LiveExecClient

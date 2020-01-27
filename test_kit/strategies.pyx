@@ -420,9 +420,13 @@ cdef class EMACross(TradingStrategy):
         cdef double exchange_rate
         if self.instrument.security_type == SecurityType.FOREX:
             quote_currency = currency_from_string(self.instrument.symbol.code[3:])
-            exchange_rate = self.xrate_for_account(quote_currency)
+            exchange_rate = self.get_exchange_rate(
+                from_currency=quote_currency,
+                to_currency=self.account().currency)
         else:
-            exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
+            exchange_rate = self.get_exchange_rate(
+                from_currency=self.instrument.quote_currency,
+                to_currency=self.account().currency)
 
         cdef Quantity position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
@@ -462,9 +466,13 @@ cdef class EMACross(TradingStrategy):
         cdef double exchange_rate
         if self.instrument.security_type == SecurityType.FOREX:
             quote_currency = currency_from_string(self.instrument.symbol.code[3:])
-            exchange_rate = self.xrate_for_account(quote_currency)
+            exchange_rate = self.get_exchange_rate(
+                from_currency=quote_currency,
+                to_currency=self.account().currency)
         else:
-            exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
+            exchange_rate = self.get_exchange_rate(
+                from_currency=self.instrument.quote_currency,
+                to_currency=self.account().currency)
 
         cdef Quantity position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,

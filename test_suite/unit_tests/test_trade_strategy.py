@@ -10,13 +10,7 @@ import unittest
 import time
 from datetime import datetime, timezone, timedelta
 
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.data import DataClient
-from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
@@ -24,6 +18,12 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.model.enums import OrderState, Currency, MarketPosition
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.identifiers import StrategyId, Label
+from nautilus_trader.common.data import DataClient
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -426,7 +426,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.xrate_for_account(Currency.JPY)
+        result = strategy.get_exchange_rate(Currency.JPY, Currency.USD)
 
         # Assert
         self.assertEqual(0.009025266685348969, result)
@@ -444,7 +444,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.xrate_for_account(Currency.AUD)
+        result = strategy.get_exchange_rate(Currency.AUD, Currency.USD)
 
         # Assert
         self.assertEqual(0.80005, result)
