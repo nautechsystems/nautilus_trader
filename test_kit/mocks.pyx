@@ -7,10 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import uuid
-import zmq
+import threading
 
-from threading import Thread
-from zmq import Context
+import zmq
 
 from nautilus_trader.model.commands cimport (
     AccountInquiry,
@@ -23,7 +22,9 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.network.responses cimport MessageReceived
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
-from test_kit.stubs import UNIX_EPOCH
+from test_kit.stubs import TestStubs
+
+UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 cdef class ObjectStorer:
@@ -118,7 +119,7 @@ cdef class MockServer:
 
     def __init__(
             self,
-            zmq_context: Context,
+            zmq_context: zmq.Context,
             int port,
             Logger logger,
             list responses=None):
@@ -138,7 +139,7 @@ cdef class MockServer:
         self._zmq_context = zmq_context
         self._socket = self._zmq_context.socket(zmq.REP)
         self._socket.bind(self._service_address)
-        self._thread = Thread(target=self._consume_messages, daemon=True)
+        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._cycles = 0
         self._responses = responses
 
@@ -181,7 +182,7 @@ cdef class MockPublisher:
     cdef int _cycles
 
     def __init__(self,
-                 zmq_context: Context,
+                 zmq_context: zmq.Context,
                  int port,
                  Logger logger):
         """
@@ -237,7 +238,7 @@ cdef class MockCommandRouter:
 
     def __init__(
             self,
-            zmq_context: Context,
+            zmq_context: zmq.Context,
             int port,
             CommandSerializer command_serializer,
             ResponseSerializer response_serializer,
@@ -263,7 +264,7 @@ cdef class MockCommandRouter:
 
         self.commands_received = []
         self.responses_sent = []
-        self._thread = Thread(target=self._consume_messages, daemon=True)
+        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
     def _consume_messages(self):

@@ -26,8 +26,8 @@ from test_kit.stubs import TestStubs
 from test_kit.mocks import MockCommandRouter, MockPublisher
 from test_kit.strategies import TestStrategy1
 
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 UTF8 = 'utf8'
 LOCAL_HOST = "127.0.0.1"

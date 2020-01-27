@@ -17,7 +17,9 @@ from nautilus_trader.common.clock import TimeEventHandler, LiveClock, TestClock
 from nautilus_trader.common.logger import LoggerAdapter, TestLogger
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.model.events import TimeEvent
-from test_kit.stubs import UNIX_EPOCH
+from test_kit.stubs import TestStubs
+
+UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 class TimeEventTests(unittest.TestCase):

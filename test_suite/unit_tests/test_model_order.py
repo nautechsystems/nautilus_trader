@@ -36,11 +36,11 @@ from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
+from test_kit.stubs import TestStubs
 
-from test_kit.stubs import TestStubs, UNIX_EPOCH
-
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+UNIX_EPOCH = TestStubs.unix_epoch()
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 
 class OrderTests(unittest.TestCase):
@@ -180,7 +180,6 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price(1.00000, 5), order2.price)
         self.assertEqual(Price(1.00000, 5), order3.price)
         self.assertEqual(Price(1.00001, 5), order4.price)
-        print(help(Order))
 
     def test_can_initialize_buy_market_order(self):
         # Arrange

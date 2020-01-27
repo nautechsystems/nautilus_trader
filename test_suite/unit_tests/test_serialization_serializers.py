@@ -25,6 +25,8 @@ from nautilus_trader.network.requests import *
 from nautilus_trader.network.responses import *
 from test_kit.stubs import *
 
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
 
@@ -85,9 +87,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             price=Price(1.00000, 5),
             label=None,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=TestStubs.unix_epoch(),
             init_id=GUID(uuid.uuid4()),
-            timestamp=UNIX_EPOCH)
+            timestamp=TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -109,7 +111,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             price=Price(1.00000, 5),
             label=Label('S1_SL'),
             init_id=GUID(uuid.uuid4()),
-            timestamp=UNIX_EPOCH)
+            timestamp=TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -131,9 +133,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             price=Price(1.00000, 5),
             label=None,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=TestStubs.unix_epoch(),
             init_id=GUID(uuid.uuid4()),
-            timestamp=UNIX_EPOCH)
+            timestamp=TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -164,7 +166,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -189,7 +191,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             PositionId('P-123456'),
             order,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -216,7 +218,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -245,7 +247,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -266,7 +268,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00001, 5),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -285,7 +287,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             OrderId('O-123456'),
             ValidString('EXPIRED'),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -318,7 +320,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             TimeInForce.DAY,
             None,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -332,9 +334,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderSubmitted(
             self.account_id,
             OrderId('O-123456'),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -349,7 +351,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId('O-123456'),
             "OrderId already exists",
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -364,7 +366,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId('O-123456'),
             "Exceeds risk for FX",
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -380,9 +382,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId('O-123456'),
             OrderIdBroker('B-123456'),
             Label('E'),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -396,10 +398,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderRejected(
             self.account_id,
             OrderId('O-123456'),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             ValidString('ORDER_ID_INVALID'),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -421,9 +423,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             Price(1.50000, 5),
             TimeInForce.DAY,
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             expire_time=None)
 
         # Act
@@ -446,10 +448,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             Price(1.50000, 5),
             TimeInForce.DAY,
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH,
-            expire_time=UNIX_EPOCH)
+            TestStubs.unix_epoch(),
+            expire_time=TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -463,9 +465,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderCancelled(
             self.account_id,
             OrderId('O-123456'),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -479,11 +481,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderCancelReject(
             self.account_id,
             OrderId('O-123456'),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             ValidString('RESPONSE'),
             ValidString('ORDER_DOES_NOT_EXIST'),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -500,9 +502,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderIdBroker('BO-123456'),
             Quantity(100000),
             Price(0.80010, 5),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -516,9 +518,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderExpired(
             self.account_id,
             OrderId('O-123456'),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -540,9 +542,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(50000),
             Price(1.00000, 5),
             Currency.USD,
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -563,9 +565,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5),
             Currency.USD,
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -867,7 +869,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal(1.1, 1),
             rollover_interest_sell=Decimal(-1.1, 1),
-            timestamp=UNIX_EPOCH)
+            timestamp=TestStubs.unix_epoch())
 
         # Act
         serialized = serializer.serialize(instrument)
@@ -907,14 +909,14 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         query = {
             "DataType": "Tick[]",
             "Symbol": "AUDUSD.FXCM",
-            "FromDateTime": convert_datetime_to_string(UNIX_EPOCH),
-            "ToDateTime": convert_datetime_to_string(UNIX_EPOCH),
+            "FromDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
+            "ToDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
         }
 
         request = DataRequest(
             query,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(request)
@@ -930,14 +932,14 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
             "DataType": "Bar[]",
             "Symbol": "AUDUSD.FXCM",
             "Specification": "1-MIN[BID]",
-            "FromDateTime": convert_datetime_to_string(UNIX_EPOCH),
-            "ToDateTime": convert_datetime_to_string(UNIX_EPOCH),
+            "FromDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
+            "ToDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
         }
 
         request = DataRequest(
             query,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(request)
@@ -957,7 +959,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         request = DataRequest(
             query,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(request)
@@ -977,7 +979,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         request = DataRequest(
             query,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(request)
@@ -1004,7 +1006,7 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
             data_encoding=data_encoding,
             correlation_id=GUID(uuid.uuid4()),
             response_id=GUID(uuid.uuid4()),
-            response_timestamp=UNIX_EPOCH)
+            response_timestamp=TestStubs.unix_epoch())
 
         # Act
         serialized = self.serializer.serialize(response)
@@ -1027,7 +1029,7 @@ class MsgPackLogSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_log_messages(self):
         # Arrange
         message = LogMessage(
-            timestamp=UNIX_EPOCH,
+            timestamp=TestStubs.unix_epoch(),
             level=LogLevel.DEBUG,
             text="This is a test message")
 

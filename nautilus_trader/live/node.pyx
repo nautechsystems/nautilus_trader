@@ -29,8 +29,8 @@ from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer,
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
-
 from test_kit.stubs import TestStubs
+
 
 cdef class TradingNode:
     """
