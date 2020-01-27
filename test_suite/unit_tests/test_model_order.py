@@ -23,8 +23,6 @@ from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, Order
     OrderRejected
 from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
 from nautilus_trader.model.identifiers import (
-    Symbol,
-    Venue,
     Label,
     IdTag,
     OrderId,

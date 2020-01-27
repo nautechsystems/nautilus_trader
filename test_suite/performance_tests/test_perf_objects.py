@@ -9,7 +9,6 @@
 import unittest
 
 from nautilus_trader.model.objects import Price, Bar
-
 from test_kit.performance import PerformanceProfiler
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 

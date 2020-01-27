@@ -13,16 +13,15 @@ import unittest
 from datetime import datetime, timezone
 
 from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.config import BacktestConfig
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
-USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
+USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
 class BacktestEnginePerformanceTests(unittest.TestCase):

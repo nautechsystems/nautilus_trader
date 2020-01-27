@@ -11,7 +11,6 @@ import unittest
 
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.objects import Price
-
 from test_kit.performance import PerformanceProfiler
 
 

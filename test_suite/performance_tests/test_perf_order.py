@@ -8,12 +8,13 @@
 
 import unittest
 
-from nautilus_trader.model.identifiers import Symbol, Venue, IdTag
+from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.generators import OrderIdGenerator
-
 from test_kit.performance import PerformanceProfiler
+from test_kit.stubs import TestStubs
 
-AUDUSD_FXCM = Symbol('USDJPY', Venue('FXCM'))
+
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 
 class OrderPerformanceTests(unittest.TestCase):

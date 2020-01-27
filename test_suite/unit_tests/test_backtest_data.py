@@ -7,14 +7,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-
 from pandas import Timestamp
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
-
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 

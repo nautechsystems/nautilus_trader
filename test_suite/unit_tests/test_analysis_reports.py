@@ -8,7 +8,6 @@
 
 import unittest
 import uuid
-
 from datetime import timedelta
 
 from nautilus_trader.core.types import GUID

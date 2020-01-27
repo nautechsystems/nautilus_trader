@@ -9,7 +9,6 @@
 import time
 import uuid
 import unittest
-
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.core.types import GUID

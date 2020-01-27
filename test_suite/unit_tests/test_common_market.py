@@ -7,18 +7,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-
 from pandas import Timestamp
 from datetime import datetime, timezone
+
+from nautilus_indicators.average.ema import ExponentialMovingAverage
+from nautilus_indicators.atr import AverageTrueRange
 
 from nautilus_trader.model.enums import BarStructure
 from nautilus_trader.model.objects import Price, Tick, Bar
 from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater, BarBuilder
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs, UNIX_EPOCH
-
-from nautilus_indicators.average.ema import ExponentialMovingAverage
-from nautilus_indicators.atr import AverageTrueRange
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

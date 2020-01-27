@@ -13,14 +13,13 @@ from setuptools import setup
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
-from nautilus_trader.__info__ import __version__
+from nautilus_trader import __author__, __version__
 from tools.packaging import parse_requirements, make_extensions
 from tools.linter import check_file_headers
 
 
 PACKAGE_NAME = 'nautilus_trader'
-AUTHOR = 'Nautech Systems Pty Ltd'
-MAINTAINER = 'Nautech Systems Pty Ltd'
+MAINTAINER = __author__
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
 DESCRIPTION = 'An algorithmic trading framework utilizing Cython.'
 LICENSE = 'Nautech Systems Software License, April 2018'
@@ -62,7 +61,7 @@ compiler_directives = {
 check_file_headers(
     directories=DIRECTORIES_ALL,
     to_lint=['.py', '.pyx', '.pxd'],
-    company_name=AUTHOR)
+    company_name=__author__)
 
 packages = [module for module in setuptools.find_packages(exclude=PACKAGE_EXCLUSIONS)]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
@@ -70,7 +69,7 @@ package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
 setup(
     name=PACKAGE_NAME,
     version=__version__,
-    author=AUTHOR,
+    author=__author__,
     maintainer=MAINTAINER,
     maintainer_email=MAINTAINER_EMAIL,
     description=DESCRIPTION,
