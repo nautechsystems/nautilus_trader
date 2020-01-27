@@ -66,7 +66,8 @@ cdef class ValidString:
 
     def __le__(self, ValidString other) -> bool:
         """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+        Return a value indicating whether this object is greater than or equal to (>=) the given
+        object.
 
         :param other: The other object.
         :return bool.
@@ -84,7 +85,8 @@ cdef class ValidString:
 
     def __ge__(self, ValidString other) -> bool:
         """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+        Return a value indicating whether this object is greater than or equal to (>=) the given
+        object.
 
         :param other: The other object.
         :return bool.

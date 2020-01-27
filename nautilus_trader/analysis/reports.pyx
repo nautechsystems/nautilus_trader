@@ -60,7 +60,9 @@ cdef class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.state == OrderState.FILLED]
+        cdef list filled_orders = [
+            self._order_to_dict(o) for o in orders.values() if o.state == OrderState.FILLED
+        ]
 
         return pd.DataFrame(data=filled_orders).set_index('order_id')
 
@@ -110,7 +112,8 @@ cdef class ReportProvider:
                 'side': order_side_to_string(order.side),
                 'type': order_type_to_string(order.type),
                 'quantity': order.quantity.value,
-                'avg_price': 'None' if order.average_price is None else order.average_price.as_double(),
+                'avg_price': 'None' if order.average_price is None
+                else order.average_price.as_double(),
                 'slippage': order.slippage.as_double(),
                 'timestamp': order.last_event.timestamp}
 

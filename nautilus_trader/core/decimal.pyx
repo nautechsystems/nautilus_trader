@@ -149,7 +149,8 @@ cdef class Decimal:
 
     cpdef bint le(self, Decimal other):
         """
-        Return a value indicating whether this decimal is less than or equal to (<=) the given decimal.
+        Return a value indicating whether this decimal is less than or equal to (<=) the given
+        decimal.
 
         :param other: The other decimal.
         :return bool.
@@ -171,7 +172,8 @@ cdef class Decimal:
 
     cpdef bint ge(self, Decimal other):
         """
-        Return a value indicating whether this decimal is greater than or equal to (>=) the given decimal.
+        Return a value indicating whether this decimal is greater than or equal to (>=) the given
+        decimal.
 
         :param other: The other decimal.
         :return bool.
@@ -252,7 +254,8 @@ cdef class Decimal:
 
     def __le__(self, other) -> bool:
         """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
+        Return a value indicating whether this object is less than or equal to (<=) the given
+        object.
 
         :param other: The other object.
         :return bool.
@@ -276,7 +279,8 @@ cdef class Decimal:
 
     def __ge__(self, other) -> bool:
         """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+        Return a value indicating whether this object is greater than or equal to (>=) the given
+        object.
 
         :param other: The other object.
         :return bool.
@@ -357,4 +361,5 @@ cdef class Decimal:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({self.to_string()}, precision={self.precision}) object at {id(self)}>"
+        return (f"<{self.__class__.__name__}({self.to_string()}, "
+                f"precision={self.precision}) object at {id(self)}>")

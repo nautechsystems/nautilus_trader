@@ -66,7 +66,9 @@ cdef long get_size_of(obj):
 
         # Filter object that are already marked.
         # Using dict notation will prevent repeated objects.
-        new_ref = {o_id: o for o_id, o in all_refs if o_id not in marked and not isinstance(o, type)}
+        new_ref = {
+            o_id: o for o_id, o in all_refs if o_id not in marked and not isinstance(o, type)
+        }
 
         # The new obj_q will be the ones that were not marked,
         # and we will update marked with their ids so we will
@@ -86,7 +88,7 @@ cpdef str format_bytes(double size):
     """
     cdef double power = pow(2, 10)
     cdef dict power_labels = {
-        0 : 'bytes',
+        0: 'bytes',
         1: 'KB',
         2: 'MB',
         3: 'GB',
@@ -128,21 +130,21 @@ cpdef str format_zulu_datetime(datetime dt):
 
 
 cpdef object with_utc_index(dataframe):
-        """
-        Return the given pandas DataFrame with the index timestamps localized 
-        or converted to UTC. If the DataFrame is None then returns None.
+    """
+    Return the given pandas DataFrame with the index timestamps localized
+    or converted to UTC. If the DataFrame is None then returns None.
         
-        :param dataframe: The pd.DataFrame to localize.
-        :return pd.DataFrame or None.
-        """
-        if dataframe is not None:
-            if not hasattr(dataframe.index, 'tz') or dataframe.index.tz is None:  # tz-naive
-                return dataframe.tz_localize('UTC')
-            elif dataframe.index.tz != pytz.UTC:
-                return dataframe.tz_convert('UTC')
-            else:
-                return dataframe  # Already UTC
-        return dataframe  # The input argument was None
+    :param dataframe: The pd.DataFrame to localize.
+    :return pd.DataFrame or None.
+    """
+    if dataframe is not None:
+        if not hasattr(dataframe.index, 'tz') or dataframe.index.tz is None:  # tz-naive
+            return dataframe.tz_localize('UTC')
+        elif dataframe.index.tz != pytz.UTC:
+            return dataframe.tz_convert('UTC')
+        else:
+            return dataframe  # Already UTC
+    return dataframe  # The input argument was None
 
 
 cpdef object as_utc_timestamp(datetime timestamp):
@@ -167,7 +169,7 @@ cpdef object as_utc_timestamp(datetime timestamp):
 def max_in_dict(dict dictionary):
     """
     Return the key for the maximum value held in the given dictionary.
-    
+
     :param dictionary: The dictionary to check.
     :return The key.
     """

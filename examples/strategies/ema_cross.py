@@ -91,9 +91,18 @@ class EMACrossPy(TradingStrategy):
         self.subscribe_ticks(self.symbol)
 
         # Register the indicators for updating
-        self.register_indicator(data_source=self.bar_type, indicator=self.fast_ema, update_method=self.fast_ema.update)
-        self.register_indicator(data_source=self.bar_type, indicator=self.slow_ema, update_method=self.slow_ema.update)
-        self.register_indicator(data_source=self.bar_type, indicator=self.atr, update_method=self.atr.update)
+        self.register_indicator(
+            data_source=self.bar_type,
+            indicator=self.fast_ema,
+            update_method=self.fast_ema.update)
+        self.register_indicator(
+            data_source=self.bar_type,
+            indicator=self.slow_ema,
+            update_method=self.slow_ema.update)
+        self.register_indicator(
+            data_source=self.bar_type,
+            indicator=self.atr,
+            update_method=self.atr.update)
 
     def on_tick(self, tick: Tick):
         """
@@ -141,11 +150,9 @@ class EMACrossPy(TradingStrategy):
         sl_buffer = self.atr.value * self.SL_atr_multiple
 
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
-
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self._enter_long(bar, sl_buffer, spread_buffer)
-
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 self._enter_short(bar, sl_buffer, spread_buffer)
