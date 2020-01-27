@@ -394,11 +394,9 @@ cdef class EMACross(TradingStrategy):
         cdef double sl_buffer = self.atr.value * self.SL_atr_multiple
 
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
-
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self._enter_long(bar, sl_buffer, spread_buffer)
-
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 self._enter_short(bar, sl_buffer, spread_buffer)

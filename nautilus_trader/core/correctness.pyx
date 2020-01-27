@@ -46,7 +46,7 @@ cdef class Condition:
 
         cdef str msg = f"The condition predicate \'{description}\' was False"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -75,7 +75,7 @@ cdef class Condition:
 
         cdef str msg = f"The condition predicate \'{description}\' was True"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -104,7 +104,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' argument was not None"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -133,7 +133,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' argument was None"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -165,7 +165,7 @@ cdef class Condition:
         cdef str msg = (f"The \'{param}\' argument was not of type {expected}"
                         f", was {type(argument)}")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise TypeError(msg)
+            raise TypeError(msg)
         else:
             raise ex_type(msg)
 
@@ -221,7 +221,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' object was not callable."
         if ex_type is None or type(ex_type) != type(Exception):
-                raise TypeError(msg)
+            raise TypeError(msg)
         else:
             raise ex_type(msg)
 
@@ -251,7 +251,12 @@ cdef class Condition:
         Condition.callable(argument, param, ex_type)
 
     @staticmethod
-    cdef void equal(object argument1, object argument2, str param1, str param2, ex_type=None) except *:
+    cdef void equal(
+            object argument1,
+            object argument2,
+            str param1,
+            str param2,
+            ex_type=None) except *:
         """
         Check the objects are equal.
         
@@ -281,12 +286,17 @@ cdef class Condition:
                         f"was not equal to "
                         f"the \'{param2}\' {type(argument2)} of {argument2}")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void not_equal(object object1, object object2, str param1, str param2, ex_type=None) except *:
+    cdef void not_equal(
+            object object1,
+            object object2,
+            str param1,
+            str param2,
+            ex_type=None) except *:
         """
         Check the objects are not equal.
         
@@ -315,19 +325,23 @@ cdef class Condition:
         cdef str msg = (f"The \'{param1}\' {type(object1)} of {object1} "
                         f"was equal to the \'{param2}\' {type(object2)} of {object1}")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void list_type(list argument, type expected_type, str param, ex_type=None) except *:
+    cdef void list_type(
+            list argument,
+            type expected_type,
+            str param,
+            ex_type=None) except *:
         """
         Check the list only contains types of the given expected type.
 
         Parameters
         ----------
         argument : list
-            The list to check.          
+            The list to check.
         expected_type : type
             The expected element type (if not empty).
         param : str
@@ -349,12 +363,17 @@ cdef class Condition:
         cdef str msg = (f"The \'{param}\' collection contained an element with "
                         f"a type other than {expected_type}, was {type(argument)}")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise TypeError(msg)
+            raise TypeError(msg)
         else:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void dict_types(dict argument, type key_type, type value_type, str param, ex_type=None) except *:
+    cdef void dict_types(
+            dict argument,
+            type key_type,
+            type value_type,
+            str param,
+            ex_type=None) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
         
@@ -383,7 +402,12 @@ cdef class Condition:
         Condition.list_type(list(argument.values()), value_type, param + ' values', ex_type)
 
     @staticmethod
-    cdef void is_in(object element, object collection, str param1, str param2, ex_type=None) except *:
+    cdef void is_in(
+            object element,
+            object collection,
+            str param1,
+            str param2,
+            ex_type=None) except *:
         """
         Check the element is contained within the specified collection.
         
@@ -414,12 +438,17 @@ cdef class Condition:
         cdef str msg = (f"The \'{param1}\' {element} was not contained in "
                         f"the {param2} collection")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void not_in(object element, object collection, str param1, str param2, ex_type=None) except *:
+    cdef void not_in(
+            object element,
+            object collection,
+            str param1,
+            str param2,
+            ex_type=None) except *:
         """
         Check the element is not contained within the specified collection.
         
@@ -450,7 +479,7 @@ cdef class Condition:
         cdef str msg = (f"The \'{param1}\' {element} was already contained in "
                         f"the \'{param2}\' collection")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -481,7 +510,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' collection was empty"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -512,7 +541,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' collection was not empty"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -541,7 +570,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' was not a positive real, was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -570,7 +599,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' was not a positive integer, was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -599,7 +628,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' was a negative real, was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -628,12 +657,17 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' was a negative integer, was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void in_range(double value, double start, double end, str param, ex_type=None) except *:
+    cdef void in_range(
+            double value,
+            double start,
+            double end,
+            str param,
+            ex_type=None) except *:
         """
         Check the real number value is within the specified range (inclusive).
         
@@ -662,12 +696,17 @@ cdef class Condition:
         cdef str msg = (f"The \'{param}\' was out of range [{start}-{end}]"
                         f", was {value}")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void in_range_int(int value, int start, int end, str param, ex_type=None) except *:
+    cdef void in_range_int(
+            int value,
+            int start,
+            int end,
+            str param,
+            ex_type=None) except *:
         """
         Check the integer value is within the specified range (inclusive).
         
@@ -696,7 +735,7 @@ cdef class Condition:
         cdef str msg = (f"The \'{param}\' was out of range [{start}-{end}]"
                         f", was {value}")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 
@@ -728,7 +767,7 @@ cdef class Condition:
         cdef str msg = (f"The \'{param}\' string argument was invalid"
                         f", was \'{argument}\'")
         if ex_type is None or type(ex_type) != type(Exception):
-                raise ValueError(msg)
+            raise ValueError(msg)
         else:
             raise ex_type(msg)
 

@@ -192,8 +192,11 @@ cdef class PerformanceAnalyzer:
         """
         if self._account_starting_capital == Money.zero():  # Protect divide by zero
             return 0.0
-        cdef double difference = self._account_capital.as_double() - self._account_starting_capital.as_double()
-        return (difference / self._account_starting_capital.as_double()) * 100
+        cdef double current = self._account_capital.as_double()
+        cdef double starting = self._account_starting_capital.as_double()
+        cdef double difference = current - starting
+
+        return (difference / starting) * 100
 
     cpdef double max_winner(self):
         """
@@ -461,7 +464,7 @@ cdef class PerformanceAnalyzer:
 
     cdef list get_performance_stats_formatted(self, Currency account_currency):
         """
-        Return the performance statistics from the last backtest run formatted 
+        Return the performance statistics from the last backtest run formatted
         for printing in the backtest run footer.
         
         :return List[str].

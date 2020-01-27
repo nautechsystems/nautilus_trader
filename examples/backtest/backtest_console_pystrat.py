@@ -20,7 +20,7 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
-from examples.strategies.ema_cross import EMACrossMarketEntryPy
+from examples.strategies.ema_cross import EMACrossPy
 
 
 if __name__ == "__main__":
@@ -28,10 +28,18 @@ if __name__ == "__main__":
 
     data = BacktestDataContainer()
     data.add_instrument(USDJPY)
-    data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-    data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+    data.add_bars(
+        USDJPY.symbol,
+        BarStructure.MINUTE,
+        PriceType.BID,
+        TestDataProvider.usdjpy_1min_bid())
+    data.add_bars(
+        USDJPY.symbol,
+        BarStructure.MINUTE,
+        PriceType.ASK,
+        TestDataProvider.usdjpy_1min_ask())
 
-    strategies = [EMACrossMarketEntryPy(
+    strategies = [EMACrossPy(
         symbol=USDJPY.symbol,
         bar_spec=BarSpecification(1, BarStructure.MINUTE, PriceType.BID),
         risk_bp=10,
@@ -72,7 +80,13 @@ if __name__ == "__main__":
 
     engine.run(start, stop)
 
-    with pd.option_context('display.max_rows', 100, 'display.max_columns', None, 'display.width', 300):
+    with pd.option_context(
+            'display.max_rows',
+            100,
+            'display.max_columns',
+            None,
+            'display.width',
+            300):
         pass
         print(engine.trader.generate_account_report())
         print(engine.trader.generate_order_fills_report())

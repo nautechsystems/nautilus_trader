@@ -5,6 +5,3 @@
 #  https://nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.common import data
-from nautilus_trader.common import execution
