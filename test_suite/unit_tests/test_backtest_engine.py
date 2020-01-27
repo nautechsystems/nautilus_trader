@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-
 from datetime import datetime
 from pandas import Timestamp
 

@@ -6,12 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 import unittest
 import pandas as pd
 import pytz
-
-from datetime import timezone, timedelta
+from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.common.functions import (
     fast_round,
@@ -120,14 +118,14 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
-        timestamp1 = datetime.datetime(1970, 1, 1, 0, 0, 0, 0)
+        timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0)
         timestamp2 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0)
         min1 = timedelta(minutes=1)
 
         # Act
         timestamp3 = timestamp1 + min1
         timestamp4 = timestamp2 + min1
-        timestamp5 = datetime.datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        timestamp5 = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
         timestamp6 = timestamp2.tz_localize('UTC')
 
         # Assert
@@ -139,7 +137,7 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_as_utc_timestamp_given_tz_naive_datetime(self):
         # Arrange
-        timestamp = datetime.datetime(2013, 2, 1, 0, 0, 0, 0)
+        timestamp = datetime(2013, 2, 1, 0, 0, 0, 0)
 
         # Act
         result = as_utc_timestamp(timestamp)
@@ -161,7 +159,7 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_as_utc_timestamp_given_tz_aware_datetime(self):
         # Arrange
-        timestamp = datetime.datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
         result = as_utc_timestamp(timestamp)
@@ -183,8 +181,8 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_as_utc_timestamp_equality(self):
         # Arrange
-        timestamp1 = datetime.datetime(1970, 1, 1, 0, 0, 0, 0)
-        timestamp2 = datetime.datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0)
+        timestamp2 = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
         timestamp3 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0)
         timestamp4 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0).tz_localize('UTC')
 

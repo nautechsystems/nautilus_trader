@@ -9,7 +9,7 @@
 from pandas import DataFrame
 
 from nautilus_trader.backtest.loaders import CSVTickDataLoader, CSVBarDataLoader
-from test_kit.__info__ import PACKAGE_ROOT
+from test_kit import PACKAGE_ROOT
 
 
 class TestDataProvider:

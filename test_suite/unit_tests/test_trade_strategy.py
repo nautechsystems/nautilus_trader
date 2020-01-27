@@ -7,9 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import datetime
 import time
-
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.common.clock import TestClock

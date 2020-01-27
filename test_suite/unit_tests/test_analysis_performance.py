@@ -7,16 +7,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-
 from datetime import datetime
 
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 
 class AnalyzerTests(unittest.TestCase):

@@ -8,7 +8,6 @@
 
 import numpy as np
 import pandas as pd
-
 from cpython.datetime cimport date, datetime
 from scipy.stats import kurtosis, skew
 
@@ -92,7 +91,7 @@ cdef class PerformanceAnalyzer:
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """
         Add return data to the analyzer.
-        
+
         :param timestamp: The timestamp for the returns entry.
         :param value: The return value to add.
         """
@@ -147,7 +146,7 @@ cdef class PerformanceAnalyzer:
     cpdef object get_returns(self):
         """
         Return the returns data.
-        
+
         :return Pandas.Series.
         """
         return self._returns
@@ -155,7 +154,7 @@ cdef class PerformanceAnalyzer:
     cpdef object get_positions(self):
         """
         Return the positions data.
-        
+
         :return Pandas.DataFrame.
         """
         return self._positions
@@ -163,7 +162,7 @@ cdef class PerformanceAnalyzer:
     cpdef object get_transactions(self):
         """
         Return the transactions data.
-        
+
         :return Pandas.DataFrame.
         """
         return self._transactions
@@ -171,7 +170,7 @@ cdef class PerformanceAnalyzer:
     cpdef object get_equity_curve(self):
         """
         Return the transactions data.
-        
+
         :return Pandas.DataFrame.
         """
         return self._transactions['capital']
@@ -179,7 +178,7 @@ cdef class PerformanceAnalyzer:
     cpdef double total_pnl(self):
         """
         Return the total PNL for the portfolio.
-        
+
         :return double.
         """
         return self._account_capital.subtract(self._account_starting_capital).as_double()
@@ -187,7 +186,7 @@ cdef class PerformanceAnalyzer:
     cpdef double total_pnl_percentage(self):
         """
         Return the percentage change of the total PNL for the portfolio.
-        
+
         :return double.
         """
         if self._account_starting_capital == Money.zero():  # Protect divide by zero
@@ -201,7 +200,7 @@ cdef class PerformanceAnalyzer:
     cpdef double max_winner(self):
         """
         Return the maximum winner for the portfolio.
-        
+
         :return double.
         """
         return self._transactions['pnl'].max()
@@ -209,7 +208,7 @@ cdef class PerformanceAnalyzer:
     cpdef double max_loser(self):
         """
         Return the maximum loser for the portfolio.
-        
+
         :return double.
         """
         return self._transactions['pnl'].min()
@@ -217,7 +216,7 @@ cdef class PerformanceAnalyzer:
     cpdef double min_winner(self):
         """
         Return the minimum winner for the portfolio.
-        
+
         :return double.
         """
         return self._transactions['pnl'][self._transactions['pnl'] > 0].min()
@@ -225,7 +224,7 @@ cdef class PerformanceAnalyzer:
     cpdef double min_loser(self):
         """
         Return the minimum loser for the portfolio.
-        
+
         :return double.
         """
         return self._transactions['pnl'][self._transactions['pnl'] <= 0].max()
@@ -233,7 +232,7 @@ cdef class PerformanceAnalyzer:
     cpdef double avg_winner(self):
         """
         Return the average winner for the portfolio.
-        
+
         :return double.
         """
         return self._transactions['pnl'][self._transactions['pnl'] > 0].mean()
@@ -241,7 +240,7 @@ cdef class PerformanceAnalyzer:
     cpdef double avg_loser(self):
         """
         Return the average loser for the portfolio.
-        
+
         :return double.
         """
         return self._transactions['pnl'][self._transactions['pnl'] <= 0].mean()
@@ -249,7 +248,7 @@ cdef class PerformanceAnalyzer:
     cpdef double win_rate(self):
         """
         Return the win rate (after commissions) for the portfolio.
-        
+
         :return double.
         """
         cdef list winners = list(self._transactions['pnl'][self._transactions['pnl'] > 0])
@@ -260,7 +259,7 @@ cdef class PerformanceAnalyzer:
     cpdef double expectancy(self):
         """
         Return the expectancy for the portfolio.
-        
+
         :return double.
         """
         cdef double win_rate = self.win_rate()
@@ -272,7 +271,7 @@ cdef class PerformanceAnalyzer:
         """
         Determines the mean annual growth rate of returns. This is equivalent
         to the compound annual growth rate.
-        
+
         :return double.
         """
         return annual_return(returns=self._returns)
@@ -280,7 +279,7 @@ cdef class PerformanceAnalyzer:
     cpdef double cum_return(self):
         """
         Get the cumulative return for the portfolio.
-        
+
         :return double.
         """
         return cum_returns_final(returns=self._returns)
@@ -288,7 +287,7 @@ cdef class PerformanceAnalyzer:
     cpdef double max_drawdown_return(self):
         """
         Get the maximum return drawdown for the portfolio.
-        
+
         :return double.
         """
         return max_drawdown(returns=self._returns)
@@ -296,7 +295,7 @@ cdef class PerformanceAnalyzer:
     cpdef double annual_volatility(self):
         """
         Get the annual volatility for the portfolio.
-        
+
         :return double.
         """
         return annual_volatility(returns=self._returns)
@@ -304,7 +303,7 @@ cdef class PerformanceAnalyzer:
     cpdef double sharpe_ratio(self):
         """
         Get the sharpe ratio for the portfolio.
-        
+
         :return double.
         """
         return sharpe_ratio(returns=self._returns)

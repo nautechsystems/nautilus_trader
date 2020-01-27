@@ -5,3 +5,22 @@
 #  https://nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
+
+"""Define package location and version information."""
+
+import os
+
+PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+__author__ = 'Nautech Systems Pty Ltd'
+
+# Semantic Versioning (https://semver.org/)
+_MAJOR_VERSION = 1
+_MINOR_VERSION = 14
+_PATCH_VERSION = 11
+
+__version__ = '.'.join([
+    str(_MAJOR_VERSION),
+    str(_MINOR_VERSION),
+    str(_PATCH_VERSION)])

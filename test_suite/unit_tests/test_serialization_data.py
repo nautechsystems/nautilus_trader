@@ -11,7 +11,6 @@ import unittest
 from nautilus_trader.common.clock import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.serialization.data import BsonDataSerializer, DataMapper, BsonInstrumentSerializer
-
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 from test_kit.data import TestDataProvider
 
