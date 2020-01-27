@@ -302,17 +302,17 @@ cdef class DataClient:
 
     cpdef void _handle_tick(self, Tick tick) except *:
         # Handle the given tick by sending it to all tick handlers for that symbol
-        cdef list tick_handlers = self._tick_handlers.get(tick.symbol, None)
+        cdef list tick_handlers = self._tick_handlers.get(tick.symbol)
         cdef TickHandler handler
-        if tick_handlers:
+        if tick_handlers is not None:
             for handler in tick_handlers:
                 handler.handle(tick)
 
     cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
         # Handle the given bar by sending it to all bar handlers for that bar type
-        cdef list bar_handlers = self._bar_handlers.get(bar_type, None)
+        cdef list bar_handlers = self._bar_handlers.get(bar_type)
         cdef BarHandler handler
-        if bar_handlers:
+        if bar_handlers is not None:
             for handler in bar_handlers:
                 handler.handle(bar_type, bar)
 
@@ -321,9 +321,9 @@ cdef class DataClient:
         self._instruments[instrument.symbol] = instrument
         self._log.info(f"Updated instrument {instrument.symbol}")
 
-        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol, None)
+        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
         cdef InstrumentHandler handler
-        if instrument_handlers:
+        if instrument_handlers is not None:
             for handler in instrument_handlers:
                 handler.handle(instrument)
 

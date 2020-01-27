@@ -167,7 +167,7 @@ class EMACrossPy(TradingStrategy):
         price_take_profit = Price(price_entry + risk, self.precision)
 
         if self.instrument.security_type == SecurityType.FOREX:
-            quote_currency = self.instrument.symbol.code[3:]
+            quote_currency = Currency(self.instrument.symbol.code[3:])
             exchange_rate = self.get_exchange_rate(
                 from_currency=quote_currency,
                 to_currency=self.account().currency)
@@ -209,10 +209,14 @@ class EMACrossPy(TradingStrategy):
         price_take_profit = Price(price_entry - risk, self.precision)
 
         if self.instrument.security_type == SecurityType.FOREX:
-            quote_currency = Currency[self.instrument.symbol.code[3:]]
-            exchange_rate = self.xrate_for_account(quote_currency)
+            quote_currency = Currency(self.instrument.symbol.code[3:])
+            exchange_rate = self.get_exchange_rate(
+                from_currency=quote_currency,
+                to_currency=self.account().currency)
         else:
-            exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
+            exchange_rate = self.get_exchange_rate(
+                from_currency=self.instrument.quote_currency,
+                to_currency=self.account().currency)
 
         position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
