@@ -9,11 +9,11 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.common.market import TickBarAggregator, TimeBarAggregator
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType
+from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.market import TickBarAggregator, TimeBarAggregator
+from nautilus_trader.common.clock import TestClock
 from test_kit.mocks import ObjectStorer
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 

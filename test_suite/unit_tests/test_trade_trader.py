@@ -8,14 +8,14 @@
 
 import unittest
 
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import IdTag, TraderId, StrategyId
+from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel

@@ -22,7 +22,12 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
 from nautilus_trader.model.identifiers cimport (
-Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+    Symbol,
+    Label,
+    TraderId,
+    StrategyId,
+    OrderId,
+    PositionId
 )
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
@@ -35,7 +40,11 @@ from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.model.commands cimport (
-AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+    AccountInquiry,
+    SubmitOrder,
+    SubmitAtomicOrder,
+    ModifyOrder,
+    CancelOrder
 )
 
 
@@ -311,6 +320,8 @@ cdef class TradingStrategy:
         """
         Condition.not_none(data_source, 'data_source')
         Condition.not_none(indicator, 'indicator')
+        if update_method is None:
+            update_method = indicator.update
         Condition.callable(update_method, 'update_method')
 
         if indicator not in self._indicators:
@@ -792,12 +803,17 @@ cdef class TradingStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    cpdef double xrate_for_account(self, Currency quote_currency, PriceType price_type=PriceType.MID):
+    cpdef double get_exchange_rate(
+            self,
+            Currency from_currency,
+            Currency to_currency,
+            PriceType price_type=PriceType.MID):
         """
         Return the calculated exchange rate for the give trading instrument quote 
         currency to the account currency.
 
-        :param quote_currency: The quote currency for the trading instrument.
+        :param from_currency: The currency to convert from.
+        :param to_currency: The currency to convert to.
         :param price_type: The quote type for the exchange rate (default=MID).
         :return float.
         :raises ValueError: If the quote type is LAST.
@@ -807,16 +823,13 @@ cdef class TradingStrategy:
             self.log.error("Cannot get exchange rate (account is not initialized).")
             return 0.0
 
-        cdef dict bid_rates = {}
-        cdef dict ask_rates = {}
         cdef Symbol symbol
-        for symbol, ticks in self._ticks.items():
-            bid_rates[symbol.code] = ticks[0].bid.as_double()
-            ask_rates[symbol.code] = ticks[0].ask.as_double()
+        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._ticks.items()}
+        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._ticks.items()}
 
         return self._exchange_calculator.get_rate(
-            from_currency=quote_currency,
-            to_currency=self.account().currency,
+            from_currency=from_currency,
+            to_currency=to_currency,
             price_type=price_type,
             bid_rates=bid_rates,
             ask_rates=ask_rates)
