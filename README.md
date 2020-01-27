@@ -11,7 +11,7 @@
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
 ## Installation
-To install via pip by run the below command;
+To install via pip run the below command;
 
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
