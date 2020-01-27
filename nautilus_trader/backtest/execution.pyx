@@ -719,10 +719,10 @@ cdef class BacktestExecClient(ExecutionClient):
             self._reject_order(order,  f'order quantity of {order.quantity} is less than the minimum trade size of {instrument.min_trade_size}')
             return  # Cannot accept order
 
-        cdef Tick current_market = self._market.get(order.symbol, None)
+        cdef Tick current_market = self._market.get(order.symbol)
 
         # Check market exists
-        if not current_market:  # Market not initialized
+        if current_market is None:  # Market not initialized
             self._reject_order(order,  f'no market for {order.symbol}')
             return  # Cannot accept order
 

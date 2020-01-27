@@ -655,12 +655,13 @@ cdef class TradingStrategy:
         
         :param symbol: The tick symbol to count.
         :return int.
-        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
-        return len(self._ticks[symbol])
+        ticks = self._ticks.get(symbol)
+        if ticks is None:
+            return 0
+        return len(ticks)
 
     cpdef int bar_count(self, BarType bar_type):
         """
@@ -668,12 +669,13 @@ cdef class TradingStrategy:
         
         :param bar_type: The bar type to count.
         :return int.
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.not_none(bar_type, 'bar_type')
-        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
-        return len(self._bars[bar_type])
+        bars = self._bars.get(bar_type)
+        if bars is None:
+            return 0
+        return len(bars)
 
     cpdef list ticks(self, Symbol symbol):
         """
@@ -681,12 +683,13 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks to get.
         :return List[Tick].
-        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
-        return list(self._ticks[symbol])
+        ticks = self._ticks.get(symbol)
+        if ticks is None:
+            return []
+        return list(ticks)
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -694,12 +697,13 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to get.
         :return List[Bar].
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.not_none(bar_type, 'bar_type')
-        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
-        return list(self._bars[bar_type])
+        bars = self._bars.get(bar_type)
+        if bars is None:
+            return []
+        return list(bars)
 
     cpdef Tick tick(self, Symbol symbol, int index):
         """
@@ -796,9 +800,9 @@ cdef class TradingStrategy:
         :return OrderSide.
         :raises ValueError: If the given market position is FLAT.
         """
-        if market_position is MarketPosition.LONG:
+        if market_position == MarketPosition.LONG:
             return OrderSide.SELL
-        elif market_position is MarketPosition.SHORT:
+        elif market_position == MarketPosition.SHORT:
             return OrderSide.BUY
         else:
             raise ValueError("Cannot flatten a FLAT position.")
@@ -830,6 +834,35 @@ cdef class TradingStrategy:
         return self._exchange_calculator.get_rate(
             from_currency=from_currency,
             to_currency=to_currency,
+            price_type=price_type,
+            bid_rates=bid_rates,
+            ask_rates=ask_rates)
+
+    cpdef double get_exchange_rate_for_account(
+            self,
+            Currency quote_currency,
+            PriceType price_type=PriceType.MID):
+        """
+        Return the calculated exchange rate for the give trading instrument quote 
+        currency to the account currency.
+
+        :param quote_currency: The quote currency to convert from.
+        :param price_type: The quote type for the exchange rate (default=MID).
+        :return float.
+        :raises ValueError: If the quote type is LAST.
+        """
+        cdef Account account = self.account()
+        if account is None:
+            self.log.error("Cannot get exchange rate (account is not initialized).")
+            return 0.0
+
+        cdef Symbol symbol
+        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._ticks.items()}
+        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._ticks.items()}
+
+        return self._exchange_calculator.get_rate(
+            from_currency=quote_currency,
+            to_currency=self.account().currency,
             price_type=price_type,
             bid_rates=bid_rates,
             ask_rates=ask_rates)

@@ -129,6 +129,10 @@ cdef class TradingStrategy:
             Currency from_currency,
             Currency to_currency,
             PriceType price_type=*)
+    cpdef double get_exchange_rate_for_account(
+            self,
+            Currency quote_currency,
+            PriceType price_type=*)
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)

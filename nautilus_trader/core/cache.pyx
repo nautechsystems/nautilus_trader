@@ -34,9 +34,8 @@ cdef class ObjectCache:
         """
         Condition.valid_string(key, 'key')
 
-        parsed = self._cache.get(key, None)
-
-        if not parsed:
+        parsed = self._cache.get(key)
+        if parsed is None:
             parsed = self._parser(key)
             self._cache[key] = parsed
 
