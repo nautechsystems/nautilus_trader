@@ -17,7 +17,6 @@ import pandas as pd
 import logging
 import psutil
 import platform
-
 from platform import python_version
 from nautilus_trader import __version__
 from cpython.datetime cimport datetime

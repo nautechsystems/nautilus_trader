@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import msgpack
-
 from cpython.datetime cimport datetime
 from uuid import UUID
 

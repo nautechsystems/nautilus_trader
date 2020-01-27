@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-
 from datetime import datetime
 
 from nautilus_trader.common.logger import LogLevel

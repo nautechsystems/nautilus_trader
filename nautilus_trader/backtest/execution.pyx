@@ -11,7 +11,6 @@
 
 import datetime as dt
 import pytz
-
 from cpython.datetime cimport datetime, timedelta
 from typing import List, Dict
 

@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-
 from cpython.datetime cimport datetime
 from typing import Callable
 

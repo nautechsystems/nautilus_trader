@@ -10,12 +10,22 @@ from collections import deque
 from datetime import timedelta
 from typing import Deque
 
+from nautilus_indicators.atr cimport AverageTrueRange
+from nautilus_indicators.average.ema cimport ExponentialMovingAverage
+
 from nautilus_trader.common.functions cimport fast_mean
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
-from nautilus_trader.model.objects cimport (Quantity, Price, Tick, BarSpecification,
-                                            BarType, Bar, Instrument)
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.objects cimport (
+    Quantity,
+    Price,
+    Tick,
+    BarSpecification,
+    BarType,
+    Bar,
+    Instrument
+)
+from nautilus_trader.model.order cimport AtomicOrder
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -25,9 +35,6 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock, TestClock
 from nautilus_trader.trade.sizing cimport PositionSizer, FixedRiskSizer
 from test_kit.mocks cimport ObjectStorer
-
-from nautilus_indicators.atr cimport AverageTrueRange
-from nautilus_indicators.average.ema cimport ExponentialMovingAverage
 
 
 class PyStrategy(TradingStrategy):
