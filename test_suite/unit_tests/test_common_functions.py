@@ -26,7 +26,9 @@ from nautilus_trader.common.functions import (
 )
 
 from test_kit.data import TestDataProvider
-from test_kit.stubs import UNIX_EPOCH
+from test_kit.stubs import TestStubs
+
+UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 class TestFunctionsTests(unittest.TestCase):

@@ -27,10 +27,11 @@ from nautilus_trader.model.identifiers import (
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
-from test_kit.stubs import TestStubs, UNIX_EPOCH
+from test_kit.stubs import TestStubs
 
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+UNIX_EPOCH = TestStubs.unix_epoch()
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 
 class PositionTests(unittest.TestCase):

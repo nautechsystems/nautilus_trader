@@ -50,15 +50,14 @@ from nautilus_trader.model.events import (
     PositionModified,
     PositionClosed)
 
-# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
-
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
-USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 
 
 class TestStubs:
+
+    @staticmethod
+    def unix_epoch() -> datetime:
+        return UNIX_EPOCH
 
     @staticmethod
     def symbol_audusd_fxcm() -> Symbol:
@@ -90,7 +89,7 @@ class TestStubs:
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal(0),
             rollover_interest_sell=Decimal(0),
-            timestamp=UNIX_EPOCH)
+            timestamp=TestStubs.unix_epoch())
 
     @staticmethod
     def instrument_usdjpy() -> Instrument:
@@ -110,7 +109,7 @@ class TestStubs:
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal(0),
             rollover_interest_sell=Decimal(0),
-            timestamp=UNIX_EPOCH)
+            timestamp=TestStubs.unix_epoch())
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
@@ -130,31 +129,31 @@ class TestStubs:
 
     @staticmethod
     def bartype_audusd_1min_bid() -> BarType:
-        return BarType(AUDUSD_FXCM, TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.symbol_audusd_fxcm(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_audusd_1min_ask() -> BarType:
-        return BarType(AUDUSD_FXCM, TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.symbol_audusd_fxcm(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1min_bid() -> BarType:
-        return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.symbol_gbpusd_fxcm(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_gbpusd_1min_ask() -> BarType:
-        return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.symbol_gbpusd_fxcm(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1sec_mid() -> BarType:
-        return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1sec_mid())
+        return BarType(TestStubs.symbol_gbpusd_fxcm(), TestStubs.bar_spec_1sec_mid())
 
     @staticmethod
     def bartype_usdjpy_1min_bid() -> BarType:
-        return BarType(USDJPY_FXCM, TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.symbol_usdjpy_fxcm(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_usdjpy_1min_ask() -> BarType:
-        return BarType(USDJPY_FXCM, TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.symbol_usdjpy_fxcm(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -163,7 +162,7 @@ class TestStubs:
                    Price(1.00001, 5),
                    Price(1.00003, 5),
                    100000,
-                   UNIX_EPOCH)
+                   TestStubs.unix_epoch())
 
     @staticmethod
     def bar_3decimal() -> Bar:
@@ -172,14 +171,14 @@ class TestStubs:
                    Price(90.001, 3),
                    Price(90.003, 3),
                    100000,
-                   UNIX_EPOCH)
+                   TestStubs.unix_epoch())
 
     @staticmethod
     def tick_3decimal(symbol) -> Tick:
         return Tick(symbol,
                     Price(90.002, 3),
                     Price(90.003, 3),
-                    UNIX_EPOCH)
+                    TestStubs.unix_epoch())
 
     @staticmethod
     def trader_id() -> TraderId:
@@ -204,7 +203,7 @@ class TestStubs:
             Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
     @staticmethod
     def event_order_filled(order, fill_price=Price(1.00000, 5)) -> OrderFilled:
@@ -218,9 +217,9 @@ class TestStubs:
             order.quantity,
             order.price if fill_price is None else fill_price,
             Currency.USD,
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
     @staticmethod
     def event_order_working(order, working_price=Price(1.00000, 5)) -> OrderWorking:
@@ -235,9 +234,9 @@ class TestStubs:
             order.quantity,
             order.price if working_price is None else working_price,
             order.time_in_force,
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH,
+            TestStubs.unix_epoch(),
             order.expire_time)
 
     @staticmethod
@@ -247,7 +246,7 @@ class TestStubs:
             StrategyId('SCALPER', '001'),
             position.last_event,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
     @staticmethod
     def event_position_modified(position) -> PositionModified:
@@ -256,7 +255,7 @@ class TestStubs:
             StrategyId('SCALPER', '001'),
             position.last_event,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
@@ -265,7 +264,7 @@ class TestStubs:
             StrategyId('SCALPER', '001'),
             position.last_event,
             GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+            TestStubs.unix_epoch())
 
     @staticmethod
     def position(number=1, entry_price=Price(1.00000, 5)) -> Position:
@@ -285,7 +284,7 @@ class TestStubs:
             clock=clock)
 
         order = order_factory.market(
-            AUDUSD_FXCM,
+            TestStubs.symbol_audusd_fxcm(),
             OrderSide.BUY,
             Quantity(100000))
 
@@ -308,7 +307,7 @@ class TestStubs:
             clock=clock)
 
         order = order_factory.market(
-            AUDUSD_FXCM,
+            TestStubs.symbol_audusd_fxcm(),
             OrderSide.SELL,
             Quantity(100000))
 
@@ -322,9 +321,9 @@ class TestStubs:
             order.quantity,
             close_price,
             Currency.USD,
-            UNIX_EPOCH + timedelta(minutes=5),
+            TestStubs.unix_epoch() + timedelta(minutes=5),
             GUID(uuid.uuid4()),
-            UNIX_EPOCH + timedelta(minutes=5))
+            TestStubs.unix_epoch() + timedelta(minutes=5))
 
         position.apply(order_filled)
 
