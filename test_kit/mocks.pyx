@@ -24,8 +24,6 @@ from nautilus_trader.network.responses cimport MessageReceived
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestStubs.unix_epoch()
-
 
 cdef class ObjectStorer:
     """"
@@ -279,7 +277,12 @@ cdef class MockCommandRouter:
             self._cycles += 1
             self._log.debug(f"Received[{self._cycles}] {message}")
 
-            response = MessageReceived(str(message), message.id, GUID(uuid.uuid4()), UNIX_EPOCH)
+            response = MessageReceived(
+                str(message),
+                message.id,
+                GUID(uuid.uuid4()),
+                TestStubs.unix_epoch())
+
             self.responses_sent.append(response)
             self._socket.send(self._response_serializer.serialize(response))
 
