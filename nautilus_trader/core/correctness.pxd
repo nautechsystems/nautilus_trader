@@ -22,10 +22,18 @@ cdef class Condition:
     cdef void not_none(object argument, str param, ex_type=*) except *
 
     @staticmethod
-    cdef void type(object argument, object expected, str param, ex_type=*) except *
+    cdef void type(
+        object argument,
+        object expected,
+        str param,
+        ex_type=*) except *
 
     @staticmethod
-    cdef void type_or_none(object argument, object expected, str param, ex_type=*) except *
+    cdef void type_or_none(
+        object argument,
+        object expected,
+        str param,
+        ex_type=*) except *
 
     @staticmethod
     cdef void callable(object argument, str param, ex_type=*) except *

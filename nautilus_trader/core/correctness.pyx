@@ -138,7 +138,11 @@ cdef class Condition:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void type(object argument, object expected, str param, ex_type=None) except *:
+    cdef void type(
+            object argument,
+            object expected,
+            str param,
+            ex_type=None) except *:
         """
         Check the argument is of the specified type.
         
@@ -170,7 +174,11 @@ cdef class Condition:
             raise ex_type(msg)
 
     @staticmethod
-    cdef void type_or_none(object argument, object expected, str param, ex_type=None) except *:
+    cdef void type_or_none(
+            object argument,
+            object expected,
+            str param,
+            ex_type=None) except *:
         """
         Check the argument is of the specified type, or is None.
         
