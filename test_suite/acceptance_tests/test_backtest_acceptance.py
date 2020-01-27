@@ -19,7 +19,6 @@ from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
@@ -97,7 +96,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(559, strategies[0].fast_ema.count)
-        self.assertEqual(-339.96, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(-351.97, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_can_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange

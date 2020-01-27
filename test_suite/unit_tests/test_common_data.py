@@ -17,10 +17,9 @@ from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType
 
 from test_kit.mocks import ObjectStorer
-from test_kit.stubs import TestStubs
+from test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 class TickBarAggregatorTests(unittest.TestCase):

@@ -18,7 +18,6 @@ from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataCli
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 
 

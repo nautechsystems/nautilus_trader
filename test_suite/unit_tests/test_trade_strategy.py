@@ -31,10 +31,9 @@ from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 
 from nautilus_trader.trade.strategy import TradingStrategy
-from test_kit.stubs import TestStubs
+from test_kit.stubs import TestStubs, UNIX_EPOCH
 from test_kit.strategies import TestStrategy1
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 

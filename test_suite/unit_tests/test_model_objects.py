@@ -11,11 +11,10 @@ import unittest
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
-from test_kit.stubs import TestStubs
+from test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
-UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 class ObjectTests(unittest.TestCase):

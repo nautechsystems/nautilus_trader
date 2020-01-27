@@ -8,15 +8,13 @@
 
 import unittest
 
-from nautilus_trader.model.objects import Price, Tick, Bar
+from nautilus_trader.model.objects import Price, Bar
 
 from test_kit.performance import PerformanceProfiler
-from test_kit.stubs import TestStubs
+from test_kit.stubs import TestStubs, UNIX_EPOCH
 
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-UNIX_EPOCH = TestStubs.unix_epoch()
-
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 
 

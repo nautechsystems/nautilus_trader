@@ -22,7 +22,6 @@ from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 
 

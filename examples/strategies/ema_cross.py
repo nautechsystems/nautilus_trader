@@ -175,8 +175,8 @@ class EMACrossPy(TradingStrategy):
         position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
             risk_bp=self.risk_bp,
-            price_entry=price_entry,
-            price_stop_loss=price_stop_loss,
+            entry=price_entry,
+            stop_loss=price_stop_loss,
             exchange_rate=exchange_rate,
             commission_rate_bp=0.15,
             hard_limit=20000000,
@@ -213,8 +213,8 @@ class EMACrossPy(TradingStrategy):
         position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
             risk_bp=self.risk_bp,
-            price_entry=price_entry,
-            price_stop_loss=price_stop_loss,
+            entry=price_entry,
+            stop_loss=price_stop_loss,
             exchange_rate=exchange_rate,
             commission_rate_bp=0.15,
             hard_limit=20000000,
