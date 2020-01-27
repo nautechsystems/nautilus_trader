@@ -13,11 +13,11 @@ from typing import Deque
 from nautilus_trader.common.functions cimport fast_mean
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
-from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport (Quantity, Price, Tick, BarSpecification,
+                                            BarType, Bar, Instrument)
 from nautilus_trader.model.order cimport Order, AtomicOrder
-from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.model.c_enums.currency cimport currency_from_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
@@ -355,7 +355,7 @@ cdef class EMACross(TradingStrategy):
 
         :param tick: The received tick.
         """
-        # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        # self.log.info(f"Received Tick({tick})")  # For debugging
         self.spreads.append(float(tick.ask.as_double() - tick.bid.as_double()))
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
@@ -367,7 +367,7 @@ cdef class EMACross(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        # self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
+        self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging
 
         # Check if indicators ready
         if not self.indicators_initialized():
@@ -390,105 +390,117 @@ cdef class EMACross(TradingStrategy):
                 self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
-        cdef Price price_entry
-        cdef Price price_stop_loss
-        cdef Price price_take_profit
-        cdef AtomicOrder atomic_order
-        cdef double exchange_rate
+        cdef double spread_buffer = max(average_spread, self.spreads[-1])
+        cdef double sl_buffer = self.atr.value * self.SL_atr_multiple
 
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
+
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(bar.high + self.entry_buffer + max(average_spread, self.spreads[-1]), self.precision)
-                price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
-                price_take_profit = Price(price_entry + (price_entry.as_double() - price_stop_loss.as_double()), self.precision)
-
-                if self.instrument.security_type == SecurityType.FOREX:
-                    quote_currency = currency_from_string(self.instrument.symbol.code[3:])
-                    exchange_rate = self.xrate_for_account(quote_currency)
-                else:
-                    exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
-
-                position_size = self.position_sizer.calculate(
-                    equity=self.account().free_equity,
-                    risk_bp=self.risk_bp,
-                    price_entry=price_entry,
-                    price_stop_loss=price_stop_loss,
-                    exchange_rate=exchange_rate,
-                    commission_rate_bp=0.15,
-                    hard_limit=0,
-                    units=1,
-                    unit_batch_size=1000)
-
-                if position_size.value > 0:
-                    atomic_order = self.order_factory.atomic_stop_market(
-                        symbol=self.symbol,
-                        order_side=OrderSide.BUY,
-                        quantity=position_size,
-                        price_entry=price_entry,
-                        price_stop_loss=price_stop_loss,
-                        price_take_profit=price_take_profit,
-                        label=Label('S1'),
-                        time_in_force=TimeInForce.GTD,
-                        expire_time=bar.timestamp + timedelta(minutes=1))
-                else:
-                    atomic_order = None
+                self._enter_long(bar, sl_buffer, spread_buffer)
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                price_entry = Price(bar.low - self.entry_buffer, self.precision)
-                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + max(average_spread, self.spreads[-1]), self.precision)
-                price_take_profit = Price(price_entry - (price_stop_loss.as_double() - price_entry.as_double()), self.precision)
+                self._enter_short(bar, sl_buffer, spread_buffer)
 
-                if self.instrument.security_type == SecurityType.FOREX:
-                    quote_currency = currency_from_string(self.instrument.symbol.code[3:])
-                    exchange_rate = self.xrate_for_account(quote_currency)
-                else:
-                    exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
+        self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
-                position_size = self.position_sizer.calculate(
-                    equity=self.account().free_equity,
-                    risk_bp=self.risk_bp,
-                    price_entry=price_entry,
-                    price_stop_loss=price_stop_loss,
-                    exchange_rate=exchange_rate,
-                    commission_rate_bp=0.15,
-                    hard_limit=0,
-                    units=1,
-                    unit_batch_size=1000)
+    cdef void _enter_long(self, bar: Bar, sl_buffer: float, spread_buffer: float) except *:
+        cdef Price price_entry = Price(bar.high + self.entry_buffer + spread_buffer, self.precision)
+        cdef Price price_stop_loss = Price(bar.low - sl_buffer, self.precision)
+        cdef double risk = price_entry.as_double() - price_stop_loss.as_double()
+        cdef Price price_take_profit = Price(price_entry + risk, self.precision)
 
-                if position_size.value > 0:
-                    atomic_order = self.order_factory.atomic_stop_market(
-                        symbol=self.symbol,
-                        order_side=OrderSide.SELL,
-                        quantity=position_size,
-                        price_entry=price_entry,
-                        price_stop_loss=price_stop_loss,
-                        price_take_profit=price_take_profit,
-                        label=Label('S1'),
-                        time_in_force=TimeInForce.GTD,
-                        expire_time=bar.timestamp + timedelta(minutes=1))
-                else:
-                    atomic_order = None
+        cdef Currency quote_currency
+        cdef double exchange_rate
+        if self.instrument.security_type == SecurityType.FOREX:
+            quote_currency = currency_from_string(self.instrument.symbol.code[3:])
+            exchange_rate = self.xrate_for_account(quote_currency)
+        else:
+            exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
 
-            # ENTRY ORDER SUBMISSION
-            if atomic_order is not None:
-                self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
+        cdef Quantity position_size = self.position_sizer.calculate(
+            equity=self.account().free_equity,
+            risk_bp=self.risk_bp,
+            price_entry=price_entry,
+            price_stop_loss=price_stop_loss,
+            exchange_rate=exchange_rate,
+            commission_rate_bp=0.15,
+            hard_limit=20000000,
+            units=1,
+            unit_batch_size=10000)
 
-        # TRAILING STOP LOGIC
-        cdef Order trailing_stop
-        cdef Price temp_price
+        cdef AtomicOrder atomic_order
+        if position_size.value > 0:
+            atomic_order = self.order_factory.atomic_stop_market(
+                symbol=self.symbol,
+                order_side=OrderSide.BUY,
+                quantity=position_size,
+                price_entry=price_entry,
+                price_stop_loss=price_stop_loss,
+                price_take_profit=price_take_profit,
+                label=Label('S1'),
+                time_in_force=TimeInForce.GTD,
+                expire_time=bar.timestamp + timedelta(minutes=1))
+
+            self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
+        else:
+            self.log.info("Insufficient equity for BUY signal.")
+
+    cdef void _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float) except *:
+        cdef Price price_entry = Price(bar.low - self.entry_buffer, self.precision)
+        cdef Price price_stop_loss = Price(bar.high + sl_buffer + spread_buffer, self.precision)
+        cdef double risk = price_stop_loss.as_double() - price_entry.as_double()
+        cdef Price price_take_profit = Price(price_entry - risk, self.precision)
+
+        cdef Currency quote_currency
+        cdef double exchange_rate
+        if self.instrument.security_type == SecurityType.FOREX:
+            quote_currency = currency_from_string(self.instrument.symbol.code[3:])
+            exchange_rate = self.xrate_for_account(quote_currency)
+        else:
+            exchange_rate = self.xrate_for_account(self.instrument.quote_currency)
+
+        cdef Quantity position_size = self.position_sizer.calculate(
+            equity=self.account().free_equity,
+            risk_bp=self.risk_bp,
+            price_entry=price_entry,
+            price_stop_loss=price_stop_loss,
+            exchange_rate=exchange_rate,
+            commission_rate_bp=0.15,
+            hard_limit=20000000,
+            units=1,
+            unit_batch_size=10000)
+
+        cdef AtomicOrder atomic_order
+        if position_size.value > 0:  # Sufficient equity for a position
+            atomic_order = self.order_factory.atomic_stop_market(
+                symbol=self.symbol,
+                order_side=OrderSide.SELL,
+                quantity=position_size,
+                price_entry=price_entry,
+                price_stop_loss=price_stop_loss,
+                price_take_profit=price_take_profit,
+                label=Label('S1'),
+                time_in_force=TimeInForce.GTD,
+                expire_time=bar.timestamp + timedelta(minutes=1))
+
+            self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
+        else:
+            self.log.info("Insufficient equity for SELL signal.")
+
+    cdef void _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float) except *:
         for working_order in self.orders_working().values():
             if working_order.purpose == OrderPurpose.STOP_LOSS:
                 # SELL SIDE ORDERS
                 if working_order.is_sell:
-                    temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple), self.precision)
-                    if temp_price.gt(working_order.price):
+                    temp_price = Price(bar.low - sl_buffer, self.precision)
+                    if temp_price > working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + max(average_spread, self.spreads[-1]), self.precision)
-                    if temp_price.lt(working_order.price):
+                    temp_price = Price(bar.high + sl_buffer + spread_buffer, self.precision)
+                    if temp_price < working_order.price:
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
     cpdef void on_instrument(self, Instrument instrument):

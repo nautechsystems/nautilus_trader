@@ -20,7 +20,7 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
-from examples.strategies.ema_cross import EMACrossPy
+from examples.strategies.ema_cross import EMACrossMarketEntryPy
 
 
 if __name__ == "__main__":
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
     data.add_bars(USDJPY.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-    strategies = [EMACrossPy(
+    strategies = [EMACrossMarketEntryPy(
         symbol=USDJPY.symbol,
         bar_spec=BarSpecification(1, BarStructure.MINUTE, PriceType.BID),
         risk_bp=10,
