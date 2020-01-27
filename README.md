@@ -11,8 +11,7 @@
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
 ## Installation
-First make sure all required packages are installed (as found in the `setup.py` requirements).
-Then install via pip by running the below command;
+To install via pip by run the below command;
 
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
