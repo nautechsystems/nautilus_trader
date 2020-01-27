@@ -8,7 +8,6 @@
 
 import inspect
 import pandas as pd
-
 from cpython.datetime cimport datetime, timedelta
 from typing import List, Callable
 

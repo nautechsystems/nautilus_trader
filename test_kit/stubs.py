@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import uuid
-
 from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.core.types import GUID, ValidString

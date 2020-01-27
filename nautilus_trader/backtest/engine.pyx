@@ -8,7 +8,6 @@
 
 import psutil
 import pytz
-
 from cpython.datetime cimport datetime
 from typing import List
 

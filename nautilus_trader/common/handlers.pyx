@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Callable
-
 from cpython.object cimport PyObject_Repr
 
 from nautilus_trader.core.correctness cimport Condition

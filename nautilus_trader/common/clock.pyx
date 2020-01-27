@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import numpy as np
-
 from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer as TimerThread

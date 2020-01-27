@@ -8,7 +8,6 @@
 
 import threading
 import zmq
-
 from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
