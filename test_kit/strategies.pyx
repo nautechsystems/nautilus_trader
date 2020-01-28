@@ -27,8 +27,7 @@ from nautilus_trader.model.objects cimport (
 )
 from nautilus_trader.model.order cimport AtomicOrder
 from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -416,17 +415,9 @@ cdef class EMACross(TradingStrategy):
         cdef double risk = price_entry.as_double() - price_stop_loss.as_double()
         cdef Price price_take_profit = Price(price_entry + risk, self.precision)
 
-        cdef Currency quote_currency
-        cdef double exchange_rate
-        if self.instrument.security_type == SecurityType.FOREX:
-            quote_currency = currency_from_string(self.instrument.symbol.code[3:])
-            exchange_rate = self.get_exchange_rate(
-                from_currency=quote_currency,
-                to_currency=self.account().currency)
-        else:
-            exchange_rate = self.get_exchange_rate(
-                from_currency=self.instrument.quote_currency,
-                to_currency=self.account().currency)
+        cdef double exchange_rate = self.get_exchange_rate_for_account(
+                quote_currency=self.instrument.quote_currency,
+                price_type=PriceType.ASK)
 
         cdef Quantity position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
@@ -462,17 +453,9 @@ cdef class EMACross(TradingStrategy):
         cdef double risk = price_stop_loss.as_double() - price_entry.as_double()
         cdef Price price_take_profit = Price(price_entry - risk, self.precision)
 
-        cdef Currency quote_currency
-        cdef double exchange_rate
-        if self.instrument.security_type == SecurityType.FOREX:
-            quote_currency = currency_from_string(self.instrument.symbol.code[3:])
-            exchange_rate = self.get_exchange_rate(
-                from_currency=quote_currency,
-                to_currency=self.account().currency)
-        else:
-            exchange_rate = self.get_exchange_rate(
-                from_currency=self.instrument.quote_currency,
-                to_currency=self.account().currency)
+        cdef double exchange_rate = self.get_exchange_rate_for_account(
+                quote_currency=self.instrument.quote_currency,
+                price_type=PriceType.BID)
 
         cdef Quantity position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
