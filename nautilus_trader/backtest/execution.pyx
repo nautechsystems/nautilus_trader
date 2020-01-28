@@ -28,7 +28,7 @@ from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Decimal, Price, Tick, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.events cimport (
+from nautilus_trader.model.events cimport (  # noqa: E211
     OrderFillEvent,
     AccountStateEvent,
     OrderSubmitted,
@@ -39,16 +39,14 @@ from nautilus_trader.model.events cimport (
     OrderModified,
     OrderCancelled,
     OrderCancelReject,
-    OrderFilled
-)
+    OrderFilled)
 from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
-from nautilus_trader.model.commands cimport (
+from nautilus_trader.model.commands cimport (  # noqa: E211
     AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
-    CancelOrder
-)
+    CancelOrder)
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.clock cimport TestClock

@@ -11,14 +11,14 @@ from typing import Set, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.commands cimport (
+from nautilus_trader.model.commands cimport (  # noqa: E211
     Command,
     AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
     CancelOrder)
-from nautilus_trader.model.events cimport (
+from nautilus_trader.model.events cimport (  # noqa: E211
     Event,
     OrderEvent,
     OrderFillEvent,
@@ -28,7 +28,7 @@ from nautilus_trader.model.events cimport (
     PositionOpened,
     PositionModified,
     PositionClosed)
-from nautilus_trader.model.identifiers cimport (
+from nautilus_trader.model.identifiers cimport (  # noqa: E211
     AccountId,
     TraderId,
     StrategyId,
@@ -566,7 +566,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
          
         :return Set[StrategyId].
         """
-        return  self._strategies.copy()
+        return self._strategies.copy()
 
     cpdef set get_order_ids(self, StrategyId strategy_id=None):
         """

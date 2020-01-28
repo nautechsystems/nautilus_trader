@@ -12,7 +12,8 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport as_utc_timestamp, format_zulu_datetime, format_bytes, pad_string, get_size_of
+from nautilus_trader.common.functions cimport (as_utc_timestamp, format_zulu_datetime, format_bytes,
+                                               pad_string, get_size_of)
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
@@ -30,7 +31,9 @@ from nautilus_trader.backtest.data cimport BacktestDataContainer, BacktestDataCl
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.live.execution cimport RedisExecutionDatabase
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
+from nautilus_trader.serialization.serializers cimport (  # noqa: E211
+    MsgPackCommandSerializer,
+    MsgPackEventSerializer)
 
 
 cdef class BacktestEngine:

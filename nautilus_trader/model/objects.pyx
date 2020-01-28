@@ -420,9 +420,11 @@ cdef class Tick:
         :param tick_type: The tick type (default=TRADE).
         :param bid_size: The tick bid size (default=1.0).
         :param ask_size: The tick ask size (default=1.0).
+        :raises ValueError: If tick_type is UNDEFINED.
         :raises ValueError: If the bid_size is negative (< 0).
         :raises ValueError: If the ask_size is negative (< 0).
         """
+        Condition.not_equal(tick_type, TickType.UNDEFINED, 'tick_type', 'UNDEFINED')
         Condition.not_negative(bid_size, 'bid_size')
         Condition.not_negative(ask_size, 'ask_size')
 

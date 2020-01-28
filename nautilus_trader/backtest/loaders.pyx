@@ -25,7 +25,7 @@ cdef class CSVTickDataLoader:
     """
 
     @staticmethod
-    def load(file_path: str) -> pd.DataFrame:
+    def load(str file_path) -> pd.DataFrame:
         """
         Return the tick pandas.DataFrame loaded from the given csv file.
 
@@ -47,7 +47,7 @@ cdef class CSVBarDataLoader:
     """
 
     @staticmethod
-    def load(file_path: str) -> pd.DataFrame:
+    def load(str file_path) -> pd.DataFrame:
         """
         Return the bar pandas.DataFrame loaded from the given csv file.
 
@@ -76,7 +76,7 @@ cdef class InstrumentLoader:
         :raises ValueError: If the tick_precision is not 3 or 5.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.true(len(symbol.code) == 6, 'len(symbol) == 6')
+        Condition.equal(len(symbol.code), 6, 'len(symbol)', '6')
         Condition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
