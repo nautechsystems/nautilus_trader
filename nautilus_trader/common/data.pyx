@@ -55,7 +55,7 @@ cdef class DataClient:
 
         self._log.info("Initialized.")
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
     cpdef void connect(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")

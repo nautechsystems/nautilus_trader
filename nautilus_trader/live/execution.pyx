@@ -133,7 +133,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                               f"(this should only be done in a testing environment).")
 
 
-# -- COMMANDS -------------------------------------------------------------------------------------"
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_accounts_cache(self) except *:
         """
@@ -527,7 +527,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef set _decode_set_to_strategy_ids(self, list original):
         return {StrategyId.from_string(element.decode(_UTF8).rsplit(':', 2)[1]) for element in original}
 
-# -- QUERIES --------------------------------------------------------------------------------------"
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account get_account(self, AccountId account_id):
         """

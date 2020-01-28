@@ -47,7 +47,7 @@ cdef class ExecutionDatabase:
 
     cdef readonly TraderId trader_id
 
-#-- COMMANDS --------------------------------------------------------------------------------------"
+# -- COMMANDS --------------------------------------------------------------------------------------
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
@@ -65,7 +65,7 @@ cdef class ExecutionDatabase:
     cpdef void flush(self) except *
     cdef void _reset(self) except *
 
-#-- QUERIES ---------------------------------------------------------------------------------------"
+# -- QUERIES ---------------------------------------------------------------------------------------
     cpdef Account get_account(self, AccountId account_id)
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
@@ -136,7 +136,7 @@ cdef class ExecutionEngine:
     cdef readonly int command_count
     cdef readonly int event_count
 
-#-- COMMANDS --------------------------------------------------------------------------------------#
+# -- COMMANDS --------------------------------------------------------------------------------------
     cpdef void register_client(self, ExecutionClient exec_client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
@@ -145,12 +145,12 @@ cdef class ExecutionEngine:
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
-#-- QUERIES ---------------------------------------------------------------------------------------"
+# -- QUERIES ---------------------------------------------------------------------------------------
     cpdef list registered_strategies(self)
     cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)
 
-#--------------------------------------------------------------------------------------------------"
+# --------------------------------------------------------------------------------------------------
     cdef void _execute_command(self, Command command) except *
     cdef void _handle_event(self, Event event) except *
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
@@ -172,7 +172,7 @@ cdef class ExecutionClient:
     cdef readonly int command_count
     cdef readonly int event_count
 
-#-- ABSTRACT METHODS ----------------------------------------------------------#
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void dispose(self) except *
@@ -182,5 +182,5 @@ cdef class ExecutionClient:
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
     cpdef void reset(self) except *
-#------------------------------------------------------------------------------#
+# --------------------------------------------------------------------------------------------------
     cdef void _reset(self) except *

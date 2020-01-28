@@ -9,7 +9,7 @@
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.core.message cimport Event
 
-#cdef void (*_handler)(Tick tick)
+# cdef void (*_handler)(Tick tick)
 
 cdef class Handler:
     cdef readonly object handle
