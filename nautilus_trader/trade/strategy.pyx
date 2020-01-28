@@ -813,8 +813,7 @@ cdef class TradingStrategy:
             Currency to_currency,
             PriceType price_type=PriceType.MID):
         """
-        Return the calculated exchange rate for the give trading instrument quote 
-        currency to the account currency.
+        Return the calculated exchange rate for the given currencies.
 
         :param from_currency: The currency to convert from.
         :param to_currency: The currency to convert to.

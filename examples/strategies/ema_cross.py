@@ -12,7 +12,7 @@ from typing import Dict
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.common.functions import fast_mean
-from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, Currency, SecurityType
+from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, PriceType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.trade.strategy import TradingStrategy
@@ -166,15 +166,9 @@ class EMACrossPy(TradingStrategy):
         risk = price_entry.as_double() - price_stop_loss.as_double()
         price_take_profit = Price(price_entry + risk, self.precision)
 
-        if self.instrument.security_type == SecurityType.FOREX:
-            quote_currency = Currency(self.instrument.symbol.code[3:])
-            exchange_rate = self.get_exchange_rate(
-                from_currency=quote_currency,
-                to_currency=self.account().currency)
-        else:
-            exchange_rate = self.get_exchange_rate(
-                from_currency=self.instrument.quote_currency,
-                to_currency=self.account().currency)
+        exchange_rate = self.get_exchange_rate_for_account(
+            quote_currency=self.instrument.quote_currency,
+            price_type=PriceType.ASK)
 
         position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
@@ -208,15 +202,9 @@ class EMACrossPy(TradingStrategy):
         risk = price_stop_loss.as_double() - price_entry.as_double()
         price_take_profit = Price(price_entry - risk, self.precision)
 
-        if self.instrument.security_type == SecurityType.FOREX:
-            quote_currency = Currency(self.instrument.symbol.code[3:])
-            exchange_rate = self.get_exchange_rate(
-                from_currency=quote_currency,
-                to_currency=self.account().currency)
-        else:
-            exchange_rate = self.get_exchange_rate(
-                from_currency=self.instrument.quote_currency,
-                to_currency=self.account().currency)
+        exchange_rate = self.get_exchange_rate_for_account(
+            quote_currency=self.instrument.quote_currency,
+            price_type=PriceType.ASK)
 
         position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
