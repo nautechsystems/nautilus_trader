@@ -105,6 +105,8 @@ cdef class DataBar:
     cdef readonly double volume
     cdef readonly datetime timestamp
 
+    cpdef str to_string(self)
+
 
 cdef class Instrument:
     cdef readonly InstrumentId id
