@@ -670,7 +670,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return the strategy_id associated with the given order_id (if found).
         
         :param order_id: The order_id associated with the strategy.
-        :return StrategyId or None: 
+        :return StrategyId or None.
         """
         Condition.not_none(order_id, 'order_id')
 
@@ -681,7 +681,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return the strategy_id associated with the given position_id (if found).
         
         :param position_id: The position_id associated with the strategy.
-        :return StrategyId or None: 
+        :return StrategyId or None.
         """
         Condition.not_none(position_id, 'position_id')
 
@@ -923,7 +923,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef bint position_indexed_for_order(self, OrderId order_id):
         """
-        Return a value indicating whether there is a position_id indexed for the 
+        Return a value indicating whether there is a position_id indexed for the
         given order_id.
         
         :param order_id: The order_id.
@@ -1144,7 +1144,7 @@ cdef class ExecutionEngine:
 
     cpdef bint is_strategy_flat(self, StrategyId strategy_id):
         """
-        Return a value indicating whether the strategy given identifier is flat 
+        Return a value indicating whether the strategy given identifier is flat
         (all associated positions FLAT).
         
         :param strategy_id: The strategy_id.
@@ -1202,7 +1202,9 @@ cdef class ExecutionEngine:
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.order_id)
         if strategy_id is None:
-            self._log.error(f"Cannot process event {event}, {strategy_id.to_string(with_class=True)} not found.")
+            self._log.error(f"Cannot process event {event}, "
+                            f"{strategy_id.to_string(with_class=True)} "
+                            f"not found.")
             return  # Cannot process event further
 
         self._send_to_strategy(event, strategy_id)
@@ -1210,7 +1212,9 @@ cdef class ExecutionEngine:
     cdef void _handle_order_event(self, OrderEvent event) except *:
         cdef Order order = self.database.get_order(event.order_id)
         if order is None:
-            self._log.warning(f"Cannot apply event {event} to any order, {event.order_id.to_string(with_class=True)} not found in cache.")
+            self._log.warning(f"Cannot apply event {event} to any order, "
+                              f"{event.order_id.to_string(with_class=True)} "
+                              f"not found in cache.")
             return  # Cannot process event further
         else:
             order.apply(event)
@@ -1228,14 +1232,19 @@ cdef class ExecutionEngine:
             position_id = self.database.get_position_id_for_broker_id(event.position_id_broker)
 
         if position_id is None:
-            self._log.error(f"Cannot process event {event}, PositionId for {event.order_id.to_string(with_class=True)} not found.")
+            self._log.error(f"Cannot process event {event}, "
+                            f"PositionId for {event.order_id.to_string(with_class=True)} "
+                            f"not found.")
             return  # Cannot process event further
 
-        cdef Position position = self.database.get_position_for_order(event.order_id)  # Could still be None here
+        cdef Position position = self.database.get_position_for_order(event.order_id)
         cdef StrategyId strategy_id = self.database.get_strategy_for_position(position_id)
+        # position could still be None here
 
         if strategy_id is None:
-            self._log.error(f"Cannot process event {event}, StrategyId for {position_id.to_string(with_class=True)} not found.")
+            self._log.error(f"Cannot process event {event}, "
+                            f"StrategyId for {position_id.to_string(with_class=True)} "
+                            f"not found.")
             return  # Cannot process event further
 
         if position is None:
@@ -1269,7 +1278,9 @@ cdef class ExecutionEngine:
             self.database.update_account(account)
         else:
             self._log.warning(f"Cannot process event {event} "
-                              f"(event {event.account_id.to_string(with_class=True)} does not match this account {account.id.to_string(with_class=True)}).")
+                              f"(event {event.account_id.to_string(with_class=True)} "
+                              f"does not match this account "
+                              f"{account.id.to_string(with_class=True)}).")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef PositionOpened position_opened = PositionOpened(
@@ -1307,12 +1318,14 @@ cdef class ExecutionEngine:
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
-            self._log.error(f"Cannot send event {event} to strategy, {strategy_id.to_string(with_class=True)} not found.")
+            self._log.error(f"Cannot send event {event} to strategy, "
+                            f"{strategy_id.to_string(with_class=True)} not found.")
             return  # Cannot send to strategy
 
         cdef TradingStrategy strategy = self._registered_strategies.get(strategy_id)
         if strategy_id is None:
-            self._log.error(f"Cannot send event {event} to strategy, {strategy_id.to_string(with_class=True)} not registered.")
+            self._log.error(f"Cannot send event {event} to strategy, "
+                            f"{strategy_id.to_string(with_class=True)} not registered.")
             return
 
         strategy.handle_event(event)
