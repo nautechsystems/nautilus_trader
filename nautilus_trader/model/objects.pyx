@@ -1016,6 +1016,31 @@ cdef class DataBar:
         self.volume = volume
         self.timestamp = timestamp
 
+    @staticmethod
+    def py_from_string(str value) -> Bar:
+        """
+        Python wrapper for the from_string method.
+
+        Return a bar parsed from the given string.
+
+        :param value: The bar string to parse.
+        :return Bar.
+        """
+        return Bar.from_string(value)
+
+    cpdef str to_string(self):
+        """
+        Return the string representation of this object.
+
+        :return: str.
+        """
+        return (f"{self.open},"
+                f"{self.high},"
+                f"{self.low},"
+                f"{self.close},"
+                f"{self.volume},"
+                f"{self.timestamp}")
+
     def __eq__(self, DataBar other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -1023,7 +1048,7 @@ cdef class DataBar:
         :param other: The other object.
         :return bool.
         """
-        return self.open == other.open
+        return self.timestamp == other.timestamp
 
     def __ne__(self, DataBar other) -> bool:
         """
@@ -1048,8 +1073,7 @@ cdef class DataBar:
 
         :return str.
         """
-        return (f"{self.open},{self.high},{self.low},{self.close},"
-                f"{self.volume},{self.timestamp.isoformat()}")
+        return self.to_string()
 
     def __repr__(self) -> str:
         """
@@ -1058,7 +1082,7 @@ cdef class DataBar:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
 
 cdef class Instrument:

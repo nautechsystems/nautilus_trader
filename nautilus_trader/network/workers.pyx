@@ -27,7 +27,7 @@ cdef class MQWorker:
             str service_name,
             str service_address,
             int service_port,
-            zmq_context: zmq.Context,
+            zmq_context not None: zmq.Context,
             int zmq_socket_type,
             Logger logger not None):
         """
@@ -96,7 +96,7 @@ cdef class RequestWorker(MQWorker):
             str service_name,
             str service_address,
             int service_port,
-            zmq_context: zmq.Context,
+            zmq_context not None: zmq.Context,
             Logger logger not None):
         """
         Initializes a new instance of the RequestWorker class.
@@ -143,7 +143,13 @@ cdef class RequestWorker(MQWorker):
         self._zmq_socket.send(request)
         self._log.verbose(f"[{self._cycles}]--> Request of {len(request)} bytes.")
 
-        cdef bytes response = self._zmq_socket.recv()
+        cdef bytes response
+        try:
+            response = self._zmq_socket.recv(flags=0)  # None blocking
+        except zmq.ZMQError as ex:
+            self._log.error(str(ex))
+            return None
+
         self._log.verbose(f"[{self._cycles}]<-- Response of {len(response)} bytes.")
 
         return response
@@ -160,8 +166,8 @@ cdef class SubscriberWorker(MQWorker):
             str service_name,
             str service_address,
             int service_port,
-            zmq_context: zmq.Context,
-            handler: Callable,
+            zmq_context not None: zmq.Context,
+            handler not None: Callable,
             Logger logger not None):
         """
         Initializes a new instance of the SubscriberWorker class.
@@ -183,6 +189,7 @@ cdef class SubscriberWorker(MQWorker):
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')
         Condition.valid_port(service_port, 'port')
+        Condition.type(zmq_context, zmq.Context, 'zmq_context')
         Condition.callable(handler, 'handler')
 
         # noinspection PyUnresolvedReferences
