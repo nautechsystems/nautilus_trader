@@ -100,6 +100,8 @@ cdef class Utf8BarSerializer:
         cdef int array_length = len(bar_bytes_array)
         cdef list bars = []
         for i in range(array_length):
+            # noinspection PyUnresolvedReferences
+            # indexing into bar_bytes_array is ok
             bars.append(Utf8BarSerializer.deserialize(bar_bytes_array[i]))
         return bars
 
@@ -206,7 +208,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         }
 
         if isinstance(instrument, ForexInstrument):
-            map[BASE_CURRENCY] = currency_to_string(instrument.base_currency)
+            bson_map[BASE_CURRENCY] = currency_to_string(instrument.base_currency)
 
         return BsonSerializer.serialize(bson_map)
 

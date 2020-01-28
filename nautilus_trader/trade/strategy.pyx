@@ -184,7 +184,7 @@ cdef class TradingStrategy:
         return f"<{str(self)} object at {id(self)}>"
 
 
-#-- ABSTRACT METHODS -----------------------------------------------------------------------------#
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
         """
@@ -266,7 +266,7 @@ cdef class TradingStrategy:
         raise NotImplementedError("Method on_dispose() must be implemented in the strategy (or just add pass).")
 
 
-#-- REGISTRATION METHODS --------------------------------------------------------------------------#
+# -- REGISTRATION METHODS --------------------------------------------------------------------------
 
     cpdef void register_trader(self, TraderId trader_id) except *:
         """
@@ -336,7 +336,7 @@ cdef class TradingStrategy:
             self.log.error(f"Indicator {indicator} already registered for {data_source}.")
 
 
-#-- HANDLER METHODS -------------------------------------------------------------------------------#
+# -- HANDLER METHODS -------------------------------------------------------------------------------
 
     cpdef void handle_tick(self, Tick tick) except *:
         """"
@@ -461,7 +461,7 @@ cdef class TradingStrategy:
                     raise ex  # Re-raise
 
 
-#-- DATA METHODS ----------------------------------------------------------------------------------#
+# -- DATA METHODS ----------------------------------------------------------------------------------
 
     cpdef datetime time_now(self):
         """
@@ -736,7 +736,7 @@ cdef class TradingStrategy:
         return self._bars[bar_type][index]
 
 
-#-- INDICATOR METHODS -----------------------------------------------------------------------------#
+# -- INDICATOR METHODS -----------------------------------------------------------------------------
 
     cpdef list registered_indicators(self):
         """
@@ -759,7 +759,7 @@ cdef class TradingStrategy:
         return True
 
 
-#-- MANAGEMENT METHODS ----------------------------------------------------------------------------#
+# -- MANAGEMENT METHODS ----------------------------------------------------------------------------
 
     cpdef Account account(self):
         """
@@ -1052,7 +1052,8 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.count_positions_total(self.id)
 
-#-- COMMANDS --------------------------------------------------------------------------------------#
+
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void start(self) except *:
         """
@@ -1487,7 +1488,7 @@ cdef class TradingStrategy:
                 self.flatten_position(position_id)
 
 
-#-- BACKTEST METHODS ------------------------------------------------------------------------------#
+# -- BACKTEST METHODS ------------------------------------------------------------------------------
 
     cpdef void change_clock(self, Clock clock) except *:
         """

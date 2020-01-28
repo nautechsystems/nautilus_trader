@@ -26,7 +26,7 @@ cdef class DataClient:
     cdef dict _instrument_handlers
     cdef dict _instruments
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *

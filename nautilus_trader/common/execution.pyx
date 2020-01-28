@@ -63,7 +63,7 @@ cdef class ExecutionDatabase:
         self._cached_positions = {}  # type: Dict[PositionId, Position]
 
 
-# -- COMMANDS -------------------------------------------------------------------------------------"
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *:
         # Raise exception if not overridden in implementation
@@ -140,7 +140,7 @@ cdef class ExecutionDatabase:
         self._log.info(f"Reset.")
 
 
-# -- QUERIES -------------------------------------------------------------------------------------"
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account get_account(self, AccountId account_id):
         # Raise exception if not overridden in implementation
@@ -314,7 +314,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_positions_closed = set()  # type: Set[PositionId]
 
 
-# -- COMMANDS -------------------------------------------------------------------------------------"
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *:
         """
@@ -547,7 +547,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._log.info('Flushing database (in-memory database does nothing).')
 
 
-# -- QUERIES --------------------------------------------------------------------------------------"
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account get_account(self, AccountId account_id):
         """
@@ -1056,7 +1056,7 @@ cdef class ExecutionEngine:
         self.event_count = 0
 
 
-#-- COMMANDS --------------------------------------------------------------------------------------#
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *:
         """
@@ -1132,7 +1132,7 @@ cdef class ExecutionEngine:
         self.event_count = 0
 
 
-#-- QUERIES ---------------------------------------------------------------------------------------"
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef list registered_strategies(self):
         """
@@ -1163,7 +1163,7 @@ cdef class ExecutionEngine:
         return self.database.count_positions_open() == 0
 
 
-#--------------------------------------------------------------------------------------------------"
+# --------------------------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
         self._log.debug(f'{RECV}{CMD} {command}.')
@@ -1347,7 +1347,7 @@ cdef class ExecutionClient:
         self._log.info(f"Initialized.")
 
 
-# -- ABSTRACT METHODS ---------------------------------------------------------#
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void connect(self) except *:
         # Raise exception if not overridden in implementation
