@@ -124,3 +124,7 @@ cdef class Instrument:
     cdef readonly Decimal rollover_interest_buy
     cdef readonly Decimal rollover_interest_sell
     cdef readonly datetime timestamp
+
+
+cdef class ForexInstrument(Instrument):
+    cdef readonly Currency base_currency

@@ -15,7 +15,6 @@ from nautilus_trader.model.enums import (
     BarStructure,
     PriceType,
     Currency,
-    SecurityType,
     AccountType,
     OrderSide)
 from nautilus_trader.model.objects import (
@@ -26,7 +25,7 @@ from nautilus_trader.model.objects import (
     BarSpecification,
     BarType,
     Bar,
-    Instrument)
+    ForexInstrument)
 from nautilus_trader.model.identifiers import (
     Venue,
     Symbol,
@@ -72,12 +71,10 @@ class TestStubs:
         return Symbol('USDJPY', Venue('FXCM'))
 
     @staticmethod
-    def instrument_gbpusd() -> Instrument:
-        return Instrument(
+    def instrument_gbpusd() -> ForexInstrument:
+        return ForexInstrument(
             Symbol('GBPUSD', Venue('FXCM')),
             'GBP/USD',
-            Currency.USD,
-            SecurityType.FOREX,
             tick_precision=5,
             tick_size=Decimal(0.00001, 5),
             round_lot_size=Quantity(1000),
@@ -92,12 +89,10 @@ class TestStubs:
             timestamp=TestStubs.unix_epoch())
 
     @staticmethod
-    def instrument_usdjpy() -> Instrument:
-        return Instrument(
+    def instrument_usdjpy() -> ForexInstrument:
+        return ForexInstrument(
             Symbol('USDJPY', Venue('FXCM')),
             'USD/JPY',
-            Currency.JPY,
-            SecurityType.FOREX,
             tick_precision=3,
             tick_size=Decimal(0.001, 3),
             round_lot_size=Quantity(1000),

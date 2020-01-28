@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.price_type cimport (
     price_type_to_string,
     price_type_from_string)
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.identifiers cimport Venue
 
 
@@ -1086,24 +1086,26 @@ cdef class Instrument:
         """
         Initializes a new instance of the Instrument class.
 
-        :param symbol: The instruments symbol.
-        :param broker_symbol: The instruments broker symbol.
-        :param quote_currency: The instruments base currency.
-        :param security_type: The instruments security type.
-        :param tick_precision: The instruments tick decimal digits precision.
-        :param tick_size: The instruments tick size.
-        :param round_lot_size: The instruments rounded lot size.
-        :param min_stop_distance_entry: The instruments minimum distance for stop entry orders.
-        :param min_stop_distance: The instruments minimum tick distance for stop orders.
-        :param min_limit_distance_entry: The instruments minimum distance for limit entry orders.
-        :param min_limit_distance: The instruments minimum tick distance for limit orders.
-        :param min_trade_size: The instruments minimum trade size.
-        :param max_trade_size: The instruments maximum trade size.
-        :param rollover_interest_buy: The instruments rollover interest for long positions.
-        :param rollover_interest_sell: The instruments rollover interest for short positions.
+        :param symbol: The symbol.
+        :param broker_symbol: The broker symbol.
+        :param quote_currency: The base currency.
+        :param security_type: The security type.
+        :param tick_precision: The tick decimal digits precision.
+        :param tick_size: The tick size.
+        :param round_lot_size: The rounded lot size.
+        :param min_stop_distance_entry: The minimum distance for stop entry orders.
+        :param min_stop_distance: The minimum tick distance for stop orders.
+        :param min_limit_distance_entry: The minimum distance for limit entry orders.
+        :param min_limit_distance: The minimum tick distance for limit orders.
+        :param min_trade_size: The minimum trade size.
+        :param max_trade_size: The maximum trade size.
+        :param rollover_interest_buy: The rollover interest for long positions.
+        :param rollover_interest_sell: The rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
         Condition.valid_string(broker_symbol, 'broker_symbol')
+        Condition.not_equal(quote_currency, Currency.UNDEFINED, 'quote_currency', 'UNDEFINED')
+        Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
         Condition.not_negative_int(tick_precision, 'tick_precision')
         Condition.positive(tick_size.as_double(), 'tick_size.value')
         Condition.not_negative_int(min_stop_distance_entry, 'min_stop_distance_entry')
@@ -1174,3 +1176,64 @@ cdef class Instrument:
         :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+
+cdef class ForexInstrument(Instrument):
+    """
+    Represents a tradeable FOREX currency pair.
+    """
+
+    def __init__(self,
+                 Symbol symbol not None,
+                 str broker_symbol not None,
+                 int tick_precision,
+                 Decimal tick_size not None,
+                 Quantity round_lot_size not None,
+                 int min_stop_distance_entry,
+                 int min_stop_distance,
+                 int min_limit_distance_entry,
+                 int min_limit_distance,
+                 Quantity min_trade_size not None,
+                 Quantity max_trade_size not None,
+                 Decimal rollover_interest_buy not None,
+                 Decimal rollover_interest_sell not None,
+                 datetime timestamp not None):
+        """
+        Initializes a new instance of the Instrument class.
+
+        :param symbol: The symbol.
+        :param broker_symbol: The broker symbol.
+        :param tick_precision: The tick decimal digits precision.
+        :param tick_size: The tick size.
+        :param round_lot_size: The rounded lot size.
+        :param min_stop_distance_entry: The minimum distance for stop entry orders.
+        :param min_stop_distance: The minimum tick distance for stop orders.
+        :param min_limit_distance_entry: The minimum distance for limit entry orders.
+        :param min_limit_distance: The minimum tick distance for limit orders.
+        :param min_trade_size: The minimum trade size.
+        :param max_trade_size: The maximum trade size.
+        :param rollover_interest_buy: The rollover interest for long positions.
+        :param rollover_interest_sell: The rollover interest for short positions.
+        :param timestamp: The timestamp the instrument was created/updated at.
+        """
+        Condition.equal(len(symbol.code), 6, 'len(symbol.code)', '6')
+
+        super().__init__(
+            symbol,
+            broker_symbol,
+            currency_from_string(symbol.code[3:]),
+            SecurityType.FOREX,
+            tick_precision,
+            tick_size,
+            round_lot_size,
+            min_stop_distance_entry,
+            min_stop_distance,
+            min_limit_distance_entry,
+            min_limit_distance,
+            min_trade_size,
+            max_trade_size,
+            rollover_interest_buy,
+            rollover_interest_sell,
+            timestamp)
+
+        self.base_currency = currency_from_string(symbol.code[:3])

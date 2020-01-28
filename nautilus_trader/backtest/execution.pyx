@@ -346,25 +346,6 @@ cdef class BacktestExecClient(ExecutionClient):
                     del self._working_orders[order.id]
                     self._expire_order(order)
 
-    cpdef Money calculate_pnl(
-            self,
-            MarketPosition direction,
-            double open_price,
-            double close_price,
-            Quantity quantity,
-            double exchange_rate):
-        Condition.not_none(quantity, 'quantity')
-
-        cdef double difference
-        if direction == MarketPosition.LONG:
-            difference = close_price - open_price
-        elif direction == MarketPosition.SHORT:
-            difference = open_price - close_price
-        else:
-            raise ValueError(f'Cannot calculate the pnl of a {market_position_to_string(direction)} direction.')
-
-        return Money(difference * quantity.value * exchange_rate)
-
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
         Condition.not_none(event, 'event')
         Condition.not_none(position, 'position')
@@ -413,6 +394,25 @@ cdef class BacktestExecClient(ExecutionClient):
                 event_timestamp=self._clock.time_now())
 
             self._exec_engine.handle_event(account_event)
+
+    cpdef Money calculate_pnl(
+            self,
+            MarketPosition direction,
+            double open_price,
+            double close_price,
+            Quantity quantity,
+            double exchange_rate):
+        Condition.not_none(quantity, 'quantity')
+
+        cdef double difference
+        if direction == MarketPosition.LONG:
+            difference = close_price - open_price
+        elif direction == MarketPosition.SHORT:
+            difference = open_price - close_price
+        else:
+            raise ValueError(f'Cannot calculate the pnl of a {market_position_to_string(direction)} direction.')
+
+        return Money(difference * quantity.value * exchange_rate)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, 'timestamp')
