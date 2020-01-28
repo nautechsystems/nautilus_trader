@@ -208,7 +208,7 @@ cdef class TestTimer(Timer):
 
     cpdef list advance(self, datetime to_time):
         """
-        Return a list of time events by advancing the test timer forward to 
+        Return a list of time events by advancing the test timer forward to
         the given time. A time event is appended for each time a next event is
         <= the given to_time.
 
@@ -363,7 +363,7 @@ cdef class Clock:
             datetime alert_time,
             handler=None) except *:
         """
-        Set a time alert for the given time. When the time is reached the 
+        Set a time alert for the given time. When the time is reached the
         handler will be passed the TimeEvent containing the timers unique label.
 
         :param label: The label for the alert (must be unique for this clock).
@@ -404,8 +404,8 @@ cdef class Clock:
             datetime stop_time=None,
             handler=None) except *:
         """
-        Set a timer with the given interval. The timer will run from the start 
-        time (optionally until the stop time). When the intervals are reached the 
+        Set a timer with the given interval. The timer will run from the start
+        time (optionally until the stop time). When the intervals are reached the
         handlers will be passed the TimeEvent containing the timers unique label.
 
         :param label: The label for the timer (must be unique for this clock).

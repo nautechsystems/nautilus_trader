@@ -18,11 +18,10 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.analysis.stats import (
+from nautilus_trader.analysis.stats import (  # noqa: E211
     annual_return, cum_returns_final, annual_volatility, sharpe_ratio,
     calmar_ratio, sortino_ratio, omega_ratio, stability_of_timeseries,
-    max_drawdown, alpha, beta, tail_ratio
-)
+    max_drawdown, alpha, beta, tail_ratio)
 
 
 cdef class PerformanceAnalyzer:

@@ -10,15 +10,14 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.events cimport (
+from nautilus_trader.model.events cimport (  # noqa: E211
     Event,
     OrderEvent,
     OrderCancelReject,
     OrderFillEvent,
     AccountStateEvent,
-    PositionEvent
-)
-from nautilus_trader.model.identifiers cimport (
+    PositionEvent)
+from nautilus_trader.model.identifiers cimport (  # noqa: E211
     AccountId,
     TraderId,
     StrategyId,
@@ -27,14 +26,13 @@ from nautilus_trader.model.identifiers cimport (
     PositionIdBroker)
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.commands cimport (
+from nautilus_trader.model.commands cimport (  # noqa: E211
     Command,
     AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
-    CancelOrder
-)
+    CancelOrder)
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 

@@ -21,14 +21,13 @@ from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
-from nautilus_trader.model.identifiers cimport (
+from nautilus_trader.model.identifiers cimport (  # noqa: E211
     Symbol,
     Label,
     TraderId,
     StrategyId,
     OrderId,
-    PositionId
-)
+    PositionId)
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -39,13 +38,12 @@ from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
-from nautilus_trader.model.commands cimport (
+from nautilus_trader.model.commands cimport (  # noqa: E211
     AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
-    CancelOrder
-)
+    CancelOrder)
 
 
 cdef class TradingStrategy:
