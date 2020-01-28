@@ -11,9 +11,9 @@ from bson.raw_bson import RawBSONDocument
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Quantity, Decimal, Tick, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Decimal, Tick, Bar, Instrument, ForexInstrument
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
-from nautilus_trader.model.c_enums.security_type cimport security_type_to_string, security_type_from_string
+from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_to_string, security_type_from_string
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.common cimport convert_datetime_to_string, convert_string_to_datetime
@@ -186,7 +186,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         """
         Condition.not_none(instrument, 'instrument')
 
-        return BsonSerializer.serialize({
+        cdef dict bson_map = {
             SYMBOL: instrument.symbol.value,
             BROKER_SYMBOL: instrument.broker_symbol,
             QUOTE_CURRENCY: currency_to_string(instrument.quote_currency),
@@ -203,7 +203,12 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             ROLL_OVER_INTEREST_BUY: str(instrument.rollover_interest_buy),
             ROLL_OVER_INTEREST_SELL: str(instrument.rollover_interest_sell),
             TIMESTAMP: convert_datetime_to_string(instrument.timestamp),
-        })
+        }
+
+        if isinstance(instrument, ForexInstrument):
+            map[BASE_CURRENCY] = currency_to_string(instrument.base_currency)
+
+        return BsonSerializer.serialize(bson_map)
 
     cpdef Instrument deserialize(self, bytes instrument_bytes):
         """
@@ -216,11 +221,29 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
 
         cdef dict deserialized = BsonSerializer.deserialize(instrument_bytes)
 
+        cdef SecurityType security_type = security_type_from_string(deserialized[SECURITY_TYPE])
+        if security_type == SecurityType.FOREX:
+            return ForexInstrument(
+                symbol=Symbol.from_string(deserialized[SYMBOL]),
+                broker_symbol=deserialized[BROKER_SYMBOL],
+                tick_precision=deserialized[TICK_PRECISION],
+                tick_size=Decimal.from_string_to_decimal(str(deserialized[TICK_SIZE])),
+                round_lot_size=Quantity(deserialized[ROUND_LOT_SIZE]),
+                min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
+                min_stop_distance=deserialized[MIN_STOP_DISTANCE],
+                min_limit_distance_entry=deserialized[MIN_LIMIT_DISTANCE_ENTRY],
+                min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
+                min_trade_size=Quantity(deserialized[MIN_TRADE_SIZE]),
+                max_trade_size=Quantity(deserialized[MAX_TRADE_SIZE]),
+                rollover_interest_buy=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_BUY])),
+                rollover_interest_sell=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_SELL])),
+                timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
+
         return Instrument(
             symbol=Symbol.from_string(deserialized[SYMBOL]),
             broker_symbol=deserialized[BROKER_SYMBOL],
             quote_currency=currency_from_string(deserialized[QUOTE_CURRENCY]),
-            security_type=security_type_from_string(deserialized[SECURITY_TYPE]),
+            security_type=security_type,
             tick_precision=deserialized[TICK_PRECISION],
             tick_size=Decimal.from_string_to_decimal(str(deserialized[TICK_SIZE])),
             round_lot_size=Quantity(deserialized[ROUND_LOT_SIZE]),
