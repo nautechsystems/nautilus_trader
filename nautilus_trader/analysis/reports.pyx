@@ -111,7 +111,7 @@ cdef class ReportProvider:
                 'symbol': order.symbol.code,
                 'side': order_side_to_string(order.side),
                 'type': order_type_to_string(order.type),
-                'quantity': order.quantity.value,
+                'quantity': order.quantity,
                 'avg_price': 'None' if order.average_price is None
                 else order.average_price.as_double(),
                 'slippage': order.slippage.as_double(),
@@ -121,7 +121,7 @@ cdef class ReportProvider:
         return {'position_id': position.id.value,
                 'symbol': position.symbol.code,
                 'direction': order_side_to_string(position.entry_direction),
-                'peak_quantity': position.peak_quantity.value,
+                'peak_quantity': position.peak_quantity,
                 'opened_time': position.opened_time,
                 'closed_time': position.closed_time,
                 'duration': position.open_duration,

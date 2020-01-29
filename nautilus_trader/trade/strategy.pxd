@@ -14,7 +14,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected
-from nautilus_trader.model.identifiers cimport (
+from nautilus_trader.model.identifiers cimport (  # noqa: E211
     Symbol,
     TraderId,
     StrategyId,

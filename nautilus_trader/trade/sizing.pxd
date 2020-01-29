@@ -21,9 +21,10 @@ cdef class PositionSizer:
             Price stop_loss,
             double exchange_rate=*,
             double commission_rate_bp=*,
-            int hard_limit=*,
+            double hard_limit=*,
             int units=*,
-            int unit_batch_size=*)
+            int unit_batch_size=*,
+            int precision=*)
 
     cdef double _calculate_risk_ticks(self, double entry, double stop_loss)
     cdef double _calculate_riskable_money(

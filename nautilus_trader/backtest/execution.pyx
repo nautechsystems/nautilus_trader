@@ -417,7 +417,7 @@ cdef class BacktestExecClient(ExecutionClient):
             raise ValueError(f'Cannot calculate the pnl of a '
                              f'{market_position_to_string(direction)} direction.')
 
-        return Money(difference * quantity.value * exchange_rate)
+        return Money(difference * quantity.as_double() * exchange_rate)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, 'timestamp')
@@ -455,7 +455,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         price_type=PriceType.MID,
                         bid_rates=self._build_current_bid_rates(),
                         ask_rates=self._build_current_ask_rates())
-                rollover = mid_price * position.quantity.value * interest_rate * exchange_rate
+                rollover = mid_price * position.quantity.as_double() * interest_rate * exchange_rate
                 # Apply any bank and broker spread markup (basis points)
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
 
@@ -579,7 +579,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Order order = self._working_orders[command.order_id]
         cdef Instrument instrument = self.instruments[order.symbol]
 
-        if command.modified_quantity.value == 0:
+        if command.modified_quantity.as_double() == 0.0:
             self._cancel_reject_order(
                 order,
                 'modify order',
@@ -725,11 +725,11 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Instrument instrument = self.instruments[order.symbol]
 
         # Check order size is valid or reject
-        if order.quantity.value > instrument.max_trade_size.value:
+        if order.quantity > instrument.max_trade_size:
             self._reject_order(order,  f'order quantity of {order.quantity} exceeds '
                                        f'the maximum trade size of {instrument.max_trade_size}')
             return  # Cannot accept order
-        if order.quantity.value < instrument.min_trade_size.value:
+        if order.quantity < instrument.min_trade_size:
             self._reject_order(order,  f'order quantity of {order.quantity} is less than '
                                        f'the minimum trade size of {instrument.min_trade_size}')
             return  # Cannot accept order

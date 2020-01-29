@@ -16,7 +16,7 @@ from nautilus_trader.model.enums import Currency  # Do not remove
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal, Instrument, Quantity
+from nautilus_trader.model.objects cimport Decimal, Instrument
 
 
 cdef class CSVTickDataLoader:
@@ -95,13 +95,13 @@ cdef class InstrumentLoader:
             security_type=SecurityType.FOREX,
             tick_precision=tick_precision,
             tick_size=Decimal(1 / (10 ** tick_precision), tick_precision),
-            round_lot_size=Quantity(1000),
+            round_lot_size=1000,
             min_stop_distance_entry=0,
             min_limit_distance_entry=0,
             min_stop_distance=0,
             min_limit_distance=0,
-            min_trade_size=Quantity(1),
-            max_trade_size=Quantity(50000000),
+            min_trade_size=1,
+            max_trade_size=50000000,
             rollover_interest_buy=Decimal.zero(),
             rollover_interest_sell=Decimal.zero(),
             timestamp=datetime.now(timezone.utc))

@@ -11,7 +11,7 @@ from cpython.datetime cimport datetime, timedelta
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Quantity, Tick, Money
 from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.identifiers cimport (
+from nautilus_trader.model.identifiers cimport (  # noqa: E211
     Symbol,
     PositionId,
     OrderId,
@@ -29,8 +29,10 @@ cdef class Position:
     cdef dict _fill_prices
     cdef dict _buy_quantities
     cdef dict _sell_quantities
-    cdef long _buy_quantity
-    cdef long _sell_quantity
+    cdef Quantity _buy_quantity
+    cdef Quantity _sell_quantity
+    cdef double _relative_quantity
+    cdef int _precision
 
     cdef readonly PositionId id
     cdef readonly PositionIdBroker id_broker
@@ -54,7 +56,6 @@ cdef class Position:
     cdef readonly Money realized_pnl_last
     cdef readonly OrderFillEvent last_event
     cdef readonly int event_count
-    cdef readonly long relative_quantity
     cdef readonly Quantity quantity
     cdef readonly Quantity peak_quantity
     cdef readonly MarketPosition market_position
@@ -80,7 +81,7 @@ cdef class Position:
     cdef void _update(self, OrderFillEvent event) except *
     cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *
     cdef void _handle_sell_order_fill(self, OrderFillEvent event) except *
-    cdef double _calculate_average_price(self, dict fills, long total_quantity)
+    cdef double _calculate_average_price(self, dict fills, Quantity total_quantity)
     cdef double _calculate_points(self, double open_price, double close_price)
     cdef double _calculate_return(self, double open_price, double close_price)
-    cdef Money _calculate_pnl(self, double open_price, double close_price, long filled_quantity)
+    cdef Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_quantity)

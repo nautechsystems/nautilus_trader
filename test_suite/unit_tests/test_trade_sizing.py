@@ -45,11 +45,10 @@ class FixedRiskSizerTests(unittest.TestCase):
             10,   # 0.1%
             Price(110.010, 3),
             Price(110.000, 3),
-            exchange_rate=0.01,
-            unit_batch_size=1000)
+            exchange_rate=0.01)
 
         # Assert
-        self.assertEqual(Quantity(9999000), result)
+        self.assertEqual(Quantity(10000000), result)
 
     def test_can_calculate_single_unit_size_when_risk_too_high(self):
         # Arrange

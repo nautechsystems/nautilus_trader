@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, ord
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
 from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string, order_purpose_from_string
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
-from nautilus_trader.model.identifiers cimport (
+from nautilus_trader.model.identifiers cimport (  # noqa: E211
     Symbol,
     OrderId,
     OrderIdBroker,
@@ -31,7 +31,7 @@ from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.common.logger cimport LogMessage, log_level_from_string
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.base cimport (
+from nautilus_trader.serialization.base cimport (  # noqa: E211
     OrderSerializer,
     CommandSerializer,
     EventSerializer,
@@ -190,7 +190,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             SYMBOL: order.symbol.value,
             ORDER_SIDE: order_side_to_string(order.side),
             ORDER_TYPE: order_type_to_string(order.type),
-            QUANTITY: order.quantity.value,
+            QUANTITY: order.quantity.to_string(),
             PRICE: convert_price_to_string(order.price),
             LABEL: convert_label_to_string(order.label),
             ORDER_PURPOSE: order_purpose_to_string(order.purpose),
@@ -219,7 +219,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                      symbol=self.symbol_cache.get(unpacked[SYMBOL]),
                      order_side=order_side_from_string(unpacked[ORDER_SIDE]),
                      order_type=order_type_from_string(unpacked[ORDER_TYPE]),
-                     quantity=Quantity(unpacked[QUANTITY]),
+                     quantity=Quantity.from_string(unpacked[QUANTITY]),
                      price=convert_string_to_price(unpacked[PRICE]),
                      label=convert_string_to_label(unpacked[LABEL]),
                      order_purpose=order_purpose_from_string(unpacked[ORDER_PURPOSE]),
@@ -278,8 +278,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[ORDER_ID] = command.order_id.value
-            package[MODIFIED_QUANTITY] = command.modified_quantity.value
-            package[MODIFIED_PRICE] = str(command.modified_price)
+            package[MODIFIED_QUANTITY] = command.modified_quantity.to_string()
+            package[MODIFIED_PRICE] = command.modified_price.to_string()
         elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
@@ -340,7 +340,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
-                Quantity(unpacked[MODIFIED_QUANTITY]),
+                Quantity.from_string(str(unpacked[MODIFIED_QUANTITY])),  # TODO: Remove str once C# side fixed
                 convert_string_to_price(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
@@ -398,7 +398,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[ORDER_TYPE] = order_type_to_string(event.order_type)
-            package[QUANTITY] = event.quantity.value
+            package[QUANTITY] = event.quantity.to_string()
             package[PRICE] = convert_price_to_string(event.price)
             package[LABEL] = convert_label_to_string(event.label)
             package[ORDER_PURPOSE] = order_purpose_to_string(event.order_purpose)
@@ -433,8 +433,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LABEL] = convert_label_to_string(event.label)
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[ORDER_TYPE] = order_type_to_string(event.order_type)
-            package[QUANTITY] = event.quantity.value
-            package[PRICE] = str(event.price)
+            package[QUANTITY] = event.quantity.to_string()
+            package[PRICE] = event.price.to_string()
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
             package[WORKING_TIME] = convert_datetime_to_string(event.working_time)
@@ -453,8 +453,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[MODIFIED_TIME] = convert_datetime_to_string(event.modified_time)
-            package[MODIFIED_QUANTITY] = event.modified_quantity.value
-            package[MODIFIED_PRICE] = str(event.modified_price)
+            package[MODIFIED_QUANTITY] = event.modified_quantity.to_string()
+            package[MODIFIED_PRICE] = event.modified_price.to_string()
         elif isinstance(event, OrderExpired):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
@@ -466,9 +466,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[POSITION_ID_BROKER] = event.position_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
-            package[FILLED_QUANTITY] = event.filled_quantity.value
-            package[LEAVES_QUANTITY] = event.leaves_quantity.value
-            package[AVERAGE_PRICE] = str(event.average_price)
+            package[FILLED_QUANTITY] = event.filled_quantity.to_string()
+            package[LEAVES_QUANTITY] = event.leaves_quantity.to_string()
+            package[AVERAGE_PRICE] = event.average_price.to_string()
             package[CURRENCY] = currency_to_string(event.transaction_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         elif isinstance(event, OrderFilled):
@@ -478,8 +478,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[POSITION_ID_BROKER] = event.position_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
-            package[FILLED_QUANTITY] = event.filled_quantity.value
-            package[AVERAGE_PRICE] = str(event.average_price)
+            package[FILLED_QUANTITY] = event.filled_quantity.to_string()
+            package[AVERAGE_PRICE] = event.average_price.to_string()
             package[CURRENCY] = currency_to_string(event.transaction_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
@@ -524,7 +524,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_label(unpacked[LABEL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 order_type_from_string(unpacked[ORDER_TYPE]),
-                Quantity(unpacked[QUANTITY]),
+                Quantity.from_string(str(unpacked[QUANTITY])),  # TODO: Remove str once C# side fixed
                 convert_string_to_price(unpacked[PRICE]),
                 order_purpose_from_string(unpacked[ORDER_PURPOSE]),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE]),
@@ -576,7 +576,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_label(unpacked[LABEL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 order_type_from_string(unpacked[ORDER_TYPE]),
-                Quantity(unpacked[QUANTITY]),
+                Quantity.from_string(str(unpacked[QUANTITY])),  # TODO: Remove str once C# side fixed
                 convert_string_to_price(unpacked[PRICE]),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                 convert_string_to_datetime(unpacked[WORKING_TIME]),
@@ -604,7 +604,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                Quantity(unpacked[MODIFIED_QUANTITY]),
+                Quantity.from_string(str(unpacked[MODIFIED_QUANTITY])),  # TODO: Remove str once C# side fixed
                 convert_string_to_price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
@@ -624,8 +624,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 PositionIdBroker(unpacked[POSITION_ID_BROKER]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
-                Quantity(unpacked[FILLED_QUANTITY]),
-                Quantity(unpacked[LEAVES_QUANTITY]),
+                Quantity.from_string(str(unpacked[FILLED_QUANTITY])),  # TODO: Remove str once C# side fixed
+                Quantity.from_string(str(unpacked[LEAVES_QUANTITY])),  # TODO: Remove str once C# side fixed
                 convert_string_to_price(unpacked[AVERAGE_PRICE]),
                 currency_from_string(unpacked[CURRENCY]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),
@@ -639,7 +639,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 PositionIdBroker(unpacked[POSITION_ID_BROKER]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
-                Quantity(unpacked[FILLED_QUANTITY]),
+                Quantity.from_string(str(unpacked[FILLED_QUANTITY])),  # TODO: Remove str once C# side fixed
                 convert_string_to_price(unpacked[AVERAGE_PRICE]),
                 currency_from_string(unpacked[CURRENCY]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),

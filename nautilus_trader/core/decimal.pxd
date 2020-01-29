@@ -8,7 +8,6 @@
 
 
 cdef class Decimal:
-    cdef double _power
     cdef double _value
 
     cdef readonly int precision
@@ -18,9 +17,10 @@ cdef class Decimal:
     @staticmethod
     cdef Decimal from_string_to_decimal(str value)
     @staticmethod
-    cdef int precision_from_string(str value) except -1
+    cdef int precision_from_string(str value)
     cpdef bint equals(self, Decimal other)
     cpdef str to_string(self, bint format_commas=*)
+    cpdef int as_int(self)
     cpdef double as_double(self)
     cpdef object as_decimal(self)
     cpdef bint eq(self, Decimal other)

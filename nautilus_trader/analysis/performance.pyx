@@ -130,7 +130,8 @@ cdef class PerformanceAnalyzer:
             columns = list(self._positions.columns.values)
             if symbol not in columns:
                 self._positions[symbol] = 0
-            self._positions.loc[index_date][symbol] += position.relative_quantity
+
+            self._positions.loc[index_date][symbol] += position._relative_quantity
 
     cpdef void reset(self) except *:
         """
