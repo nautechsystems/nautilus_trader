@@ -227,28 +227,21 @@ cdef class Tick:
                  Price bid not None,
                  Price ask not None,
                  datetime timestamp not None,
-                 TickType tick_type=TickType.TRADE,
-                 double bid_size=1.0,
-                 double ask_size=1.0):
+                 double bid_size=1,
+                 double ask_size=1):
         """
         Initializes a new instance of the Tick class.
 
-        :param symbol: The tick symbol.
-        :param bid: The tick best bid price.
-        :param ask: The tick best ask price.
+        :param symbol: The ticker symbol.
+        :param bid: The best bid price.
+        :param ask: The best ask price.
         :param timestamp: The tick timestamp (UTC).
-        :param tick_type: The tick type (default=TRADE).
-        :param bid_size: The tick bid size (default=1.0).
-        :param ask_size: The tick ask size (default=1.0).
-        :raises ValueError: If tick_type is UNDEFINED.
-        :raises ValueError: If the bid_size is negative (< 0).
-        :raises ValueError: If the ask_size is negative (< 0).
+        :param bid_size: The bid size (default=1).
+        :param ask_size: The ask size (default=1).
         """
-        Condition.not_equal(tick_type, TickType.UNDEFINED, 'tick_type', 'UNDEFINED')
         Condition.not_negative(bid_size, 'bid_size')
         Condition.not_negative(ask_size, 'ask_size')
 
-        self.type = TickType.TRADE
         self.symbol = symbol
         self.bid = bid
         self.ask = ask
