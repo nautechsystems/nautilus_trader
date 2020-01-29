@@ -302,7 +302,7 @@ cdef class Order:
         """
         Return a list or order events.
         
-        :return List[OrderEvent]. 
+        :return List[OrderEvent].
         """
         return self._events.copy()
 
@@ -910,11 +910,11 @@ cdef class OrderFactory:
             label)
 
     cdef AtomicOrder _create_atomic_order(
-        self,
-        Order entry,
-        Price price_stop_loss,
-        Price price_take_profit,
-        Label original_label):
+            self,
+            Order entry,
+            Price price_stop_loss,
+            Price price_take_profit,
+            Label original_label):
         cdef OrderSide child_order_side = OrderSide.BUY if entry.side == OrderSide.SELL else OrderSide.SELL
 
         cdef Label label_stop_loss = None

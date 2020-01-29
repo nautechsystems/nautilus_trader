@@ -6,15 +6,15 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.currency import Currency
-from nautilus_trader.model.c_enums.market_position import MarketPosition
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.order_state import OrderState
-from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
-from nautilus_trader.model.c_enums.price_type import PriceType
-from nautilus_trader.model.c_enums.bar_structure import BarStructure
-from nautilus_trader.model.c_enums.security_type import SecurityType
-from nautilus_trader.model.c_enums.tick_type import TickType
-from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.c_enums.account_type import AccountType        # noqa F401
+from nautilus_trader.model.c_enums.currency import Currency               # noqa F401
+from nautilus_trader.model.c_enums.market_position import MarketPosition  # noqa F401
+from nautilus_trader.model.c_enums.order_side import OrderSide            # noqa F401
+from nautilus_trader.model.c_enums.order_state import OrderState          # noqa F401
+from nautilus_trader.model.c_enums.order_type import OrderType            # noqa F401
+from nautilus_trader.model.c_enums.order_purpose import OrderPurpose      # noqa F401
+from nautilus_trader.model.c_enums.price_type import PriceType            # noqa F401
+from nautilus_trader.model.c_enums.bar_structure import BarStructure      # noqa F401
+from nautilus_trader.model.c_enums.security_type import SecurityType      # noqa F401
+from nautilus_trader.model.c_enums.tick_type import TickType              # noqa F401
+from nautilus_trader.model.c_enums.time_in_force import TimeInForce       # noqa F401

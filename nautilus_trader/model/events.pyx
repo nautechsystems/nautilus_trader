@@ -711,7 +711,6 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                          event_timestamp)
         self.leaves_quantity = leaves_quantity
 
-
     def __str__(self) -> str:
         """
         Return the string representation of this object.

@@ -105,10 +105,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_index_position_orders    = f'{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:'    # SET
         self.key_index_strategy_orders    = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:'    # SET
         self.key_index_strategy_positions = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:' # SET
-        self.key_index_orders             = f'{self.key_trader}:{_INDEX}:{_ORDERS}'               # SET
+        self.key_index_orders             = f'{self.key_trader}:{_INDEX}:{_ORDERS}'                # SET
         self.key_index_orders_working     = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_WORKING}'     # SET
         self.key_index_orders_completed   = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_COMPLETED}'   # SET
-        self.key_index_positions          = f'{self.key_trader}:{_INDEX}:{_POSITIONS}'            # SET
+        self.key_index_positions          = f'{self.key_trader}:{_INDEX}:{_POSITIONS}'             # SET
         self.key_index_positions_open     = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}'     # SET
         self.key_index_positions_closed   = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}'   # SET
 

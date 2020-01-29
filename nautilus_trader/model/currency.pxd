@@ -12,9 +12,9 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 
 cdef class ExchangeRateCalculator:
     cpdef double get_rate(
-            self,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type,
-            dict bid_rates,
-            dict ask_rates) except *
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type,
+        dict bid_rates,
+        dict ask_rates) except *
