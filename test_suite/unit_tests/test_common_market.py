@@ -90,46 +90,6 @@ class BarDataWranglerTests(unittest.TestCase):
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
         self.bar_builder = BarDataWrangler(5, 1, data)
 
-    def test_build_databars_all(self):
-        # Arrange
-        # Act
-        bars = self.bar_builder.build_databars_all()
-
-        # Assert
-        self.assertEqual(1000, len(bars))
-
-    def test_build_databars_range_with_defaults(self):
-        # Arrange
-        # Act
-        bars = self.bar_builder.build_databars_range()
-
-        # Assert
-        self.assertEqual(999, len(bars))
-
-    def test_build_databars_range_with_params(self):
-        # Arrange
-        # Act
-        bars = self.bar_builder.build_databars_range(start=500)
-
-        # Assert
-        self.assertEqual(499, len(bars))
-
-    def test_build_databars_from_with_defaults(self):
-        # Arrange
-        # Act
-        bars = self.bar_builder.build_databars_from()
-
-        # Assert
-        self.assertEqual(1000, len(bars))
-
-    def test_build_databars_from_with_param(self):
-        # Arrange
-        # Act
-        bars = self.bar_builder.build_databars_from(500)
-
-        # Assert
-        self.assertEqual(500, len(bars))
-
     def test_can_build_bars_all(self):
         # Arrange
         # Act
@@ -189,22 +149,6 @@ class IndicatorUpdaterTests(unittest.TestCase):
         self.assertEqual(1000, ema.count)
         self.assertEqual(1.9838850009689002, ema.value)
 
-    def test_can_update_indicator_with_data_bars(self):
-        # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarDataWrangler(5, 1, data)
-        bars = bar_builder.build_databars_all()
-        ema = ExponentialMovingAverage(10)
-        updater = IndicatorUpdater(ema)
-
-        # Act
-        for bar in bars:
-            updater.update_databar(bar)
-
-        # Assert
-        self.assertEqual(1000, ema.count)
-        self.assertEqual(1.9838850009689002, ema.value)
-
     def test_can_build_features_from_bars(self):
         # Arrange
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
@@ -215,22 +159,6 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # Act
         result = updater.build_features_bars(bars)
-
-        # Assert
-        self.assertTrue('value' in result)
-        self.assertEqual(1000, len(result['value']))
-        self.assertEqual(1.9838850009689002, ema.value)
-
-    def test_can_build_features_from_data_bars(self):
-        # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarDataWrangler(5, 1, data)
-        bars = bar_builder.build_databars_all()
-        ema = ExponentialMovingAverage(10)
-        updater = IndicatorUpdater(ema)
-
-        # Act
-        result = updater.build_features_databars(bars)
 
         # Assert
         self.assertTrue('value' in result)

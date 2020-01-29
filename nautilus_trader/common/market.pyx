@@ -18,7 +18,6 @@ from nautilus_trader.model.objects cimport (  # noqa: E211
     Price,
     Tick,
     Bar,
-    DataBar,
     BarType,
     BarSpecification,
     Instrument)
@@ -214,40 +213,6 @@ cdef class BarDataWrangler:
         self._volume_multiple = volume_multiple
         self._data = with_utc_index(data)
 
-    cpdef list build_databars_all(self):
-        """
-        Return a list of DataBars from all data.
-        
-        :return List[DataBar].
-        """
-        return list(map(self._build_databar,
-                        self._data.values,
-                        pd.to_datetime(self._data.index)))
-
-    cpdef list build_databars_from(self, int index=0):
-        """
-        Return a list of DataBars from the given index.
-        
-        :return List[DataBar].
-        """
-        Condition.not_negative_int(index, 'index')
-
-        return list(map(self._build_databar,
-                        self._data.iloc[index:].values,
-                        pd.to_datetime(self._data.iloc[index:].index)))
-
-    cpdef list build_databars_range(self, int start=0, int end=-1):
-        """
-        Return a list of DataBars within the given range.
-        
-        :return List[DataBar].
-        """
-        Condition.not_negative_int(start, 'start')
-
-        return list(map(self._build_databar,
-                        self._data.iloc[start:end].values,
-                        pd.to_datetime(self._data.iloc[start:end].index)))
-
     cpdef list build_bars_all(self):
         """
         Return a list of Bars from all data.
@@ -282,16 +247,6 @@ cdef class BarDataWrangler:
                         self._data.iloc[start:end].values,
                         pd.to_datetime(self._data.iloc[start:end].index)))
 
-    cpdef DataBar _build_databar(self, double[:] values, datetime timestamp):
-        # Build a DataBar from the given index and values. The function expects the
-        # values to be an ndarray with 5 elements [open, high, low, close, volume].
-        return DataBar(values[0],
-                       values[1],
-                       values[2],
-                       values[3],
-                       values[4] * self._volume_multiple,
-                       timestamp)
-
     cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -301,6 +256,7 @@ cdef class BarDataWrangler:
                    Price(values[3], self._precision),
                    int(values[4] * self._volume_multiple),
                    timestamp)
+
 
 cdef str _BID = 'bid'
 cdef str _ASK = 'ask'
@@ -396,17 +352,6 @@ cdef class IndicatorUpdater:
         else:
             self._input_method(*[bar.__getattribute__(param).as_double() for param in self._input_params])
 
-    cpdef void update_databar(self, DataBar bar) except *:
-        """
-        Update the indicator with the given data bar.
-
-        :param bar: The bar to update with.
-        """
-        Condition.not_none(bar, 'bar')
-
-        cdef str param
-        self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
-
     cpdef dict build_features_ticks(self, list ticks):
         """
         Return a dictionary of output features from the given bars data.
@@ -444,27 +389,6 @@ cdef class IndicatorUpdater:
         cdef tuple value
         for bar in bars:
             self.update_bar(bar)
-            for value in self._get_values():
-                features[value[0]].append(value[1])
-
-        return features
-
-    cpdef dict build_features_databars(self, list bars):
-        """
-        Return a dictionary of output features from the given bars data.
-        
-        :return Dict[str, float].
-        """
-        Condition.not_none(bars, 'bars')
-
-        cdef dict features = {}
-        for output in self._outputs:
-            features[output] = []
-
-        cdef DataBar bar
-        cdef tuple value
-        for bar in bars:
-            self.update_databar(bar)
             for value in self._get_values():
                 features[value[0]].append(value[1])
 

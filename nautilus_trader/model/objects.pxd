@@ -97,17 +97,6 @@ cdef class Bar:
     cpdef str to_string(self)
 
 
-cdef class DataBar:
-    cdef readonly double open
-    cdef readonly double high
-    cdef readonly double low
-    cdef readonly double close
-    cdef readonly double volume
-    cdef readonly datetime timestamp
-
-    cpdef str to_string(self)
-
-
 cdef class Instrument:
     cdef readonly InstrumentId id
     cdef readonly Symbol symbol
