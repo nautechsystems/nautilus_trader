@@ -14,7 +14,7 @@ from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Price, Tick, BarType, BarSpecification, Bar
+from nautilus_trader.model.objects cimport Price, Volume, Tick, BarType, BarSpecification, Bar
 from nautilus_trader.model.events cimport TimeEvent
 
 
@@ -67,14 +67,14 @@ cdef class BarBuilder:
     cdef Price _high
     cdef Price _low
     cdef Price _close
-    cdef double _volume
+    cdef Volume _volume
     cdef bint _use_previous_close
 
     cpdef void update(self, Tick tick) except *
     cpdef Bar build(self, datetime close_time=*)
     cdef void _reset(self) except *
     cdef Price _get_price(self, Tick tick)
-    cdef double _get_volume(self, Tick tick)
+    cdef Volume _get_volume(self, Tick tick)
 
 
 cdef class BarAggregator:

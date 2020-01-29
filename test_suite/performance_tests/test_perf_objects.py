@@ -8,7 +8,7 @@
 
 import unittest
 
-from nautilus_trader.model.objects import Price, Bar
+from nautilus_trader.model.objects import Price, Volume, Bar
 from test_kit.performance import PerformanceProfiler
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 
@@ -33,7 +33,7 @@ class ObjectTests:
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   UNIX_EPOCH,
                   check=False)
 
@@ -43,7 +43,7 @@ class ObjectTests:
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   UNIX_EPOCH,
                   check=True)
 
@@ -52,20 +52,20 @@ class ObjectPerformanceTests(unittest.TestCase):
 
     def test_symbol_using_str(self):
         result = PerformanceProfiler.profile_function(ObjectTests.symbol_using_str, 3, 1000000)
-        # ~138ms (138291μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        # ~140ms (140233μs) minimum of 3 runs @ 1,000,000 iterations each run.
         self.assertTrue(result < 0.2)
 
     def test_symbol_using_to_string(self):
         result = PerformanceProfiler.profile_function(ObjectTests.symbol_using_to_string, 3, 1000000)
-        # ~90ms (90342μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        # ~103ms (103260μs) minimum of 3 runs @ 1,000,000 iterations each run.
         self.assertTrue(result < 0.2)
 
     def test_build_bar_no_checking(self):
         result = PerformanceProfiler.profile_function(ObjectTests.build_bar_no_checking, 3, 100000)
-        # ~113ms (113953μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~146ms (146283μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 0.2)
 
     def test_build_bar_with_checking(self):
         result = PerformanceProfiler.profile_function(ObjectTests.build_bar_with_checking, 3, 100000)
-        # ~117ms (117651μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~143ms (143914μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 0.2)

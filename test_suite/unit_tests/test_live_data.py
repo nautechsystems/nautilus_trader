@@ -12,7 +12,7 @@ import time
 import zmq
 
 from nautilus_trader.core.types import GUID
-from nautilus_trader.model.objects import Price, Tick, Bar
+from nautilus_trader.model.objects import Price, Volume, Tick, Bar
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
@@ -140,7 +140,7 @@ class LiveDataClientTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   UNIX_EPOCH)
 
         # Act
@@ -235,7 +235,7 @@ class LiveDataClientTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   UNIX_EPOCH)
         bars = [bar, bar, bar, bar, bar]
         bar_data = self.data_mapper.map_bars(bars, bar_type)

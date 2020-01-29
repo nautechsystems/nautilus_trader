@@ -27,7 +27,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_stri
 from nautilus_trader.model.identifiers cimport Venue
 
 
-cdef Quantity _ZERO_QUANTITY = Quantity()
+cdef Quantity _QUANTITY_ZERO = Quantity()
 
 cdef class Quantity(Decimal):
     """
@@ -60,7 +60,7 @@ cdef class Quantity(Decimal):
         
         :return Money.
         """
-        return _ZERO_QUANTITY
+        return _QUANTITY_ZERO
 
     @staticmethod
     cdef Quantity from_string(str value):
@@ -75,7 +75,7 @@ cdef class Quantity(Decimal):
 
         return Quantity(float(value), precision=Decimal.precision_from_string(value))
 
-    cpdef Quantity add(self, Decimal other):
+    cpdef Quantity add(self, Quantity other):
         """
         Return a new quantity by adding the given quantity to this quantity.
 
@@ -84,7 +84,7 @@ cdef class Quantity(Decimal):
         """
         return Quantity(self._value + other._value, max(self.precision, other.precision))
 
-    cpdef Quantity subtract(self, Decimal other):
+    cpdef Quantity subtract(self, Quantity other):
         """
         Return a new quantity by subtracting the quantity from this quantity.
 
@@ -105,9 +105,9 @@ cdef class Price(Decimal):
         Initializes a new instance of the Price class.
 
         :param value: The value of the price (>= 0).
-        :param precision: The decimal precision of the price (> 0).
+        :param precision: The decimal precision of the price (>= 0).
         :raises ValueError: If the value is negative (< 0).
-        :raises ValueError: If the precision is not positive (> 0).
+        :raises ValueError: If the precision is negative (< 0).
         """
         Condition.not_negative(value, 'value')
 
@@ -130,8 +130,8 @@ cdef class Price(Decimal):
         """
         Return a new price by adding the given decimal to this price.
 
-        :param other: The other price to add (precision must be <= this decimals precision).
-        :raises ValueError: If the precision of the given decimal is not <= this precision.
+        :param other: The other decimal to add (precision must be <= this decimals precision).
+        :raises ValueError: If the precision of the other decimal is not <= this precision.
         :return Price.
         """
         Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
@@ -143,7 +143,7 @@ cdef class Price(Decimal):
         Return a new price by subtracting the decimal price from this price.
 
         :param other: The other decimal to subtract (precision must be <= this decimals precision).
-        :raises ValueError: If price precision is < the other decimal precision.
+        :raises ValueError: If the precision of the other decimal is not <= this precision.
         :raises ValueError: If value of the other decimal is greater than this price.
         :return Price.
         """
@@ -152,7 +152,79 @@ cdef class Price(Decimal):
         return Price(self._value - other._value, self.precision)
 
 
-cdef Money _ZERO_MONEY = Money()
+cdef Volume _VOLUME_ZERO = Volume(0)
+cdef Volume _VOLUME_ONE = Volume(1)
+
+cdef class Volume(Decimal):
+    """
+    Represents a non-negative volume.
+    """
+
+    def __init__(self, double value, int precision=0):
+        """
+        Initializes a new instance of the Volume class.
+
+        :param value: The value of the volume (>= 0).
+        :param precision: The decimal precision of the volume (>= 0).
+        :raises ValueError: If the value is negative (< 0).
+        :raises ValueError: If the precision is negative (< 0).
+        """
+        Condition.not_negative(value, 'value')
+
+        super().__init__(value, precision)
+
+    @staticmethod
+    cdef Volume zero():
+        """
+        Return a volume with a value of 0.
+        
+        :return Volume.
+        """
+        return _VOLUME_ZERO
+
+    @staticmethod
+    cdef Volume one():
+        """
+        Return a volume with a value of 1.
+        
+        :return Volume.
+        """
+        return _VOLUME_ONE
+
+    @staticmethod
+    cdef Volume from_string(str value):
+        """
+        Return a volume from the given string. Precision will be inferred from the
+        number of digits after the decimal place.
+
+        :param value: The string value to parse.
+        :return: Volume.
+        """
+        Condition.valid_string(value, 'value')
+
+        return Volume(float(value), precision=Decimal.precision_from_string(value))
+
+    cpdef Volume add(self, Volume other):
+        """
+        Return a new volume by adding the given decimal to this volume.
+
+        :param other: The other volume to add.
+        :return Volume.
+        """
+
+        return Volume(self._value + other._value, max(self.precision, other.precision))
+
+    cpdef Volume subtract(self, Volume other):
+        """
+        Return a new volume by subtracting the decimal from this volume.
+
+        :param other: The other volume to subtract.
+        :return Volume.
+        """
+        return Volume(self._value - other._value, max(self.precision, other.precision))
+
+
+cdef Money _MONEY_ZERO = Money()
 
 cdef class Money(Decimal):
     """
@@ -175,7 +247,7 @@ cdef class Money(Decimal):
         
         :return Money.
         """
-        return _ZERO_MONEY
+        return _MONEY_ZERO
 
     @staticmethod
     cdef Money from_string(str value):
@@ -189,18 +261,18 @@ cdef class Money(Decimal):
 
         return Money(float(value))
 
-    cpdef Money add(self, Decimal other):
+    cpdef Money add(self, Money other):
         """
-        Return new money by adding the given decimal to this money.
+        Return new money by adding the given money to this money.
 
         :param other: The other money to add.
         :return Money.
         """
         return Money(self._value + other._value)
 
-    cpdef Money subtract(self, Decimal other):
+    cpdef Money subtract(self, Money other):
         """
-        Return new money by subtracting the given decimal from this money.
+        Return new money by subtracting the given money from this money.
 
         :param other: The other money to subtract.
         :return Money.
@@ -227,8 +299,8 @@ cdef class Tick:
                  Price bid not None,
                  Price ask not None,
                  datetime timestamp not None,
-                 double bid_size=1,
-                 double ask_size=1):
+                 Volume bid_size not None=Volume.one(),
+                 Volume ask_size not None=Volume.one()):
         """
         Initializes a new instance of the Tick class.
 
@@ -236,12 +308,9 @@ cdef class Tick:
         :param bid: The best bid price.
         :param ask: The best ask price.
         :param timestamp: The tick timestamp (UTC).
-        :param bid_size: The bid size (default=1).
-        :param ask_size: The ask size (default=1).
+        :param bid_size: The bid size (default=None).
+        :param ask_size: The ask size (default=None).
         """
-        Condition.not_negative(bid_size, 'bid_size')
-        Condition.not_negative(ask_size, 'ask_size')
-
         self.symbol = symbol
         self.bid = bid
         self.ask = ask
@@ -261,12 +330,14 @@ cdef class Tick:
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
 
-        cdef list split_values = values.split(',', maxsplit=2)
+        cdef list split_values = values.split(',', maxsplit=4)
         return Tick(
-            symbol,
-            Price.from_string(split_values[0]),
-            Price.from_string(split_values[1]),
-            pd.to_datetime(split_values[2]))
+            symbol=symbol,
+            bid=Price.from_string(split_values[0]),
+            ask=Price.from_string(split_values[1]),
+            bid_size=Volume.from_string(split_values[2]),
+            ask_size=Volume.from_string(split_values[3]),
+            timestamp=pd.to_datetime(split_values[4]))
 
     @staticmethod
     cdef Tick from_string(str value):
@@ -278,12 +349,14 @@ cdef class Tick:
         """
         Condition.valid_string(value, 'value')
 
-        cdef list split_values = value.split(',', maxsplit=3)
+        cdef list split_values = value.split(',', maxsplit=5)
         return Tick(
-            Symbol.from_string(split_values[0]),
-            Price.from_string(split_values[1]),
-            Price.from_string(split_values[2]),
-            pd.to_datetime(split_values[3]))
+            symbol=Symbol.from_string(split_values[0]),
+            bid=Price.from_string(split_values[1]),
+            ask=Price.from_string(split_values[2]),
+            bid_size=Volume.from_string(split_values[3]),
+            ask_size=Volume.from_string(split_values[4]),
+            timestamp=pd.to_datetime(split_values[5]))
 
     @staticmethod
     def py_from_string_with_symbol(Symbol symbol, str values) -> Tick:
@@ -316,7 +389,11 @@ cdef class Tick:
 
         :return: str.
         """
-        return f"{self.bid},{self.ask},{self.timestamp.isoformat()}"
+        return (f"{self.bid.to_string()},"
+                f"{self.ask.to_string()},"
+                f"{self.bid_size.to_string()},"
+                f"{self.ask_size.to_string()},"
+                f"{self.timestamp.isoformat()}")
 
     def __eq__(self, Tick other) -> bool:
         """
@@ -678,7 +755,7 @@ cdef class Bar:
                  Price high_price not None,
                  Price low_price not None,
                  Price close_price not None,
-                 double volume,
+                 Volume volume not None,
                  datetime timestamp not None,
                  bint check=False):
         """
@@ -688,16 +765,13 @@ cdef class Bar:
         :param high_price: The bars high price.
         :param low_price: The bars low price.
         :param close_price: The bars close price.
-        :param volume: The bars volume (>= 0).
+        :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
         :param check: If the bar parameters should be checked valid.
-        :raises ValueError: If check and the volume is negative (< 0).
         :raises ValueError: If check and the high_price is not >= low_price.
         :raises ValueError: If check and the high_price is not >= close_price.
         :raises ValueError: If check and the low_price is not <= close_price.
         """
-        Condition.not_negative(volume, 'volume')
-
         if check:
             Condition.true(high_price.ge(low_price), 'high_price >= low_price')
             Condition.true(high_price.ge(close_price), 'high_price >= close_price')
@@ -727,7 +801,7 @@ cdef class Bar:
                    Price.from_string(split_bar[1]),
                    Price.from_string(split_bar[2]),
                    Price.from_string(split_bar[3]),
-                   float(split_bar[4]),
+                   Volume.from_string(split_bar[4]),
                    pd.to_datetime(split_bar[5]))
 
     @staticmethod
@@ -748,11 +822,11 @@ cdef class Bar:
 
         :return: str.
         """
-        return (f"{self.open},"
-                f"{self.high},"
-                f"{self.low},"
-                f"{self.close},"
-                f"{self.volume},"
+        return (f"{self.open.to_string()},"
+                f"{self.high.to_string()},"
+                f"{self.low.to_string()},"
+                f"{self.close.to_string()},"
+                f"{self.volume.to_string()},"
                 f"{self.timestamp}")
 
     def __eq__(self, Bar other) -> bool:

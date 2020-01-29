@@ -21,8 +21,8 @@ cdef class Quantity(Decimal):
     cdef Quantity zero()
     @staticmethod
     cdef Quantity from_string(str value)
-    cpdef Quantity add(self, Decimal other)
-    cpdef Quantity subtract(self, Decimal other)
+    cpdef Quantity add(self, Quantity other)
+    cpdef Quantity subtract(self, Quantity other)
 
 
 cdef class Price(Decimal):
@@ -32,21 +32,32 @@ cdef class Price(Decimal):
     cpdef Price subtract(self, Decimal other)
 
 
+cdef class Volume(Decimal):
+    @staticmethod
+    cdef Volume zero()
+    @staticmethod
+    cdef Volume one()
+    @staticmethod
+    cdef Volume from_string(str value)
+    cpdef Volume add(self, Volume other)
+    cpdef Volume subtract(self, Volume other)
+
+
 cdef class Money(Decimal):
     @staticmethod
     cdef Money zero()
     @staticmethod
     cdef Money from_string(str value)
-    cpdef Money add(self, Decimal other)
-    cpdef Money subtract(self, Decimal other)
+    cpdef Money add(self, Money other)
+    cpdef Money subtract(self, Money other)
 
 
 cdef class Tick:
     cdef readonly Symbol symbol
     cdef readonly Price bid
     cdef readonly Price ask
-    cdef readonly double bid_size
-    cdef readonly double ask_size
+    cdef readonly Volume bid_size
+    cdef readonly Volume ask_size
     cdef readonly datetime timestamp
 
     @staticmethod
@@ -86,7 +97,7 @@ cdef class Bar:
     cdef readonly Price high
     cdef readonly Price low
     cdef readonly Price close
-    cdef readonly double volume
+    cdef readonly Volume volume
     cdef readonly datetime timestamp
     cdef readonly bint checked
 

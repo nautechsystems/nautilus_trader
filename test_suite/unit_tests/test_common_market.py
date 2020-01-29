@@ -14,7 +14,7 @@ from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange
 
 from nautilus_trader.model.enums import BarStructure
-from nautilus_trader.model.objects import Price, Tick, Bar
+from nautilus_trader.model.objects import Price, Volume, Tick, Bar
 from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater, BarBuilder
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs, UNIX_EPOCH
@@ -175,7 +175,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Price(1.00004, 5),
             Price(1.00002, 5),
             Price(1.00003, 5),
-            1000,
+            Volume(1000),
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
         # Act
@@ -195,7 +195,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Price(1.00004, 5),
             Price(1.00002, 5),
             Price(1.00003, 5),
-            1000,
+            Volume(1000),
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
         # Act
