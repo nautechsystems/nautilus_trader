@@ -44,9 +44,10 @@ cdef class PositionSizer:
             Price stop_loss,
             double exchange_rate=1.0,
             double commission_rate_bp=0.0,
-            int hard_limit=0,
+            double hard_limit=0.0,
             int units=1,
-            int unit_batch_size=1):
+            int unit_batch_size=1,
+            int precision=0):
         """
         Return the calculated quantity for the position size.
         Note: 1 basis point = 0.01%.
@@ -60,6 +61,7 @@ cdef class PositionSizer:
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
+        :param precision: The precision for the position size quantity (>= 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
@@ -118,13 +120,14 @@ cdef class FixedRiskSizer(PositionSizer):
             Price stop_loss,
             double exchange_rate=1.0,
             double commission_rate_bp=0.0,
-            int hard_limit=0,
+            double hard_limit=0.0,
             int units=1,
-            int unit_batch_size=1):
+            int unit_batch_size=0,
+            int precision=0):
         """
         Return the calculated quantity for the position size.
         Note: 1 basis point = 0.01%.
-        
+
         :param equity: The account equity.
         :param risk_bp: The risk in basis points.
         :param entry: The entry price.
@@ -133,13 +136,14 @@ cdef class FixedRiskSizer(PositionSizer):
         :param commission_rate_bp: The commission rate as basis points of notional transaction value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
-        :param unit_batch_size: The unit batch size (> 0).
+        :param unit_batch_size: The unit batch size (>= 0) If 0 then no batching applied.
+        :param precision: The final precision for the position size quantity (>= 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
         :raises ValueError: If the units is not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
-        
+
         :return Quantity.
         """
         Condition.not_none(equity, 'equity')
@@ -149,22 +153,28 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.positive(exchange_rate, 'exchange_rate')
         Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
         Condition.positive_int(units, 'units')
-        Condition.positive_int(unit_batch_size, 'unit_batch_size')
+        Condition.not_negative_int(unit_batch_size, 'unit_batch_size')
+        Condition.not_negative_int(precision, 'precision')
 
         cdef double risk_points = self._calculate_risk_ticks(entry.as_double(), stop_loss.as_double())
         cdef double risk_money = self._calculate_riskable_money(equity.as_double(), risk_bp, commission_rate_bp)
 
-        # Divide by zero protection
-        if risk_points <= 0:
-            return Quantity()
+        if risk_points <= 0.0:
+            # Divide by zero protection
+            return Quantity(precision=precision)
 
-        cdef long position_size = long(((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_double())
+        # Calculate position size
+        cdef double position_size = ((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size.as_double()
 
         # Limit size
-        if hard_limit > 0:
+        if hard_limit > 0.0:
             position_size = min(position_size, hard_limit)
 
         # Batch into units
-        cdef long position_size_batched = (position_size // units // unit_batch_size) * unit_batch_size
+        cdef double position_size_batched = max(0.0, position_size / units)
 
-        return Quantity(min(max(0, position_size_batched), self.instrument.max_trade_size.value))
+        if unit_batch_size > 0:
+            # Round position size to nearest unit batch size
+            position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
+
+        return Quantity(min(position_size_batched, self.instrument.max_trade_size), precision=precision)

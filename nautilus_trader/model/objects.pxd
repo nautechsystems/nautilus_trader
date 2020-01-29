@@ -17,13 +17,13 @@ from nautilus_trader.model.c_enums.tick_type cimport TickType
 from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 
 
-cdef class Quantity:
-    cdef readonly long value
-
+cdef class Quantity(Decimal):
     @staticmethod
     cdef Quantity zero()
-    cpdef bint equals(self, Quantity other)
-    cpdef str to_string(self, bint format_commas=*)
+    @staticmethod
+    cdef Quantity from_string(str value)
+    cpdef Quantity add(self, Decimal other)
+    cpdef Quantity subtract(self, Decimal other)
 
 
 cdef class Price(Decimal):
@@ -38,8 +38,8 @@ cdef class Money(Decimal):
     cdef Money zero()
     @staticmethod
     cdef Money from_string(str value)
-    cpdef Money add(self, Money other)
-    cpdef Money subtract(self, Money other)
+    cpdef Money add(self, Decimal other)
+    cpdef Money subtract(self, Decimal other)
 
 
 cdef class Tick:
@@ -116,13 +116,13 @@ cdef class Instrument:
     cdef readonly SecurityType security_type
     cdef readonly int tick_precision
     cdef readonly Decimal tick_size
-    cdef readonly Quantity round_lot_size
+    cdef readonly double round_lot_size
     cdef readonly int min_stop_distance_entry
     cdef readonly int min_stop_distance
     cdef readonly int min_limit_distance_entry
     cdef readonly int min_limit_distance
-    cdef readonly Quantity min_trade_size
-    cdef readonly Quantity max_trade_size
+    cdef readonly double min_trade_size
+    cdef readonly double max_trade_size
     cdef readonly Decimal rollover_interest_buy
     cdef readonly Decimal rollover_interest_sell
     cdef readonly datetime timestamp

@@ -21,7 +21,7 @@ from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
-from nautilus_trader.serialization.data cimport (
+from nautilus_trader.serialization.data cimport (  # noqa: E211
     Utf8TickSerializer,
     Utf8BarSerializer,
     BsonDataSerializer,

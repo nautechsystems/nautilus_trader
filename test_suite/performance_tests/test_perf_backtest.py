@@ -219,3 +219,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 19/01/20 15230115 function calls (15002375 primitive calls) in 15.535 seconds (remove redundant prints)
         # 20/01/20 15230117 function calls (15002377 primitive calls) in 13.824 seconds (remove clock bottleneck)
         # 28/01/20 15321331 function calls (15093635 primitive calls) in 15.415 seconds (refactored test strat for more clarity)
+        # 29/01/20 15321331 function calls (15093635 primitive calls) in 15.120 seconds (refactored quantity to handle decimals)

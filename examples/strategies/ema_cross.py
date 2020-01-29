@@ -180,7 +180,7 @@ class EMACrossPy(TradingStrategy):
             hard_limit=20000000,
             units=1,
             unit_batch_size=10000)
-        if position_size.value > 0:
+        if position_size > 0:
             atomic_order = self.order_factory.atomic_stop_market(
                 symbol=self.symbol,
                 order_side=OrderSide.BUY,
@@ -217,7 +217,7 @@ class EMACrossPy(TradingStrategy):
             units=1,
             unit_batch_size=10000)
 
-        if position_size.value > 0:  # Sufficient equity for a position
+        if position_size > 0:  # Sufficient equity for a position
             atomic_order = self.order_factory.atomic_stop_market(
                 symbol=self.symbol,
                 order_side=OrderSide.SELL,
@@ -238,12 +238,12 @@ class EMACrossPy(TradingStrategy):
                 # SELL SIDE ORDERS
                 if working_order.is_sell:
                     temp_price = Price(bar.low - sl_buffer, self.precision)
-                    if temp_price > working_order.price:
+                    if temp_price.gt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
                     temp_price = Price(bar.high + sl_buffer + spread_buffer, self.precision)
-                    if temp_price < working_order.price:
+                    if temp_price.lt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
     def on_instrument(self, instrument: Instrument):

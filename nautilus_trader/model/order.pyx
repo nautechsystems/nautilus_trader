@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_t
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.objects cimport Quantity, Price
-from nautilus_trader.model.events cimport (
+from nautilus_trader.model.events cimport (  # noqa: E211
     OrderEvent,
     OrderFillEvent,
     OrderInitialized,
@@ -128,7 +128,7 @@ cdef class Order:
         Condition.not_equal(order_type, OrderType.UNDEFINED, 'order_type', 'OrderType.UNDEFINED')
         Condition.not_equal(order_purpose, OrderPurpose.UNDEFINED, 'order_purpose', 'OrderPurpose.UNDEFINED')
         Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, 'time_in_force', 'TimeInForce.UNDEFINED')
-        Condition.positive_int(quantity.value, 'quantity')
+        Condition.positive(quantity.as_double(), 'quantity')
 
         # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:

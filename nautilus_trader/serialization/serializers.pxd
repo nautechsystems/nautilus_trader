@@ -8,7 +8,7 @@
 
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.serialization.base cimport (
+from nautilus_trader.serialization.base cimport (  # noqa: E211
     QuerySerializer,
     OrderSerializer,
     EventSerializer,

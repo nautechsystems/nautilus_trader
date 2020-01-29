@@ -8,7 +8,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
-from nautilus_trader.model.c_enums.account_type cimport (
+from nautilus_trader.model.c_enums.account_type cimport (  # noqa: E211
     AccountType,
     account_type_to_string,
     account_type_from_string)
@@ -32,8 +32,9 @@ cdef class Symbol(Identifier):
         :raises ValueError: If the code is not a valid string.
         """
         Condition.valid_string(code, 'code')
-        assert code.isupper()  # Design time check
-        self.code = code.upper()
+        assert code.isupper()              # TODO: Design time check only
+        assert not code.__contains__('/')  # TODO: Design time check only
+        self.code = code.replace('/', '').upper()  # Remove potential '/' from currency pairs
         self.venue = venue
         super().__init__(f'{self.code}.{self.venue.value}')
 

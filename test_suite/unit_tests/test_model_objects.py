@@ -32,8 +32,9 @@ class ObjectTests(unittest.TestCase):
         result1 = Quantity(1)
 
         # Assert
-        self.assertEqual(0, result0.value)
-        self.assertEqual(1, result1.value)
+        self.assertEqual(0, result0.precision)
+        self.assertEqual(0, result0.as_int())
+        self.assertEqual(1, result1.as_int())
 
     def test_quantity_equality(self):
         # Arrange
@@ -50,23 +51,15 @@ class ObjectTests(unittest.TestCase):
 
     def test_quantity_str(self):
         # Arrange
-        quantity = Quantity(1)
-
         # Act
-        result = str(quantity)
+        result0 = str(Quantity())
+        result1 = str(Quantity(1000))
+        result2 = Quantity(1000, 1).to_string(format_commas=True)
 
         # Assert
-        self.assertEqual('1', result)
-
-    def test_quantity_repr(self):
-        # Arrange
-        quantity = Quantity(1)
-
-        # Act
-        result = repr(quantity)
-
-        # Assert
-        self.assertTrue(result.startswith('<Quantity(1) object at'))
+        self.assertEqual('0', result0)
+        self.assertEqual('1000', result1)
+        self.assertEqual('1,000.0', result2)
 
     def test_quantity_comparisons(self):
         # Arrange
@@ -96,31 +89,31 @@ class ObjectTests(unittest.TestCase):
         result3 = Quantity(2) - 1
         result4 = Quantity(2) - Quantity(1)
 
-        # result5 = Quantity(4) / 2  # Temporarily commented to avoid warning (still working)
+        result5 = Quantity(4) / 2  # Temporarily commented to avoid warning (still working)
         result6 = Quantity(4) / Quantity(2)
 
-        # result7 = Quantity(2) * 2  # Temporarily commented to avoid warning (still working)
+        result7 = Quantity(2) * 2  # Temporarily commented to avoid warning (still working)
         result8 = Quantity(2) * Quantity(2)
 
         # Assert
-        self.assertEqual(int, type(result1))
+        self.assertEqual(float, type(result1))
         self.assertEqual(2, result1)
-        self.assertEqual(int, type(result2))
+        self.assertEqual(float, type(result2))
         self.assertEqual(2, result2)
 
-        self.assertEqual(int, type(result3))
+        self.assertEqual(float, type(result3))
         self.assertEqual(1, result3)
-        self.assertEqual(int, type(result4))
+        self.assertEqual(float, type(result4))
         self.assertEqual(1, result4)
 
-        # self.assertEqual(int, type(result5))
-        # self.assertEqual(2, result5)
-        self.assertEqual(int, type(result6))
+        self.assertEqual(float, type(result5))
+        self.assertEqual(2, result5)
+        self.assertEqual(float, type(result6))
         self.assertEqual(2, result6)
 
-        # self.assertEqual(int, type(result7))
-        # self.assertEqual(4, result7)
-        self.assertEqual(int, type(result8))
+        self.assertEqual(float, type(result7))
+        self.assertEqual(4, result7)
+        self.assertEqual(float, type(result8))
         self.assertEqual(4, result8)
 
     def test_price_initialized_with_negative_value_raises_exception(self):

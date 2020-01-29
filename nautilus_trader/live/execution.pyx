@@ -15,14 +15,14 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, Message, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.identifiers cimport (
+from nautilus_trader.model.identifiers cimport (  # noqa: E211
     AccountId,
     TraderId,
     StrategyId,
     OrderId,
     PositionId,
     PositionIdBroker)
-from nautilus_trader.model.commands cimport (
+from nautilus_trader.model.commands cimport (  # noqa: E211
     Command,
     AccountInquiry,
     SubmitOrder,

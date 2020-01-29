@@ -20,18 +20,18 @@ cdef class Decimal:
     Represents a decimal floating point value type with fixed precision.
     """
 
-    def __init__(self, double value=0.0, int precision=1):
+    def __init__(self, double value=0.0, int precision=0):
         """
         Initializes a new instance of the Decimal class.
 
         :param value: The value of the decimal.
-        :param precision: The precision of the decimal (> 0).
-        :raises ValueError: If the precision is not positive (> 0).
+        :param precision: The precision of the decimal (>= 0).
+        :raises ValueError: If the precision is negative (< 0).
         """
-        Condition.positive_int(precision, 'precision')
+        Condition.not_negative(precision, 'precision')
 
-        self._power = 10 ** precision
-        self._value = round(value * self._power) / self._power  # Rounding to nearest
+        cdef int power = 10 ** precision  # Zero power rule 10^0 = 1
+        self._value = round(value * power) / power  # Rounding to nearest
         self.precision = precision
 
     @staticmethod
@@ -48,6 +48,7 @@ cdef class Decimal:
         """
         Return a decimal from the given string. Precision will be inferred from the
         number of digits after the decimal place.
+        Note: If no decimal place then precision will be zero.
 
         :param value: The string value to parse.
         :return: Decimal.
@@ -57,26 +58,29 @@ cdef class Decimal:
         return Decimal(float(value), precision=Decimal.precision_from_string(value))
 
     @staticmethod
-    cdef int precision_from_string(str value) except -1:
+    cdef int precision_from_string(str value):
         """
         Return the decimal precision inferred from the number of digits after the decimal place.
+        Note: If no decimal place then precision will be zero.
 
         :param value: The string value to parse.
         :return: int.
         """
         Condition.valid_string(value, 'value')
 
-        try:
-            if PyUnicode_Contains(value, '.'):
-                return len(value.partition('.')[2])
-            else:
-                return 1
-        except IndexError:
-            return -1
+        return len(value.partition('.')[2])  # If does not contain '.' then partition will be ''
+
+    cpdef int as_int(self):
+        """
+        Return the internal value as an integer.
+
+        :return double.
+        """
+        return int(self._value)
 
     cpdef double as_double(self):
         """
-        Return the internal value as a floating point number.
+        Return the internal value as a real number.
 
         :return double.
         """
@@ -109,9 +113,15 @@ cdef class Decimal:
         :return: str.
         """
         if format_commas:
-            return f'{self._value:,.{self.precision}f}'
+            if self.precision == 0:
+                return f'{int(self._value):,}'
+            else:
+                return f'{self._value:,.{self.precision}f}'
         else:
-            return f'{self._value:.{self.precision}f}'
+            if self.precision == 0:
+                return f'{int(self._value)}'
+            else:
+                return f'{self._value:.{self.precision}f}'
 
     cpdef bint eq(self, Decimal other):
         """

@@ -21,7 +21,7 @@ class DecimalTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, result)
-        self.assertEqual(1, result.precision)
+        self.assertEqual(0, result.precision)
         self.assertEqual(decimal.Decimal('0'), result.as_decimal())
         self.assertEqual(0, result.as_double())
 
@@ -32,12 +32,14 @@ class DecimalTests(unittest.TestCase):
         result1 = Decimal(1.0, 2)
         result2 = Decimal(-1.001, 3)
         result3 = Decimal(1.0005, 3)
+        result4 = Decimal(100)
 
         # Assert
         self.assertEqual(decimal.Decimal('1'), result0.as_decimal())
         self.assertEqual(decimal.Decimal('1.00'), result1.as_decimal())
         self.assertEqual(decimal.Decimal('-1.001'), result2.as_decimal())
         self.assertEqual(decimal.Decimal('1.001'), result3.as_decimal())  # Rounds up
+        self.assertEqual(100, result4)
         self.assertEqual(1, result0.as_double())
         self.assertEqual(1, result0.as_double())
         self.assertEqual(-1.001, result2.as_double())
@@ -59,11 +61,10 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(decimal.Decimal('0'), result1.as_decimal())
         self.assertEqual(decimal.Decimal('0'), result2.as_decimal())
 
-    def test_decimal_initialized_with_not_positive_precision_raises_exception(self):
+    def test_decimal_initialized_with_negative_precision_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Decimal, 1.00000, 0)
         self.assertRaises(ValueError, Decimal, 1.00000, -1)
 
     def test_decimal_addition(self):

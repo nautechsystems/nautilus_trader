@@ -14,12 +14,11 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.model.c_enums.bar_structure cimport (
+from nautilus_trader.model.c_enums.bar_structure cimport (  # noqa: E211
     BarStructure,
     bar_structure_to_string,
-    bar_structure_from_string
-)
-from nautilus_trader.model.c_enums.price_type cimport (
+    bar_structure_from_string)
+from nautilus_trader.model.c_enums.price_type cimport (  # noqa: E211
     PriceType,
     price_type_to_string,
     price_type_from_string)
@@ -30,238 +29,70 @@ from nautilus_trader.model.identifiers cimport Venue
 
 cdef Quantity _ZERO_QUANTITY = Quantity()
 
-cdef class Quantity:
+cdef class Quantity(Decimal):
     """
-    Represents a quantity with non-negative integer value.
+    Represents a quantity with a non-negative value.
 
     Attributes
     ----------
-    value : int
-        The absolute value of the quantity.
+    precision : int
+        The precision of the underlying decimal value.
+
     """
 
-    def __init__(self, long value=0):
+    def __init__(self, double value=0, int precision=0):
         """
         Initializes a new instance of the Quantity class.
 
-        Parameters
-        ----------
-        value : long
-            The value of the quantity (>= 0).
-
-        Raises
-        ------
-        ValueError
-            If the value is negative (< 0).
-
+        :param value: The value of the quantity (>= 0).
+        :param precision: The decimal precision of the quantity (>= 0).
+        :raises ValueError: If the value is negative (< 0).
+        :raises ValueError: If the precision is negative (< 0).
         """
-        Condition.not_negative_int(value, 'value')
+        Condition.not_negative(value, 'value')
 
-        self.value = value
+        super().__init__(value, precision)
 
     @staticmethod
     cdef Quantity zero():
         """
-        Returns
-        -------
-        Quantity
-            A quantity of zero.
-
+        Return a quantity of zero.
+        
+        :return Money.
         """
         return _ZERO_QUANTITY
 
-    cpdef bint equals(self, Quantity other):
+    @staticmethod
+    cdef Quantity from_string(str value):
         """
-        Check if this object is equal to (==) the given object.
+        Return a quantity from the given string. Precision will be inferred from the
+        number of digits after the decimal place.
 
-        Parameters
-        ----------
-        other : Quantity
-            The other quantity to equal.
-        
-        Returns
-        -------
-        bool
-            True if the other quantity is equal, else False.
-            
+        :param value: The string value to parse.
+        :return: Quantity.
         """
-        return self.value == other.value
+        Condition.valid_string(value, 'value')
 
-    cpdef str to_string(self, bint format_commas=False):
-        """
-        Return the formatted string representation of this object.
-        
-        Parameters
-        ----------
-        format_commas : bool 
-            If the string should be formatted with commas separating thousands.
-        
-        Returns
-        -------
-        str
-        
-        """
-        if format_commas:
-            return f'{self.value:,}'
-        else:
-            return str(self.value)
+        return Quantity(float(value), precision=Decimal.precision_from_string(value))
 
-    def __eq__(self, other) -> bool:
+    cpdef Quantity add(self, Decimal other):
         """
-        Return a value indicating whether this object is equal to (==) the given object.
+        Return a new quantity by adding the given quantity to this quantity.
 
-        :param other: The other object.
-        :return bool.
+        :param other: The other quantity to add.
+        :return Quantity.
         """
-        try:
-            return self.value == <int?>other
-        except TypeError:
-            return self.value == <int>other.value
+        return Quantity(self._value + other._value, max(self.precision, other.precision))
 
-    def __ne__(self, other) -> bool:
+    cpdef Quantity subtract(self, Decimal other):
         """
-        Return a value indicating whether this object is not equal to (!=) the given object.
+        Return a new quantity by subtracting the quantity from this quantity.
 
-        :param other: The other object.
-        :return bool.
+        :param other: The other quantity to subtract.
+        :raises ValueError: If value of the other decimal is greater than this price.
+        :return Quantity.
         """
-        try:
-            return self.value != <int?>other
-        except TypeError:
-            return self.value != <int>other.value
-
-    def __lt__(self, other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        try:
-            return self.value < <int?>other
-        except TypeError:
-            return self.value < <int>other.value
-
-    def __le__(self, other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        try:
-            return self.value <= <int?>other
-        except TypeError:
-            return self.value <= <int>other.value
-
-    def __gt__(self, other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        try:
-            return self.value > <int?>other
-        except TypeError:
-            return self.value > <int>other.value
-
-    def __ge__(self, other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        try:
-            return self.value >= <int?>other
-        except TypeError:
-            return self.value >= <int>other.value
-
-    def __add__(self, other) -> int:
-        """
-        Return the result of adding the given object to this object.
-
-        :param other: The other object.
-        :return int.
-        """
-        try:
-            return self.value + <int?>other
-        except TypeError:
-            return self.value + <int>other.value
-
-    def __sub__(self, other) -> int:
-        """
-        Return the result of subtracting the given object from this object.
-
-        :param other: The other object.
-        :return int.
-        """
-        try:
-            return self.value - <int?>other
-        except TypeError:
-            return self.value - <int>other.value
-
-    def __idiv__(self, other) -> int:
-        """
-        Return the result of dividing this object by the given object.
-
-        :param other: The other object.
-        :return int.
-        """
-        try:
-            return self.value // <int?>other
-        except TypeError:
-            return self.value // <int>other.value
-
-    def __truediv__(self, other) -> int:
-        """
-        Return the result of dividing this object by the given object.
-
-        :param other: The other object.
-        :return int.
-        """
-        try:
-            return self.value // <int?>other
-        except TypeError:
-            return self.value // <int>other.value
-
-    def __mul__(self, other) -> int:
-        """
-        Return the result of multiplying this object by the given object.
-
-        :param other: The other object.
-        :return int.
-        """
-        try:
-            return self.value * <int?>other
-        except TypeError:
-            return self.value * <int>other.value
-
-    def __hash__(self) -> int:
-        """"
-        Return the hash code of this object.
-
-        :return int.
-        """
-        return hash(self.value)
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        :return str.
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
+        return Quantity(self._value - other._value, max(self.precision, other.precision))
 
 
 cdef class Price(Decimal):
@@ -320,15 +151,6 @@ cdef class Price(Decimal):
 
         return Price(self._value - other._value, self.precision)
 
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{self.__class__.__name__}({self.to_string()}, precision={self.precision}) object at {id(self)}>"
-
 
 cdef Money _ZERO_MONEY = Money()
 
@@ -367,23 +189,21 @@ cdef class Money(Decimal):
 
         return Money(float(value))
 
-    cpdef Money add(self, Money other):
+    cpdef Money add(self, Decimal other):
         """
-        Return a new price by adding the given price to this price.
+        Return new money by adding the given decimal to this money.
 
         :param other: The other money to add.
-        :return Price.
-        :raises ValueError: If the precision of the prices are not equal.
+        :return Money.
         """
         return Money(self._value + other._value)
 
-    cpdef Money subtract(self, Money other):
+    cpdef Money subtract(self, Decimal other):
         """
-        Return a new price by subtracting the given price from this price.
+        Return new money by subtracting the given decimal from this money.
 
-        :param other: The other price to subtract.
-        :return Price.
-        :raises ValueError: If the precision of the prices are not equal.
+        :param other: The other money to subtract.
+        :return Money.
         """
         return Money(self._value - other._value)
 
@@ -1099,13 +919,13 @@ cdef class Instrument:
                  SecurityType security_type,
                  int tick_precision,
                  Decimal tick_size not None,
-                 Quantity round_lot_size not None,
+                 double round_lot_size,
                  int min_stop_distance_entry,
                  int min_stop_distance,
                  int min_limit_distance_entry,
                  int min_limit_distance,
-                 Quantity min_trade_size not None,
-                 Quantity max_trade_size not None,
+                 double min_trade_size,
+                 double max_trade_size,
                  Decimal rollover_interest_buy not None,
                  Decimal rollover_interest_sell not None,
                  datetime timestamp not None):
@@ -1118,7 +938,7 @@ cdef class Instrument:
         :param security_type: The security type.
         :param tick_precision: The tick decimal digits precision.
         :param tick_size: The tick size.
-        :param round_lot_size: The rounded lot size.
+        :param round_lot_size: The rounded lot size (> 0).
         :param min_stop_distance_entry: The minimum distance for stop entry orders.
         :param min_stop_distance: The minimum tick distance for stop orders.
         :param min_limit_distance_entry: The minimum distance for limit entry orders.
@@ -1134,13 +954,14 @@ cdef class Instrument:
         Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
         Condition.not_negative_int(tick_precision, 'tick_precision')
         Condition.positive(tick_size.as_double(), 'tick_size.value')
+        Condition.positive(round_lot_size, 'round_lot_size')
         Condition.not_negative_int(min_stop_distance_entry, 'min_stop_distance_entry')
         Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
         Condition.not_negative_int(min_stop_distance, 'min_stop_distance')
         Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
         Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
-        Condition.positive_int(min_trade_size.value, 'min_trade_size')
-        Condition.positive_int(max_trade_size.value, 'max_trade_size')
+        Condition.positive(min_trade_size, 'min_trade_size')
+        Condition.positive(max_trade_size, 'max_trade_size')
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
@@ -1214,13 +1035,13 @@ cdef class ForexInstrument(Instrument):
                  str broker_symbol not None,
                  int tick_precision,
                  Decimal tick_size not None,
-                 Quantity round_lot_size not None,
+                 double round_lot_size,
                  int min_stop_distance_entry,
                  int min_stop_distance,
                  int min_limit_distance_entry,
                  int min_limit_distance,
-                 Quantity min_trade_size not None,
-                 Quantity max_trade_size not None,
+                 double min_trade_size,
+                 double max_trade_size,
                  Decimal rollover_interest_buy not None,
                  Decimal rollover_interest_sell not None,
                  datetime timestamp not None):
@@ -1231,7 +1052,7 @@ cdef class ForexInstrument(Instrument):
         :param broker_symbol: The broker symbol.
         :param tick_precision: The tick decimal digits precision.
         :param tick_size: The tick size.
-        :param round_lot_size: The rounded lot size.
+        :param round_lot_size: The rounded lot size (> 0).
         :param min_stop_distance_entry: The minimum distance for stop entry orders.
         :param min_stop_distance: The minimum tick distance for stop orders.
         :param min_limit_distance_entry: The minimum distance for limit entry orders.
