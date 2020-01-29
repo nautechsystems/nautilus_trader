@@ -13,7 +13,6 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.tick_type cimport TickType
 from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 
 
@@ -43,7 +42,6 @@ cdef class Money(Decimal):
 
 
 cdef class Tick:
-    cdef readonly TickType type
     cdef readonly Symbol symbol
     cdef readonly Price bid
     cdef readonly Price ask

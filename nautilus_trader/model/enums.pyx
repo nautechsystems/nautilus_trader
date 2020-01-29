@@ -16,5 +16,4 @@ from nautilus_trader.model.c_enums.order_purpose import OrderPurpose      # noqa
 from nautilus_trader.model.c_enums.price_type import PriceType            # noqa F401
 from nautilus_trader.model.c_enums.bar_structure import BarStructure      # noqa F401
 from nautilus_trader.model.c_enums.security_type import SecurityType      # noqa F401
-from nautilus_trader.model.c_enums.tick_type import TickType              # noqa F401
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce       # noqa F401
