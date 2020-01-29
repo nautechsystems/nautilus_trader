@@ -21,6 +21,7 @@ from nautilus_trader.model.objects import (
     Quantity,
     Money,
     Price,
+    Volume,
     Tick,
     BarSpecification,
     BarType,
@@ -156,7 +157,7 @@ class TestStubs:
                    Price(1.00004, 5),
                    Price(1.00001, 5),
                    Price(1.00003, 5),
-                   100000,
+                   Volume(100000),
                    TestStubs.unix_epoch())
 
     @staticmethod
@@ -165,7 +166,7 @@ class TestStubs:
                    Price(90.004, 3),
                    Price(90.001, 3),
                    Price(90.003, 3),
-                   100000,
+                   Volume(100000),
                    TestStubs.unix_epoch())
 
     @staticmethod

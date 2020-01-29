@@ -22,7 +22,7 @@ from nautilus_trader.common.functions import slice_dataframe
 from nautilus_trader.common.functions cimport get_size_of, format_bytes
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.objects cimport Instrument, Price, Tick, BarType
+from nautilus_trader.model.objects cimport Instrument, Price, Volume, Tick, BarType
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.common.clock cimport TimeEventHandler, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
@@ -264,8 +264,8 @@ cdef class BacktestDataClient(DataClient):
             bid=Price(values[0], precision),
             ask=Price(values[1], precision),
             timestamp=self._timestamps[self._index],
-            bid_size=values[2],
-            ask_size=values[3])
+            bid_size=Volume(values[2]),
+            ask_size=Volume(values[3]))
 
         self._index += 1
         if self._index > self._index_last:

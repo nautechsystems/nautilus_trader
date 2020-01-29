@@ -377,6 +377,22 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual(tick, result)
 
+    def test_tick_str_and_repr(self):
+        # Arrange
+        tick = Tick(AUDUSD_FXCM,
+                    Price(1.00000, 5),
+                    Price(1.00001, 5),
+                    UNIX_EPOCH)
+
+        # Act
+        result0 = str(tick)
+        result1 = repr(tick)
+
+        # Assert
+        self.assertEqual('1.00000,1.00001,1,1,1970-01-01T00:00:00+00:00', result0)
+        self.assertTrue(result1.startswith('<Tick(AUDUSD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00+00:00) object at'))
+        self.assertTrue(result1.endswith('>'))
+
     def test_can_parse_tick_from_string(self):
         # Arrange
         tick = Tick(AUDUSD_FXCM,

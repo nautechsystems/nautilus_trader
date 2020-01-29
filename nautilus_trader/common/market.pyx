@@ -16,6 +16,7 @@ from nautilus_trader.common.functions cimport with_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.objects cimport (  # noqa: E211
     Price,
+    Volume,
     Tick,
     Bar,
     BarType,
@@ -254,7 +255,7 @@ cdef class BarDataWrangler:
                    Price(values[1], self._precision),
                    Price(values[2], self._precision),
                    Price(values[3], self._precision),
-                   int(values[4] * self._volume_multiple),
+                   Volume(values[4] * self._volume_multiple),
                    timestamp)
 
 
@@ -421,7 +422,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self._volume = 0.0
+        self._volume = Volume.zero()
         self._use_previous_close = use_previous_close
 
     cpdef void update(self, Tick tick) except *:
@@ -445,7 +446,7 @@ cdef class BarBuilder:
             self._low = price
 
         self._close = price
-        self._volume += self._get_volume(tick)
+        self._volume = self._get_volume(tick)
         self.count += 1
         self.last_update = tick.timestamp
 
@@ -482,7 +483,7 @@ cdef class BarBuilder:
             self._low = None
             self._close = None
 
-        self._volume = 0
+        self._volume = Volume.zero()
         self.count = 0
 
     cdef Price _get_price(self, Tick tick):
@@ -495,13 +496,17 @@ cdef class BarBuilder:
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
 
-    cdef double _get_volume(self, Tick tick):
+    cdef Volume _get_volume(self, Tick tick):
+        cdef int max_precision
+        cdef double total_volume
         if self.bar_spec.price_type == PriceType.MID:
-            return (tick.bid_size + tick.ask_size) / 2.0
+            max_precision = max(self._volume.precision, tick.bid_size.precision, tick.ask_size.precision)
+            total_volume = self._volume.as_double() + ((tick.bid_size + tick.ask_size) / 2.0)
+            return Volume(total_volume, max_precision)
         elif self.bar_spec.price_type == PriceType.BID:
-            return tick.bid_size
+            return self._volume.add(tick.bid_size)
         elif self.bar_spec.price_type == PriceType.ASK:
-            return tick.ask_size
+            return self._volume.add(tick.ask_size)
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
 

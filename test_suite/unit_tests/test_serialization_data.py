@@ -74,7 +74,7 @@ class DataSerializerTests(unittest.TestCase):
                    Price(1.00004, 5),
                    Price(1.00002, 5),
                    Price(1.00003, 5),
-                   100000,
+                   Volume(100000),
                    UNIX_EPOCH)
 
         data = self.mapper.map_bars([bar1, bar1], bar_type)
@@ -114,7 +114,7 @@ class DataSerializerTests(unittest.TestCase):
                    Price(1.00004, 5),
                    Price(1.00002, 5),
                    Price(1.00003, 5),
-                   100000,
+                   Volume(100000),
                    UNIX_EPOCH)
 
         data = self.mapper.map_bars([bar1, bar1], bar_type)

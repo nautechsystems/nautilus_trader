@@ -16,7 +16,7 @@ from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.enums import OrderState, Currency, MarketPosition
-from nautilus_trader.model.objects import Tick, Bar
+from nautilus_trader.model.objects import Volume, Tick, Bar
 from nautilus_trader.model.identifiers import StrategyId, Label
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.portfolio import Portfolio
@@ -215,7 +215,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
@@ -243,7 +243,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
@@ -259,7 +259,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
@@ -277,7 +277,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
@@ -411,7 +411,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
@@ -740,7 +740,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  100000,
+                  Volume(100000),
                   datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         # Act
