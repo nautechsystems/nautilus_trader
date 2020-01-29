@@ -76,7 +76,7 @@ cdef class Position:
     cpdef double unrealized_return(self, Tick last)
     cpdef double total_return(self, Tick last)
     cpdef Money unrealized_pnl(self, Tick last)
-    cpdef Money total_pnl(self, Tick last )
+    cpdef Money total_pnl(self, Tick last)
 
     cdef void _update(self, OrderFillEvent event) except *
     cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *

@@ -285,7 +285,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 0,
                 0,
                 tzinfo=pytz.timezone('US/Eastern')).astimezone(tz=pytz.utc) - timedelta(minutes=56)
-                # TODO: Why is this consistently 56 min out?
+            #  TODO: Why is this consistently 56 min out?
 
         # Check for and apply any rollover interest
         if not self.rollover_applied and time_now >= self.rollover_time:
@@ -450,11 +450,11 @@ cdef class BacktestExecClient(ExecutionClient):
                     position.symbol,
                     timestamp)
                 exchange_rate = self.exchange_calculator.get_rate(
-                        from_currency=instrument.quote_currency,
-                        to_currency=self._account.currency,
-                        price_type=PriceType.MID,
-                        bid_rates=self._build_current_bid_rates(),
-                        ask_rates=self._build_current_ask_rates())
+                    from_currency=instrument.quote_currency,
+                    to_currency=self._account.currency,
+                    price_type=PriceType.MID,
+                    bid_rates=self._build_current_bid_rates(),
+                    ask_rates=self._build_current_ask_rates())
                 rollover = mid_price * position.quantity.as_double() * interest_rate * exchange_rate
                 # Apply any bank and broker spread markup (basis points)
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
@@ -587,7 +587,7 @@ cdef class BacktestExecClient(ExecutionClient):
             return  # Cannot modify order
 
         if not self._check_valid_price(order, self._market[order.symbol], reject=True):
-            return # Cannot accept order
+            return  # Cannot accept order
 
         # Generate event
         cdef OrderModified modified = OrderModified(
@@ -726,19 +726,19 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Check order size is valid or reject
         if order.quantity > instrument.max_trade_size:
-            self._reject_order(order,  f'order quantity of {order.quantity} exceeds '
-                                       f'the maximum trade size of {instrument.max_trade_size}')
+            self._reject_order(order, f'order quantity of {order.quantity} exceeds '
+                                      f'the maximum trade size of {instrument.max_trade_size}')
             return  # Cannot accept order
         if order.quantity < instrument.min_trade_size:
-            self._reject_order(order,  f'order quantity of {order.quantity} is less than '
-                                       f'the minimum trade size of {instrument.min_trade_size}')
+            self._reject_order(order, f'order quantity of {order.quantity} is less than '
+                                      f'the minimum trade size of {instrument.min_trade_size}')
             return  # Cannot accept order
 
         cdef Tick current_market = self._market.get(order.symbol)
 
         # Check market exists
         if current_market is None:  # Market not initialized
-            self._reject_order(order,  f'no market for {order.symbol}')
+            self._reject_order(order, f'no market for {order.symbol}')
             return  # Cannot accept order
 
         # Check order price is valid or reject

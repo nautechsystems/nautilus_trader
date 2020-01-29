@@ -12,7 +12,7 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport (as_utc_timestamp, format_zulu_datetime, format_bytes,
+from nautilus_trader.common.functions cimport (as_utc_timestamp, format_zulu_datetime, format_bytes, # noqa: E211
                                                pad_string, get_size_of)
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
@@ -306,7 +306,7 @@ cdef class BacktestEngine:
 
     cpdef void reset(self) except *:
         """
-        Reset the backtest engine. 
+        Reset the backtest engine.
         
         The following components are reset;
         

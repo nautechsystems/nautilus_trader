@@ -93,7 +93,7 @@ cdef class Account:
 
     cpdef list get_events(self):
         """
-        :return List[Event]. 
+        :return List[Event].
         """
         return self._events.copy()
 

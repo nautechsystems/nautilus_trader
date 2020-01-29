@@ -20,12 +20,12 @@ cdef class TickHandler(Handler):
 
 
 cdef class BarHandler(Handler):
-    cdef void handle(self, BarType bar_type, Bar bar)  except *
+    cdef void handle(self, BarType bar_type, Bar bar) except *
 
 
 cdef class InstrumentHandler(Handler):
-    cdef void handle(self, Instrument instrument)  except *
+    cdef void handle(self, Instrument instrument) except *
 
 
 cdef class EventHandler(Handler):
-    cdef void handle(self, Event event)  except *
+    cdef void handle(self, Event event) except *

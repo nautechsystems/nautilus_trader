@@ -100,7 +100,7 @@ cdef class ExchangeRateCalculator:
         try:
             return exchange_rates[lhs_str][rhs_str]
         except KeyError:
-            pass # Exchange rate not yet calculated
+            pass  # Exchange rate not yet calculated
 
         # Continue to calculate remaining currency rates
         cdef double common_ccy1
