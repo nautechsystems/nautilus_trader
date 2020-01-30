@@ -6,15 +6,48 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import re
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.objects cimport Instrument
 
 
-cdef class QuerySerializer:
+cdef class Serializer:
+    """
+    The base class for all serializers.
+    """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the Serializer class.
+        """
+        self._re_camel_to_snake = re.compile(r'(?<!^)(?=[A-Z])')
+
+    cdef str convert_camel_to_snake(self, str value):
+        return self._re_camel_to_snake.sub('_', value).upper()
+
+    cdef str convert_snake_to_camel(self, str value):
+        cdef list components = value.split('_')
+        cdef str x
+        return ''.join(x.title() for x in components)
+
+    cpdef str py_convert_camel_to_snake(self, str value):
+        return self.convert_camel_to_snake(value)
+
+    cpdef str py_convert_snake_to_camel(self, str value):
+        return self.convert_snake_to_camel(value)
+
+
+cdef class QuerySerializer(Serializer):
     """
     The base class for all query serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the QuerySerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, dict query):
         """
@@ -37,10 +70,16 @@ cdef class QuerySerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class DataSerializer:
+cdef class DataSerializer(Serializer):
     """
     The base class for all data serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the DataSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, dict data):
         """
@@ -63,10 +102,16 @@ cdef class DataSerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class InstrumentSerializer:
+cdef class InstrumentSerializer(Serializer):
     """
     The base class for all instrument serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the InstrumentSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, Instrument instrument):
         """
@@ -89,10 +134,16 @@ cdef class InstrumentSerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class OrderSerializer:
+cdef class OrderSerializer(Serializer):
     """
     The base class for all order serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the OrderSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, Order order):
         """
@@ -115,10 +166,16 @@ cdef class OrderSerializer:
         raise NotImplementedError("Method must be implemented in the subclass. ")
 
 
-cdef class CommandSerializer:
+cdef class CommandSerializer(Serializer):
     """
     The base class for all command serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the CommandSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, Command command):
         """
@@ -141,10 +198,16 @@ cdef class CommandSerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class EventSerializer:
+cdef class EventSerializer(Serializer):
     """
     The base class for all event serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the EventSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, Event event):
         """
@@ -167,10 +230,16 @@ cdef class EventSerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class RequestSerializer:
+cdef class RequestSerializer(Serializer):
     """
     The base class for all request serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the RequestSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, Request request):
         """
@@ -193,10 +262,16 @@ cdef class RequestSerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class ResponseSerializer:
+cdef class ResponseSerializer(Serializer):
     """
     The base class for all response serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the ResponseSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, Response response):
         """
@@ -219,10 +294,16 @@ cdef class ResponseSerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class LogSerializer:
+cdef class LogSerializer(Serializer):
     """
     The base class for all log message serializers.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the LogSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, LogMessage message):
         """

@@ -17,6 +17,7 @@ from nautilus_trader.model.events import *
 from nautilus_trader.model.identifiers import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.model.order import *
+from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.data import *
 from nautilus_trader.serialization.serializers import *
 from nautilus_trader.serialization.common import *
@@ -25,6 +26,44 @@ from nautilus_trader.network.responses import *
 from test_kit.stubs import *
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+
+
+class SerializerBaseTests(unittest.TestCase):
+    def setUp(self):
+        # Fixture Setup
+        self.serializer = Serializer()
+
+    def test_can_convert_camel_case_to_snake_case(self):
+        # Arrange
+        value0 = 'CamelCase'
+        value1 = 'camelCase'
+        value2 = 'camel'
+
+        # Act
+        result0 = self.serializer.py_convert_camel_to_snake(value0)
+        result1 = self.serializer.py_convert_camel_to_snake(value1)
+        result2 = self.serializer.py_convert_camel_to_snake(value2)
+
+        # Assert
+        self.assertEqual('CAMEL_CASE', result0)
+        self.assertEqual('CAMEL_CASE', result1)
+        self.assertEqual('CAMEL', result2)
+
+    def test_can_convert_snake_case_to_camel_case(self):
+        # Arrange
+        value0 = 'SNAKE_CASE'
+        value1 = 'snake_case'
+        value2 = 'snake'
+
+        # Act
+        result0 = self.serializer.py_convert_snake_to_camel(value0)
+        result1 = self.serializer.py_convert_snake_to_camel(value1)
+        result2 = self.serializer.py_convert_snake_to_camel(value2)
+
+        # Assert
+        self.assertEqual('SnakeCase', result0)
+        self.assertEqual('SnakeCase', result1)
+        self.assertEqual('Snake', result2)
 
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
@@ -578,7 +617,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_account_state_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jKRUeXBlsUFjY291bnRTdGF0ZUV2ZW50oklk2SQ5ZjJlZjAwOS1jN2I4LTRjNmEtYjYyOS1mOTc1MWM0YTA2YTepVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWS2RlhDTS1EMTIzNDU2LVNJTVVMQVRFRKhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERheaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hMLBNYXJnaW5DYWxsU3RhdHVzoU4='
+        base64 = 'jKRUeXBlsUFjY291bnRTdGF0ZUV2ZW50oklk2SQyYTk4NjM5ZC1lMzJkLTQxMDctYmRmMC1hYTU2ODUwMjFiOGOpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWS2RlhDTS1EMTIzNDU2LVNJTVVMQVRFRKhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERheaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hMLBNYXJnaW5DYWxsU3RhdHVzoU4='
         body = b64decode(base64)
 
         # Act
@@ -677,7 +716,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_working_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkYzE2ZTJjMDQtNzE0Ny00NzI3LWI5NjMtYzBiNzk4ZmNmMTczqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1PplN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjREFZqkV4cGlyZVRpbWWkTk9ORatXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkNWRjNGY5YjYtZWIzZC00ZmMyLWEzMWUtNjFmMTdiNDhmZWQxqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlqlN0b3BNYXJrZXSoUXVhbnRpdHmmMTAwMDAwpVByaWNlozEuMKtUaW1lSW5Gb3JjZaNEQVmqRXhwaXJlVGltZaROT05Fq1dvcmtpbmdUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -691,7 +730,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(Label('E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
-        self.assertEqual(Quantity(1), result.quantity)
+        self.assertEqual(Quantity(100000), result.quantity)
         self.assertEqual(Price(1, 1), result.price)
         self.assertEqual(TimeInForce.DAY, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.working_time)
@@ -702,7 +741,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkZWE3NjlhNDgtYWE1YS00ZmQ2LWEzNmEtZGEwNzhkNjhkYjNiqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1PplN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjR1REqkV4cGlyZVRpbWW4MTk3MC0wMS0wMVQwMDowMTowMC4wMDBaq1dvcmtpbmdUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkZjY2ZGMwMjMtMWRmZi00Mzk4LTk1MjYtOTUwNjYxMjQwNjI4qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlqlN0b3BNYXJrZXSoUXVhbnRpdHmmMTAwMDAwpVByaWNlozEuMKtUaW1lSW5Gb3JjZaNHVESqRXhwaXJlVGltZbgxOTcwLTAxLTAxVDAwOjAxOjAwLjAwMFqrV29ya2luZ1RpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
@@ -717,7 +756,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Label('E'), result.label)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
-        self.assertEqual(Quantity(1), result.quantity)
+        self.assertEqual(Quantity(100000), result.quantity)
         self.assertEqual(Price(1, 1), result.price)
         self.assertEqual(TimeInForce.GTD, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.working_time)
@@ -764,7 +803,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_modified_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iaRUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJGE1MGUwMjMxLTk1ODgtNDgxOS04YTFlLTJkMzQxNmEwOTE3N6lUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NrBNb2RpZmllZFF1YW50aXR50gABhqCtTW9kaWZpZWRQcmljZaEyrE1vZGlmaWVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'iaRUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJDFkOGFlMDNkLWExMzYtNDM5ZC05ZmRlLTYwNDAzYTU1ZWMzOKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NrBNb2RpZmllZFF1YW50aXR5pjEwMDAwMK1Nb2RpZmllZFByaWNloTKsTW9kaWZpZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -800,7 +839,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_partially_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQwMGFkYzBlZC05MzJiLTRmYTgtOWUyOC1iNTQ1ODNkZDRlNWWpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCoQ3VycmVuY3mjVVNErUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQwOTk3Nzk1Ny0zMzE3LTQ3ODgtOGYxOC1lMmEyY2I0ZDljYmSpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCdXmuRmlsbGVkUXVhbnRpdHmlNTAwMDCuTGVhdmVzUXVhbnRpdHmlNTAwMDCsQXZlcmFnZVByaWNlozIuMKhDdXJyZW5jeaNVU0StRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -825,7 +864,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jaRUeXBlq09yZGVyRmlsbGVkoklk2SQ1NzY4Y2IxMS0xZmZiLTRlOTYtYmRmYS1kNmUwN2Q1M2I2YTSpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wqEN1cnJlbmN5o1VTRK1FeGVjdXRpb25UaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'jaRUeXBlq09yZGVyRmlsbGVkoklk2SRjYTg4NWZhZi1hNjE3LTQ3ZjUtYTUyZi0yNjljZGFlZmU4NDepVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCdXmuRmlsbGVkUXVhbnRpdHmmMTAwMDAwrEF2ZXJhZ2VQcmljZaMyLjCoQ3VycmVuY3mjVVNErUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
@@ -897,6 +936,18 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         self.assertEqual(instrument.timestamp, deserialized.timestamp)
         print('instrument')
         print(b64encode(serialized))
+
+    def test_can_deserialize_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'vgEAAAJTeW1ib2wADAAAAEFVRFVTRC5GWENNAAJCcm9rZXJTeW1ib2wACAAAAEFVRC9VU0QAAlF1b3RlQ3VycmVuY3kABAAAAFVTRAACU2VjdXJpdHlUeXBlAAYAAABGb3JleAAQUHJpY2VQcmVjaXNpb24ABQAAABBTaXplUHJlY2lzaW9uAAAAAAAQTWluU3RvcERpc3RhbmNlRW50cnkAAAAAABBNaW5TdG9wRGlzdGFuY2UAAAAAABBNaW5MaW1pdERpc3RhbmNlRW50cnkAAAAAABBNaW5MaW1pdERpc3RhbmNlAAAAAAACVGlja1NpemUACAAAADAuMDAwMDEAAlJvdW5kTG90U2l6ZQAFAAAAMTAwMAACTWluVHJhZGVTaXplAAIAAAAxAAJNYXhUcmFkZVNpemUACQAAADUwMDAwMDAwAAJSb2xsb3ZlckludGVyZXN0QnV5AAIAAAAxAAJSb2xsb3ZlckludGVyZXN0U2VsbAACAAAAMQACVGltZXN0YW1wABkAAAAxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFoAAkJhc2VDdXJyZW5jeQAEAAAAQVVEAAA='
+        body = b64decode(base64)
+
+        # Act
+        serializer = BsonInstrumentSerializer()
+        deserialized = serializer.deserialize(body)
+        print(deserialized)
+        self.assertTrue(isinstance(deserialized, Instrument))
 
 
 class MsgPackRequestSerializerTests(unittest.TestCase):

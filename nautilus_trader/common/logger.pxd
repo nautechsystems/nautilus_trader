@@ -18,29 +18,29 @@ cdef str EVT
 
 
 cpdef enum LogLevel:
-    UNDEFINED = -1,  # Invalid value
-    VERBOSE = 0,
-    DEBUG = 1,
-    INFO = 2,
-    WARNING = 3,
-    ERROR = 4,
-    CRITICAL = 5,
-    FATAL = 6,
+    UNDEFINED = 0,  # Invalid value
+    VERBOSE = 1,
+    DEBUG = 2,
+    INFO = 3,
+    WARNING = 4,
+    ERROR = 5,
+    CRITICAL = 6,
+    FATAL = 7,
 
 cdef inline str log_level_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'VRB'
-    elif value == 1:
-        return 'DBG'
     elif value == 2:
-        return 'INF'
+        return 'DBG'
     elif value == 3:
-        return 'WRN'
+        return 'INF'
     elif value == 4:
-        return 'ERR'
+        return 'WRN'
     elif value == 5:
-        return 'CRT'
+        return 'ERR'
     elif value == 6:
+        return 'CRT'
+    elif value == 7:
         return 'FTL'
     else:
         return 'UNDEFINED'

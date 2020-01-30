@@ -141,6 +141,12 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
     Provides a serializer for data query objects for the MsgPack specification.
     """
 
+    def __init__(self):
+        """
+        Initializes a new instance of the MsgPackQuerySerializer class.
+        """
+        super().__init__()
+
     cpdef bytes serialize(self, dict query):
         """
         Serialize the given data query to bytes.
@@ -173,6 +179,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         Initializes a new instance of the MsgPackOrderSerializer class.
         """
+        super().__init__()
+
         self.symbol_cache = ObjectCache(Symbol, Symbol.from_string)
 
     cpdef bytes serialize(self, Order order):  # Can be None
@@ -188,12 +196,12 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         return MsgPackSerializer.serialize({
             ID: order.id.value,
             SYMBOL: order.symbol.value,
-            ORDER_SIDE: order_side_to_string(order.side),
-            ORDER_TYPE: order_type_to_string(order.type),
+            ORDER_SIDE: self.convert_snake_to_camel(order_side_to_string(order.side)),
+            ORDER_TYPE: self.convert_snake_to_camel(order_type_to_string(order.type)),
             QUANTITY: order.quantity.to_string(),
             PRICE: convert_price_to_string(order.price),
             LABEL: convert_label_to_string(order.label),
-            ORDER_PURPOSE: order_purpose_to_string(order.purpose),
+            ORDER_PURPOSE: self.convert_snake_to_camel(order_purpose_to_string(order.purpose)),
             TIME_IN_FORCE: time_in_force_to_string(order.time_in_force),
             EXPIRE_TIME: convert_datetime_to_string(order.expire_time),
             INIT_ID: order.init_id.value,
@@ -217,12 +225,12 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         return Order(order_id=OrderId(unpacked[ID]),
                      symbol=self.symbol_cache.get(unpacked[SYMBOL]),
-                     order_side=order_side_from_string(unpacked[ORDER_SIDE]),
-                     order_type=order_type_from_string(unpacked[ORDER_TYPE]),
+                     order_side=order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                     order_type=order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
                      quantity=Quantity.from_string(unpacked[QUANTITY]),
                      price=convert_string_to_price(unpacked[PRICE]),
                      label=convert_string_to_label(unpacked[LABEL]),
-                     order_purpose=order_purpose_from_string(unpacked[ORDER_PURPOSE]),
+                     order_purpose=order_purpose_from_string(self.convert_camel_to_snake(unpacked[ORDER_PURPOSE])),
                      time_in_force=time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                      expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]),
                      init_id=GUID(UUID(unpacked[INIT_ID])),
@@ -238,6 +246,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Initializes a new instance of the MsgPackCommandSerializer class.
         """
+        super().__init__()
+
         self.identifier_cache = IdentifierCache()
         self.order_serializer = MsgPackOrderSerializer()
 
@@ -340,7 +350,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
-                Quantity.from_string(str(unpacked[MODIFIED_QUANTITY])),  # TODO: Remove str once C# side fixed
+                Quantity.from_string(unpacked[MODIFIED_QUANTITY]),
                 convert_string_to_price(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
@@ -365,6 +375,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Initializes a new instance of the MsgPackCommandSerializer class.
         """
+        super().__init__()
+
         self.identifier_cache = IdentifierCache()
 
     cpdef bytes serialize(self, Event event):
@@ -386,22 +398,22 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if isinstance(event, AccountStateEvent):
             package[ACCOUNT_ID] = event.account_id.value
             package[CURRENCY] = currency_to_string(event.currency)
-            package[CASH_BALANCE] = str(event.cash_balance)
-            package[CASH_START_DAY] = str(event.cash_start_day)
-            package[CASH_ACTIVITY_DAY] = str(event.cash_activity_day)
-            package[MARGIN_USED_LIQUIDATION] = str(event.margin_used_liquidation)
-            package[MARGIN_USED_MAINTENANCE] = str(event.margin_used_maintenance)
-            package[MARGIN_RATIO] = str(event.margin_ratio)
+            package[CASH_BALANCE] = event.cash_balance.to_string()
+            package[CASH_START_DAY] = event.cash_start_day.to_string()
+            package[CASH_ACTIVITY_DAY] = event.cash_activity_day.to_string()
+            package[MARGIN_USED_LIQUIDATION] = event.margin_used_liquidation.to_string()
+            package[MARGIN_USED_MAINTENANCE] = event.margin_used_maintenance.to_string()
+            package[MARGIN_RATIO] = event.margin_ratio.to_string()
             package[MARGIN_CALL_STATUS] = event.margin_call_status.value
         elif isinstance(event, OrderInitialized):
             package[ORDER_ID] = event.order_id.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = order_side_to_string(event.order_side)
-            package[ORDER_TYPE] = order_type_to_string(event.order_type)
+            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
+            package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
             package[QUANTITY] = event.quantity.to_string()
             package[PRICE] = convert_price_to_string(event.price)
             package[LABEL] = convert_label_to_string(event.label)
-            package[ORDER_PURPOSE] = order_purpose_to_string(event.order_purpose)
+            package[ORDER_PURPOSE] = self.convert_snake_to_camel(order_purpose_to_string(event.order_purpose))
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
         elif isinstance(event, OrderSubmitted):
@@ -424,15 +436,15 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
-            package[REJECTED_REASON] =  str(event.rejected_reason)
+            package[REJECTED_REASON] =  event.rejected_reason.value
         elif isinstance(event, OrderWorking):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[LABEL] = convert_label_to_string(event.label)
-            package[ORDER_SIDE] = order_side_to_string(event.order_side)
-            package[ORDER_TYPE] = order_type_to_string(event.order_type)
+            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
+            package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
             package[QUANTITY] = event.quantity.to_string()
             package[PRICE] = event.price.to_string()
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
@@ -465,7 +477,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXECUTION_ID] = event.execution_id.value
             package[POSITION_ID_BROKER] = event.position_id_broker.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = order_side_to_string(event.order_side)
+            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
             package[LEAVES_QUANTITY] = event.leaves_quantity.to_string()
             package[AVERAGE_PRICE] = event.average_price.to_string()
@@ -477,7 +489,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXECUTION_ID] = event.execution_id.value
             package[POSITION_ID_BROKER] = event.position_id_broker.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = order_side_to_string(event.order_side)
+            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
             package[AVERAGE_PRICE] = event.average_price.to_string()
             package[CURRENCY] = currency_to_string(event.transaction_currency)
@@ -522,11 +534,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderId(unpacked[ORDER_ID]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 convert_string_to_label(unpacked[LABEL]),
-                order_side_from_string(unpacked[ORDER_SIDE]),
-                order_type_from_string(unpacked[ORDER_TYPE]),
-                Quantity.from_string(str(unpacked[QUANTITY])),  # TODO: Remove str once C# side fixed
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
+                Quantity.from_string(unpacked[QUANTITY]),
                 convert_string_to_price(unpacked[PRICE]),
-                order_purpose_from_string(unpacked[ORDER_PURPOSE]),
+                order_purpose_from_string(self.convert_camel_to_snake(unpacked[ORDER_PURPOSE])),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                 convert_string_to_datetime(unpacked[EXPIRE_TIME]),
                 event_id,
@@ -574,9 +586,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
                 Symbol.from_string(unpacked[SYMBOL]),
                 convert_string_to_label(unpacked[LABEL]),
-                order_side_from_string(unpacked[ORDER_SIDE]),
-                order_type_from_string(unpacked[ORDER_TYPE]),
-                Quantity.from_string(str(unpacked[QUANTITY])),  # TODO: Remove str once C# side fixed
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
+                Quantity.from_string(unpacked[QUANTITY]),
                 convert_string_to_price(unpacked[PRICE]),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                 convert_string_to_datetime(unpacked[WORKING_TIME]),
@@ -604,7 +616,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                Quantity.from_string(str(unpacked[MODIFIED_QUANTITY])),  # TODO: Remove str once C# side fixed
+                Quantity.from_string(unpacked[MODIFIED_QUANTITY]),
                 convert_string_to_price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
@@ -623,9 +635,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ExecutionId(unpacked[EXECUTION_ID]),
                 PositionIdBroker(unpacked[POSITION_ID_BROKER]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
-                order_side_from_string(unpacked[ORDER_SIDE]),
-                Quantity.from_string(str(unpacked[FILLED_QUANTITY])),  # TODO: Remove str once C# side fixed
-                Quantity.from_string(str(unpacked[LEAVES_QUANTITY])),  # TODO: Remove str once C# side fixed
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                Quantity.from_string(unpacked[FILLED_QUANTITY]),
+                Quantity.from_string(unpacked[LEAVES_QUANTITY]),
                 convert_string_to_price(unpacked[AVERAGE_PRICE]),
                 currency_from_string(unpacked[CURRENCY]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),
@@ -638,8 +650,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ExecutionId(unpacked[EXECUTION_ID]),
                 PositionIdBroker(unpacked[POSITION_ID_BROKER]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
-                order_side_from_string(unpacked[ORDER_SIDE]),
-                Quantity.from_string(str(unpacked[FILLED_QUANTITY])),  # TODO: Remove str once C# side fixed
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                Quantity.from_string(unpacked[FILLED_QUANTITY]),
                 convert_string_to_price(unpacked[AVERAGE_PRICE]),
                 currency_from_string(unpacked[CURRENCY]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),
@@ -658,6 +670,8 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         """
         Initializes a new instance of the MsgPackRequestSerializer class.
         """
+        super().__init__()
+
         self.query_serializer = MsgPackQuerySerializer()
 
     cpdef bytes serialize(self, Request request):
@@ -714,6 +728,12 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
     """
     Provides a response serializer for the MessagePack specification.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the MsgPackResponseSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, Response response):
         """
@@ -796,6 +816,12 @@ cdef class MsgPackLogSerializer(LogSerializer):
     """
     Provides a log message serializer for the MessagePack specification.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the MsgPackLogSerializer class.
+        """
+        super().__init__()
 
     cpdef bytes serialize(self, LogMessage message):
         """
