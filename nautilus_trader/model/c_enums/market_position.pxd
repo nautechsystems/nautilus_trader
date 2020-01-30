@@ -8,18 +8,18 @@
 
 
 cpdef enum MarketPosition:
-    UNDEFINED = -1,  # Invalid value
-    FLAT = 0,
-    LONG = 1,
-    SHORT = 2
+    UNDEFINED = 0,  # Invalid value
+    FLAT = 1,
+    LONG = 2,
+    SHORT = 3
 
 
 cdef inline str market_position_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'FLAT'
-    elif value == 1:
-        return 'LONG'
     elif value == 2:
+        return 'LONG'
+    elif value == 3:
         return 'SHORT'
     else:
         return 'UNDEFINED'

@@ -8,24 +8,24 @@
 
 
 cpdef enum OrderType:
-    UNDEFINED = -1,  # Invalid value
-    MARKET = 0,
-    LIMIT = 1,
-    STOP_MARKET = 2,
-    STOP_LIMIT = 3,
-    MIT = 4
+    UNDEFINED = 0,  # Invalid value
+    MARKET = 1,
+    LIMIT = 2,
+    STOP_MARKET = 3,
+    STOP_LIMIT = 4,
+    MIT = 5
 
 
 cdef inline str order_type_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'MARKET'
-    elif value == 1:
-        return 'LIMIT'
     elif value == 2:
-        return 'STOP_MARKET'
+        return 'LIMIT'
     elif value == 3:
-        return 'STOP_LIMIT'
+        return 'STOP_MARKET'
     elif value == 4:
+        return 'STOP_LIMIT'
+    elif value == 5:
         return 'MIT'
     else:
         return 'UNDEFINED'

@@ -8,7 +8,7 @@
 
 
 cpdef enum Currency:
-    UNDEFINED = -1,  # Invalid value
+    UNDEFINED = 0,  # Invalid value
     AUD = 36,
     CAD = 124,
     CHF = 756,

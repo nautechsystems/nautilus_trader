@@ -8,18 +8,18 @@
 
 
 cpdef enum AccountType:
-    UNDEFINED = -1  # Invalid value
-    SIMULATED = 0,
-    DEMO = 1,
-    REAL = 2,
+    UNDEFINED = 0,  # Invalid value
+    SIMULATED = 1,
+    DEMO = 2,
+    REAL = 3,
 
 
 cdef inline str account_type_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'SIMULATED'
-    elif value == 1:
-        return 'DEMO'
     elif value == 2:
+        return 'DEMO'
+    elif value == 3:
         return 'REAL'
     else:
         return 'UNDEFINED'

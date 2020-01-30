@@ -8,45 +8,45 @@
 
 
 cpdef enum OrderState:
-    UNDEFINED = -1,  # Invalid value
-    INITIALIZED = 0,
-    INVALID = 1,
-    DENIED = 2,
-    SUBMITTED = 3,
-    ACCEPTED = 4,
-    REJECTED = 5,
-    WORKING = 6,
-    CANCELLED = 7,
-    EXPIRED = 8,
-    OVER_FILLED = 9,
-    PARTIALLY_FILLED = 10,
-    FILLED = 11,
+    UNDEFINED = 0,  # Invalid value
+    INITIALIZED = 1,
+    INVALID = 2,
+    DENIED = 3,
+    SUBMITTED = 4,
+    ACCEPTED = 5,
+    REJECTED = 6,
+    WORKING = 7,
+    CANCELLED = 8,
+    EXPIRED = 9,
+    OVER_FILLED = 10,
+    PARTIALLY_FILLED = 11,
+    FILLED = 12,
 
 
 cdef inline str order_state_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'INITIALIZED'
-    elif value == 1:
-        return 'INVALID'
     elif value == 2:
-        return 'DENIED'
+        return 'INVALID'
     elif value == 3:
-        return 'SUBMITTED'
+        return 'DENIED'
     elif value == 4:
-        return 'ACCEPTED'
+        return 'SUBMITTED'
     elif value == 5:
-        return 'REJECTED'
+        return 'ACCEPTED'
     elif value == 6:
-        return 'WORKING'
+        return 'REJECTED'
     elif value == 7:
-        return 'CANCELLED'
+        return 'WORKING'
     elif value == 8:
-        return 'EXPIRED'
+        return 'CANCELLED'
     elif value == 9:
-        return 'OVER_FILLED'
+        return 'EXPIRED'
     elif value == 10:
-        return 'PARTIALLY_FILLED'
+        return 'OVER_FILLED'
     elif value == 11:
+        return 'PARTIALLY_FILLED'
+    elif value == 12:
         return 'FILLED'
     else:
         return 'UNDEFINED'

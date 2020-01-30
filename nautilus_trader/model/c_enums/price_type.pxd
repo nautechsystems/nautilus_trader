@@ -8,21 +8,21 @@
 
 
 cpdef enum PriceType:
-    UNDEFINED = -1,  # Invalid value
-    BID = 0,
-    ASK = 1,
-    MID = 2,
-    LAST = 3
+    UNDEFINED = 0,  # Invalid value
+    BID = 1,
+    ASK = 2,
+    MID = 3,
+    LAST = 4
 
 
 cdef inline str price_type_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'BID'
-    elif value == 1:
-        return 'ASK'
     elif value == 2:
-        return 'MID'
+        return 'ASK'
     elif value == 3:
+        return 'MID'
+    elif value == 4:
         return 'LAST'
     else:
         return 'UNDEFINED'

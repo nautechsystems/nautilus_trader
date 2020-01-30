@@ -8,39 +8,39 @@
 
 
 cpdef enum BarStructure:
-    UNDEFINED = -1,  # Invalid value
-    TICK = 0,
-    TICK_IMBALANCE = 1,
-    VOLUME = 2,
-    VOLUME_IMBALANCE = 3,
-    DOLLAR = 4,
-    DOLLAR_IMBALANCE = 5
-    SECOND = 6,
-    MINUTE = 7,
-    HOUR = 8,
-    DAY = 9,
+    UNDEFINED = 0,  # Invalid value
+    TICK = 1,
+    TICK_IMBALANCE = 2,
+    VOLUME = 3,
+    VOLUME_IMBALANCE = 4,
+    DOLLAR = 5,
+    DOLLAR_IMBALANCE = 6
+    SECOND = 7,
+    MINUTE = 8,
+    HOUR = 9,
+    DAY = 10,
 
 
 cdef inline str bar_structure_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'TICK'
-    elif value == 1:
-        return 'TICK_IMBALANCE'
     elif value == 2:
-        return 'VOLUME'
+        return 'TICK_IMBALANCE'
     elif value == 3:
-        return 'VOLUME_IMBALANCE'
+        return 'VOLUME'
     elif value == 4:
-        return 'DOLLAR'
+        return 'VOLUME_IMBALANCE'
     elif value == 5:
-        return 'DOLLAR_IMBALANCE'
+        return 'DOLLAR'
     elif value == 6:
-        return 'SECOND'
+        return 'DOLLAR_IMBALANCE'
     elif value == 7:
-        return 'MINUTE'
+        return 'SECOND'
     elif value == 8:
-        return 'HOUR'
+        return 'MINUTE'
     elif value == 9:
+        return 'HOUR'
+    elif value == 10:
         return 'DAY'
     else:
         return 'UNDEFINED'
