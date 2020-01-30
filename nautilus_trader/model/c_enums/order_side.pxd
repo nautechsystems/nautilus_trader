@@ -8,15 +8,15 @@
 
 
 cpdef enum OrderSide:
-    UNDEFINED = -1,  # Invalid value
-    BUY = 0,
-    SELL = 1
+    UNDEFINED = 0,  # Invalid value
+    BUY = 1,
+    SELL = 2
 
 
 cdef inline str order_side_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'BUY'
-    elif value == 1:
+    elif value == 2:
         return 'SELL'
     else:
         return 'UNDEFINED'

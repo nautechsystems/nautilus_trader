@@ -8,24 +8,24 @@
 
 
 cpdef enum OrderPurpose:
-    UNDEFINED = -1,  # Invalid value
-    NONE = 0,
-    ENTRY = 1,
-    EXIT = 2,
-    STOP_LOSS = 3,
-    TAKE_PROFIT = 4
+    UNDEFINED = 0,  # Invalid value
+    NONE = 1,
+    ENTRY = 2,
+    EXIT = 3,
+    STOP_LOSS = 4,
+    TAKE_PROFIT = 5
 
 
 cdef inline str order_purpose_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'NONE'
-    elif value == 1:
-        return 'ENTRY'
     elif value == 2:
-        return 'EXIT'
+        return 'ENTRY'
     elif value == 3:
-        return 'STOP_LOSS'
+        return 'EXIT'
     elif value == 4:
+        return 'STOP_LOSS'
+    elif value == 5:
         return 'TAKE_PROFIT'
     else:
         return 'UNDEFINED'

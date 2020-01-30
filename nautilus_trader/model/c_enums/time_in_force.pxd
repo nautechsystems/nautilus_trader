@@ -8,24 +8,24 @@
 
 
 cpdef enum TimeInForce:
-    UNDEFINED = -1,  # Invalid value
-    DAY = 0,
-    GTC = 1,
-    IOC = 2,
-    FOC = 3,
-    GTD = 4
+    UNDEFINED = 0,  # Invalid value
+    DAY = 1,
+    GTC = 2,
+    IOC = 3,
+    FOC = 4,
+    GTD = 5
 
 
 cdef inline str time_in_force_to_string(int value):
-    if value == 0:
+    if value == 1:
         return 'DAY'
-    elif value == 1:
-        return 'GTC'
     elif value == 2:
-        return 'IOC'
+        return 'GTC'
     elif value == 3:
-        return 'FOC'
+        return 'IOC'
     elif value == 4:
+        return 'FOC'
+    elif value == 5:
         return 'GTD'
     else:
         return 'UNDEFINED'
