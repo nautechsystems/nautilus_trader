@@ -93,6 +93,8 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
                     Price(1.00001, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -201,6 +203,8 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
                     Price(1.00001, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
         ticks = [tick, tick, tick, tick, tick]
         tick_data = self.data_mapper.map_ticks(ticks)

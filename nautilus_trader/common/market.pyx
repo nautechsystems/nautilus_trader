@@ -64,8 +64,7 @@ cdef class TickDataWrangler:
             self._data_bars_bid = data_bars_bid
             self._data_bars_ask = data_bars_ask
 
-        self._symbol = instrument.symbol
-        self._precision = instrument.price_precision
+        self.instrument = instrument
 
         self.tick_data = []
         self.resolution = BarStructure.UNDEFINED
@@ -168,21 +167,23 @@ cdef class TickDataWrangler:
         Build a tick from the given values. The function expects the values to
         be an ndarray with 2 elements [bid, ask] of type double.
         """
-        return Tick(self._symbol,
-                    Price(values[0], self._precision),
-                    Price(values[1], self._precision),
-                    timestamp,
-                    bid_size=values[2],
-                    ask_size=values[3])
+        return Tick(self.instrument.symbol,
+                    Price(values[0], self.instrument.price_precision),
+                    Price(values[1], self.instrument.price_precision),
+                    Volume(values[2], self.instrument.size_precision),
+                    Volume(values[3], self.instrument.size_precision),
+                    timestamp)
 
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
         be an ndarray with 2 elements [bid, ask] of type double.
         """
-        return Tick(self._symbol,
-                    Price(values[0], self._precision),
-                    Price(values[1], self._precision),
+        return Tick(self.instrument.symbol,
+                    Price(values[0], self.instrument.price_precision),
+                    Price(values[1], self.instrument.price_precision),
+                    Volume.one(),
+                    Volume.one(),
                     timestamp)
 
 

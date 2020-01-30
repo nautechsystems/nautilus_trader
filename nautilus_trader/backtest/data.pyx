@@ -161,7 +161,8 @@ cdef class BacktestDataClient(DataClient):
 
         cdef int counter = 0
         self._symbol_index = {}
-        self._precision_index = {}
+        self._price_precisions = {}
+        self._size_precisions = {}
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
@@ -177,7 +178,8 @@ cdef class BacktestDataClient(DataClient):
             timing_start = datetime.utcnow()
 
             self._symbol_index[counter] = symbol
-            self._precision_index[counter] = instrument.price_precision
+            self._price_precisions[counter] = instrument.price_precision
+            self._size_precisions[counter] = instrument.size_precision
 
             # Build data wrangler
             wrangler = TickDataWrangler(
@@ -256,16 +258,17 @@ cdef class BacktestDataClient(DataClient):
         :return: Tick.
         """
         cdef int symbol_indexer = self._symbols[self._index]
-        cdef int precision = self._precision_index[symbol_indexer]
+        cdef int price_precision = self._price_precisions[symbol_indexer]
+        cdef int size_precision = self._size_precisions[symbol_indexer]
         cdef double[:] values = self._price_volume[self._index]
 
         cdef Tick tick = Tick(
-            symbol=self._symbol_index[symbol_indexer],
-            bid=Price(values[0], precision),
-            ask=Price(values[1], precision),
-            timestamp=self._timestamps[self._index],
-            bid_size=Volume(values[2]),
-            ask_size=Volume(values[3]))
+            self._symbol_index[symbol_indexer],
+            Price(values[0], price_precision),
+            Price(values[1], price_precision),
+            Volume(values[2], size_precision),
+            Volume(values[3], size_precision),
+            self._timestamps[self._index])
 
         self._index += 1
         if self._index > self._index_last:

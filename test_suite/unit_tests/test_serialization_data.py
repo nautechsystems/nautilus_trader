@@ -50,6 +50,8 @@ class DataSerializerTests(unittest.TestCase):
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
                     Price(1.00001, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         data = self.mapper.map_ticks([tick])
