@@ -91,8 +91,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, deserialized)
-        print('market')
         print(b64encode(serialized))
+        print(order)
 
     def test_can_serialize_and_deserialize_limit_orders(self):
         # Arrange
