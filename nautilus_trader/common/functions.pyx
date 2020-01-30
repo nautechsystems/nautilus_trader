@@ -112,14 +112,18 @@ cpdef str pad_string(str string, int length, str pad=' '):
     return ((length - len(string)) * pad) + string
 
 
-cpdef str format_zulu_datetime(datetime dt):
+cpdef str format_zulu_datetime(datetime dt, bint with_t=True):
     """
     Return the formatted string from the given datetime.
     
     :param dt: The datetime to format.
+    :param with_t: If the datetime should be formatted with 'T' separating time.
     :return str.
     """
     cdef str tz_stripped = str(dt).rpartition('+')[0]
+
+    if with_t:
+        tz_stripped = tz_stripped.replace(' ', 'T')
 
     if not PyUnicode_Contains(tz_stripped, '.'):
         return tz_stripped + '.000Z'
