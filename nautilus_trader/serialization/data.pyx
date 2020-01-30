@@ -224,7 +224,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
 
         cdef dict deserialized = BsonSerializer.deserialize(instrument_bytes)
 
-        cdef SecurityType security_type = security_type_from_string(deserialized[SECURITY_TYPE])
+        cdef SecurityType security_type = security_type_from_string(deserialized[SECURITY_TYPE].upper())
         if security_type == SecurityType.FOREX:
             return ForexInstrument(
                 symbol=Symbol.from_string(deserialized[SYMBOL]),
