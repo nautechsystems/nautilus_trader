@@ -10,7 +10,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType
+from nautilus_trader.model.objects import Price, Volume, Tick, BarSpecification, BarType
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.market import TickBarAggregator, TimeBarAggregator
 from nautilus_trader.common.clock import TestClock
@@ -35,18 +35,24 @@ class TickBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price(1.00001, 5),
             ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00002, 5),
             ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00000, 5),
             ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         # Act
@@ -80,18 +86,24 @@ class TimeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price(1.00001, 5),
             ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00002, 5),
             ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00000, 5),
             ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=stop_time)
 
         # Act

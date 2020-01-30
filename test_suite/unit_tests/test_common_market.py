@@ -226,18 +226,24 @@ class BarBuilderTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price(1.00001, 5),
             ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00002, 5),
             ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00000, 5),
             ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         # Act
@@ -259,18 +265,24 @@ class BarBuilderTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price(1.00001, 5),
             ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00002, 5),
             ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00000, 5),
             ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
@@ -285,7 +297,7 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price(1.00002, 5), bar.high)
         self.assertEqual(Price(1.00000, 5), bar.low)
         self.assertEqual(Price(1.00000, 5), bar.close)
-        self.assertEqual(3, bar.volume)
+        self.assertEqual(3, bar.volume.as_int())
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
@@ -299,18 +311,24 @@ class BarBuilderTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price(1.00001, 5),
             ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00002, 5),
             ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00000, 5),
             ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
@@ -325,7 +343,7 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price(1.000035, 6), bar.high)
         self.assertEqual(Price(1.000015, 6), bar.low)
         self.assertEqual(Price(1.000015, 6), bar.close)
-        self.assertEqual(3, bar.volume)
+        self.assertEqual(3, bar.volume.as_int())
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
@@ -339,18 +357,24 @@ class BarBuilderTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price(1.00001, 5),
             ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00002, 5),
             ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = Tick(
             symbol=AUDUSD_FXCM,
             bid=Price(1.00000, 5),
             ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
             timestamp=UNIX_EPOCH)
 
         builder.update(tick1)
@@ -366,7 +390,7 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price(1.000015, 6), bar.high)
         self.assertEqual(Price(1.000015, 6), bar.low)
         self.assertEqual(Price(1.000015, 6), bar.close)
-        self.assertEqual(0, bar.volume)
+        self.assertEqual(0, bar.volume.as_int())
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)

@@ -298,18 +298,18 @@ cdef class Tick:
                  Symbol symbol not None,
                  Price bid not None,
                  Price ask not None,
-                 datetime timestamp not None,
-                 Volume bid_size not None=Volume.one(),
-                 Volume ask_size not None=Volume.one()):
+                 Volume bid_size not None,
+                 Volume ask_size not None,
+                 datetime timestamp not None):
         """
         Initializes a new instance of the Tick class.
 
         :param symbol: The ticker symbol.
         :param bid: The best bid price.
         :param ask: The best ask price.
+        :param bid_size: The bid size.
+        :param ask_size: The ask size.
         :param timestamp: The tick timestamp (UTC).
-        :param bid_size: The bid size (default=None).
-        :param ask_size: The ask size (default=None).
         """
         self.symbol = symbol
         self.bid = bid
@@ -332,12 +332,12 @@ cdef class Tick:
 
         cdef list split_values = values.split(',', maxsplit=4)
         return Tick(
-            symbol=symbol,
-            bid=Price.from_string(split_values[0]),
-            ask=Price.from_string(split_values[1]),
-            bid_size=Volume.from_string(split_values[2]),
-            ask_size=Volume.from_string(split_values[3]),
-            timestamp=pd.to_datetime(split_values[4]))
+            symbol,
+            Price.from_string(split_values[0]),
+            Price.from_string(split_values[1]),
+            Volume.from_string(split_values[2]),
+            Volume.from_string(split_values[3]),
+            pd.to_datetime(split_values[4]))
 
     @staticmethod
     cdef Tick from_string(str value):
@@ -351,12 +351,12 @@ cdef class Tick:
 
         cdef list split_values = value.split(',', maxsplit=5)
         return Tick(
-            symbol=Symbol.from_string(split_values[0]),
-            bid=Price.from_string(split_values[1]),
-            ask=Price.from_string(split_values[2]),
-            bid_size=Volume.from_string(split_values[3]),
-            ask_size=Volume.from_string(split_values[4]),
-            timestamp=pd.to_datetime(split_values[5]))
+            Symbol.from_string(split_values[0]),
+            Price.from_string(split_values[1]),
+            Price.from_string(split_values[2]),
+            Volume.from_string(split_values[3]),
+            Volume.from_string(split_values[4]),
+            pd.to_datetime(split_values[5]))
 
     @staticmethod
     def py_from_string_with_symbol(Symbol symbol, str values) -> Tick:

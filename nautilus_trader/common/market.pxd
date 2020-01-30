@@ -13,18 +13,16 @@ from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Price, Volume, Tick, BarType, BarSpecification, Bar
+from nautilus_trader.model.objects cimport Price, Volume, Tick, BarType, BarSpecification, Bar, Instrument
 from nautilus_trader.model.events cimport TimeEvent
 
 
 cdef class TickDataWrangler:
-    cdef Symbol _symbol
-    cdef int _precision
     cdef object _data_ticks
     cdef dict _data_bars_ask
     cdef dict _data_bars_bid
 
+    cdef readonly Instrument instrument
     cdef readonly tick_data
     cdef readonly BarStructure resolution
 

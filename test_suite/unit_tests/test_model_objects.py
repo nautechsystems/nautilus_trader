@@ -10,7 +10,7 @@ import unittest
 
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
+from nautilus_trader.model.objects import Quantity, Money, Price, Volume, Tick, BarSpecification, BarType, Bar
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -369,6 +369,8 @@ class ObjectTests(unittest.TestCase):
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
                     Price(1.00001, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -382,6 +384,8 @@ class ObjectTests(unittest.TestCase):
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
                     Price(1.00001, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -398,6 +402,8 @@ class ObjectTests(unittest.TestCase):
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
                     Price(1.00001, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act

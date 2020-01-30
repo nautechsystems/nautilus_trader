@@ -36,7 +36,8 @@ cdef class BacktestDataClient(DataClient):
     cdef double[:, :] _price_volume
     cdef datetime[:] _timestamps
     cdef dict _symbol_index
-    cdef dict _precision_index
+    cdef dict _price_precisions
+    cdef dict _size_precisions
     cdef int _index
     cdef int _index_last
 

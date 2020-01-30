@@ -176,6 +176,8 @@ class TestStubs:
         return Tick(symbol,
                     Price(90.002, 3),
                     Price(90.003, 3),
+                    Volume(1),
+                    Volume(1),
                     TestStubs.unix_epoch())
 
     @staticmethod

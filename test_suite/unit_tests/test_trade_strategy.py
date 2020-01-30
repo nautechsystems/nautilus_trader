@@ -301,6 +301,8 @@ class TradeStrategyTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
                     Price(1.00000, 5),
                     Price(1.00001, 5),
+                    Volume(1),
+                    Volume(1),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy.handle_tick(tick)
@@ -454,6 +456,8 @@ class TradeStrategyTests(unittest.TestCase):
         tick = Tick(Symbol('USDJPY', Venue('FXCM')),
                     Price(110.80000, 5),
                     Price(110.80010, 5),
+                    Volume(1),
+                    Volume(1),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy.handle_tick(tick)
@@ -472,6 +476,8 @@ class TradeStrategyTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
                     Price(0.80000, 5),
                     Price(0.80010, 5),
+                    Volume(1),
+                    Volume(1),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy.handle_tick(tick)

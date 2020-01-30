@@ -14,7 +14,7 @@ from datetime import timedelta
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.enums import OrderSide, MarketPosition, Currency
-from nautilus_trader.model.objects import Quantity, Price, Tick, Money
+from nautilus_trader.model.objects import Quantity, Price, Volume, Tick, Money
 from nautilus_trader.model.identifiers import (
     IdTag,
     OrderId,
@@ -67,6 +67,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -123,6 +125,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -175,6 +179,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         position = Position(PositionId('P-123456'), order_partially_filled)
@@ -244,6 +250,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -310,6 +318,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -400,6 +410,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -475,6 +487,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
@@ -568,6 +582,8 @@ class PositionTests(unittest.TestCase):
         last = Tick(AUDUSD_FXCM,
                     Price(1.00050, 5),
                     Price(1.00048, 5),
+                    Volume(1),
+                    Volume(1),
                     UNIX_EPOCH)
 
         # Act
