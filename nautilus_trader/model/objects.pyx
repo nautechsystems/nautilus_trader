@@ -886,15 +886,16 @@ cdef class Instrument:
                  str broker_symbol not None,
                  Currency quote_currency,
                  SecurityType security_type,
-                 int tick_precision,
-                 Decimal tick_size not None,
-                 double round_lot_size,
+                 int price_precision,
+                 int size_precision,
                  int min_stop_distance_entry,
                  int min_stop_distance,
                  int min_limit_distance_entry,
                  int min_limit_distance,
-                 double min_trade_size,
-                 double max_trade_size,
+                 Price tick_size not None,
+                 Quantity round_lot_size not None,
+                 Quantity min_trade_size not None,
+                 Quantity max_trade_size not None,
                  Decimal rollover_interest_buy not None,
                  Decimal rollover_interest_sell not None,
                  datetime timestamp not None):
@@ -905,15 +906,16 @@ cdef class Instrument:
         :param broker_symbol: The broker symbol.
         :param quote_currency: The base currency.
         :param security_type: The security type.
-        :param tick_precision: The tick decimal digits precision.
-        :param tick_size: The tick size.
-        :param round_lot_size: The rounded lot size (> 0).
+        :param price_precision: The price decimal precision.
+        :param size_precision: The trading size decimal precision.
         :param min_stop_distance_entry: The minimum distance for stop entry orders.
         :param min_stop_distance: The minimum tick distance for stop orders.
         :param min_limit_distance_entry: The minimum distance for limit entry orders.
         :param min_limit_distance: The minimum tick distance for limit orders.
-        :param min_trade_size: The minimum trade size.
-        :param max_trade_size: The maximum trade size.
+        :param tick_size: The tick size.
+        :param round_lot_size: The rounded lot size.
+        :param min_trade_size: The minimum possible trade size.
+        :param max_trade_size: The maximum possible trade size.
         :param rollover_interest_buy: The rollover interest for long positions.
         :param rollover_interest_sell: The rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
@@ -921,29 +923,30 @@ cdef class Instrument:
         Condition.valid_string(broker_symbol, 'broker_symbol')
         Condition.not_equal(quote_currency, Currency.UNDEFINED, 'quote_currency', 'UNDEFINED')
         Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
-        Condition.not_negative_int(tick_precision, 'tick_precision')
-        Condition.positive(tick_size.as_double(), 'tick_size.value')
-        Condition.positive(round_lot_size, 'round_lot_size')
+        Condition.not_negative_int(price_precision, 'price_precision')
+        Condition.not_negative_int(size_precision, 'volume_precision')
         Condition.not_negative_int(min_stop_distance_entry, 'min_stop_distance_entry')
-        Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
         Condition.not_negative_int(min_stop_distance, 'min_stop_distance')
+        Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
         Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
-        Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
-        Condition.positive(min_trade_size, 'min_trade_size')
-        Condition.positive(max_trade_size, 'max_trade_size')
+        Condition.equal(price_precision, tick_size.precision, 'size_precision', 'tick_size.precision')
+        Condition.equal(size_precision, round_lot_size.precision, 'size_precision', 'round_lot_size.precision')
+        Condition.equal(size_precision, min_trade_size.precision, 'size_precision', 'min_trade_size.precision')
+        Condition.equal(size_precision, max_trade_size.precision, 'size_precision', 'max_trade_size.precision')
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
         self.broker_symbol = broker_symbol
         self.quote_currency = quote_currency
         self.security_type = security_type
-        self.tick_precision = tick_precision
-        self.tick_size = tick_size
-        self.round_lot_size = round_lot_size
+        self.price_precision = price_precision
+        self.size_precision = size_precision
         self.min_stop_distance_entry = min_stop_distance_entry
         self.min_stop_distance = min_stop_distance
         self.min_limit_distance_entry = min_limit_distance_entry
         self.min_limit_distance = min_limit_distance
+        self.tick_size = tick_size
+        self.round_lot_size = round_lot_size
         self.min_trade_size = min_trade_size
         self.max_trade_size = max_trade_size
         self.rollover_interest_buy = rollover_interest_buy
@@ -1002,15 +1005,16 @@ cdef class ForexInstrument(Instrument):
     def __init__(self,
                  Symbol symbol not None,
                  str broker_symbol not None,
-                 int tick_precision,
-                 Decimal tick_size not None,
-                 double round_lot_size,
+                 int price_precision,
+                 int size_precision,
                  int min_stop_distance_entry,
                  int min_stop_distance,
                  int min_limit_distance_entry,
                  int min_limit_distance,
-                 double min_trade_size,
-                 double max_trade_size,
+                 Price tick_size not None,
+                 Quantity round_lot_size not None,
+                 Quantity min_trade_size not None,
+                 Quantity max_trade_size not None,
                  Decimal rollover_interest_buy not None,
                  Decimal rollover_interest_sell not None,
                  datetime timestamp not None):
@@ -1019,15 +1023,16 @@ cdef class ForexInstrument(Instrument):
 
         :param symbol: The symbol.
         :param broker_symbol: The broker symbol.
-        :param tick_precision: The tick decimal digits precision.
-        :param tick_size: The tick size.
-        :param round_lot_size: The rounded lot size (> 0).
+        :param price_precision: The price decimal precision.
+        :param size_precision: The trading size decimal precision.
         :param min_stop_distance_entry: The minimum distance for stop entry orders.
         :param min_stop_distance: The minimum tick distance for stop orders.
         :param min_limit_distance_entry: The minimum distance for limit entry orders.
         :param min_limit_distance: The minimum tick distance for limit orders.
-        :param min_trade_size: The minimum trade size.
-        :param max_trade_size: The maximum trade size.
+        :param tick_size: The tick size.
+        :param round_lot_size: The rounded lot size.
+        :param min_trade_size: The minimum possible trade size.
+        :param max_trade_size: The maximum possible trade size.
         :param rollover_interest_buy: The rollover interest for long positions.
         :param rollover_interest_sell: The rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
@@ -1039,13 +1044,14 @@ cdef class ForexInstrument(Instrument):
             broker_symbol,
             currency_from_string(symbol.code[3:]),
             SecurityType.FOREX,
-            tick_precision,
-            tick_size,
-            round_lot_size,
+            price_precision,
+            size_precision,
             min_stop_distance_entry,
             min_stop_distance,
             min_limit_distance_entry,
             min_limit_distance,
+            tick_size,
+            round_lot_size,
             min_trade_size,
             max_trade_size,
             rollover_interest_buy,

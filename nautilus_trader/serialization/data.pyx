@@ -11,7 +11,7 @@ from bson.raw_bson import RawBSONDocument
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Quantity, Decimal, Tick, Bar, Instrument, ForexInstrument
+from nautilus_trader.model.objects cimport Decimal, Quantity, Price, Tick, Bar, Instrument, ForexInstrument
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_to_string, security_type_from_string
 from nautilus_trader.serialization.constants cimport *
@@ -193,17 +193,18 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             BROKER_SYMBOL: instrument.broker_symbol,
             QUOTE_CURRENCY: currency_to_string(instrument.quote_currency),
             SECURITY_TYPE: security_type_to_string(instrument.security_type),
-            TICK_PRECISION: instrument.tick_precision,
-            TICK_SIZE: str(instrument.tick_size),
-            ROUND_LOT_SIZE: instrument.round_lot_size,
+            PRICE_PRECISION: instrument.price_precision,
+            SIZE_PRECISION: instrument.size_precision,
             MIN_STOP_DISTANCE_ENTRY: instrument.min_stop_distance_entry,
             MIN_STOP_DISTANCE: instrument.min_stop_distance,
             MIN_LIMIT_DISTANCE_ENTRY: instrument.min_limit_distance_entry,
             MIN_LIMIT_DISTANCE: instrument.min_limit_distance,
-            MIN_TRADE_SIZE: instrument.min_trade_size,
-            MAX_TRADE_SIZE: instrument.max_trade_size,
-            ROLL_OVER_INTEREST_BUY: str(instrument.rollover_interest_buy),
-            ROLL_OVER_INTEREST_SELL: str(instrument.rollover_interest_sell),
+            TICK_SIZE: instrument.tick_size.to_string(),
+            ROUND_LOT_SIZE: instrument.round_lot_size.to_string(),
+            MIN_TRADE_SIZE: instrument.min_trade_size.to_string(),
+            MAX_TRADE_SIZE: instrument.max_trade_size.to_string(),
+            ROLL_OVER_INTEREST_BUY: instrument.rollover_interest_buy.to_string(),
+            ROLL_OVER_INTEREST_SELL: instrument.rollover_interest_sell.to_string(),
             TIMESTAMP: convert_datetime_to_string(instrument.timestamp),
         }
 
@@ -228,17 +229,18 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             return ForexInstrument(
                 symbol=Symbol.from_string(deserialized[SYMBOL]),
                 broker_symbol=deserialized[BROKER_SYMBOL],
-                tick_precision=deserialized[TICK_PRECISION],
-                tick_size=Decimal.from_string_to_decimal(str(deserialized[TICK_SIZE])),
-                round_lot_size=deserialized[ROUND_LOT_SIZE],
+                price_precision=deserialized[PRICE_PRECISION],
+                size_precision=deserialized[SIZE_PRECISION],
                 min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
                 min_stop_distance=deserialized[MIN_STOP_DISTANCE],
                 min_limit_distance_entry=deserialized[MIN_LIMIT_DISTANCE_ENTRY],
                 min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
-                min_trade_size=deserialized[MIN_TRADE_SIZE],
-                max_trade_size=deserialized[MAX_TRADE_SIZE],
-                rollover_interest_buy=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_BUY])),
-                rollover_interest_sell=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_SELL])),
+                tick_size=Price.from_string(deserialized[TICK_SIZE]),
+                round_lot_size=Quantity.from_string(deserialized[ROUND_LOT_SIZE]),
+                min_trade_size=Quantity.from_string(deserialized[MIN_TRADE_SIZE]),
+                max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
+                rollover_interest_buy=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
+                rollover_interest_sell=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
                 timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
         return Instrument(
@@ -246,17 +248,18 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             broker_symbol=deserialized[BROKER_SYMBOL],
             quote_currency=currency_from_string(deserialized[QUOTE_CURRENCY]),
             security_type=security_type,
-            tick_precision=deserialized[TICK_PRECISION],
-            tick_size=Decimal.from_string_to_decimal(str(deserialized[TICK_SIZE])),
-            round_lot_size=deserialized[ROUND_LOT_SIZE],
+            price_precision=deserialized[PRICE_PRECISION],
+            size_precision=deserialized[SIZE_PRECISION],
             min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
             min_stop_distance=deserialized[MIN_STOP_DISTANCE],
             min_limit_distance_entry=deserialized[MIN_LIMIT_DISTANCE_ENTRY],
             min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
-            min_trade_size=deserialized[MIN_TRADE_SIZE],
-            max_trade_size=deserialized[MAX_TRADE_SIZE],
-            rollover_interest_buy=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_BUY])),
-            rollover_interest_sell=Decimal.from_string_to_decimal(str(deserialized[ROLL_OVER_INTEREST_SELL])),
+            tick_size=Price.from_string(deserialized[TICK_SIZE]),
+            round_lot_size=Quantity.from_string(deserialized[ROUND_LOT_SIZE]),
+            min_trade_size=Quantity.from_string(deserialized[MIN_TRADE_SIZE]),
+            max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
+            rollover_interest_buy=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
+            rollover_interest_sell=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
             timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
 
