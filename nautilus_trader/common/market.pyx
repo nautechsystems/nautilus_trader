@@ -65,7 +65,7 @@ cdef class TickDataWrangler:
             self._data_bars_ask = data_bars_ask
 
         self._symbol = instrument.symbol
-        self._precision = instrument.tick_precision
+        self._precision = instrument.price_precision
 
         self.tick_data = []
         self.resolution = BarStructure.UNDEFINED

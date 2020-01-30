@@ -140,11 +140,11 @@ cdef class BacktestExecClient(ExecutionClient):
         for symbol, instrument in self.instruments.items():
             min_stops[symbol] = Decimal(
                 instrument.tick_size * instrument.min_stop_distance,
-                instrument.tick_precision)
+                instrument.price_precision)
 
             min_limits[symbol] = Decimal(
                 instrument.tick_size * instrument.min_limit_distance,
-                instrument.tick_precision)
+                instrument.price_precision)
 
         self._min_stops = min_stops
         self._min_limits = min_limits

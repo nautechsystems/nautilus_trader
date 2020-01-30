@@ -16,7 +16,7 @@ from nautilus_trader.model.enums import Currency  # Do not remove
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal, Instrument
+from nautilus_trader.model.objects cimport Decimal, Quantity, Price, Instrument
 
 
 cdef class CSVTickDataLoader:
@@ -66,42 +66,40 @@ cdef class InstrumentLoader:
     Provides instrument template methods for backtesting.
     """
 
-    cpdef Instrument default_fx_ccy(self, Symbol symbol, int tick_precision):
+    cpdef Instrument default_fx_ccy(self, Symbol symbol):
         """
         Return a default FX currency pair instrument from the given arguments.
         
         :param symbol: The currency pair symbol.
-        :param tick_precision: The currency pair tick precision.
         :raises ValueError: If the symbol.code length is not == 6.
-        :raises ValueError: If the tick_precision is not 3 or 5.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.equal(len(symbol.code), 6, 'len(symbol)', '6')
-        Condition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
         cdef Currency quote_currency = currency_from_string(symbol.code[3:])
 
         # Check tick precision of quote currency
-        if quote_currency == Currency.USD:
-            Condition.true(tick_precision == 5, 'USD tick_precision == 5')
-        elif quote_currency == Currency.JPY:
-            Condition.true(tick_precision == 3, 'JPY tick_precision == 3')
+        if quote_currency == Currency.JPY:
+            price_precision = 3
+        else:
+            price_precision = 5
 
         return Instrument(
             symbol=symbol,
             broker_symbol=symbol.code[:3] + '/' + symbol.code[3:],
             quote_currency=quote_currency,
             security_type=SecurityType.FOREX,
-            tick_precision=tick_precision,
-            tick_size=Decimal(1 / (10 ** tick_precision), tick_precision),
-            round_lot_size=1000,
+            price_precision=price_precision,
+            size_precision=0,
             min_stop_distance_entry=0,
             min_limit_distance_entry=0,
             min_stop_distance=0,
             min_limit_distance=0,
-            min_trade_size=1,
-            max_trade_size=50000000,
+            tick_size=Price(1 / (10 ** price_precision), price_precision),
+            round_lot_size=Quantity(1000),
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal.zero(),
             rollover_interest_sell=Decimal.zero(),
             timestamp=datetime.now(timezone.utc))

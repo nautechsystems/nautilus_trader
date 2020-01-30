@@ -112,15 +112,16 @@ cdef class Instrument:
     cdef readonly str broker_symbol
     cdef readonly Currency quote_currency
     cdef readonly SecurityType security_type
-    cdef readonly int tick_precision
-    cdef readonly Decimal tick_size
-    cdef readonly double round_lot_size
+    cdef readonly int price_precision
+    cdef readonly int size_precision
     cdef readonly int min_stop_distance_entry
     cdef readonly int min_stop_distance
     cdef readonly int min_limit_distance_entry
     cdef readonly int min_limit_distance
-    cdef readonly double min_trade_size
-    cdef readonly double max_trade_size
+    cdef readonly Price tick_size
+    cdef readonly Quantity round_lot_size
+    cdef readonly Quantity min_trade_size
+    cdef readonly Quantity max_trade_size
     cdef readonly Decimal rollover_interest_buy
     cdef readonly Decimal rollover_interest_sell
     cdef readonly datetime timestamp

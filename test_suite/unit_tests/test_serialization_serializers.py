@@ -857,17 +857,18 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
             broker_symbol='AUD/USD',
             quote_currency=Currency.USD,
             security_type=SecurityType.FOREX,
-            tick_precision=5,
-            tick_size=Decimal(0.00001, 5),
-            round_lot_size=1000,
+            price_precision=5,
+            size_precision=0,
+            tick_size=Price(0.00001, 5),
+            round_lot_size=Quantity(1000),
             min_stop_distance_entry=0,
             min_stop_distance=0,
             min_limit_distance_entry=1,
             min_limit_distance=1,
-            min_trade_size=1,
-            max_trade_size=50000000,
-            rollover_interest_buy=Decimal(1.1, 1),
-            rollover_interest_sell=Decimal(-1.1, 1),
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(50000000),
+            rollover_interest_buy=Decimal(0.025, 3),
+            rollover_interest_sell=Decimal(-0.035, 3),
             timestamp=TestStubs.unix_epoch())
 
         # Act
@@ -881,7 +882,8 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         self.assertEqual(instrument.broker_symbol, deserialized.broker_symbol)
         self.assertEqual(instrument.quote_currency, deserialized.quote_currency)
         self.assertEqual(instrument.security_type, deserialized.security_type)
-        self.assertEqual(instrument.tick_precision, deserialized.tick_precision)
+        self.assertEqual(instrument.price_precision, deserialized.price_precision)
+        self.assertEqual(instrument.size_precision, deserialized.size_precision)
         self.assertEqual(instrument.tick_size, deserialized.tick_size)
         self.assertEqual(instrument.round_lot_size, deserialized.round_lot_size)
         self.assertEqual(instrument.min_stop_distance_entry, deserialized.min_stop_distance_entry)

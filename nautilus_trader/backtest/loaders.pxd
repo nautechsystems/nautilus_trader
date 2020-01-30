@@ -19,4 +19,4 @@ cdef class CSVBarDataLoader:
 
 
 cdef class InstrumentLoader:
-    cpdef Instrument default_fx_ccy(self, Symbol symbol, int tick_precision)
+    cpdef Instrument default_fx_ccy(self, Symbol symbol)

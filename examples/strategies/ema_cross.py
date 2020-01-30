@@ -77,7 +77,7 @@ class EMACrossPy(TradingStrategy):
         """
         # Put custom code to be run on strategy start here (or pass)
         self.instrument = self.get_instrument(self.symbol)
-        self.precision = self.instrument.tick_precision
+        self.precision = self.instrument.price_precision
         self.entry_buffer = self.instrument.tick_size.as_double() * 3.0
         self.SL_buffer = self.instrument.tick_size * 10.0
         self.position_sizer = FixedRiskSizer(self.instrument)

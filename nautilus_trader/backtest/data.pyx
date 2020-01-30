@@ -177,7 +177,7 @@ cdef class BacktestDataClient(DataClient):
             timing_start = datetime.utcnow()
 
             self._symbol_index[counter] = symbol
-            self._precision_index[counter] = instrument.tick_precision
+            self._precision_index[counter] = instrument.price_precision
 
             # Build data wrangler
             wrangler = TickDataWrangler(

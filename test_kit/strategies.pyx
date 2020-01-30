@@ -320,7 +320,7 @@ cdef class EMACross(TradingStrategy):
         self.instrument = instrument
         self.symbol = instrument.symbol
         self.bar_type = BarType(instrument.symbol, bar_spec)
-        self.precision = instrument.tick_precision
+        self.precision = instrument.price_precision
 
         self.risk_bp = risk_bp
         self.entry_buffer = instrument.tick_size.as_double() * 3.0
