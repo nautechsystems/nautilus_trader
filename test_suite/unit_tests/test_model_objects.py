@@ -55,7 +55,7 @@ class ObjectTests(unittest.TestCase):
         result0 = str(Quantity())
         result1 = str(Quantity(1000))
         result2 = Quantity(1000, 1).to_string(format_commas=True)
-        result3 = Quantity(1000, 1).to_string_formatted()
+        result3 = Quantity(1000).to_string_formatted()
 
         # Assert
         self.assertEqual('0', result0)
