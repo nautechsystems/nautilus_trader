@@ -10,7 +10,7 @@ import gc
 import sys
 import pandas as pd
 import pytz
-from libc.math cimport round
+from libc.math cimport round, floor, log10
 from cpython.datetime cimport datetime
 from cpython.unicode cimport PyUnicode_Contains
 
@@ -78,6 +78,35 @@ cdef long get_size_of(obj):
     return size
 
 
+cpdef str format_size(double size, int precision=0):
+    """
+    Return the formatted bytes size.
+
+    :param size: The quantity size.
+    :param precision: The precision of the final quantity.
+    :return: str.
+    """
+    if precision > 0:
+        return f'{size:.{precision}f}'
+
+    if size < 1000 or size % 1000 != 0:
+        return f'{size:.{precision}f}'
+
+    if size < 1000000:
+        return f'{size / 1000:.{0}f}K'
+
+    cdef str millions = f'{size / 1000000:.{3}f}'.rstrip('0').rstrip('.')
+    return f'{millions}M'
+
+
+cdef dict POWER_LABELS = {
+        0: 'bytes',
+        1: 'KB',
+        2: 'MB',
+        3: 'GB',
+        4: 'TB'
+}
+
 cpdef str format_bytes(double size):
     """
     Return the formatted bytes size.
@@ -86,18 +115,13 @@ cpdef str format_bytes(double size):
     :return: str.
     """
     cdef double power = pow(2, 10)
-    cdef dict power_labels = {
-        0: 'bytes',
-        1: 'KB',
-        2: 'MB',
-        3: 'GB',
-        4: 'TB'}
+
 
     cdef int n = 0
-    while size > power:
+    while size >= power:
         size /= power
         n += 1
-    return f'{fast_round(size, 2):,} {power_labels[n]}'
+    return f'{fast_round(size, 2):,} {POWER_LABELS[n]}'
 
 
 cpdef str pad_string(str string, int length, str pad=' '):

@@ -55,11 +55,13 @@ class ObjectTests(unittest.TestCase):
         result0 = str(Quantity())
         result1 = str(Quantity(1000))
         result2 = Quantity(1000, 1).to_string(format_commas=True)
+        result3 = Quantity(1000, 1).to_string_formatted()
 
         # Assert
         self.assertEqual('0', result0)
         self.assertEqual('1000', result1)
         self.assertEqual('1,000.0', result2)
+        self.assertEqual('1K', result3)
 
     def test_quantity_comparisons(self):
         # Arrange

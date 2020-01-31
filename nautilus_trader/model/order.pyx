@@ -278,7 +278,7 @@ cdef class Order:
         """
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string(format_commas=True)} {self.symbol} "
+        return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
                 f"{order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 

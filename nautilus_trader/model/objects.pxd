@@ -23,6 +23,7 @@ cdef class Quantity(Decimal):
     cdef Quantity from_string(str value)
     cpdef Quantity add(self, Quantity other)
     cpdef Quantity subtract(self, Quantity other)
+    cpdef str to_string_formatted(self)
 
 
 cdef class Price(Decimal):

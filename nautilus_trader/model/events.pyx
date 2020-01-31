@@ -489,7 +489,7 @@ cdef class OrderWorking(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
                 f"label={self.label}, "
-                f"{order_side_to_string(self.order_side)} {self.quantity.to_string(format_commas=True)} "
+                f"{order_side_to_string(self.order_side)} {self.quantity.to_string_formatted()} "
                 f"{self.symbol} {order_type_to_string(self.order_type)} @ "
                 f"{self.price} {time_in_force_to_string(self.time_in_force)}{expire_time})")
 
@@ -620,7 +620,7 @@ cdef class OrderModified(OrderEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
-                f"quantity={self.modified_quantity.to_string(format_commas=True)}, "
+                f"quantity={self.modified_quantity.to_string_formatted()}, "
                 f"price={self.modified_price})")
 
 
@@ -722,8 +722,8 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}, "
-                f"quantity={self.filled_quantity.to_string(format_commas=True)}, "
-                f"leaves_quantity={self.leaves_quantity.to_string(format_commas=True)}, "
+                f"quantity={self.filled_quantity.to_string_formatted()}, "
+                f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
                 f"avg_price={self.average_price} {currency_to_string(self.transaction_currency)})")
 
 
@@ -787,7 +787,7 @@ cdef class OrderFilled(OrderFillEvent):
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}, "
-                f"quantity={self.filled_quantity.to_string(format_commas=True)}, "
+                f"quantity={self.filled_quantity.to_string_formatted()}, "
                 f"avg_price={self.average_price} {currency_to_string(self.transaction_currency)})")
 
 
