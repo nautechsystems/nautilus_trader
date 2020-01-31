@@ -100,11 +100,11 @@ cpdef str format_size(double size, int precision=0):
 
 
 cdef dict POWER_LABELS = {
-        0: 'bytes',
-        1: 'KB',
-        2: 'MB',
-        3: 'GB',
-        4: 'TB'
+    0: 'bytes',
+    1: 'KB',
+    2: 'MB',
+    3: 'GB',
+    4: 'TB'
 }
 
 cpdef str format_bytes(double size):
@@ -115,7 +115,6 @@ cpdef str format_bytes(double size):
     :return: str.
     """
     cdef double power = pow(2, 10)
-
 
     cdef int n = 0
     while size >= power:

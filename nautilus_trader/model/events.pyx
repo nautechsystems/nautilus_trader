@@ -858,11 +858,12 @@ cdef class PositionOpened(PositionEvent):
 
         :return str.
         """
+        cdef str currency = currency_to_string(self.order_fill.transaction_currency)
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
-                f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"avg_open_price={round(self.position.average_open_price, 5)} {currency_to_string(self.order_fill.transaction_currency)}, "
+                f"entry={order_side_to_string(self.position.entry_direction)}, "
+                f"avg_open={round(self.position.average_open_price, 5)} {currency}, "
                 f"{self.position.status_string()})")
 
 
@@ -904,11 +905,11 @@ cdef class PositionModified(PositionEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
-                f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"avg_open_price={self.position.average_open_price} {currency}, "
+                f"entry={order_side_to_string(self.position.entry_direction)}, "
+                f"avg_open={self.position.average_open_price} {currency}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl} {currency}, "
+                f"realized_pnl={self.position.realized_pnl.to_string(True)} {currency}, "
                 f"{self.position.status_string()})")
 
 
@@ -947,16 +948,17 @@ cdef class PositionClosed(PositionEvent):
         :return str.
         """
         cdef str currency = currency_to_string(self.order_fill.transaction_currency)
+        cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
-                f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
-                f"duration={self.position.open_duration}, "
-                f"avg_open_price={self.position.average_open_price} {currency}, "
-                f"avg_close_price={self.position.average_close_price} {currency}, "
+                f"entry={order_side_to_string(self.position.entry_direction)}, "
+                f"duration={duration}, "
+                f"avg_open={self.position.average_open_price} {currency}, "
+                f"avg_close={self.position.average_close_price} {currency}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl} {currency})")
+                f"realized_pnl={self.position.realized_pnl.to_string(True)} {currency})")
 
 
 cdef class TimeEvent(Event):
