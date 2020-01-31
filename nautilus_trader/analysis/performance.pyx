@@ -9,6 +9,7 @@
 import numpy as np
 import pandas as pd
 from cpython.datetime cimport date, datetime
+from numpy import float64
 from scipy.stats import kurtosis, skew
 
 from nautilus_trader.core.correctness cimport Condition
@@ -36,7 +37,7 @@ cdef class PerformanceAnalyzer:
         """
         self._account_starting_capital = None
         self._account_capital = None
-        self._returns = pd.Series()
+        self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
 
@@ -139,7 +140,7 @@ cdef class PerformanceAnalyzer:
         """
         self._account_starting_capital = None
         self._account_capital = None
-        self._returns = pd.Series()
+        self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
 
