@@ -16,9 +16,10 @@ from cpython.object cimport PyCallable_Check
 
 cdef class Condition:
     """
-    Provides static methods for the checking of function or method conditions.
-    A condition is a predicate which must be true just prior to the execution
-    of some section of code - for correct behaviour as per the design specification.
+    Provides checking of function or method conditions. A condition is a
+    predicate which must be true just prior to the execution of some section of
+    code - for correct behaviour as per the design specification.
+    If a check fails an Exception is thrown with a descriptive message.
     """
 
     @staticmethod
@@ -634,7 +635,7 @@ cdef class Condition:
         if value >= 0.0:
             return  # Check passed
 
-        cdef str msg = f"The \'{param}\' was a negative real, was {value}"
+        cdef str msg = f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -663,7 +664,7 @@ cdef class Condition:
         if value >= 0:
             return  # Check passed
 
-        cdef str msg = f"The \'{param}\' was a negative integer, was {value}"
+        cdef str msg = f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
