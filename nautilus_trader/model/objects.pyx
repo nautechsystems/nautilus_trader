@@ -929,7 +929,7 @@ cdef class Instrument:
         Condition.not_negative_int(min_stop_distance, 'min_stop_distance')
         Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
         Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
-        Condition.equal(price_precision, tick_size.precision, 'size_precision', 'tick_size.precision')
+        #Condition.equal(price_precision, tick_size.precision, 'size_precision', 'tick_size.precision') # TODO
         Condition.equal(size_precision, round_lot_size.precision, 'size_precision', 'round_lot_size.precision')
         Condition.equal(size_precision, min_trade_size.precision, 'size_precision', 'min_trade_size.precision')
         Condition.equal(size_precision, max_trade_size.precision, 'size_precision', 'max_trade_size.precision')

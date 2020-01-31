@@ -41,7 +41,10 @@ cdef class MessageReceived(Response):
 
         :return str.
         """
-        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value}, received_type={self.received_type})"
+        return (f"{self.__class__.__name__}("
+                f"received_type={self.received_type}, "
+                f"id={self.id.value}, "
+                f"correlation_id={self.id.value})")
 
 
 cdef class MessageRejected(Response):
@@ -72,7 +75,10 @@ cdef class MessageRejected(Response):
 
         :return str.
         """
-        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value}, message='{self.message}')"
+        return (f"{self.__class__.__name__}("
+                f"message='{self.message}, '"
+                f"id={self.id.value}, "
+                f"correlation_id={self.id.value})")
 
 
 cdef class QueryFailure(Response):
@@ -103,7 +109,10 @@ cdef class QueryFailure(Response):
 
         :return str.
         """
-        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value}, message='{self.message}')"
+        return (f"{self.__class__.__name__}("
+                f"message='{self.message}', "
+                f"id={self.id.value}, "
+                f"correlation_id={self.id.value})")
 
 
 cdef class DataResponse(Response):
