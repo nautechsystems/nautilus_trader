@@ -52,16 +52,20 @@ class ObjectTests(unittest.TestCase):
     def test_quantity_str(self):
         # Arrange
         # Act
-        result0 = str(Quantity())
-        result1 = str(Quantity(1000))
-        result2 = Quantity(1000, 1).to_string(format_commas=True)
-        result3 = Quantity(1000).to_string_formatted()
-
         # Assert
-        self.assertEqual('0', result0)
-        self.assertEqual('1000', result1)
-        self.assertEqual('1,000.0', result2)
-        self.assertEqual('1K', result3)
+        self.assertEqual("0", str(Quantity()))
+        self.assertEqual("1000", str(Quantity(1000)))
+        self.assertEqual('1000', Quantity(1000).to_string_formatted())
+        self.assertEqual("10.05", Quantity(10.05, 2).to_string_formatted())
+        self.assertEqual("1K", Quantity(1000).to_string_formatted())
+        self.assertEqual("120100", Quantity(120100).to_string_formatted())
+        self.assertEqual("200K", Quantity(200000).to_string_formatted())
+        self.assertEqual("1M", Quantity(1000000).to_string_formatted())
+        self.assertEqual("2.5M", Quantity(2500000).to_string_formatted())
+        self.assertEqual("1111111", Quantity(1111111).to_string_formatted())
+        self.assertEqual("2.523M", Quantity(2523000).to_string_formatted())
+        self.assertEqual("100M", Quantity(100000000).to_string_formatted())
+        self.assertEqual('1,000.0', Quantity(1000, 1).to_string(format_commas=True))
 
     def test_quantity_comparisons(self):
         # Arrange
