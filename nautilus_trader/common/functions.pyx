@@ -78,27 +78,6 @@ cdef long get_size_of(obj):
     return size
 
 
-cpdef str format_size(double size, int precision=0):
-    """
-    Return the formatted bytes size.
-
-    :param size: The quantity size.
-    :param precision: The precision of the final quantity.
-    :return: str.
-    """
-    if precision > 0:
-        return f'{size:.{precision}f}'
-
-    if size < 1000 or size % 1000 != 0:
-        return f'{size:.{precision}f}'
-
-    if size < 1000000:
-        return f'{size / 1000:.{0}f}K'
-
-    cdef str millions = f'{size / 1000000:.{3}f}'.rstrip('0').rstrip('.')
-    return f'{millions}M'
-
-
 cdef dict POWER_LABELS = {
     0: 'bytes',
     1: 'KB',

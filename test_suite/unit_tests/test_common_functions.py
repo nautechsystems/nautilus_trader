@@ -15,7 +15,6 @@ from nautilus_trader.common.functions import (
     fast_round,
     fast_mean,
     basis_points_as_percentage,
-    format_size,
     format_bytes,
     pad_string,
     format_zulu_datetime,
@@ -75,30 +74,6 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(" 1234", result)
-
-    def test_format_size(self):
-        # Arrange
-        # Act
-        result0 = format_size(10.05, 2)
-        result1 = format_size(1000)
-        result2 = format_size(120100)
-        result3 = format_size(200000)
-        result4 = format_size(1000000)
-        result5 = format_size(2500000)
-        result6 = format_size(1111111)
-        result7 = format_size(2523000)
-        result8 = format_size(100000000)
-
-        # Assert
-        self.assertEqual("10.05", result0)
-        self.assertEqual("1K", result1)
-        self.assertEqual("120100", result2)
-        self.assertEqual("200K", result3)
-        self.assertEqual("1M", result4)
-        self.assertEqual("2.5M", result5)
-        self.assertEqual("1111111", result6)
-        self.assertEqual("2.523M", result7)
-        self.assertEqual("100M", result8)
 
     def test_format_bytes(self):
         # Arrange

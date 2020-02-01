@@ -25,7 +25,6 @@ from nautilus_trader.model.c_enums.price_type cimport (  # noqa: E211
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.common.functions cimport format_size
 
 
 cdef Quantity _QUANTITY_ZERO = Quantity()
@@ -99,7 +98,17 @@ cdef class Quantity(Decimal):
         """
         Return the formatted string representation of this object.
         """
-        return format_size(self._value, self.precision)
+        if self.precision > 0:
+            return f'{self._value:.{self.precision}f}'
+
+        if self._value < 1000 or self._value % 1000 != 0:
+            return f'{self._value:.{self.precision}f}'
+
+        if self._value < 1000000:
+            return f'{self._value / 1000:.{0}f}K'
+
+        cdef str millions = f'{self._value / 1000000:.{3}f}'.rstrip('0').rstrip('.')
+        return f'{millions}M'
 
 
 cdef class Price(Decimal):
