@@ -100,7 +100,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         calculator = RolloverInterestCalculator()
 
         # Act
-        rate = calculator.calc_overnight_rate(AUDUSD_FXCM, datetime.datetime(2018, 2, 1, 1, 0, 0))
+        rate = calculator.calc_overnight_rate(AUDUSD_FXCM, datetime.date(2018, 2, 1))
 
         # Assert
         self.assertEqual(-2.739726027397263e-07, rate)
@@ -111,5 +111,5 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_FXCM, datetime.datetime(1900, 1, 1, 1, 0, 0))
-        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_FXCM, datetime.datetime(2020, 1, 1, 1, 0, 0))
+        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_FXCM, datetime.date(1900, 1, 1))
+        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_FXCM, datetime.date(2020, 1, 1))

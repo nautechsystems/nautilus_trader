@@ -23,4 +23,5 @@ cdef class QueryFailure(Response):
 
 cdef class DataResponse(Response):
     cdef readonly bytes data
+    cdef readonly str data_type
     cdef readonly str data_encoding

@@ -82,17 +82,20 @@ cdef str MAX_TRADE_SIZE
 cdef str ROLL_OVER_INTEREST_BUY
 cdef str ROLL_OVER_INTEREST_SELL
 
-cdef str CORRELATION_ID
-cdef str DATA_ENCODING
-cdef str DATA_TYPE
-cdef str DATA
 cdef str RECEIVED_TYPE
-cdef str QUERY
+cdef str CORRELATION_ID
 cdef str MESSAGE
+
+cdef str DATA
+cdef str DATA_TYPE
+cdef str DATA_ENCODING
+cdef str METADATA
+cdef str QUERY
 cdef str BAR_TYPE
 cdef str SPECIFICATION
-cdef str FROM_DATETIME
-cdef str TO_DATETIME
+cdef str FROM_DATE
+cdef str TO_DATE
+cdef str LIMIT
 
 cdef str LOG_LEVEL
 cdef str LOG_TEXT

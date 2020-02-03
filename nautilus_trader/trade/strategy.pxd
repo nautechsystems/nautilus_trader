@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date, datetime
 
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -97,9 +97,20 @@ cdef class TradingStrategy:
 # -- DATA METHODS ---------------------------------------------------------------------------------#
     cpdef datetime time_now(self)
     cpdef list instrument_symbols(self)
+    cpdef void get_ticks(
+        self,
+        Symbol symbol,
+        date from_date=*,
+        date to_date=*,
+        int limit=*) except *
+    cpdef void get_bars(
+        self,
+        BarType bar_type,
+        date from_date=*,
+        date to_date=*,
+        int limit=*) except *
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef dict get_instruments(self)
-    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*) except *
     cpdef void subscribe_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void subscribe_instrument(self, Symbol symbol) except *

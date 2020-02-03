@@ -122,6 +122,7 @@ cdef class DataResponse(Response):
 
     def __init__(self,
                  bytes data not None,
+                 str data_type not None,
                  str data_encoding not None,
                  GUID correlation_id not None,
                  GUID response_id not None,
@@ -135,6 +136,22 @@ cdef class DataResponse(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
+        Condition.valid_string(data_type, 'data_type')
+        Condition.valid_string(data_encoding, 'data_encoding')
         super().__init__(correlation_id, response_id, response_timestamp)
+
         self.data = data
+        self.data_type = data_type
         self.data_encoding = data_encoding
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"data_type='{self.data_type}', "
+                f"data_encoding='{self.data_encoding}', "
+                f"id={self.id.value}, "
+                f"correlation_id={self.id.value})")

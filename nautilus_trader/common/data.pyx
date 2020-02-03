@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date, datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
@@ -72,11 +72,23 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback: Callable) except *:
+    cpdef void request_ticks(
+        self,
+        Symbol symbol,
+        date from_date,
+        date to_date,
+        int limit,
+        callback: Callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback: Callable) except *:
+    cpdef void request_bars(
+        self,
+        BarType bar_type,
+        date from_date,
+        date to_date,
+        int limit,
+        callback: Callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 

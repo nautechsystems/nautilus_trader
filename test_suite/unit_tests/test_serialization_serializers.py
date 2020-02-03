@@ -961,8 +961,9 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         query = {
             "DataType": "Tick[]",
             "Symbol": "AUDUSD.FXCM",
-            "FromDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
-            "ToDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
+            "FromDate": str(TestStubs.unix_epoch().date()),
+            "ToDate": str(TestStubs.unix_epoch().date()),
+            "Limit": "0",
         }
 
         request = DataRequest(
@@ -984,8 +985,9 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
             "DataType": "Bar[]",
             "Symbol": "AUDUSD.FXCM",
             "Specification": "1-MIN[BID]",
-            "FromDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
-            "ToDateTime": convert_datetime_to_string(TestStubs.unix_epoch()),
+            "FromDate": str(TestStubs.unix_epoch().date()),
+            "ToDate": str(TestStubs.unix_epoch().date()),
+            "Limit": "0",
         }
 
         request = DataRequest(
@@ -1051,10 +1053,12 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_data_responses(self):
         # Arrange
         data = b'\x01 \x00'
-        data_encoding = 'BSON1.1'
+        data_type = 'NothingUseful'
+        data_encoding = 'BSON'
 
         response = DataResponse(
             data=data,
+            data_type='NothingUseful',
             data_encoding=data_encoding,
             correlation_id=GUID(uuid.uuid4()),
             response_id=GUID(uuid.uuid4()),
@@ -1067,6 +1071,7 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(deserialized, DataResponse))
         self.assertEqual(data, deserialized.data)
+        self.assertEqual(data_type, deserialized.data_type)
         self.assertEqual(data_encoding, deserialized.data_encoding)
 
         print(deserialized)

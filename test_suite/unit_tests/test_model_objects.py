@@ -55,7 +55,6 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual("0", str(Quantity()))
         self.assertEqual("1000", str(Quantity(1000)))
-        self.assertEqual('1000', Quantity(1000).to_string_formatted())
         self.assertEqual("10.05", Quantity(10.05, 2).to_string_formatted())
         self.assertEqual("1K", Quantity(1000).to_string_formatted())
         self.assertEqual("120100", Quantity(120100).to_string_formatted())

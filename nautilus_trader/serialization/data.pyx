@@ -101,7 +101,7 @@ cdef class Utf8BarSerializer:
         cdef list bars = []
         for i in range(array_length):
             # noinspection PyUnresolvedReferences
-            # indexing into bar_bytes_array is ok
+            # indexing into the bar_bytes_array is ok
             bars.append(Utf8BarSerializer.deserialize(bar_bytes_array[i]))
         return bars
 
@@ -279,9 +279,9 @@ cdef class DataMapper:
         Condition.type(ticks[0], Tick, 'ticks')
 
         return {
+            DATA: [tick.to_string() for tick in ticks],
             DATA_TYPE: type(ticks[0]).__name__,
-            SYMBOL: ticks[0].symbol.value,
-            DATA: [tick.to_string() for tick in ticks]
+            METADATA: { SYMBOL: ticks[0].symbol.value },
         }
 
     cpdef dict map_bars(self, list bars, BarType bar_type):
@@ -290,10 +290,10 @@ cdef class DataMapper:
         Condition.type(bars[0], Bar, 'bars')
 
         return {
+            DATA: [bar.to_string() for bar in bars],
             DATA_TYPE: type(bars[0]).__name__,
-            SYMBOL: bar_type.symbol.value,
-            SPECIFICATION: bar_type.specification.to_string(),
-            DATA: [bar.to_string() for bar in bars]
+            METADATA: { SYMBOL: bar_type.symbol.value,
+                        SPECIFICATION: bar_type.specification.to_string()},
         }
 
     cpdef dict map_instruments(self, list instruments):
@@ -301,6 +301,6 @@ cdef class DataMapper:
         Condition.type(instruments[0], Instrument, 'instruments')
 
         return {
+            DATA: [self.instrument_serializer.serialize(instrument) for instrument in instruments],
             DATA_TYPE: type(instruments[0]).__name__,
-            DATA: [self.instrument_serializer.serialize(instrument) for instrument in instruments]
         }
