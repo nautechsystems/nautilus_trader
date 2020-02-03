@@ -14,7 +14,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.identifiers cimport Symbol, Venue
-from nautilus_trader.model.objects cimport Tick, Bar, BarType, Instrument
+from nautilus_trader.model.objects cimport BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.live.logger cimport LiveLogger
@@ -255,7 +255,7 @@ cdef class LiveDataClient(DataClient):
         cdef Symbol received_symbol = self._cached_symbols.get(metadata[SYMBOL])
         assert(received_symbol == symbol)
 
-        callback([Tick.from_string_with_symbol(received_symbol, values) for values in data[DATA]])
+        callback(Utf8TickSerializer.deserialize_bytes_list(received_symbol, data[DATA]))
 
     cpdef void request_bars(
             self,
@@ -307,7 +307,7 @@ cdef class LiveDataClient(DataClient):
         cdef BarType received_bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
         assert(received_bar_type == bar_type)
 
-        callback(received_bar_type, [Bar.from_string(values) for values in data[DATA]])
+        callback(received_bar_type, Utf8BarSerializer.deserialize_bytes_list(data[DATA]))
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable) except *:
         """

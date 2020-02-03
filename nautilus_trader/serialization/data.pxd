@@ -16,6 +16,8 @@ cdef class Utf8TickSerializer:
     cdef bytes serialize(Tick tick)
     @staticmethod
     cdef Tick deserialize(Symbol symbol, bytes tick_bytes)
+    @staticmethod
+    cdef list deserialize_bytes_list(Symbol symbol, list tick_values)
 
 
 cdef class Utf8BarSerializer:
@@ -24,7 +26,7 @@ cdef class Utf8BarSerializer:
     @staticmethod
     cdef Bar deserialize(bytes bar_bytes)
     @staticmethod
-    cdef list deserialize_bars(bytes[:] bar_bytes_array)
+    cdef list deserialize_bytes_list(list bar_values)
 
 
 cdef class BsonDataSerializer(DataSerializer):
