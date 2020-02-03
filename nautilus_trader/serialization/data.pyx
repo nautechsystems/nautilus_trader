@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from typing import List
+
 from bson import BSON
 from bson.raw_bson import RawBSONDocument
 
@@ -40,7 +42,7 @@ cdef class Utf8TickSerializer:
         """
         Deserialize the given tick bytes to a tick.
 
-        :param symbol: The symbol to deserialize.
+        :param symbol: The symbol for the tick.
         :param tick_bytes: The tick bytes to deserialize.
         :return Tick.
         """
@@ -50,12 +52,30 @@ cdef class Utf8TickSerializer:
         return Tick.from_string_with_symbol(symbol, tick_bytes.decode(UTF8))
 
     @staticmethod
+    cdef list deserialize_bytes_list(Symbol symbol, list tick_values):
+        """
+        Deserialize the given bar bytes to a bar.
+
+        :param symbol: The symbol for the tick.
+        :param tick_values: The tick values to deserialize.
+        :return Bar.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(tick_values, 'tick_values')
+
+        return [Tick.from_string_with_symbol(symbol, values.decode(UTF8)) for values in tick_values]
+
+    @staticmethod
     def py_serialize(Tick tick) -> bytes:
         return Utf8TickSerializer.serialize(tick)
 
     @staticmethod
     def py_deserialize(Symbol symbol, bytes values_bytes) -> Tick:
         return Utf8TickSerializer.deserialize(symbol, values_bytes)
+
+    @staticmethod
+    def py_deserialize_bytes_list(Symbol symbol, list tick_values) -> List[Tick]:
+        return Utf8TickSerializer.deserialize_bytes_list(symbol, tick_values)
 
 
 cdef class Utf8BarSerializer:
@@ -87,23 +107,16 @@ cdef class Utf8BarSerializer:
         return Bar.from_string(bar_bytes.decode(UTF8))
 
     @staticmethod
-    cdef list deserialize_bars(bytes[:] bar_bytes_array):
+    cdef list deserialize_bytes_list(list bar_values):
         """
-        Return a list of deserialized bars from the given bars bytes.
-    
-        :param bar_bytes_array: The bar bytes to deserialize.
-        :return List[Bar].
-        """
-        Condition.not_none(bar_bytes_array, 'bar_bytes_array')
+        Deserialize the given bar bytes to a bar.
 
-        cdef int i
-        cdef int array_length = len(bar_bytes_array)
-        cdef list bars = []
-        for i in range(array_length):
-            # noinspection PyUnresolvedReferences
-            # indexing into the bar_bytes_array is ok
-            bars.append(Utf8BarSerializer.deserialize(bar_bytes_array[i]))
-        return bars
+        :param bar_values: The bar values to deserialize.
+        :return Bar.
+        """
+        Condition.not_none(bar_values, 'bar_values')
+
+        return [Bar.from_string(values.decode(UTF8)) for values in bar_values]
 
     @staticmethod
     def py_serialize(Bar bar) -> bytes:
@@ -114,8 +127,8 @@ cdef class Utf8BarSerializer:
         return Utf8BarSerializer.deserialize(bar_bytes)
 
     @staticmethod
-    def py_deserialize_bars(bytearray bar_bytes_array):
-        return Utf8BarSerializer.deserialize_bars(bar_bytes_array)
+    def py_deserialize_bytes_list(list bar_values) -> List[Bar]:
+        return Utf8BarSerializer.deserialize_bytes_list(bar_values)
 
 
 cdef class BsonSerializer:

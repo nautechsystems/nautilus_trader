@@ -71,6 +71,20 @@ class EMACrossPy(TradingStrategy):
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
 
+        # Register the indicators for updating
+        self.register_indicator(
+            data_source=self.bar_type,
+            indicator=self.fast_ema,
+            update_method=self.fast_ema.update)
+        self.register_indicator(
+            data_source=self.bar_type,
+            indicator=self.slow_ema,
+            update_method=self.slow_ema.update)
+        self.register_indicator(
+            data_source=self.bar_type,
+            indicator=self.atr,
+            update_method=self.atr.update)
+
     def on_start(self):
         """
         This method is called when self.start() is called, and after internal start logic.
@@ -89,20 +103,6 @@ class EMACrossPy(TradingStrategy):
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
-
-        # Register the indicators for updating
-        self.register_indicator(
-            data_source=self.bar_type,
-            indicator=self.fast_ema,
-            update_method=self.fast_ema.update)
-        self.register_indicator(
-            data_source=self.bar_type,
-            indicator=self.slow_ema,
-            update_method=self.slow_ema.update)
-        self.register_indicator(
-            data_source=self.bar_type,
-            indicator=self.atr,
-            update_method=self.atr.update)
 
     def on_tick(self, tick: Tick):
         """
@@ -128,10 +128,12 @@ class EMACrossPy(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
+            self.log.debug("Waiting for indicators to warm up...")
             return  # Wait for indicators to warm up...
 
         # Check if tick data available
         if not self.has_ticks(self.symbol):
+            self.log.debug(f"Waiting for {self.symbol.value} ticks...")
             return  # Wait for ticks...
 
         # Calculate average spread
@@ -252,7 +254,7 @@ class EMACrossPy(TradingStrategy):
 
         :param instrument: The received instrument.
         """
-        if self.instrument.symbol.equal(instrument.symbol):
+        if self.instrument.symbol.equals(instrument.symbol):
             self.instrument = instrument
 
         self.log.info(f"Updated instrument {instrument}.")

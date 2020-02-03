@@ -288,10 +288,10 @@ cdef class EMACross(TradingStrategy):
     cdef readonly double entry_buffer
     cdef readonly double SL_buffer
     cdef readonly object spreads
+    cdef readonly PositionSizer position_sizer
     cdef readonly ExponentialMovingAverage fast_ema
     cdef readonly ExponentialMovingAverage slow_ema
     cdef readonly AverageTrueRange atr
-    cdef readonly PositionSizer position_sizer
 
     def __init__(self,
                  Instrument instrument,
@@ -327,6 +327,8 @@ cdef class EMACross(TradingStrategy):
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10.0
 
+        self.position_sizer = FixedRiskSizer(self.instrument)
+
         # Track spreads for calculating average
         self.spreads = deque(maxlen=100)  # type: Deque[float]
 
@@ -335,7 +337,10 @@ cdef class EMACross(TradingStrategy):
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
 
-        self.position_sizer = FixedRiskSizer(self.instrument)
+        # Register the indicators for updating
+        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
+        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
+        self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
     cpdef void on_start(self):
         """
@@ -347,11 +352,6 @@ cdef class EMACross(TradingStrategy):
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
-
-        # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
-        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
-        self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
     cpdef void on_tick(self, Tick tick):
         """
@@ -410,10 +410,10 @@ cdef class EMACross(TradingStrategy):
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
     cdef void _enter_long(self, bar: Bar, sl_buffer: float, spread_buffer: float) except *:
-        cdef Price price_entry = Price(bar.high.as_double() + self.entry_buffer + spread_buffer, self.precision)
-        cdef Price price_stop_loss = Price(bar.low.as_double() - sl_buffer, self.precision)
+        cdef Price price_entry = Price(bar.high + self.entry_buffer + spread_buffer, self.precision)
+        cdef Price price_stop_loss = Price(bar.low - sl_buffer, self.precision)
         cdef double risk = price_entry.as_double() - price_stop_loss.as_double()
-        cdef Price price_take_profit = Price(price_entry.as_double() + risk, self.precision)
+        cdef Price price_take_profit = Price(price_entry + risk, self.precision)
 
         cdef double exchange_rate = self.get_exchange_rate_for_account(
                 quote_currency=self.instrument.quote_currency,
@@ -448,10 +448,10 @@ cdef class EMACross(TradingStrategy):
             self.log.info("Insufficient equity for BUY signal.")
 
     cdef void _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float) except *:
-        cdef Price price_entry = Price(bar.low.as_double() - self.entry_buffer, self.precision)
-        cdef Price price_stop_loss = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+        cdef Price price_entry = Price(bar.low - self.entry_buffer, self.precision)
+        cdef Price price_stop_loss = Price(bar.high + sl_buffer + spread_buffer, self.precision)
         cdef double risk = price_stop_loss.as_double() - price_entry.as_double()
-        cdef Price price_take_profit = Price(price_entry.as_double() - risk, self.precision)
+        cdef Price price_take_profit = Price(price_entry - risk, self.precision)
 
         cdef double exchange_rate = self.get_exchange_rate_for_account(
                 quote_currency=self.instrument.quote_currency,
@@ -490,12 +490,12 @@ cdef class EMACross(TradingStrategy):
             if working_order.purpose == OrderPurpose.STOP_LOSS:
                 # SELL SIDE ORDERS
                 if working_order.is_sell:
-                    temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
+                    temp_price = Price(bar.low - sl_buffer, self.precision)
                     if temp_price.gt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
                 elif working_order.is_buy:
-                    temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+                    temp_price = Price(bar.high + sl_buffer + spread_buffer, self.precision)
                     if temp_price.lt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
