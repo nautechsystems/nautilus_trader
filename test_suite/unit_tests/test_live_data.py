@@ -210,7 +210,13 @@ class LiveDataClientTests(unittest.TestCase):
         tick_data = self.data_mapper.map_ticks(ticks)
 
         data = self.data_serializer.serialize(tick_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
+        data_response = DataResponse(
+            data,
+            'Tick[]',
+            'BSON',
+            GUID(uuid.uuid4()),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(
             zmq_context=self.zmq_context,
@@ -223,7 +229,12 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.request_ticks(AUDUSD_FXCM, UNIX_EPOCH, UNIX_EPOCH, data_receiver.store)
+        self.data_client.request_ticks(
+            AUDUSD_FXCM,
+            UNIX_EPOCH.date(),
+            UNIX_EPOCH.date(),
+            limit=0,
+            callback=data_receiver.store)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
@@ -245,7 +256,15 @@ class LiveDataClientTests(unittest.TestCase):
         bar_data = self.data_mapper.map_bars(bars, bar_type)
 
         data = self.data_serializer.serialize(bar_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
+
+        data_response = DataResponse(
+            data,
+            'Bar[]',
+            'BSON',
+            GUID(uuid.uuid4()),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(
             zmq_context=self.zmq_context,
@@ -258,7 +277,12 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.request_bars(bar_type, UNIX_EPOCH, UNIX_EPOCH, data_receiver.store_2)
+        self.data_client.request_bars(
+            bar_type,
+            UNIX_EPOCH.date(),
+            UNIX_EPOCH.date(),
+            limit=0,
+            callback=data_receiver.store_2)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
@@ -274,7 +298,15 @@ class LiveDataClientTests(unittest.TestCase):
         instrument_data = self.data_mapper.map_instruments(instruments)
 
         data = self.data_serializer.serialize(instrument_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
+
+        data_response = DataResponse(
+            data,
+            'Instrument[]',
+            'BSON',
+            GUID(uuid.uuid4()),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(
             zmq_context=self.zmq_context,
@@ -302,7 +334,15 @@ class LiveDataClientTests(unittest.TestCase):
         instrument_data = self.data_mapper.map_instruments(instruments)
 
         data = self.data_serializer.serialize(instrument_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
+
+        data_response = DataResponse(
+            data,
+            'Instrument[]',
+            'BSON',
+            GUID(uuid.uuid4()),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(
             zmq_context=self.zmq_context,

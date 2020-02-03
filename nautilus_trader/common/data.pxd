@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date, datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -31,8 +31,20 @@ cdef class DataClient:
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
-    cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback) except *
-    cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback) except *
+    cpdef void request_ticks(
+        self,
+        Symbol symbol,
+        date from_date,
+        date to_date,
+        int limit,
+        callback) except *
+    cpdef void request_bars(
+        self,
+        BarType bar_type,
+        date from_date,
+        date to_date,
+        int limit,
+        callback) except *
     cpdef void request_instrument(self, Symbol symbol, callback) except *
     cpdef void request_instruments(self, Venue venue, callback) except *
     cpdef void subscribe_ticks(self, Symbol symbol, handler) except *

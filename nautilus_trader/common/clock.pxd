@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport date, datetime, timedelta
 
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.logger cimport LoggerAdapter
@@ -64,6 +64,7 @@ cdef class Clock:
     cdef readonly bint is_logger_registered
     cdef readonly bint is_default_handler_registered
 
+    cpdef date date_now(self)
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
     cpdef list get_timer_labels(self)

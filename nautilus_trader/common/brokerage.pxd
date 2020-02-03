@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date
 
 from nautilus_trader.model.objects cimport Money, Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
@@ -29,4 +29,4 @@ cdef class RolloverInterestCalculator:
     cdef dict _rate_data
 
     cpdef object get_rate_data(self)
-    cpdef double calc_overnight_rate(self, Symbol symbol, datetime timestamp) except *
+    cpdef double calc_overnight_rate(self, Symbol symbol, date timestamp) except *

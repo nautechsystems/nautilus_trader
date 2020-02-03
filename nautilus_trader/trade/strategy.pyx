@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport date, datetime, timedelta
 
 from collections import deque
 from typing import List, Dict, Deque
@@ -480,6 +480,94 @@ cdef class TradingStrategy:
 
         return self._data_client.instrument_symbols()
 
+    cpdef void get_ticks(
+            self,
+            Symbol symbol,
+            date from_date=None,
+            date to_date=None,
+            int limit=0) except *:
+        """
+        Request the historical bars for the given parameters from the data service.
+        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
+
+        :param symbol: The symbol for the request.
+        :param from_date: The from date for the request.
+        :param to_date: The to date for the request.
+        :param limit: The limit for the number of ticks in the response (default = tick capacity).
+        :raises ValueError: If the limit is negative (< 0).
+        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
+        """
+        if limit == 0:
+            limit = self.tick_capacity
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_negative_int(limit, 'limit')
+
+        if not self.is_data_client_registered:
+            self.log.error("Cannot request ticks (data client not registered).")
+            return
+
+        if to_date is None:
+            to_date = self.clock.date_now()
+        if from_date is None:
+            from_date = self.clock.date_now() - timedelta(days=1)
+
+        Condition.true(from_date < to_date, 'from_datetime < to_date')
+
+        if self._data_client is None:
+            self.log.error("Cannot download historical bars (data client not registered).")
+            return
+
+        self._data_client.request_ticks(
+            symbol,
+            from_date,
+            to_date,
+            limit,
+            self.handle_ticks)
+
+    cpdef void get_bars(
+            self,
+            BarType bar_type,
+            date from_date=None,
+            date to_date=None,
+            int limit=0) except *:
+        """
+        Request the historical bars for the given parameters from the data service.
+        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
+
+        :param bar_type: The historical bar type to download.
+        :param from_date: The from date for the request.
+        :param to_date: The to date for the request.
+        :param limit: The limit for the number of bars in the response (default = bar capacity).
+        :raises ValueError: If the limit is negative (< 0).
+        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
+        """
+        if limit == 0:
+            limit = self.bar_capacity
+        Condition.not_none(bar_type, 'bar_type')
+        Condition.not_negative_int(limit, 'limit')
+
+        if not self.is_data_client_registered:
+            self.log.error("Cannot request bars (data client not registered).")
+            return
+
+        if to_date is None:
+            to_date = self.clock.date_now()
+        if from_date is None:
+            from_date = self.clock.date_now() - timedelta(days=1)
+
+        Condition.true(from_date < to_date, 'from_datetime < to_date')
+
+        if self._data_client is None:
+            self.log.error("Cannot download historical bars (data client not registered).")
+            return
+
+        self._data_client.request_bars(
+            bar_type,
+            from_date,
+            to_date,
+            limit,
+            self.handle_bars)
+
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
         Return the instrument corresponding to the given symbol (if found).
@@ -505,35 +593,6 @@ cdef class TradingStrategy:
             return
 
         return self._data_client.get_instruments()
-
-    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None) except *:
-        """
-        Request the historical bars for the given parameters from the data service.
-        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
-
-        :param bar_type: The historical bar type to download.
-        :param from_datetime: The datetime from which the historical bars should be downloaded.
-        :param to_datetime: The datetime to which the historical bars should be downloaded.
-        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
-        """
-        Condition.not_none(bar_type, 'bar_type')
-
-        if not self.is_data_client_registered:
-            self.log.error("Cannot request bars (data client not registered).")
-            return
-
-        if to_datetime is None:
-            to_datetime = self.clock.time_now()
-        if from_datetime is None:
-            from_datetime = self.clock.time_now() - timedelta(days=1)
-
-        Condition.true(from_datetime < to_datetime, 'from_datetime < to_date')
-
-        if self._data_client is None:
-            self.log.error("Cannot download historical bars (data client not registered).")
-            return
-
-        self._data_client.request_bars(bar_type, from_datetime, to_datetime, self.handle_bars)
 
     cpdef void subscribe_ticks(self, Symbol symbol) except *:
         """

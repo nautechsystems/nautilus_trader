@@ -8,7 +8,7 @@
 
 import os
 import pandas as pd
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions cimport basis_points_as_percentage
@@ -131,25 +131,25 @@ cdef class RolloverInterestCalculator:
         """
         return self._rate_data
 
-    cpdef double calc_overnight_rate(self, Symbol symbol, datetime timestamp) except *:
+    cpdef double calc_overnight_rate(self, Symbol symbol, date date) except *:
         """
         Return the rollover interest rate between the given base currency and quote currency.
         Note: 1% = 0.01
         
         :param symbol: The forex currency symbol for the calculation.
-        :param timestamp: The timestamp for the calculation.
+        :param date: The date for the overnight rate.
         :return: double.
         :raises ValueError: If the symbol.code length is not == 6.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.not_none(timestamp, 'timestamp')
+        Condition.not_none(date, 'timestamp')
         Condition.equal(len(symbol.code), 6, 'len(symbol)', '6')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
         cdef Currency quote_currency = currency_from_string(symbol.code[3:])
 
-        cdef str time_monthly = f'{timestamp.year}-{str(timestamp.month).zfill(2)}'
-        cdef str time_quarter = f'{timestamp.year}-Q{str(int(((timestamp.month - 1) // 3) + 1)).zfill(2)}'
+        cdef str time_monthly = f'{date.year}-{str(date.month).zfill(2)}'
+        cdef str time_quarter = f'{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}'
 
         base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_monthly]
         if base_data.empty:
@@ -160,7 +160,7 @@ cdef class RolloverInterestCalculator:
             quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_quarter]
 
         if base_data.empty and quote_data.empty:
-            raise RuntimeError(f'Cannot find rollover interest rate for {symbol} on {timestamp.date()}.')
+            raise RuntimeError(f'Cannot find rollover interest rate for {symbol} on {date}.')
 
         cdef double base_interest = base_data['Value']
         cdef double quote_interest = quote_data['Value']

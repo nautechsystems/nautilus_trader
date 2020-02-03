@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date
 from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
@@ -27,7 +27,6 @@ from nautilus_trader.serialization.data cimport (  # noqa: E211
     BsonDataSerializer,
     BsonInstrumentSerializer)
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.common cimport convert_datetime_to_string
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure
@@ -210,31 +209,37 @@ cdef class LiveDataClient(DataClient):
     cpdef void request_ticks(
             self,
             Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
+            date from_date,
+            date to_date,
+            int limit,
             callback: Callable) except *:
         """
         Request ticks for the given symbol and query parameters.
 
         :param symbol: The symbol for the request.
-        :param from_datetime: The from date time for the request.
-        :param to_datetime: The to date time for the request.
+        :param from_date: The from date for the request.
+        :param to_date: The to date for the request.
+        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
+        :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.not_none(from_datetime, 'from_datetime')
-        Condition.not_none(to_datetime, 'to_datetime')
+        Condition.not_none(from_date, 'from_datetime')
+        Condition.not_none(to_date, 'to_datetime')
+        Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
             DATA_TYPE: "Tick[]",
             SYMBOL: symbol.value,
-            FROM_DATETIME: convert_datetime_to_string(from_datetime),
-            TO_DATETIME: convert_datetime_to_string(to_datetime),
+            FROM_DATE: str(from_date),
+            TO_DATE: str(to_date),
+            LIMIT: str(limit)
         }
 
-        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} ...")
+        cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
+        self._log.info(f"Requesting {symbol} ticks from {from_date} to {to_date} {limit_string}...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
@@ -246,7 +251,8 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef Symbol received_symbol = self._cached_symbols.get(data[SYMBOL])
+        cdef dict metadata = data[METADATA]
+        cdef Symbol received_symbol = self._cached_symbols.get(metadata[SYMBOL])
         assert(received_symbol == symbol)
 
         callback([Tick.from_string_with_symbol(received_symbol, values) for values in data[DATA]])
@@ -254,32 +260,38 @@ cdef class LiveDataClient(DataClient):
     cpdef void request_bars(
             self,
             BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
+            date from_date,
+            date to_date,
+            int limit,
             callback: Callable) except *:
         """
         Request bars for the given bar type and query parameters.
 
         :param bar_type: The bar type for the request.
-        :param from_datetime: The from date time for the request.
-        :param to_datetime: The to date time for the request.
+        :param from_date: The from date for the request.
+        :param to_date: The to date for the request.
+        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
+        :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type Callable.
         """
         Condition.not_none(bar_type, 'bar_type')
-        Condition.not_none(from_datetime, 'from_datetime')
-        Condition.not_none(to_datetime, 'to_datetime')
+        Condition.not_none(from_date, 'from_date')
+        Condition.not_none(to_date, 'to_date')
+        Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
             DATA_TYPE: "Bar[]",
             SYMBOL: bar_type.symbol.value,
             SPECIFICATION: bar_type.specification.to_string(),
-            FROM_DATETIME: convert_datetime_to_string(from_datetime),
-            TO_DATETIME: convert_datetime_to_string(to_datetime),
+            FROM_DATE: str(from_date),
+            TO_DATE: str(to_date),
+            LIMIT: str(limit),
         }
 
-        self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime} ...")
+        cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
+        self._log.info(f"Requesting {bar_type} bars from {from_date} to {to_date} {limit_string}...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
@@ -291,7 +303,8 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef BarType received_bar_type = self._cached_bar_types.get(data[SYMBOL] + '-' + data[SPECIFICATION])
+        cdef dict metadata = data[METADATA]
+        cdef BarType received_bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
         assert(received_bar_type == bar_type)
 
         callback(received_bar_type, [Bar.from_string(values) for values in data[DATA]])
@@ -308,7 +321,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
-            DATA_TYPE: "Instrument",
+            DATA_TYPE: "Instrument[]",
             SYMBOL: symbol.value,
         }
 

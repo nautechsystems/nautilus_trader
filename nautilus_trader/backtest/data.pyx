@@ -13,7 +13,7 @@ import gc
 import numpy as np
 import pandas as pd
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date, datetime
 from typing import Set, Dict, Callable
 from pandas import DatetimeIndex
 
@@ -330,46 +330,54 @@ cdef class BacktestDataClient(DataClient):
     cpdef void request_ticks(
             self,
             Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
+            date from_date,
+            date to_date,
+            int limit,
             callback: Callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
         :param symbol: The symbol for the bars to download.
-        :param from_datetime: The datetime from which the historical bars should be downloaded.
-        :param to_datetime: The datetime to which the historical bars should be downloaded.
+        :param from_date: The from date for the request.
+        :param to_date: The to date for the request.
+        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
+        :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type Callable.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.not_none(from_datetime, 'from_datetime')
-        Condition.not_none(to_datetime, 'to_datetime')
+        Condition.not_none(from_date, 'from_datetime')
+        Condition.not_none(to_date, 'to_datetime')
+        Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
-        self._log.info(f"Simulated request ticks for {symbol} from {from_datetime} to {to_datetime}.")
+        self._log.info(f"Simulated request ticks for {symbol} from {from_date} to {to_date}.")
 
     cpdef void request_bars(
             self,
             BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
+            date from_date,
+            date to_date,
+            int limit,
             callback: Callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
         :param bar_type: The bar type for the bars to download.
-        :param from_datetime: The datetime from which the historical bars should be downloaded.
-        :param to_datetime: The datetime to which the historical bars should be downloaded.
+        :param from_date: The from date for the request.
+        :param to_date: The to date for the request.
+        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
+        :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type Callable.
         """
         Condition.not_none(bar_type, 'bar_type')
-        Condition.not_none(from_datetime, 'from_datetime')
-        Condition.not_none(to_datetime, 'to_datetime')
+        Condition.not_none(from_date, 'from_datetime')
+        Condition.not_none(to_date, 'to_datetime')
+        Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
-        self._log.info(f"Simulated request bars for {bar_type} from {from_datetime} to {to_datetime}.")
+        self._log.info(f"Simulated request bars for {bar_type} from {from_date} to {to_date}.")
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable) except *:
         """

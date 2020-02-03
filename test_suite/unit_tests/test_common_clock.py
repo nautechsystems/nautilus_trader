@@ -9,7 +9,7 @@
 import time
 import uuid
 import unittest
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.identifiers import Label
@@ -64,6 +64,14 @@ class LiveClockTests(unittest.TestCase):
         self.assertTrue(self.clock.is_default_handler_registered)
         self.assertTrue(self.clock.is_logger_registered)
         self.assertEqual([], self.clock.get_timer_labels())
+
+    def test_date_today(self):
+        # Arrange
+        # Act
+        result = self.clock.date_now()
+
+        # Assert
+        self.assertEqual(date, type(result))
 
     def test_time_now(self):
         # Arrange
@@ -289,6 +297,15 @@ class TestClockTests(unittest.TestCase):
         self.assertTrue(self.clock.is_default_handler_registered)
         self.assertTrue(self.clock.is_logger_registered)
         self.assertEqual([], self.clock.get_timer_labels())
+
+    def test_date_today(self):
+        # Arrange
+        # Act
+        result = self.clock.date_now()
+
+        # Assert
+        self.assertEqual("1970-01-01", str(result))
+        self.assertEqual(date, type(result))
 
     def test_time_now(self):
         # Arrange
