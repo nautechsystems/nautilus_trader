@@ -38,6 +38,18 @@ cdef class Utf8TickSerializer:
         return tick.to_string().encode(UTF8)
 
     @staticmethod
+    cdef list serialize_ticks_list(list ticks):
+        """
+        Serialize the given tick to UTF-8 specification bytes.
+
+        :param ticks: The ticks to serialize.
+        :return bytes.
+        """
+        Condition.not_none(ticks, 'ticks')
+
+        return [tick.to_string().encode(UTF8) for tick in ticks]
+
+    @staticmethod
     cdef Tick deserialize(Symbol symbol, bytes tick_bytes):
         """
         Deserialize the given tick bytes to a tick.
@@ -70,6 +82,10 @@ cdef class Utf8TickSerializer:
         return Utf8TickSerializer.serialize(tick)
 
     @staticmethod
+    def py_serialize_ticks_list(list ticks) -> List[bytes]:
+        return Utf8TickSerializer.serialize_ticks_list(ticks)
+
+    @staticmethod
     def py_deserialize(Symbol symbol, bytes values_bytes) -> Tick:
         return Utf8TickSerializer.deserialize(symbol, values_bytes)
 
@@ -93,6 +109,18 @@ cdef class Utf8BarSerializer:
         Condition.not_none(bar, 'bar')
 
         return bar.to_string().encode(UTF8)
+
+    @staticmethod
+    cdef list serialize_bars_list(list bars):
+        """
+        Serialize the given bar to UTF-8 specification bytes.
+
+        :param bars: The bars to serialize.
+        :return bytes.
+        """
+        Condition.not_none(bars, 'bars')
+
+        return [bar.to_string().encode(UTF8) for bar in bars]
 
     @staticmethod
     cdef Bar deserialize(bytes bar_bytes):
@@ -121,6 +149,10 @@ cdef class Utf8BarSerializer:
     @staticmethod
     def py_serialize(Bar bar) -> bytes:
         return Utf8BarSerializer.serialize(bar)
+
+    @staticmethod
+    def py_serialize_bars_list(list bars) -> List[bytes]:
+        return Utf8BarSerializer.serialize_bars_list(bars)
 
     @staticmethod
     def py_deserialize(bytes bar_bytes) -> Bar:
@@ -292,8 +324,8 @@ cdef class DataMapper:
         Condition.type(ticks[0], Tick, 'ticks')
 
         return {
-            DATA: [tick.to_string() for tick in ticks],
-            DATA_TYPE: type(ticks[0]).__name__,
+            DATA: Utf8TickSerializer.serialize_ticks_list(ticks),
+            DATA_TYPE: 'Tick[]',
             METADATA: { SYMBOL: ticks[0].symbol.value },
         }
 
@@ -303,8 +335,8 @@ cdef class DataMapper:
         Condition.type(bars[0], Bar, 'bars')
 
         return {
-            DATA: [bar.to_string() for bar in bars],
-            DATA_TYPE: type(bars[0]).__name__,
+            DATA: Utf8BarSerializer.serialize_bars_list(bars),
+            DATA_TYPE: 'Bar[]',
             METADATA: { SYMBOL: bar_type.symbol.value,
                         SPECIFICATION: bar_type.specification.to_string()},
         }
@@ -315,5 +347,5 @@ cdef class DataMapper:
 
         return {
             DATA: [self.instrument_serializer.serialize(instrument) for instrument in instruments],
-            DATA_TYPE: type(instruments[0]).__name__,
+            DATA_TYPE: 'Instrument[]',
         }
