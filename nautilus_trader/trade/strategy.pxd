@@ -123,8 +123,8 @@ cdef class TradingStrategy:
     cpdef int bar_count(self, BarType bar_type)
     cpdef list ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
-    cpdef Tick tick(self, Symbol symbol, int index)
-    cpdef Bar bar(self, BarType bar_type, int index)
+    cpdef Tick tick(self, Symbol symbol, int index=*)
+    cpdef Bar bar(self, BarType bar_type, int index=*)
 
 # -- INDICATOR METHODS ----------------------------------------------------------------------------#
     cpdef readonly list registered_indicators(self)
