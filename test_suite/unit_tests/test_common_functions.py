@@ -45,7 +45,17 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual(-0.02, result2)
         self.assertEqual(1.002, result3)
 
-    def test_fast_mean(self):
+    def test_fast_mean_with_empty_list_returns_zero(self):
+        # Arrange
+        iterable = []
+
+        # Act
+        result = fast_mean(iterable)
+
+        # Assert
+        self.assertEqual(0, result)
+
+    def test_fast_mean_with_values(self):
         # Arrange
         iterable = [0.0, 1.1, 2.2, 3.3, 4.4, 5.5]
 

@@ -97,6 +97,7 @@ class EMACrossPy(TradingStrategy):
             update_method=self.atr.update)
 
         # Get historical data
+        self.get_ticks(self.symbol)
         self.get_bars(self.bar_type)
 
         # Subscribe to live data
@@ -106,7 +107,7 @@ class EMACrossPy(TradingStrategy):
 
         # Kick off strategy immediately with last bar
         if self.bar_count(self.bar_type) > 0:
-            self.on_bar(self.bar_type, self.bar(self.bar_type, 0))
+            self.on_bar(self.bar_type, self.bar(self.bar_type))
 
     def on_tick(self, tick: Tick):
         """
@@ -116,7 +117,7 @@ class EMACrossPy(TradingStrategy):
 
         :param tick: The received tick.
         """
-        # self.log.info(f"Received Tick({tick})")  # For debugging
+        self.log.info(f"Received Tick({tick})")  # For debugging
         self.spreads.append(tick.ask.as_double() - tick.bid.as_double())
 
     def on_bar(self, bar_type: BarType, bar: Bar):
