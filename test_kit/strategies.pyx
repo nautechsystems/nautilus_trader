@@ -337,16 +337,16 @@ cdef class EMACross(TradingStrategy):
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
 
-        # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
-        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
-        self.register_indicator(self.bar_type, self.atr, self.atr.update)
-
     cpdef void on_start(self):
         """
         This method is called when self.start() is called, and after internal
         start logic.
         """
+        # Register the indicators for updating
+        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
+        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
+        self.register_indicator(self.bar_type, self.atr, self.atr.update)
+
         # Put custom code to be run on strategy start here
         self.get_bars(self.bar_type)
         self.subscribe_instrument(self.symbol)
@@ -362,7 +362,7 @@ cdef class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
-        self.spreads.append(float(tick.ask.as_double() - tick.bid.as_double()))
+        self.spreads.append(tick.ask.as_double() - tick.bid.as_double())
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """

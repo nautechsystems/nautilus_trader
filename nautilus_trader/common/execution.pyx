@@ -381,7 +381,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         else:
             self._index_strategy_positions[strategy_id].add(position_id)
 
-        self._log.debug(f"Added Order(id={order.id.value}).")
+        if not self._log.bypassed:
+            self._log.debug(f"Added Order(id={order.id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -1166,7 +1167,8 @@ cdef class ExecutionEngine:
 # --------------------------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
-        self._log.debug(f'{RECV}{CMD} {command}.')
+        if not self._log.bypassed:
+            self._log.debug(f'{RECV}{CMD} {command}.')
         self.command_count += 1
 
         if isinstance(command, AccountInquiry):
@@ -1186,7 +1188,8 @@ cdef class ExecutionEngine:
             self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event) except *:
-        self._log.debug(f'{RECV}{EVT} {event}.')
+        if not self._log.bypassed:
+            self._log.debug(f'{RECV}{EVT} {event}.')
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
