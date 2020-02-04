@@ -18,7 +18,7 @@ __author__ = 'Nautech Systems Pty Ltd'
 # Semantic Versioning (https://semver.org/)
 _MAJOR_VERSION = 1
 _MINOR_VERSION = 17
-_PATCH_VERSION = 1
+_PATCH_VERSION = 2
 
 __version__ = '.'.join([
     str(_MAJOR_VERSION),
