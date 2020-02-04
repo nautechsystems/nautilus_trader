@@ -356,7 +356,7 @@ cdef class TradingStrategy:
             spread = tick.ask.as_double() - tick.bid.as_double()
             self._spreads[tick.symbol] = deque([spread], maxlen=self.tick_capacity)
             self.log.warning(f"Received {repr(tick)} when not registered. "
-                             f"Setup tick handling.")
+                             f"Handling now setup.")
 
         cdef list updaters = self._indicator_updaters.get(tick.symbol)
         cdef IndicatorUpdater updater
@@ -379,8 +379,9 @@ cdef class TradingStrategy:
         Condition.not_none(ticks, 'ticks')  # Can be empty
 
         cdef int length = len(ticks)
+        cdef str symbol = ticks[0] if length > 0 else '?'
         if length > 0:
-            self.log.info(f"Received tick data for {ticks[0]} of {length} ticks.")
+            self.log.info(f"Received tick data for {symbol} of {length} ticks.")
 
         cdef int i
         for i in range(len(ticks)):
@@ -403,7 +404,7 @@ cdef class TradingStrategy:
         except KeyError as ex:
             self._bars[bar_type] = deque([bar], maxlen=self.bar_capacity)
             self.log.warning(f"Received {bar_type} {repr(bar)} when not registered. "
-                             f"Setup bar handling.")
+                             f"Handling now setup.")
 
         cdef list updaters = self._indicator_updaters.get(bar_type)
         cdef IndicatorUpdater updater
