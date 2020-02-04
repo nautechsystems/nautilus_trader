@@ -10,9 +10,11 @@ import gc
 import sys
 import pandas as pd
 import pytz
-from libc.math cimport round, floor, log10
+from libc.math cimport round
 from cpython.datetime cimport datetime
 from cpython.unicode cimport PyUnicode_Contains
+
+from nautilus_trader.core.correctness cimport Condition
 
 
 cpdef double fast_round(double value, int precision):
@@ -23,6 +25,8 @@ cpdef double fast_round(double value, int precision):
     :param precision: The precision to round to.
     :return: double.
     """
+    Condition.not_negative_int(precision, 'precision')
+
     cdef int power = 10 ** precision
     return round(value * power) / power
 
@@ -34,8 +38,14 @@ cpdef double fast_mean(iterable):
     :param iterable: The iterable to evaluate.
     :return: double.
     """
-    cdef double total = 0.0
+    Condition.not_none(iterable, 'iterable')
+
     cdef int length = len(iterable)
+
+    if length == 0:
+        return 0.0
+
+    cdef double total = 0.0
     for i in range(length):
         total += iterable[i]
     return total / length
@@ -52,6 +62,8 @@ cpdef double basis_points_as_percentage(double basis_points):
 
 
 cdef long get_size_of(obj):
+    Condition.not_none(obj, 'obj')
+
     cdef set marked = {id(obj)}
     obj_q = [obj]
     cdef long size = 0
@@ -93,6 +105,8 @@ cpdef str format_bytes(double size):
     :param size: The size in bytes.
     :return: str.
     """
+    Condition.not_negative(size, 'size')
+
     cdef double power = pow(2, 10)
 
     cdef int n = 0
@@ -111,6 +125,10 @@ cpdef str pad_string(str string, int length, str pad=' '):
     :param pad: The padding character.
     :return str.
     """
+    Condition.not_none(string, 'string')
+    Condition.not_negative_int(length, 'length')
+    Condition.not_none(pad, 'pad')
+
     return ((length - len(string)) * pad) + string
 
 
@@ -122,6 +140,8 @@ cpdef str format_zulu_datetime(datetime dt, bint with_t=True):
     :param with_t: If the datetime should be formatted with 'T' separating time.
     :return str.
     """
+    Condition.not_none(dt, 'dt')
+
     cdef str tz_stripped = str(dt).rpartition('+')[0]
 
     if with_t:
@@ -159,6 +179,8 @@ cpdef object as_utc_timestamp(datetime timestamp):
     :param timestamp: The timestamp to convert.
     :return pd.Timestamp.
     """
+    Condition.not_none(timestamp, 'timestamp')
+
     if not isinstance(timestamp, pd.Timestamp):
         timestamp = pd.Timestamp(timestamp)
 
@@ -178,6 +200,8 @@ def max_in_dict(dict dictionary):
     :param dictionary: The dictionary to check.
     :return The key.
     """
+    Condition.not_none(dictionary, 'dictionary')
+
     return max(dictionary.items(), key=lambda x: x[1])[0]
 
 

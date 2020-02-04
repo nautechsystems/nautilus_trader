@@ -175,12 +175,10 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         for order_list in self._atomic_child_orders.values():
             for order in order_list:
-                if not self._log.bypassed:
-                    self._log.warning(f"Residual child-order {order}")
+                self._log.warning(f"Residual child-order {order}")
 
         for order_id in self._oco_orders.values():
-            if not self._log.bypassed:
-                self._log.warning(f"Residual OCO {order_id}")
+            self._log.warning(f"Residual OCO {order_id}")
 
     cpdef void reset(self) except *:
         """
@@ -881,6 +879,5 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        if not self._log.bypassed:
-            self._log.debug(f"OCO order cancelled from {oco_order_id}.")
+        self._log.debug(f"OCO order cancelled from {oco_order_id}.")
         self._exec_engine.handle_event(event)
