@@ -104,7 +104,9 @@ class EMACrossPy(TradingStrategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
 
-        self.on_bar(self.bar_type, self.bar(self.bar_type, 0))
+        # Kick off strategy immediately with last bar
+        if self.bar_count(self.bar_type) > 0:
+            self.on_bar(self.bar_type, self.bar(self.bar_type, 0))
 
     def on_tick(self, tick: Tick):
         """
