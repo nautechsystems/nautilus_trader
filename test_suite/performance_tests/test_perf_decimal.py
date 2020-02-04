@@ -130,4 +130,4 @@ class DecimalPerformanceTests(unittest.TestCase):
     def test_decimal_arithmetic(self):
         result = PerformanceProfiler.profile_function(DecimalTesting.decimal_arithmetic, 3, 1000000)
         # ~124ms (125350μs) average over 3 runs @ 1000000 iterations
-        self.assertTrue(result < 0.15)
+        self.assertTrue(result < 0.2)

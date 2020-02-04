@@ -175,15 +175,13 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, result)
 
-    def test_get_ticks_for_unknown_symbol_returns_empty_list(self):
+    def test_get_ticks_for_unknown_symbol_raises_exception(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
 
         # Act
-        result = strategy.ticks(AUDUSD_FXCM)
-
         # Assert
-        self.assertEqual([], result)
+        self.assertRaises(ValueError, strategy.ticks, AUDUSD_FXCM)
 
     def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
         # Arrange
@@ -196,16 +194,14 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, result)
 
-    def test_get_bars_for_unknown_bar_type_returns_empty_list(self):
+    def test_get_bars_for_unknown_bar_type_raises_exception(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
-        result = strategy.bars(bar_type)
-
         # Assert
-        self.assertEqual([], result)
+        self.assertRaises(ValueError, strategy.bars, bar_type)
 
     def test_can_get_bars(self):
         # Arrange
