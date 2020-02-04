@@ -442,13 +442,16 @@ cdef class TradingStrategy:
 
         cdef Order order
         if isinstance(event, OrderRejected):
-            self.log.warning(f"{RECV}{EVT} {event}.")
+            if not self.log.bypassed:
+                self.log.warning(f"{RECV}{EVT} {event}.")
             if self.flatten_on_sl_reject:
                 self._flatten_on_sl_reject(event)
         elif isinstance(event, OrderCancelReject):
-            self.log.warning(f"{RECV}{EVT} {event}.")
+            if not self.log.bypassed:
+                self.log.warning(f"{RECV}{EVT} {event}.")
         else:
-            self.log.info(f"{RECV}{EVT} {event}.")
+            if not self.log.bypassed:
+                self.log.info(f"{RECV}{EVT} {event}.")
 
         if self.is_running:
             try:
@@ -1320,7 +1323,8 @@ cdef class TradingStrategy:
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        if not self.log.bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id) except *:
@@ -1347,7 +1351,8 @@ cdef class TradingStrategy:
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        if not self.log.bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void modify_order(self, Order order, Quantity new_quantity=None, Price new_price=None) except *:
@@ -1384,7 +1389,8 @@ cdef class TradingStrategy:
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        if not self.log.bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void cancel_order(self, Order order, str cancel_reason='NONE') except *:
@@ -1412,7 +1418,8 @@ cdef class TradingStrategy:
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        if not self.log.bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void cancel_all_orders(self, str cancel_reason='CANCEL_ON_STOP') except *:
@@ -1447,8 +1454,8 @@ cdef class TradingStrategy:
                 ValidString(cancel_reason),
                 self.guid_factory.generate(),
                 self.clock.time_now())
-
-            self.log.info(f"{CMD}{SENT} {command}.")
+            if not self.log.bypassed:
+                self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute_command(command)
 
     cpdef void flatten_position(self, PositionId position_id, Label label=Label('FLATTEN')) except *:
