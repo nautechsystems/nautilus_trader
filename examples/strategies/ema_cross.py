@@ -71,6 +71,17 @@ class EMACrossPy(TradingStrategy):
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
 
+    def on_start(self):
+        """
+        This method is called when self.start() is called, and after internal start logic.
+        """
+        # Put custom code to be run on strategy start here (or pass)
+        self.instrument = self.get_instrument(self.symbol)
+        self.precision = self.instrument.price_precision
+        self.entry_buffer = self.instrument.tick_size.as_double() * 3.0
+        self.SL_buffer = self.instrument.tick_size * 10.0
+        self.position_sizer = FixedRiskSizer(self.instrument)
+
         # Register the indicators for updating
         self.register_indicator(
             data_source=self.bar_type,
@@ -85,17 +96,6 @@ class EMACrossPy(TradingStrategy):
             indicator=self.atr,
             update_method=self.atr.update)
 
-    def on_start(self):
-        """
-        This method is called when self.start() is called, and after internal start logic.
-        """
-        # Put custom code to be run on strategy start here (or pass)
-        self.instrument = self.get_instrument(self.symbol)
-        self.precision = self.instrument.price_precision
-        self.entry_buffer = self.instrument.tick_size.as_double() * 3.0
-        self.SL_buffer = self.instrument.tick_size * 10.0
-        self.position_sizer = FixedRiskSizer(self.instrument)
-
         # Get historical data
         self.get_bars(self.bar_type)
 
@@ -103,6 +103,8 @@ class EMACrossPy(TradingStrategy):
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
+
+        self.on_bar(self.bar_type, self.bar(self.bar_type, 0))
 
     def on_tick(self, tick: Tick):
         """
@@ -128,7 +130,8 @@ class EMACrossPy(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.debug("Waiting for indicators to warm up...")
+            self.log.debug(f"Waiting for indicators to warm up "
+                           f"[{self.bar_count(self.bar_type)}] ...")
             return  # Wait for indicators to warm up...
 
         # Check if tick data available
