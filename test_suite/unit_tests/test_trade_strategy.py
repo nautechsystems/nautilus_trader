@@ -161,8 +161,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertFalse(strategy.is_data_client_registered)
-        self.assertFalse(strategy.is_exec_engine_registered)
         self.assertFalse(strategy.indicators_initialized())
 
     def test_get_tick_count_for_unknown_symbol_returns_zero(self):
