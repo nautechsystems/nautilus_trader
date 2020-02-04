@@ -377,10 +377,12 @@ cdef class EMACross(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
+            self.log.debug("Waiting for indicators to warm up...")
             return  # Wait for indicators to warm up...
 
         # Check if tick data available
         if not self.has_ticks(self.symbol):
+            self.log.debug(f"Waiting for {self.symbol.value} ticks...")
             return  # Wait for ticks...
 
         # Calculate average spread
