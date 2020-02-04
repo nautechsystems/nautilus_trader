@@ -375,7 +375,7 @@ cdef class TradingStrategy:
         Condition.not_none(ticks, 'ticks')  # Can be empty
 
         cdef int length = len(ticks)
-        cdef str symbol = ticks[0] if length > 0 else '?'
+        cdef str symbol = ticks[0].symbol.to_string() if length > 0 else '?'
         if length > 0:
             self.log.info(f"Received tick data for {symbol} of {length} ticks.")
 
