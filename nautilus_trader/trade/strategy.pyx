@@ -348,8 +348,15 @@ cdef class TradingStrategy:
         """
         Condition.not_none(tick, 'tick')
 
-        self._ticks[tick.symbol].appendleft(tick)
-        self._spreads[tick.symbol].appendleft(tick.ask.as_double() - tick.bid.as_double())
+        try:
+            self._ticks[tick.symbol].appendleft(tick)
+            self._spreads[tick.symbol].appendleft(tick.ask.as_double() - tick.bid.as_double())
+        except KeyError as ex:
+            self._ticks[tick.symbol] = deque([tick], maxlen=self.tick_capacity)
+            spread = tick.ask.as_double() - tick.bid.as_double()
+            self._spreads[tick.symbol] = deque([spread], maxlen=self.tick_capacity)
+            self.log.warning(f"Received {repr(tick)} when not registered. "
+                             f"Setup tick handling.")
 
         cdef list updaters = self._indicator_updaters.get(tick.symbol)
         cdef IndicatorUpdater updater
@@ -371,6 +378,10 @@ cdef class TradingStrategy:
         """
         Condition.not_none(ticks, 'ticks')  # Can be empty
 
+        cdef int length = len(ticks)
+        if length > 0:
+            self.log.info(f"Received tick data for {ticks[0]} of {length} ticks.")
+
         cdef int i
         for i in range(len(ticks)):
             self.handle_tick(ticks[i])
@@ -387,7 +398,12 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_none(bar, 'bar')
 
-        self._bars[bar_type].appendleft(bar)
+        try:
+            self._bars[bar_type].appendleft(bar)
+        except KeyError as ex:
+            self._bars[bar_type] = deque([bar], maxlen=self.bar_capacity)
+            self.log.warning(f"Received {bar_type} {repr(bar)} when not registered. "
+                             f"Setup bar handling.")
 
         cdef list updaters = self._indicator_updaters.get(bar_type)
         cdef IndicatorUpdater updater
@@ -732,10 +748,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(symbol, 'symbol')
 
-        ticks = self._ticks.get(symbol)
-        if ticks is None:
-            return 0
-        return len(ticks)
+        return len(self._ticks[symbol]) if symbol in self._ticks else 0
 
     cpdef int bar_count(self, BarType bar_type):
         """
@@ -746,10 +759,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(bar_type, 'bar_type')
 
-        bars = self._bars.get(bar_type)
-        if bars is None:
-            return 0
-        return len(bars)
+        return len(self._bars[bar_type]) if bar_type in self._bars else 0
 
     cpdef list ticks(self, Symbol symbol):
         """
@@ -761,7 +771,7 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
-        return self._ticks[symbol]
+        return list(self._ticks[symbol])
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -773,7 +783,7 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, 'bar_type')
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
-        return self._bars[bar_type]
+        return list(self._bars[bar_type])
 
     cpdef Tick tick(self, Symbol symbol, int index=0):
         """
