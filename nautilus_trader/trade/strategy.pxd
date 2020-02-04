@@ -52,8 +52,10 @@ cdef class TradingStrategy:
 
     cdef readonly int tick_capacity
     cdef readonly int bar_capacity
+
     cdef dict _ticks
     cdef dict _bars
+    cdef dict _spreads
     cdef list _indicators
     cdef dict _indicator_updaters
     cdef list _state_log
@@ -125,6 +127,8 @@ cdef class TradingStrategy:
     cpdef list bars(self, BarType bar_type)
     cpdef Tick tick(self, Symbol symbol, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
+    cpdef double spread(self, Symbol symbol)
+    cpdef double average_spread(self, Symbol symbol, int window=*)
 
 # -- INDICATOR METHODS ----------------------------------------------------------------------------#
     cpdef readonly list registered_indicators(self)

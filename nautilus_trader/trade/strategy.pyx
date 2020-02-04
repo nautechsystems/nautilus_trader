@@ -35,6 +35,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
+from nautilus_trader.common.functions cimport fast_mean
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
@@ -116,6 +117,7 @@ cdef class TradingStrategy:
         self.bar_capacity = bar_capacity
         self._ticks = {}                        # type: Dict[Symbol, Deque[Tick]]
         self._bars = {}                         # type: Dict[BarType, Deque[Bar]]
+        self._spreads = {}                      # type: Dict[Symbol, List[float]]
         self._indicators = []                   # type: List[object]
         self._indicator_updaters = {}           # type: Dict[object, List[IndicatorUpdater]]
         self._state_log = []                    # type: List[(datetime, str)]
@@ -346,9 +348,8 @@ cdef class TradingStrategy:
         """
         Condition.not_none(tick, 'tick')
 
-        if tick.symbol not in self._ticks:
-            self._ticks[tick.symbol] = deque(maxlen=self.tick_capacity)
         self._ticks[tick.symbol].appendleft(tick)
+        self._spreads[tick.symbol].appendleft(tick.ask.as_double() - tick.bid.as_double())
 
         cdef list updaters = self._indicator_updaters.get(tick.symbol)
         cdef IndicatorUpdater updater
@@ -386,8 +387,6 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_none(bar, 'bar')
 
-        if bar_type not in self._bars:
-            self._bars[bar_type] = deque(maxlen=self.bar_capacity)
         self._bars[bar_type].appendleft(bar)
 
         cdef list updaters = self._indicator_updaters.get(bar_type)
@@ -517,6 +516,12 @@ cdef class TradingStrategy:
             self.log.error("Cannot download historical bars (data client not registered).")
             return
 
+        if symbol not in self._ticks:
+            self._ticks[symbol] = deque(maxlen=self.tick_capacity)
+
+        if symbol not in self._spreads:
+            self._spreads[symbol] = deque(maxlen=self.tick_capacity)
+
         self._data_client.request_ticks(
             symbol,
             from_date,
@@ -556,6 +561,9 @@ cdef class TradingStrategy:
             from_date = self.clock.date_now() - timedelta(days=1)
 
         Condition.true(from_date < to_date, 'from_datetime < to_date')
+
+        if bar_type not in self._bars:
+            self._bars[bar_type] = deque(maxlen=self.bar_capacity)
 
         if self._data_client is None:
             self.log.error("Cannot download historical bars (data client not registered).")
@@ -606,6 +614,12 @@ cdef class TradingStrategy:
             self.log.error("Cannot subscribe to ticks (data client not registered).")
             return
 
+        if symbol not in self._ticks:
+            self._ticks[symbol] = deque(maxlen=self.tick_capacity)
+
+        if symbol not in self._spreads:
+            self._spreads[symbol] = deque(maxlen=self.tick_capacity)
+
         self._data_client.subscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Subscribed to {symbol} tick data.")
 
@@ -620,6 +634,9 @@ cdef class TradingStrategy:
         if not self.is_data_client_registered:
             self.log.error("Cannot subscribe to bars (data client not registered).")
             return
+
+        if bar_type not in self._bars:
+            self._bars[bar_type] = deque(maxlen=self.bar_capacity)
 
         self._data_client.subscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Subscribed to {bar_type} bar data.")
@@ -742,11 +759,9 @@ cdef class TradingStrategy:
         :return List[Tick].
         """
         Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
-        ticks = self._ticks.get(symbol)
-        if ticks is None:
-            return []
-        return list(ticks)
+        return self._ticks[symbol]
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -756,11 +771,9 @@ cdef class TradingStrategy:
         :return List[Bar].
         """
         Condition.not_none(bar_type, 'bar_type')
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
-        bars = self._bars.get(bar_type)
-        if bars is None:
-            return []
-        return list(bars)
+        return self._bars[bar_type]
 
     cpdef Tick tick(self, Symbol symbol, int index=0):
         """
@@ -769,7 +782,7 @@ cdef class TradingStrategy:
         :param symbol: The symbol for the tick to get.
         :param index: The optional index for the tick to get .
         :return Tick.
-        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
+        :raises ValueError: If the strategies ticks does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
         Condition.not_none(symbol, 'symbol')
@@ -784,13 +797,44 @@ cdef class TradingStrategy:
         :param bar_type: The bar type to get.
         :param index: The optional index for the bar to get.
         :return Bar.
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        :raises ValueError: If the strategies bars does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return self._bars[bar_type][index]
+
+    cpdef double spread(self, Symbol symbol):
+        """
+        Return the current spread for the given symbol.
+        
+        :param symbol: The symbol for the spread to get.
+        :return float.
+        :raises ValueError: If the strategies ticks does not contain the symbol.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._spreads, 'symbol', 'spreads')
+
+        return self._spreads[symbol][0]
+
+    cpdef double average_spread(self, Symbol symbol, int window=0):
+        """
+        Return the average spread over the look back window.
+        
+        :param symbol: The symbol for the average spread to get.
+        :param window: The optional custom window for the average (> 0).
+        :return float.
+        :raises ValueError: If the strategies ticks does not contain the symbol.
+        """
+        if window == 0:
+            window = self.tick_capacity
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._spreads, 'symbol', 'ticks')
+        Condition.positive_int(window, 'window')
+
+        cdef list spreads = list(self._spreads[symbol])[:window]
+        return fast_mean(spreads)
 
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
@@ -1180,6 +1224,7 @@ cdef class TradingStrategy:
         self.position_id_generator.reset()
         self._ticks.clear()
         self._bars.clear()
+        self._spreads.clear()
         self._indicators.clear()
         self._indicator_updaters.clear()
         self._state_log.clear()
