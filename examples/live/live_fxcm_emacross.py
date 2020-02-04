@@ -38,10 +38,10 @@ if __name__ == "__main__":
         strategies.append(EMACrossPy(
             symbol,
             BAR_SPEC,
-            10.0,
-            10,
-            20,
-            20))
+            risk_bp=10.0,
+            fast_ema=1,
+            slow_ema=2,
+            atr_period=4))
 
     node = TradingNode(
         config_path='config.json',
