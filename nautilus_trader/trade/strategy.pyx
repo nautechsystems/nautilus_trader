@@ -765,12 +765,12 @@ cdef class TradingStrategy:
             return []
         return list(bars)
 
-    cpdef Tick tick(self, Symbol symbol, int index):
+    cpdef Tick tick(self, Symbol symbol, int index=0):
         """
-        Return the tick for the given symbol at the given index.
+        Return the tick for the given symbol at the given index or last if no index specified.
 
         :param symbol: The symbol for the tick to get.
-        :param index: The index for the tick to get.
+        :param index: The optional index for the tick to get .
         :return Tick.
         :raises ValueError: If the strategies tick dictionary does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
@@ -780,12 +780,12 @@ cdef class TradingStrategy:
 
         return self._ticks[symbol][index]
 
-    cpdef Bar bar(self, BarType bar_type, int index):
+    cpdef Bar bar(self, BarType bar_type, int index=0):
         """
-        Return the bar for the given bar type at the given index.
+        Return the bar for the given bar type at the given index or last if no index specified.
 
         :param bar_type: The bar type to get.
-        :param index: The index for the bar to get.
+        :param index: The optional index for the bar to get.
         :return Bar.
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
