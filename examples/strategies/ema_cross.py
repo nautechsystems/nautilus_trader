@@ -6,12 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from collections import deque
 from datetime import timedelta
 from typing import Dict
 
 from nautilus_trader.core.message import Event
-from nautilus_trader.common.functions import fast_mean
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, PriceType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol
@@ -62,9 +60,6 @@ class EMACrossPy(TradingStrategy):
 
         self.instrument = None      # initialized in on_start()
         self.position_sizer = None  # initialized in on_start()
-
-        # Track spreads
-        self.spreads = deque(maxlen=100)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -118,7 +113,6 @@ class EMACrossPy(TradingStrategy):
         :param tick: The received tick.
         """
         self.log.info(f"Received Tick({tick})")  # For debugging
-        self.spreads.append(tick.ask.as_double() - tick.bid.as_double())
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -142,8 +136,8 @@ class EMACrossPy(TradingStrategy):
             self.log.debug(f"Waiting for {self.symbol.value} ticks...")
             return  # Wait for ticks...
 
-        # Calculate average spread
-        average_spread = fast_mean(self.spreads)
+        # Get average spread
+        average_spread = self.average_spread(self.symbol)
 
         # Check market liquidity
         if average_spread == 0.0:
@@ -154,7 +148,7 @@ class EMACrossPy(TradingStrategy):
                 self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
-        spread_buffer = max(average_spread, self.spreads[-1])
+        spread_buffer = max(average_spread, self.spread(self.symbol))
         sl_buffer = self.atr.value * self.SL_atr_multiple
 
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions

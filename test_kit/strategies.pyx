@@ -6,14 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from collections import deque
 from datetime import timedelta
-from typing import Deque
 
 from nautilus_indicators.atr cimport AverageTrueRange
 from nautilus_indicators.average.ema cimport ExponentialMovingAverage
 
-from nautilus_trader.common.functions cimport fast_mean
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
 from nautilus_trader.model.objects cimport (
@@ -329,9 +326,6 @@ cdef class EMACross(TradingStrategy):
 
         self.position_sizer = FixedRiskSizer(self.instrument)
 
-        # Track spreads for calculating average
-        self.spreads = deque(maxlen=100)  # type: Deque[float]
-
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
         self.slow_ema = ExponentialMovingAverage(slow_ema)
@@ -366,7 +360,6 @@ cdef class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
-        self.spreads.append(tick.ask.as_double() - tick.bid.as_double())
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -390,8 +383,8 @@ cdef class EMACross(TradingStrategy):
             self.log.debug(f"Waiting for {self.symbol.value} ticks...")
             return  # Wait for ticks...
 
-        # Calculate average spread
-        cdef double average_spread = fast_mean(self.spreads)
+        # Get average spread
+        cdef double average_spread = self.average_spread(self.symbol)
         cdef double liquidity_ratio
 
         # Check market liquidity
@@ -403,7 +396,7 @@ cdef class EMACross(TradingStrategy):
                 self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
-        cdef double spread_buffer = max(average_spread, self.spreads[-1])
+        cdef double spread_buffer = max(average_spread, self.spread(self.symbol))
         cdef double sl_buffer = self.atr.value * self.SL_atr_multiple
 
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
@@ -542,7 +535,6 @@ cdef class EMACross(TradingStrategy):
         reset logic such as clearing the internally held bars, ticks and resetting
         all indicators.
         """
-        self.spreads.clear()
         self.fast_ema.reset()
         self.slow_ema.reset()
         self.atr.reset()

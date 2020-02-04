@@ -8,7 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-
 from datetime import datetime
 
 from nautilus_trader.common.logger import LogLevel
