@@ -99,8 +99,8 @@ cdef class TradingNode:
 
         self._log_store = LogStore(
             trader_id=self.trader_id,
-            host=config_log['redis_host'],
-            port=config_log['redis_port'])
+            host=config_log['host'],
+            port=config_log['port'])
         self._logger = LiveLogger(
             name=self.trader_id.value,
             level_console=LogLevel[config_log['log_level_console']],
@@ -120,12 +120,12 @@ cdef class TradingNode:
             zmq_context=self._zmq_context,
             service_name=config_data['service_name'],
             service_address=config_data['service_address'],
-            tick_rep_port=config_data['tick_rep_port'],
-            tick_pub_port=config_data['tick_pub_port'],
-            bar_rep_port=config_data['bar_rep_port'],
-            bar_pub_port=config_data['bar_pub_port'],
-            inst_rep_port=config_data['inst_rep_port'],
-            inst_pub_port=config_data['inst_pub_port'],
+            tick_rep_port=config_data['tick_req_port'],
+            tick_pub_port=config_data['tick_sub_port'],
+            bar_rep_port=config_data['bar_req_port'],
+            bar_pub_port=config_data['bar_sub_port'],
+            inst_rep_port=config_data['inst_req_port'],
+            inst_pub_port=config_data['inst_sub_port'],
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
@@ -140,8 +140,8 @@ cdef class TradingNode:
         if config_exec_db['type'] == 'redis':
             self._exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
-                host=config_exec_db['redis_host'],
-                port=config_exec_db['redis_port'],
+                host=config_exec_db['host'],
+                port=config_exec_db['port'],
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 logger=self._logger)
