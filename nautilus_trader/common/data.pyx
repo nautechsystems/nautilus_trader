@@ -397,8 +397,6 @@ cdef class BulkTickBarBuilder:
         :param callback: The callback to send the built bars to.
         :raises ValueError: If the callback is not type callable.
         """
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.not_none(logger, 'logger')
         Condition.callable(callback, 'callback')
 
         self.bars = []
