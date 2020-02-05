@@ -13,6 +13,7 @@ from typing import Callable
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.message cimport Response
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
@@ -281,6 +282,10 @@ cdef class LiveDataClient(DataClient):
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
+        if bar_type.specification.structure == BarStructure.TICK:
+            self._bulk_build_tick_bars(bar_type, from_date, to_date, limit, callback)
+            return
+
         cdef dict query = {
             DATA_TYPE: "Bar[]",
             SYMBOL: bar_type.symbol.value,
@@ -409,8 +414,11 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
 
-        self._add_bar_handler(bar_type, handler)
-        self._bar_sub_worker.subscribe(bar_type.to_string())
+        if bar_type.specification.structure == BarStructure.TICK:
+            self._self_generate_bars(bar_type, handler)
+        else:
+            self._add_bar_handler(bar_type, handler)
+            self._bar_sub_worker.subscribe(bar_type.to_string())
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable) except *:
         """

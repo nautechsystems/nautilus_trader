@@ -21,7 +21,8 @@ from examples.strategies.ema_cross import EMACrossPy
 #   - A NautilusExecutor instance listening on the default ports
 
 
-BAR_SPEC = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+# BAR_SPEC = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+BAR_SPEC = BarSpecification(256, BarStructure.TICK, PriceType.BID)
 
 symbols_to_trade = [
     Symbol('AUDUSD', Venue('FXCM')),
@@ -39,9 +40,9 @@ if __name__ == "__main__":
             symbol,
             BAR_SPEC,
             risk_bp=10.0,
-            fast_ema=1,
-            slow_ema=2,
-            atr_period=4))
+            fast_ema=10,
+            slow_ema=20,
+            atr_period=20))
 
     node = TradingNode(
         config_path='config.json',

@@ -140,13 +140,13 @@ class EMACrossPy(TradingStrategy):
         average_spread = self.average_spread(self.symbol)
 
         # Check market liquidity
-        # if average_spread == 0.0:
-        #     return  # Protect divide by zero
-        # else:
-        #     liquidity_ratio = self.atr.value / average_spread
-        #     if liquidity_ratio < 2.0:
-        #         self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
-        #         return
+        if average_spread == 0.0:
+            return  # Protect divide by zero
+        else:
+            liquidity_ratio = self.atr.value / average_spread
+            if liquidity_ratio < 2.0:
+                self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
+                return
 
         spread_buffer = max(average_spread, self.spread(self.symbol))
         sl_buffer = self.atr.value * self.SL_atr_multiple

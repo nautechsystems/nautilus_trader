@@ -223,7 +223,8 @@ cdef class DataClient:
             self._tick_handlers[symbol].append(tick_handler)
             self._log.debug(f"Added {tick_handler} for {symbol} tick data.")
         else:
-            self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
+            self._log.error(f"Cannot add {tick_handler} for {symbol} tick data"
+                            f"(duplicate handler found).")
 
     cdef void _add_bar_handler(self, BarType bar_type, handler: Callable) except *:
         """
@@ -238,7 +239,8 @@ cdef class DataClient:
             self._bar_handlers[bar_type].append(bar_handler)
             self._log.debug(f"Added {bar_handler} for {bar_type} bar data.")
         else:
-            self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
+            self._log.error(f"Cannot add {bar_handler} for {bar_type} bar data "
+                            f"(duplicate handler found).")
 
     cdef void _add_instrument_handler(self, Symbol symbol, handler: Callable) except *:
         """
@@ -253,7 +255,8 @@ cdef class DataClient:
             self._instrument_handlers[symbol].append(instrument_handler)
             self._log.debug(f"Added {instrument_handler} for {symbol} instruments.")
         else:
-            self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
+            self._log.error(f"Cannot add {instrument_handler} for {symbol} instruments"
+                            f"(duplicate handler found).")
 
     cdef void _remove_tick_handler(self, Symbol symbol, handler: Callable) except *:
         """
@@ -312,6 +315,23 @@ cdef class DataClient:
             del self._instrument_handlers[symbol]
             self._log.info(f"Unsubscribed from {symbol} instrument data.")
 
+    cpdef void _bulk_build_tick_bars(
+            self,
+            BarType bar_type,
+            date from_date,
+            date to_date,
+            int limit,
+            callback) except *:
+        # Bulk build tick bars
+        cdef int ticks_to_order = bar_type.specification.step * limit
+
+        cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
+            bar_type,
+            self._log.get_logger(),
+            callback)
+
+        self.request_ticks(bar_type.symbol, from_date, to_date, ticks_to_order, bar_builder.deliver)
+
     cpdef void _handle_tick(self, Tick tick) except *:
         # Handle the given tick by sending it to all tick handlers for that symbol
         cdef list tick_handlers = self._tick_handlers.get(tick.symbol)
@@ -355,3 +375,48 @@ cdef class DataClient:
         self._instruments.clear()
 
         self._log.debug("Reset.")
+
+
+cdef class BulkTickBarBuilder:
+    """
+    Provides a temporary bulk builder for tick bars from bulk ordered ticks.
+    """
+    cdef TickBarAggregator aggregator
+    cdef object callback
+    cdef list bars
+
+    def __init__(self,
+                 BarType bar_type not None,
+                 Logger logger not None,
+                 callback not None):
+        """
+        Initializes a new instance of the BulkTickBarBuilder class.
+
+        :param bar_type: The bar_type to build.
+        :param logger: The logger for the bar aggregator.
+        :param callback: The callback to send the built bars to.
+        :raises ValueError: If the callback is not type callable.
+        """
+        Condition.not_none(bar_type, 'bar_type')
+        Condition.not_none(logger, 'logger')
+        Condition.callable(callback, 'callback')
+
+        self.bars = []
+        self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
+        self.callback = callback
+
+    cpdef void deliver(self, list ticks) except *:
+        """
+        Accepts for delivery the bulk list of ticks and builds aggregated tick
+        bars. Then sends the bar type and bars list on to the registered callback.
+        
+        :param ticks: The bulk ticks for aggregation into tick bars.
+        """
+        cdef int i
+        for i in range(len(ticks)):
+            self.aggregator.update(ticks[i])
+
+        self.callback(self.aggregator.bar_type, self.bars)
+
+    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *:
+        self.bars.append(bar)

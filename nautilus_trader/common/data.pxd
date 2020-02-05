@@ -72,6 +72,13 @@ cdef class DataClient:
     cdef void _remove_tick_handler(self, Symbol symbol, handler) except *
     cdef void _remove_bar_handler(self, BarType bar_type, handler) except *
     cdef void _remove_instrument_handler(self, Symbol symbol, handler) except *
+    cpdef void _bulk_build_tick_bars(
+            self,
+            BarType bar_type,
+            date from_date,
+            date to_date,
+            int limit,
+            callback) except *
     cpdef void _handle_tick(self, Tick tick) except *
     cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *
     cpdef void _handle_instrument(self, Instrument instrument) except *
