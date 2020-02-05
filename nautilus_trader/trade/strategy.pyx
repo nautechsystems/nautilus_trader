@@ -347,7 +347,7 @@ cdef class TradingStrategy:
         try:
             self._ticks[tick.symbol].appendleft(tick)
             self._spreads[tick.symbol].appendleft(tick.ask.as_double() - tick.bid.as_double())
-        except KeyError as ex:
+        except KeyError as ex:  # Symbol was not found
             self._ticks[tick.symbol] = deque([tick], maxlen=self.tick_capacity)
             spread = tick.ask.as_double() - tick.bid.as_double()
             self._spreads[tick.symbol] = deque([spread], maxlen=self.tick_capacity)
