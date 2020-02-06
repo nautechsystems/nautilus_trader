@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
 import gc
 import sys
 import pandas as pd
