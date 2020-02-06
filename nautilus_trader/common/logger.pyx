@@ -404,7 +404,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     print('')  # New line to begin
     logger.info("=================================================================")
     logger.info(f" NAUTILUS TRADER - Algorithmic Trading Platform")
-    logger.info(f" by Nautech Systems Pty Ltd. ")
+    logger.info(f" by Nautech Systems Pty Ltd.")
     logger.info(f" Copyright (C) 2015-2020. All rights reserved.")
     logger.info("=================================================================")
     logger.info("                                                                 ")
@@ -428,7 +428,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("=================================================================")
     logger.info(" SYSTEM SPECIFICATION")
     logger.info("=================================================================")
-    logger.info(f"OS: {platform.platform()}")
     logger.info(f"CPU architecture: {platform.processor()}")
     cpu_freq_str = '' if psutil.cpu_freq() is None else f'@ {int(psutil.cpu_freq()[2])} MHz'
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
@@ -439,6 +438,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"RAM-Total: {ram_total_mb:,} MB")
     logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({round(100.0 - ram_avail_pc, 2)}%)")
     logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc}%)")
+    logger.info(f"OS: {platform.platform()}")
     logger.info("=================================================================")
     logger.info(" VERSIONING")
     logger.info("=================================================================")

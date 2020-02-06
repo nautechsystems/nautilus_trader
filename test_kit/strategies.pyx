@@ -374,13 +374,13 @@ cdef class EMACross(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.debug(f"Waiting for indicators to warm up "
+            self.log.info(f"Waiting for indicators to warm up "
                            f"[{self.bar_count(self.bar_type)}] ...")
             return  # Wait for indicators to warm up...
 
         # Check if tick data available
         if not self.has_ticks(self.symbol):
-            self.log.debug(f"Waiting for {self.symbol.value} ticks...")
+            self.log.info(f"Waiting for {self.symbol.value} ticks...")
             return  # Wait for ticks...
 
         # Get average spread
@@ -393,7 +393,7 @@ cdef class EMACross(TradingStrategy):
         else:
             liquidity_ratio = self.atr.value / average_spread
             if liquidity_ratio < 2.0:
-                self.log.debug(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
+                self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
                 return
 
         cdef double spread_buffer = max(average_spread, self.spread(self.symbol))
