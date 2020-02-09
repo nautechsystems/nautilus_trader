@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable
 from cpython.object cimport PyObject_Repr
 
 from nautilus_trader.core.correctness cimport Condition
@@ -16,7 +15,7 @@ cdef class Handler:
     """
     The base class for all handlers.
     """
-    def __init__(self, handler):
+    def __init__(self, handler not None: callable):
         """
         Initializes a new instance of the TickHandler class.
 
@@ -59,7 +58,7 @@ cdef class TickHandler(Handler):
     Provides a handler for tick objects.
     """
 
-    def __init__(self, handler: Callable):
+    def __init__(self, handler not None: callable):
         """
         Initializes a new instance of the BarHandler class.
 
@@ -73,7 +72,7 @@ cdef class BarHandler(Handler):
     Provides a handler for bar type and bar objects.
     """
 
-    def __init__(self, handler: Callable):
+    def __init__(self, handler not None: callable):
         """
         Initializes a new instance of the BarHandler class.
 
@@ -87,7 +86,7 @@ cdef class InstrumentHandler(Handler):
     Provides a handler for instrument objects.
     """
 
-    def __init__(self, handler: Callable):
+    def __init__(self, handler not None: callable):
         """
         Initializes a new instance of the InstrumentHandler class.
 
@@ -101,7 +100,7 @@ cdef class EventHandler(Handler):
     Provides a handler for event objects.
     """
 
-    def __init__(self, handler: Callable):
+    def __init__(self, handler not None: callable):
         """
         Initializes a new instance of the EventHandler class.
 

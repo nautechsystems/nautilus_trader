@@ -9,7 +9,6 @@
 import inspect
 import pandas as pd
 from cpython.datetime cimport datetime, timedelta
-from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions cimport with_utc_index
@@ -282,7 +281,7 @@ cdef class IndicatorUpdater:
 
     def __init__(self,
                  indicator not None,
-                 input_method: Callable=None,
+                 input_method: callable=None,
                  list outputs: [str]=None):
         """
         Initializes a new instance of the IndicatorUpdater class.
@@ -290,7 +289,7 @@ cdef class IndicatorUpdater:
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
-        :raises TypeError: If the input_method is not of type Callable or None.
+        :raises TypeError: If the input_method is not of type callable or None.
         """
         Condition.callable_or_none(input_method, 'input_method')
 

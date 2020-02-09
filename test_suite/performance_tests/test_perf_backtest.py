@@ -67,6 +67,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 31/07/19   13792 function calls   (13610 primitive calls) in 2.037 seconds (performance check)
         # 21/08/19   15311 function calls   (15117 primitive calls) in 2.156 seconds (performance check)
         # 14/01/20   20964 function calls   (20758 primitive calls) in 0.695 seconds (performance check)
+        # 10/02/20   713938 function calls (713572 primitive calls) in 2.670 seconds (something changed)
 
     def test_run_for_tick_processing(self):
         # Arrange
@@ -222,3 +223,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 29/01/20 15321331 function calls (15093635 primitive calls) in 15.120 seconds (refactored quantity to handle decimals)
         # 30/01/20 15321331 function calls (15093635 primitive calls) in 15.469 seconds (add volume object, refactor tick)
         # 04/02/20 23000530 function calls (22600982 primitive calls) in 19.057 seconds (something changed??)
+
+        # Profiling mission: Profile_Hooks = True
+        # ---------------------------------------
+        # 56142966 function calls (55743120 primitive calls) in 30.055 seconds

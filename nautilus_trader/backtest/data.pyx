@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 from cpython.datetime cimport date, datetime
 from pandas import DatetimeIndex
-from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions import slice_dataframe
@@ -332,7 +331,7 @@ cdef class BacktestDataClient(DataClient):
             date from_date,
             date to_date,
             int limit,
-            callback: Callable) except *:
+            callback: callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
@@ -342,7 +341,7 @@ cdef class BacktestDataClient(DataClient):
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
         :raises ValueError: If the limit is negative (< 0).
-        :raises TypeError: If the callback is not of type Callable.
+        :raises TypeError: If the callback is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(from_date, 'from_datetime')
@@ -358,7 +357,7 @@ cdef class BacktestDataClient(DataClient):
             date from_date,
             date to_date,
             int limit,
-            callback: Callable) except *:
+            callback: callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
@@ -368,7 +367,7 @@ cdef class BacktestDataClient(DataClient):
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
         :raises ValueError: If the limit is negative (< 0).
-        :raises TypeError: If the callback is not of type Callable.
+        :raises TypeError: If the callback is not of type callable.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_none(from_date, 'from_datetime')
@@ -378,13 +377,13 @@ cdef class BacktestDataClient(DataClient):
 
         self._log.info(f"Simulated request bars for {bar_type} from {from_date} to {to_date}.")
 
-    cpdef void request_instrument(self, Symbol symbol, callback: Callable) except *:
+    cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
         Request the instrument for the given symbol.
 
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
-        :raises TypeError: If the callback is not of type Callable.
+        :raises TypeError: If the callback is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(callback, 'callback')
@@ -393,13 +392,13 @@ cdef class BacktestDataClient(DataClient):
 
         callback(self._instruments[symbol])
 
-    cpdef void request_instruments(self, Venue venue, callback: Callable) except *:
+    cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
         Request all instrument for given venue.
         
         :param venue: The venue for the request.
         :param callback: The callback for the response.
-        :raises TypeError: If the callback is not of type Callable.
+        :raises TypeError: If the callback is not of type callable.
         """
         Condition.callable(callback, 'callback')
 
@@ -407,41 +406,41 @@ cdef class BacktestDataClient(DataClient):
 
         callback(self.get_instruments())
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable) except *:
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to tick data for the given symbol.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription.
         :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type Callable.
+        :raises TypeError: If the handler is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
         self._add_tick_handler(symbol, handler)
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable) except *:
+    cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
         Subscribe to live bar data for the given bar parameters.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription.
         :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type Callable or None.
+        :raises TypeError: If the handler is not of type callable or None.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable_or_none(handler, 'handler')
 
         self._self_generate_bars(bar_type, handler)
 
-    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable) except *:
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to live instrument data updates for the given symbol and handler.
 
         :param symbol: The instrument symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises TypeError: If the handler is not of type Callable or None.
+        :raises TypeError: If the handler is not of type callable or None.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable_or_none(handler, 'handler')
@@ -450,35 +449,35 @@ cdef class BacktestDataClient(DataClient):
             self._log.info(f"Simulated subscribe to {symbol} instrument updates "
                            f"(a backtest data client wont update an instrument).")
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable) except *:
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribes from tick data for the given symbol.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type Callable or None.
+        :raises TypeError: If the handler is not of type callable or None.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable_or_none(handler, 'handler')
 
         self._remove_tick_handler(symbol, handler)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable) except *:
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
         Unsubscribes from bar data for the given symbol and venue.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type Callable or None.
+        :raises TypeError: If the handler is not of type callable or None.
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable_or_none(handler, 'handler')
 
         self._remove_bar_handler(bar_type, handler)
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable) except *:
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribe from live instrument data updates for the given symbol and handler.
 

@@ -8,7 +8,6 @@
 
 import threading
 import zmq
-from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -167,7 +166,7 @@ cdef class SubscriberWorker(MQWorker):
             str service_address,
             int service_port,
             zmq_context not None: zmq.Context,
-            handler not None: Callable,
+            handler not None: callable,
             Logger logger not None):
         """
         Initializes a new instance of the SubscriberWorker class.
@@ -183,7 +182,7 @@ cdef class SubscriberWorker(MQWorker):
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         :raises ValueError: If the topic is not a valid string.
-        :raises TypeError: If the handler is not of type Callable.
+        :raises TypeError: If the handler is not of type callable.
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')

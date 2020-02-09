@@ -10,7 +10,6 @@ import numpy as np
 from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer as TimerThread
-from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
@@ -252,7 +251,7 @@ cdef class LiveTimer(Timer):
         :param now: The datetime now (UTC).
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
-        :raises TypeError: If the function is not of type Callable.
+        :raises TypeError: If the function is not of type callable.
         """
         super().__init__(label, callback, interval, start_time, stop_time)
 
@@ -297,7 +296,7 @@ cdef class Clock:
         self._log = None
         self._guid_factory = guid_factory
         self._timers = {}    # type: {Label, Timer}
-        self._handlers = {}  # type: {Label, Callable}
+        self._handlers = {}  # type: {Label, callable}
         self._stack = None
         self._default_handler = None
 
@@ -354,12 +353,12 @@ cdef class Clock:
         self._log = logger
         self.is_logger_registered = True
 
-    cpdef void register_default_handler(self, handler: Callable) except *:
+    cpdef void register_default_handler(self, handler: callable) except *:
         """
         Register the given handler as the clocks default handler.
         
         :param handler: The handler to register (must be Callable).
-        :raises TypeError: If the handler is not of type Callable.
+        :raises TypeError: If the handler is not of type callable.
         """
         Condition.callable(handler, 'handler')
 
