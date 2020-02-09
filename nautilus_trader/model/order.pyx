@@ -12,7 +12,6 @@ and an OrderFactory for more convenient creation of order objects.
 """
 
 from cpython.datetime cimport datetime
-from typing import Set, List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
@@ -141,8 +140,8 @@ cdef class Order:
             # Must have an expire time
             Condition.not_none(expire_time, 'expire_time')
 
-        self._execution_ids = set()         # type: Set[ExecutionId]
-        self._events = []                   # type: List[OrderEvent]
+        self._execution_ids = set()         # type: {ExecutionId}
+        self._events = []                   # type: [OrderEvent]
 
         self.id = order_id
         self.id_broker = None               # Can be None

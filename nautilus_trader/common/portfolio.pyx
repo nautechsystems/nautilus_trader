@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport (  # noqa: E211
     PositionEvent,
@@ -41,8 +39,8 @@ cdef class Portfolio:
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._positions_open = {}    # type: Dict[Symbol, Dict[PositionId, Position]]
-        self._positions_closed = {}  # type: Dict[Symbol, Dict[PositionId, Position]]
+        self._positions_open = {}    # type: [Symbol, {PositionId, Position}]
+        self._positions_closed = {}  # type: [Symbol, {PositionId, Position}]
 
         self.daily_pnl_realized = Money.zero()
         self.total_pnl_realized = Money.zero()

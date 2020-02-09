@@ -12,7 +12,6 @@
 import datetime as dt
 import pytz
 from cpython.datetime cimport datetime, timedelta
-from typing import List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
@@ -70,7 +69,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     def __init__(self,
                  ExecutionEngine exec_engine not None,
-                 dict instruments not None: Dict[Symbol, Instrument],
+                 dict instruments not None: {Symbol, Instrument},
                  BacktestConfig config not None,
                  FillModel fill_model not None,
                  TestClock clock not None,
@@ -117,16 +116,16 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_rollover = Money.zero()
         self.fill_model = fill_model
 
-        self._market = {}               # type: Dict[Symbol, Tick]
-        self._working_orders = {}       # type: Dict[OrderId, Order]
-        self._atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
-        self._oco_orders = {}           # type: Dict[OrderId, OrderId]
+        self._market = {}               # type: {Symbol, Tick}
+        self._working_orders = {}       # type: {OrderId, Order}
+        self._atomic_child_orders = {}  # type: {OrderId, [Order]}
+        self._oco_orders = {}           # type: {OrderId, OrderId}
 
         self._set_slippages()
         self._set_min_distances()
 
     cdef void _set_slippages(self) except *:
-        cdef dict slippage_index = {}  # type: Dict[Symbol, Decimal]
+        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
 
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = instrument.tick_size
@@ -134,8 +133,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self._slippages = slippage_index
 
     cdef void _set_min_distances(self) except *:
-        cdef dict min_stops = {}   # type: Dict[Symbol, Decimal]
-        cdef dict min_limits = {}  # type: Dict[Symbol, Decimal]
+        cdef dict min_stops = {}   # type: {Symbol, Decimal}
+        cdef dict min_limits = {}  # type: {Symbol, Decimal}
 
         for symbol, instrument in self.instruments.items():
             min_stops[symbol] = Decimal(
@@ -194,10 +193,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_commissions = Money.zero()
         self.total_rollover = Money.zero()
 
-        self._market = {}               # type: Dict[Symbol, Tick]
-        self._working_orders = {}       # type: Dict[OrderId, Order]
-        self._atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
-        self._oco_orders = {}           # type: Dict[OrderId, OrderId]
+        self._market = {}               # type: {Symbol, Tick}
+        self._working_orders = {}       # type: {OrderId, Order}
+        self._atomic_child_orders = {}  # type: {OrderId, [Order]}
+        self._oco_orders = {}           # type: {OrderId, OrderId}
 
         self._log.info("Reset.")
 

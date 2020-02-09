@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport AccountInquiry
@@ -64,14 +63,14 @@ cdef class Trader:
 
         self.portfolio = self._exec_engine.portfolio
         self.analyzer = PerformanceAnalyzer()
-        self.started_datetimes = []  # type: List[datetime]
-        self.stopped_datetimes = []  # type: List[datetime]
+        self.started_datetimes = []  # type: [datetime]
+        self.stopped_datetimes = []  # type: [datetime]
         self.is_running = False
 
         self.strategies = []
         self.initialize_strategies(strategies)
 
-    cpdef void initialize_strategies(self, list strategies: List[TradingStrategy]) except *:
+    cpdef void initialize_strategies(self, list strategies: [TradingStrategy]) except *:
         """
         Change strategies with the given list of trading strategies.
         

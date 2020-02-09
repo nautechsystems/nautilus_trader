@@ -9,7 +9,7 @@
 import inspect
 import pandas as pd
 from cpython.datetime cimport datetime, timedelta
-from typing import List, Callable
+from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions cimport with_utc_index
@@ -283,7 +283,7 @@ cdef class IndicatorUpdater:
     def __init__(self,
                  indicator not None,
                  input_method: Callable=None,
-                 list outputs: List[str]=None):
+                 list outputs: [str]=None):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
@@ -668,8 +668,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 hour=now.hour,
                 minute=now.minute,
                 second=now.second,
-                tzinfo=now.tzinfo
-            )
+                tzinfo=now.tzinfo)
         elif self.bar_type.specification.structure == BarStructure.MINUTE:
             return datetime(
                 year=now.year,
@@ -677,22 +676,19 @@ cdef class TimeBarAggregator(BarAggregator):
                 day=now.day,
                 hour=now.hour,
                 minute=now.minute,
-                tzinfo=now.tzinfo
-            )
+                tzinfo=now.tzinfo)
         elif self.bar_type.specification.structure == BarStructure.HOUR:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day,
                 hour=now.hour,
-                tzinfo=now.tzinfo
-            )
+                tzinfo=now.tzinfo)
         elif self.bar_type.specification.structure == BarStructure.DAY:
             return datetime(
                 year=now.year,
                 month=now.month,
-                day=now.day,
-            )
+                day=now.day)
         else:
             raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
 

@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import Set, List, Dict
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -28,12 +26,12 @@ cdef class Position:
         :param position_id: The positions identifier.
         :param event: The order fill event which opened the position.
         """
-        self._order_ids = {event.order_id}          # type: Set[OrderId]
-        self._execution_ids = {event.execution_id}  # type: Set[ExecutionId]
-        self._events = [event]                      # type: List[OrderFillEvent]
-        self._fill_prices = {}                      # type: Dict[OrderId, Price]
-        self._buy_quantities = {}                   # type: Dict[OrderId, Quantity]
-        self._sell_quantities = {}                  # type: Dict[OrderId, Quantity]
+        self._order_ids = {event.order_id}          # type: {OrderId}
+        self._execution_ids = {event.execution_id}  # type: {ExecutionId}
+        self._events = [event]                      # type: [OrderFillEvent]
+        self._fill_prices = {}                      # type: {OrderId, Price}
+        self._buy_quantities = {}                   # type: {OrderId, Quantity}
+        self._sell_quantities = {}                  # type: {OrderId, Quantity}
         self.last_event = event
         self.event_count = 1
 

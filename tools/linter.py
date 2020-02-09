@@ -10,12 +10,10 @@
 import os
 import re
 
-from typing import List
-
 from tools.packaging import scan_directories
 
 
-def check_file_headers(directories: List[str], to_lint: List[str], company_name: str) -> None:
+def check_file_headers(directories: [str], to_lint: [str], company_name: str) -> None:
     """
     Check the headers of all specified files for the following.
 
@@ -51,7 +49,7 @@ def check_file_headers(directories: List[str], to_lint: List[str], company_name:
     print(f"Checked headers for extensions {to_lint}; The file name and company name are all OK.")
 
 
-def check_docstrings(directories: List[str], to_lint: List[str]):
+def check_docstrings(directories: [str], to_lint: [str]):
     """
     Check the headers of all specified files for the following.
 
