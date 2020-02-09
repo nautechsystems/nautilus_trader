@@ -132,20 +132,17 @@ cpdef str pad_string(str string, int length, str pad=' '):
     return ((length - len(string)) * pad) + string
 
 
-cpdef str format_iso8601(datetime dt, bint with_t=True):
+cpdef str format_iso8601(datetime dt):
     """
-    Return the ISO 8601 formatted string for the given datetime.
+    Return the ISO 8601 formatted string for the given datetime. Unit accuracy
+    is millisecond.
     
     :param dt: The input datetime to format.
-    :param with_t: If the datetime should be formatted with 'T' separating time.
     :return str.
     """
     Condition.not_none(dt, 'dt')
 
-    cdef str tz_stripped = str(dt).rpartition('+')[0]
-
-    if with_t:
-        tz_stripped = tz_stripped.replace(' ', 'T')
+    cdef str tz_stripped = str(dt).replace(' ', 'T').rpartition('+')[0]
 
     if not PyUnicode_Contains(tz_stripped, '.'):
         return tz_stripped + '.000Z'
@@ -162,17 +159,18 @@ cpdef object with_utc_index(dataframe: pd.DataFrame):
     :param dataframe: The pd.DataFrame to localize.
     :return pd.DataFrame or None.
     """
-    if dataframe is not None:
-        if not hasattr(dataframe.index, 'tz') or dataframe.index.tz is None:  # tz-naive
-            return dataframe.tz_localize('UTC')
-        elif dataframe.index.tz != pytz.UTC:
-            return dataframe.tz_convert('UTC')
-        else:
-            return dataframe  # Already UTC
-    return dataframe  # The input argument was None
+    if dataframe is None:
+        return dataframe
+
+    if not hasattr(dataframe.index, 'tz') or dataframe.index.tz is None:  # tz-naive
+        return dataframe.tz_localize('UTC')
+    elif dataframe.index.tz != pytz.UTC:
+        return dataframe.tz_convert('UTC')
+    else:
+        return dataframe  # Already UTC
 
 
-cpdef datetime as_utc_timestamp(datetime timestamp):
+cpdef datetime as_timestamp_utc(datetime timestamp):
     """
     Return the given timestamp converted to a pandas timestamp and UTC as required.
     
