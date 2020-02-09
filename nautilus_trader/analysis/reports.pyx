@@ -7,9 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-
 from cpython.datetime cimport datetime
-from typing import Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
@@ -32,7 +30,7 @@ cdef class ReportProvider:
         Initializes a new instance of the ReportProvider class.
         """
 
-    cpdef object generate_orders_report(self, dict orders: Dict[OrderId, Order]):
+    cpdef object generate_orders_report(self, dict orders: {OrderId, Order}):
         """
         Return an orders report dataframe.
         
@@ -48,7 +46,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=orders_all).set_index('order_id')
 
-    cpdef object generate_order_fills_report(self, dict orders: Dict[OrderId, Order]):
+    cpdef object generate_order_fills_report(self, dict orders: {OrderId, Order}):
         """
         Return an order fills report dataframe.
         
@@ -66,7 +64,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=filled_orders).set_index('order_id')
 
-    cpdef object generate_positions_report(self, dict positions: Dict[PositionId, Position]):
+    cpdef object generate_positions_report(self, dict positions: {PositionId, Position}):
         """
         Return a positions report dataframe.
         

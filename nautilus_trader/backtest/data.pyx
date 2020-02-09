@@ -12,10 +12,9 @@
 import gc
 import numpy as np
 import pandas as pd
-
 from cpython.datetime cimport date, datetime
-from typing import Set, Dict, Callable
 from pandas import DatetimeIndex
+from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions import slice_dataframe
@@ -40,11 +39,11 @@ cdef class BacktestDataContainer:
         """
         Initializes a new instance of the BacktestDataContainer class.
         """
-        self.symbols = set()   # type: Set[Instrument]
-        self.instruments = {}  # type: Dict[Symbol, Instrument]
-        self.ticks = {}        # type: Dict[Symbol, pd.DataFrame]
-        self.bars_bid = {}     # type: Dict[Symbol, Dict[BarStructure, pd.DataFrame]]
-        self.bars_ask = {}     # type: Dict[Symbol, Dict[BarStructure, pd.DataFrame]]
+        self.symbols = set()   # type: {Instrument}
+        self.instruments = {}  # type: {Symbol, Instrument}
+        self.ticks = {}        # type: {Symbol, pd.DataFrame}
+        self.bars_bid = {}     # type: {Symbol, {BarStructure, pd.DataFrame}}
+        self.bars_ask = {}     # type: {Symbol, {BarStructure, pd.DataFrame}}
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
@@ -114,8 +113,8 @@ cdef class BacktestDataContainer:
             assert(symbol in self.instruments, f'The needed instrument {symbol} was not provided.')
 
         # Check that all bar DataFrames for each symbol are of the same shape and index
-        cdef dict shapes = {}  # type: Dict[BarStructure, tuple]
-        cdef dict indexs = {}  # type: Dict[BarStructure, DatetimeIndex]
+        cdef dict shapes = {}  # type: {BarStructure, tuple}
+        cdef dict indexs = {}  # type: {BarStructure, DatetimeIndex}
         for symbol, data in self.bars_bid.items():
             for structure, dataframe in data.items():
                 if structure not in shapes:

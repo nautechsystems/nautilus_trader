@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
-from typing import Dict
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, PriceType
@@ -102,7 +101,7 @@ class EMACrossPy(TradingStrategy):
 
         # Kick off strategy immediately with last bar
         if self.bar_count(self.bar_type) > 0:
-            self.on_bar(self.bar_type, self.bar(self.bar_type))
+            self.on_bar(self.bar_type, self.bar(self.bar_type, 0))
 
     def on_tick(self, tick: Tick):
         """
@@ -287,11 +286,11 @@ class EMACrossPy(TradingStrategy):
         # Put custom code to be run on a strategy reset here (or pass)
         pass
 
-    def on_save(self) -> Dict:
+    def on_save(self) -> {}:
         # Put custom state to be saved here (or return empty dictionary)
         return {}
 
-    def on_load(self, state: Dict):
+    def on_load(self, state: {}):
         # Put custom state to be loaded here (or pass)
         pass
 

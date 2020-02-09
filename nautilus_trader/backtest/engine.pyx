@@ -9,7 +9,6 @@
 import psutil
 import pytz
 from cpython.datetime cimport datetime
-from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.functions cimport (as_utc_timestamp, format_zulu_datetime, format_bytes, # noqa: E211
@@ -44,7 +43,7 @@ cdef class BacktestEngine:
 
     def __init__(self,
                  BacktestDataContainer data not None,
-                 list strategies not None: List[TradingStrategy],
+                 list strategies not None: [TradingStrategy],
                  BacktestConfig config=None,
                  FillModel fill_model=None):
         """
@@ -254,7 +253,7 @@ cdef class BacktestEngine:
         cdef Tick tick
         cdef TradingStrategy strategy
         cdef TimeEvent event
-        cdef list time_events = []  # type: List[TimeEventHandler]
+        cdef list time_events = []  # type: [TimeEventHandler]
         cdef TimeEventHandler event_handler
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#

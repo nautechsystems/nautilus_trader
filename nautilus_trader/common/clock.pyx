@@ -10,7 +10,7 @@ import numpy as np
 from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer as TimerThread
-from typing import List, Dict, Callable
+from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
@@ -217,7 +217,7 @@ cdef class TestTimer(Timer):
         """
         Condition.not_none(to_time, 'to_time')
 
-        cdef list time_events = []  # type: List[TimeEvent]
+        cdef list time_events = []  # type: [TimeEvent]
         while not self.expired and to_time >= self.next_time:
             time_events.append(self.pop_event(self._guid_factory.generate()))
             self.iterate_next_time(self.next_time)
@@ -296,8 +296,8 @@ cdef class Clock:
         """
         self._log = None
         self._guid_factory = guid_factory
-        self._timers = {}    # type: Dict[Label, Timer]
-        self._handlers = {}  # type: Dict[Label, Callable]
+        self._timers = {}    # type: {Label, Timer}
+        self._handlers = {}  # type: {Label, Callable}
         self._stack = None
         self._default_handler = None
 

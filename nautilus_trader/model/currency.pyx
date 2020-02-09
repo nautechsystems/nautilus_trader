@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
 from itertools import permutations
 
 from nautilus_trader.core.correctness cimport Condition
@@ -52,7 +51,7 @@ cdef class ExchangeRateCalculator:
         elif price_type == PriceType.ASK:
             calculation_rates = ask_rates
         elif price_type == PriceType.MID:
-            calculation_rates = {}  # type: Dict[str, float]
+            calculation_rates = {}  # type: {str, float}
             for ccy_pair in bid_rates.keys():
                 calculation_rates[ccy_pair] = (bid_rates[ccy_pair] + ask_rates[ccy_pair]) / 2.0
         else:

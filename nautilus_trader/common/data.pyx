@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport date, datetime
-from typing import List, Dict, Callable
+from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
@@ -47,11 +47,11 @@ cdef class DataClient:
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._bar_aggregators = {}      # type: Dict[BarType, BarAggregator]
-        self._tick_handlers = {}        # type: Dict[Symbol, List[TickHandler]]
-        self._bar_handlers = {}         # type: Dict[BarType, List[BarHandler]]
-        self._instrument_handlers = {}  # type: Dict[Symbol, List[InstrumentHandler]]
-        self._instruments = {}          # type: Dict[Symbol, Instrument]
+        self._bar_aggregators = {}      # type: {BarType, BarAggregator}
+        self._tick_handlers = {}        # type: {Symbol, [TickHandler]}
+        self._bar_handlers = {}         # type: {BarType, [BarHandler]}
+        self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
+        self._instruments = {}          # type: {Symbol, Instrument}
 
         self._log.info("Initialized.")
 
@@ -215,7 +215,7 @@ cdef class DataClient:
         Subscribe to tick data for the given symbol and handler.
         """
         if symbol not in self._tick_handlers:
-            self._tick_handlers[symbol] = []  # type: List[TickHandler]
+            self._tick_handlers[symbol] = []  # type: [TickHandler]
             self._log.info(f"Subscribed to {symbol} tick data.")
 
         cdef TickHandler tick_handler = TickHandler(handler)
@@ -231,7 +231,7 @@ cdef class DataClient:
         Subscribe to bar data for the given bar type and handler.
         """
         if bar_type not in self._bar_handlers:
-            self._bar_handlers[bar_type] = []  # type: List[BarHandler]
+            self._bar_handlers[bar_type] = []  # type: [BarHandler]
             self._log.info(f"Subscribed to {bar_type} bar data.")
 
         cdef BarHandler bar_handler = BarHandler(handler)
@@ -247,7 +247,7 @@ cdef class DataClient:
         Subscribe to instrument data for the given symbol and handler.
         """
         if symbol not in self._instrument_handlers:
-            self._instrument_handlers[symbol] = []  # type: List[InstrumentHandler]
+            self._instrument_handlers[symbol] = []  # type: [InstrumentHandler]
             self._log.info(f"Subscribed to {symbol} instrument data.")
 
         cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)

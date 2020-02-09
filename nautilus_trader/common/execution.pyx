@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from typing import Set, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.order cimport Order
@@ -58,9 +57,9 @@ cdef class ExecutionDatabase:
         self.trader_id = trader_id
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._cached_accounts = {}   # type: Dict[AccountId, Account]
-        self._cached_orders = {}     # type: Dict[OrderId, Order]
-        self._cached_positions = {}  # type: Dict[PositionId, Position]
+        self._cached_accounts = {}   # type: {AccountId, Account}
+        self._cached_orders = {}     # type: {OrderId, Order}
+        self._cached_positions = {}  # type: {PositionId, Position}
 
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -298,20 +297,20 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._strategies = set()              # type: Set[StrategyId]
-        self._index_order_position = {}       # type: Dict[OrderId, PositionId]
-        self._index_order_strategy = {}       # type: Dict[OrderId, StrategyId]
-        self._index_broker_position = {}      # type: Dict[PositionIdBroker, PositionId]
-        self._index_position_strategy = {}    # type: Dict[PositionId, StrategyId]
-        self._index_position_orders = {}      # type: Dict[PositionId, Set[OrderId]]
-        self._index_strategy_orders = {}      # type: Dict[StrategyId, Set[OrderId]]
-        self._index_strategy_positions = {}   # type: Dict[StrategyId, Set[PositionId]]
-        self._index_orders = set()            # type: Set[OrderId]
-        self._index_orders_working = set()    # type: Set[OrderId]
-        self._index_orders_completed = set()  # type: Set[OrderId]
-        self._index_positions = set()         # type: Set[PositionId]
-        self._index_positions_open = set()    # type: Set[PositionId]
-        self._index_positions_closed = set()  # type: Set[PositionId]
+        self._strategies = set()              # type: {StrategyId}
+        self._index_order_position = {}       # type: {OrderId, PositionId}
+        self._index_order_strategy = {}       # type: {OrderId, StrategyId}
+        self._index_broker_position = {}      # type: {PositionIdBroker, PositionId}
+        self._index_position_strategy = {}    # type: {PositionId, StrategyId}
+        self._index_position_orders = {}      # type: {PositionId, {OrderId}}
+        self._index_strategy_orders = {}      # type: {StrategyId, {OrderId}}
+        self._index_strategy_positions = {}   # type: {StrategyId, {PositionId}}
+        self._index_orders = set()            # type: {OrderId}
+        self._index_orders_working = set()    # type: {OrderId}
+        self._index_orders_completed = set()  # type: {OrderId}
+        self._index_positions = set()         # type: {PositionId}
+        self._index_positions_open = set()    # type: {PositionId}
+        self._index_positions_closed = set()  # type: {PositionId}
 
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -1043,7 +1042,7 @@ cdef class ExecutionEngine:
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
+        self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
         self._exec_client = None
 
         self.trader_id = trader_id
@@ -1334,7 +1333,7 @@ cdef class ExecutionEngine:
         """
         Reset the execution engine to its initial state.
         """
-        self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
+        self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
         self.command_count = 0
         self.event_count = 0
 

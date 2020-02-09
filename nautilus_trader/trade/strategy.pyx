@@ -9,7 +9,6 @@
 from cpython.datetime cimport date, datetime, timedelta
 
 from collections import deque
-from typing import List, Dict, Deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
@@ -115,12 +114,12 @@ cdef class TradingStrategy:
         # Data
         self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
-        self._ticks = {}                        # type: Dict[Symbol, Deque[Tick]]
-        self._bars = {}                         # type: Dict[BarType, Deque[Bar]]
-        self._spreads = {}                      # type: Dict[Symbol, List[float]]
-        self._indicators = []                   # type: List[object]
-        self._indicator_updaters = {}           # type: Dict[object, List[IndicatorUpdater]]
-        self._state_log = []                    # type: List[(datetime, str)]
+        self._ticks = {}                        # type: {Symbol, [Tick]}
+        self._bars = {}                         # type: {BarType, [Bar]}
+        self._spreads = {}                      # type: {Symbol, [float]}
+        self._indicators = []                   # type: [object]
+        self._indicator_updaters = {}           # type: {object, [IndicatorUpdater]}
+        self._state_log = []                    # type: [(datetime, str)]
         self._exchange_calculator = ExchangeRateCalculator()
 
         # Registerable modules
@@ -324,7 +323,7 @@ cdef class TradingStrategy:
             self._indicators.append(indicator)
 
         if data_source not in self._indicator_updaters:
-            self._indicator_updaters[data_source] = []  # type: List[IndicatorUpdater]
+            self._indicator_updaters[data_source] = []  # type: [IndicatorUpdater]
 
         if indicator not in self._indicator_updaters[data_source]:
             self._indicator_updaters[data_source].append(IndicatorUpdater(indicator, update_method))

@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
 from bson import BSON
 from bson.raw_bson import RawBSONDocument
 
@@ -82,7 +80,7 @@ cdef class Utf8TickSerializer:
         return Utf8TickSerializer.serialize(tick)
 
     @staticmethod
-    def py_serialize_ticks_list(list ticks) -> List[bytes]:
+    def py_serialize_ticks_list(list ticks) -> [bytes]:
         return Utf8TickSerializer.serialize_ticks_list(ticks)
 
     @staticmethod
@@ -90,7 +88,7 @@ cdef class Utf8TickSerializer:
         return Utf8TickSerializer.deserialize(symbol, values_bytes)
 
     @staticmethod
-    def py_deserialize_bytes_list(Symbol symbol, list tick_values) -> List[Tick]:
+    def py_deserialize_bytes_list(Symbol symbol, list tick_values) -> [Tick]:
         return Utf8TickSerializer.deserialize_bytes_list(symbol, tick_values)
 
 
@@ -151,7 +149,7 @@ cdef class Utf8BarSerializer:
         return Utf8BarSerializer.serialize(bar)
 
     @staticmethod
-    def py_serialize_bars_list(list bars) -> List[bytes]:
+    def py_serialize_bars_list(list bars) -> [bytes]:
         return Utf8BarSerializer.serialize_bars_list(bars)
 
     @staticmethod
@@ -159,7 +157,7 @@ cdef class Utf8BarSerializer:
         return Utf8BarSerializer.deserialize(bar_bytes)
 
     @staticmethod
-    def py_deserialize_bytes_list(list bar_values) -> List[Bar]:
+    def py_deserialize_bytes_list(list bar_values) -> [Bar]:
         return Utf8BarSerializer.deserialize_bytes_list(bar_values)
 
 
