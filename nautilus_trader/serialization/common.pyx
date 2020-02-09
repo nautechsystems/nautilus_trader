@@ -11,7 +11,7 @@ import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_iso8601
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.serialization.constants cimport *
@@ -42,7 +42,7 @@ cpdef str convert_datetime_to_string(datetime time):
     :param time: The datetime to convert
     :return str.
     """
-    return NONE if time is None else format_zulu_datetime(time)
+    return NONE if time is None else format_iso8601(time)
 
 cpdef Price convert_string_to_price(str price_string):
     """

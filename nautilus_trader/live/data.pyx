@@ -8,7 +8,6 @@
 
 import zmq
 from cpython.datetime cimport date
-from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
@@ -213,7 +212,7 @@ cdef class LiveDataClient(DataClient):
             date from_date,
             date to_date,
             int limit,
-            callback: Callable) except *:
+            callback: callable) except *:
         """
         Request ticks for the given symbol and query parameters.
 
@@ -223,7 +222,7 @@ cdef class LiveDataClient(DataClient):
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
         :raises ValueError: If the limit is negative (< 0).
-        :raises ValueError: If the callback is not of type Callable.
+        :raises ValueError: If the callback is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(from_date, 'from_datetime')
@@ -264,7 +263,7 @@ cdef class LiveDataClient(DataClient):
             date from_date,
             date to_date,
             int limit,
-            callback: Callable) except *:
+            callback: callable) except *:
         """
         Request bars for the given bar type and query parameters.
 
@@ -314,13 +313,13 @@ cdef class LiveDataClient(DataClient):
 
         callback(received_bar_type, Utf8BarSerializer.deserialize_bytes_list(data[DATA]))
 
-    cpdef void request_instrument(self, Symbol symbol, callback: Callable) except *:
+    cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
         Request the instrument for the given symbol.
 
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
-        :raises ValueError: If the callback is not of type Callable.
+        :raises ValueError: If the callback is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(callback, 'callback')
@@ -347,13 +346,13 @@ cdef class LiveDataClient(DataClient):
 
         callback(instrument)
 
-    cpdef void request_instruments(self, Venue venue, callback: Callable) except *:
+    cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
         Request all instrument for given venue.
         
         :param venue: The venue for the request.
         :param callback: The callback for the response.
-        :raises ValueError: If the callback is not of type Callable.
+        :raises ValueError: If the callback is not of type callable.
         """
         Condition.callable(callback, 'callback')
 
@@ -389,13 +388,13 @@ cdef class LiveDataClient(DataClient):
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable) except *:
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to live tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ValueError: If the handler is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
@@ -403,7 +402,7 @@ cdef class LiveDataClient(DataClient):
         self._add_tick_handler(symbol, handler)
         self._tick_sub_worker.subscribe(symbol.to_string())
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable) except *:
+    cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
         Subscribe to live bar data for the given bar type and handler.
 
@@ -420,7 +419,7 @@ cdef class LiveDataClient(DataClient):
             self._add_bar_handler(bar_type, handler)
             self._bar_sub_worker.subscribe(bar_type.to_string())
 
-    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable) except *:
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to live instrument data updates for the given symbol and handler.
 
@@ -434,7 +433,7 @@ cdef class LiveDataClient(DataClient):
         self._add_instrument_handler(symbol, handler)
         self._inst_sub_worker.subscribe(symbol.value)
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable) except *:
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribe from live tick data for the given symbol and handler.
 
@@ -448,7 +447,7 @@ cdef class LiveDataClient(DataClient):
         self._tick_sub_worker.unsubscribe(symbol.to_string())
         self._remove_tick_handler(symbol, handler)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable) except *:
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
         Unsubscribe from live bar data for the given symbol and handler.
 
@@ -462,7 +461,7 @@ cdef class LiveDataClient(DataClient):
         self._bar_sub_worker.unsubscribe(bar_type.to_string())
         self._remove_bar_handler(bar_type, handler)
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable) except *:
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribe from live instrument data updates for the given symbol and handler.
 

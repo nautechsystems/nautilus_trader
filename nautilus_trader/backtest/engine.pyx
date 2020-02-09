@@ -11,7 +11,7 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport (as_utc_timestamp, format_zulu_datetime, format_bytes, # noqa: E211
+from nautilus_trader.common.functions cimport (as_utc_timestamp, format_iso8601, format_bytes, # noqa: E211
                                                pad_string, get_size_of)
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
@@ -219,7 +219,7 @@ cdef class BacktestEngine:
         # Setup logging
         self.test_logger.clear_log_store()
         if self.config.log_to_file:
-            backtest_log_name = self.logger.name + '-' + format_zulu_datetime(run_started)
+            backtest_log_name = self.logger.name + '-' + format_iso8601(run_started)
             self.logger.change_log_file_name(backtest_log_name)
             self.test_logger.change_log_file_name(backtest_log_name)
 
@@ -356,9 +356,9 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info(" BACKTEST RUN")
         self.log.info("=================================================================")
-        self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
-        self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
-        self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
+        self.log.info(f"Run started:    {format_iso8601(run_started)}")
+        self.log.info(f"Backtest start: {format_iso8601(start)}")
+        self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
         for resolution in self.data_client.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")
         if self.exec_client.frozen_account:
@@ -380,10 +380,10 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info(" BACKTEST DIAGNOSTICS")
         self.log.info("=================================================================")
-        self.log.info(f"Run started:    {format_zulu_datetime(run_started)}")
-        self.log.info(f"Run finished:   {format_zulu_datetime(run_finished)}")
-        self.log.info(f"Backtest start: {format_zulu_datetime(start)}")
-        self.log.info(f"Backtest stop:  {format_zulu_datetime(stop)}")
+        self.log.info(f"Run started:    {format_iso8601(run_started)}")
+        self.log.info(f"Run finished:   {format_iso8601(run_finished)}")
+        self.log.info(f"Backtest start: {format_iso8601(start)}")
+        self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
         self.log.info(f"Elapsed time:   {run_finished - run_started}")
         for resolution in self.data_client.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")

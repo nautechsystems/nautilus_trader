@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport date, datetime
-from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
@@ -78,7 +77,7 @@ cdef class DataClient:
         date from_date,
         date to_date,
         int limit,
-        callback: Callable) except *:
+        callback: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -88,39 +87,39 @@ cdef class DataClient:
         date from_date,
         date to_date,
         int limit,
-        callback: Callable) except *:
+        callback: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void request_instrument(self, Symbol symbol, callback: Callable) except *:
+    cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void request_instruments(self, Venue venue, callback: Callable) except *:
+    cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable) except *:
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable) except *:
+    cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable) except *:
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable) except *:
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable) except *:
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable) except *:
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -210,7 +209,7 @@ cdef class DataClient:
 
         self._add_bar_handler(bar_type, handler)
 
-    cdef void _add_tick_handler(self, Symbol symbol, handler: Callable) except *:
+    cdef void _add_tick_handler(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to tick data for the given symbol and handler.
         """
@@ -226,7 +225,7 @@ cdef class DataClient:
             self._log.error(f"Cannot add {tick_handler} for {symbol} tick data"
                             f"(duplicate handler found).")
 
-    cdef void _add_bar_handler(self, BarType bar_type, handler: Callable) except *:
+    cdef void _add_bar_handler(self, BarType bar_type, handler: callable) except *:
         """
         Subscribe to bar data for the given bar type and handler.
         """
@@ -242,7 +241,7 @@ cdef class DataClient:
             self._log.error(f"Cannot add {bar_handler} for {bar_type} bar data "
                             f"(duplicate handler found).")
 
-    cdef void _add_instrument_handler(self, Symbol symbol, handler: Callable) except *:
+    cdef void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to instrument data for the given symbol and handler.
         """
@@ -258,7 +257,7 @@ cdef class DataClient:
             self._log.error(f"Cannot add {instrument_handler} for {symbol} instruments"
                             f"(duplicate handler found).")
 
-    cdef void _remove_tick_handler(self, Symbol symbol, handler: Callable) except *:
+    cdef void _remove_tick_handler(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribe from tick data for the given symbol and handler.
         """
@@ -277,7 +276,7 @@ cdef class DataClient:
             del self._tick_handlers[symbol]
             self._log.info(f"Unsubscribed from {symbol} tick data.")
 
-    cdef void _remove_bar_handler(self, BarType bar_type, handler: Callable) except *:
+    cdef void _remove_bar_handler(self, BarType bar_type, handler: callable) except *:
         """
         Unsubscribe from bar data for the given bar type and handler.
         """
@@ -296,7 +295,7 @@ cdef class DataClient:
             del self._bar_handlers[bar_type]
             self._log.info(f"Unsubscribed from {bar_type} bar data.")
 
-    cdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable) except *:
+    cdef void _remove_instrument_handler(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribe from tick data for the given symbol and handler.
         """

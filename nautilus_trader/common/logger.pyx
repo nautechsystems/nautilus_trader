@@ -22,7 +22,7 @@ from nautilus_trader import __version__
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_iso8601
 from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
 from nautilus_trader.common.logger cimport LogLevel
 
@@ -79,7 +79,7 @@ cdef class LogMessage:
 
         :return str.
         """
-        return f"{format_zulu_datetime(self.timestamp)} [{self.thread_id}][{log_level_to_string(self.level)}] {self.text}"
+        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{log_level_to_string(self.level)}] {self.text}"
 
 
 cdef class Logger:
@@ -192,7 +192,7 @@ cdef class Logger:
 
     cdef str _format_output(self, LogMessage message):
         # Return the formatted log message from the given arguments
-        cdef str time = format_zulu_datetime(message.timestamp)
+        cdef str time = format_iso8601(message.timestamp)
         cdef str thread = '' if self._log_thread is False else f'[{message.thread_id}]'
         cdef str formatted_text
 

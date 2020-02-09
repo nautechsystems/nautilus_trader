@@ -38,7 +38,7 @@ from nautilus_trader.model.events cimport (  # noqa: E211
 from nautilus_trader.model.identifiers cimport Label, Symbol, IdTag, OrderId, ExecutionId
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
-from nautilus_trader.common.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_iso8601
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 
 
@@ -276,7 +276,7 @@ cdef class Order:
         :return str.
         """
         cdef str price = '' if self.price is None else f'@ {self.price} '
-        cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
+        cdef str expire_time = '' if self.expire_time is None else f' {format_iso8601(self.expire_time)}'
         return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
                 f"{order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")

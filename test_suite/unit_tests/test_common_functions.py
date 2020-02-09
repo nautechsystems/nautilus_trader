@@ -17,7 +17,7 @@ from nautilus_trader.common.functions import (
     basis_points_as_percentage,
     format_bytes,
     pad_string,
-    format_zulu_datetime,
+    format_iso8601,
     as_utc_timestamp,
     with_utc_index,
     max_in_dict,
@@ -111,15 +111,15 @@ class TestFunctionsTests(unittest.TestCase):
         dt4 = UNIX_EPOCH + timedelta(seconds=1)
         dt5 = UNIX_EPOCH + timedelta(hours=1, minutes=1, seconds=2, milliseconds=3)
 
-        print(dt3)
         # Act
-        result1 = format_zulu_datetime(dt1)
-        result2 = format_zulu_datetime(dt2)
-        result3 = format_zulu_datetime(dt3)
-        result4 = format_zulu_datetime(dt4)
-        result5 = format_zulu_datetime(dt5, with_t=False)
+        result1 = format_iso8601(dt1)
+        result2 = format_iso8601(dt2)
+        result3 = format_iso8601(dt3)
+        result4 = format_iso8601(dt4)
+        result5 = format_iso8601(dt5, with_t=False)
 
         # Assert
+        self.assertEqual('1970-01-01 00:00:00+00:00', str(pd.to_datetime(dt1, utc=True)))
         self.assertEqual('1970-01-01T00:00:00.000Z', result1)
         self.assertEqual('1970-01-01T00:00:00.000Z', result2)
         self.assertEqual('1970-01-01T00:00:00.001Z', result3)

@@ -12,7 +12,7 @@ from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.common.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_iso8601
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -303,7 +303,7 @@ cdef class TradingStrategy:
             self,
             data_source,
             indicator,
-            update_method=None) except *:
+            update_method: callable=None) except *:
         """
         Register the given indicator with the strategy to receive data of the
         given data_source (can be Symbol for ticks or BarType).
@@ -311,7 +311,7 @@ cdef class TradingStrategy:
         :param data_source: The data source for updates.
         :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
-        :raises ValueError: If the update_method is not of type Callable.
+        :raises ValueError: If the update_method is not of type callable.
         """
         Condition.not_none(data_source, 'data_source')
         Condition.not_none(indicator, 'indicator')
@@ -1328,7 +1328,7 @@ cdef class TradingStrategy:
         Condition.not_none(timestamp, 'timestamp')
         Condition.valid_string(action, 'action')
 
-        self._state_log.append(f'{format_zulu_datetime(timestamp)} {action}')
+        self._state_log.append(f'{format_iso8601(timestamp)} {action}')
 
     cpdef void account_inquiry(self) except *:
         """

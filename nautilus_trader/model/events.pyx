@@ -10,7 +10,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
-from nautilus_trader.common.functions cimport format_zulu_datetime
+from nautilus_trader.common.functions cimport format_iso8601
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
@@ -484,7 +484,7 @@ cdef class OrderWorking(OrderEvent):
 
         :return str.
         """
-        cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
+        cdef str expire_time = '' if self.expire_time is None else f' {format_iso8601(self.expire_time)}'
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
