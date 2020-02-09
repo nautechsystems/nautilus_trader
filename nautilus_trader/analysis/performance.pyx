@@ -97,7 +97,7 @@ cdef class PerformanceAnalyzer:
         """
         Condition.not_none(timestamp, 'time')
 
-        cdef date index_date = pd.to_datetime(timestamp.date())
+        cdef date index_date = timestamp.date()
         if index_date not in self._returns:
             self._returns.loc[index_date] = 0.0
 
@@ -105,21 +105,21 @@ cdef class PerformanceAnalyzer:
 
     cpdef void add_positions(
             self,
-            datetime time,
+            datetime timestamp,
             list positions,
             Money cash_balance) except *:
         """
         Add end of day positions data to the analyzer.
 
-        :param time: The timestamp for the positions entry.
+        :param timestamp: The timestamp for the positions entry.
         :param positions: The end of day positions.
         :param cash_balance: The end of day cash balance of the account.
         """
-        Condition.not_none(time, 'time')
+        Condition.not_none(timestamp, 'time')
         Condition.not_none(positions, 'positions')
         Condition.not_none(cash_balance, 'cash_balance')
 
-        cdef date index_date = pd.to_datetime(time.date())
+        cdef date index_date = timestamp.date()
         if index_date not in self._positions:
             self._positions.loc[index_date] = 0
 

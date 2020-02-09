@@ -18,7 +18,7 @@ from nautilus_trader.common.functions import (
     format_bytes,
     pad_string,
     format_iso8601,
-    as_utc_timestamp,
+    as_timestamp_utc,
     with_utc_index,
     max_in_dict,
 )
@@ -103,7 +103,7 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual("9.31 GB", result4)
         self.assertEqual("90.95 TB", result5)
 
-    def test_format_zulu_datetime(self):
+    def test_format_iso8601(self):
         # Arrange
         dt1 = UNIX_EPOCH
         dt2 = UNIX_EPOCH + timedelta(microseconds=1)
@@ -116,7 +116,7 @@ class TestFunctionsTests(unittest.TestCase):
         result2 = format_iso8601(dt2)
         result3 = format_iso8601(dt3)
         result4 = format_iso8601(dt4)
-        result5 = format_iso8601(dt5, with_t=False)
+        result5 = format_iso8601(dt5)
 
         # Assert
         self.assertEqual('1970-01-01 00:00:00+00:00', str(pd.to_datetime(dt1, utc=True)))
@@ -124,7 +124,7 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual('1970-01-01T00:00:00.000Z', result2)
         self.assertEqual('1970-01-01T00:00:00.001Z', result3)
         self.assertEqual('1970-01-01T00:00:01.000Z', result4)
-        self.assertEqual('1970-01-01 01:01:02.003Z', result5)
+        self.assertEqual('1970-01-01T01:01:02.003Z', result5)
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
@@ -150,7 +150,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = datetime(2013, 2, 1, 0, 0, 0, 0)
 
         # Act
-        result = as_utc_timestamp(timestamp)
+        result = as_timestamp_utc(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -161,7 +161,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = pd.Timestamp(2013, 2, 1, 0, 0, 0, 0)
 
         # Act
-        result = as_utc_timestamp(timestamp)
+        result = as_timestamp_utc(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -172,7 +172,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        result = as_utc_timestamp(timestamp)
+        result = as_timestamp_utc(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -183,7 +183,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = pd.Timestamp(2013, 2, 1, 0, 0, 0, 0).tz_localize('UTC')
 
         # Act
-        result = as_utc_timestamp(timestamp)
+        result = as_timestamp_utc(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -197,10 +197,10 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp4 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0).tz_localize('UTC')
 
         # Act
-        timestamp1_converted = as_utc_timestamp(timestamp1)
-        timestamp2_converted = as_utc_timestamp(timestamp2)
-        timestamp3_converted = as_utc_timestamp(timestamp3)
-        timestamp4_converted = as_utc_timestamp(timestamp4)
+        timestamp1_converted = as_timestamp_utc(timestamp1)
+        timestamp2_converted = as_timestamp_utc(timestamp2)
+        timestamp3_converted = as_timestamp_utc(timestamp3)
+        timestamp4_converted = as_timestamp_utc(timestamp4)
 
         # Assert
         self.assertEqual(timestamp1_converted, timestamp2_converted)
