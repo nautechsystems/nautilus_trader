@@ -8,6 +8,7 @@
 
 import inspect
 import pandas as pd
+from cpython.object cimport PyObject_GetAttr
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
@@ -335,9 +336,9 @@ cdef class IndicatorUpdater:
 
         cdef str param
         if self._include_self:
-            self._input_method(self._indicator, *[tick.__getattribute__(param).as_double() for param in self._input_params])
+            self._input_method(self._indicator, *[PyObject_GetAttr(tick, param).as_double().as_double() for param in self._input_params])
         else:
-            self._input_method(*[tick.__getattribute__(param).as_double() for param in self._input_params])
+            self._input_method(*[PyObject_GetAttr(tick, param).as_double() for param in self._input_params])
 
     cpdef void update_bar(self, Bar bar) except *:
         """
@@ -349,9 +350,9 @@ cdef class IndicatorUpdater:
 
         cdef str param
         if self._include_self:
-            self._input_method(self._indicator, *[bar.__getattribute__(param).as_double() for param in self._input_params])
+            self._input_method(self._indicator, *[PyObject_GetAttr(bar, param).as_double() for param in self._input_params])
         else:
-            self._input_method(*[bar.__getattribute__(param).as_double() for param in self._input_params])
+            self._input_method(*[PyObject_GetAttr(bar, param).as_double() for param in self._input_params])
 
     cpdef dict build_features_ticks(self, list ticks):
         """
@@ -399,7 +400,7 @@ cdef class IndicatorUpdater:
         # Create a list of the current indicator outputs. The list will contain
         # a tuple of the name of the output and the float value. Returns List[(str, float)].
         cdef str output
-        return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
+        return [(output, PyObject_GetAttr(self._indicator, output)) for output in self._outputs]
 
 
 cdef class BarBuilder:

@@ -224,6 +224,14 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 30/01/20 15321331 function calls (15093635 primitive calls) in 15.469 seconds (add volume object, refactor tick)
         # 04/02/20 23000530 function calls (22600982 primitive calls) in 19.057 seconds (something changed??)
 
-        # Profiling mission: Profile_Hooks = True
-        # ---------------------------------------
+        # 10/02/20 Profiling Mission: (Profile_Hooks = True)
+        # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
         # 56142966 function calls (55743120 primitive calls) in 30.055 seconds
+        # 55005059 function calls (54620583 primitive calls) in 29.593 seconds
+        # 53475703 function calls (53091227 primitive calls) in 28.637 seconds (removed logging of bar received)
+        # 53104290 function calls (52719814 primitive calls) in 27.489 seconds (not building array for fast_mean in strategy)
+        # 54565207 function calls (54177522 primitive calls) in 26.206 seconds (improve average spread calculation)
+        # 53865728 function calls (53478043 primitive calls) in 25.729 seconds (not index twice to dicts in handle methods)
+        # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        # 10/02/20 21244383 function calls (20869327 primitive calls) in 17.063 seconds (post performance mission)
