@@ -21,8 +21,8 @@ from examples.strategies.ema_cross import EMACrossPy
 #   - A NautilusExecutor instance listening on the default ports
 
 
-# BAR_SPEC = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-BAR_SPEC = BarSpecification(100, BarStructure.TICK, PriceType.BID)
+BAR_SPEC = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+# BAR_SPEC = BarSpecification(100, BarStructure.TICK, PriceType.BID)
 
 symbols_to_trade = [
     Symbol('AUDUSD', Venue('FXCM')),

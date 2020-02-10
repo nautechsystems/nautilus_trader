@@ -25,6 +25,7 @@ from nautilus_trader.model.c_enums.price_type cimport (  # noqa: E211
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.common.functions cimport format_iso8601
 
 
 cdef Quantity _QUANTITY_ZERO = Quantity()
@@ -409,7 +410,7 @@ cdef class Tick:
                 f"{self.ask.to_string()},"
                 f"{self.bid_size.to_string()},"
                 f"{self.ask_size.to_string()},"
-                f"{self.timestamp.isoformat()}")
+                f"{format_iso8601(self.timestamp)}")
 
     def __eq__(self, Tick other) -> bool:
         """
@@ -843,7 +844,7 @@ cdef class Bar:
                 f"{self.low.to_string()},"
                 f"{self.close.to_string()},"
                 f"{self.volume.to_string()},"
-                f"{self.timestamp}")
+                f"{format_iso8601(self.timestamp)}")
 
     def __eq__(self, Bar other) -> bool:
         """

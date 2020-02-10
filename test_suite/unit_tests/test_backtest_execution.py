@@ -19,7 +19,7 @@ from nautilus_trader.common.execution import InMemoryExecutionDatabase, Executio
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
-from nautilus_trader.model.identifiers import TraderId, Venue
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient

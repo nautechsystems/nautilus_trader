@@ -581,14 +581,15 @@ cdef class TestClock(Clock):
         """
         Condition.not_none(to_time, 'to_time')
 
+        cdef list events = []
+
         if self.timer_count == 0 or to_time < self.next_event_time:
             self._time = to_time
-            return []  # No timer events to iterate
+            return events  # No timer events to iterate
 
         # Iterate timer events
         cdef TestTimer timer
         cdef TimeEvent event
-        cdef list events = []
         for timer in self._stack:
             for event in timer.advance(to_time):
                 events.append(TimeEventHandler(event, timer.callback))
