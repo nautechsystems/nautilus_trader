@@ -6,6 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: boundscheck=False
+# cython: wraparound=False
+
 import gc
 import sys
 import pandas as pd
@@ -25,30 +28,54 @@ cpdef double fast_round(double value, int precision):
     :param precision: The precision to round to.
     :return: double.
     """
-    Condition.not_negative_int(precision, 'precision')
-
     cdef int power = 10 ** precision
     return round(value * power) / power
 
 
-cpdef double fast_mean(iterable):
+cpdef double fast_mean(list values):
     """
     Return the average value of the iterable.
     
-    :param iterable: The iterable to evaluate.
+    :param values: The iterable to evaluate.
     :return: double.
     """
-    Condition.not_none(iterable, 'iterable')
-
-    cdef int length = len(iterable)
+    cdef int length = len(values)
 
     if length == 0:
         return 0.0
 
     cdef double total = 0.0
+    cdef int i
     for i in range(length):
-        total += iterable[i]
+        total = total + values[i]
     return total / length
+
+
+cpdef double fast_mean_iterated(
+        list values,
+        double next_value,
+        double current_value,
+        int expected_length,
+        bint drop_left=True):
+    """
+    Return the calculated average from the given inputs.
+    
+    :param values: The values for the calculation.
+    :param next_value: The next input value for the average.
+    :param current_value: The current value for the average.
+    :param expected_length: The expected length of the inputs.
+    :param drop_left: If the value to be dropped should be from the left side 
+    of the inputs (index 0).
+    :return: double.
+    """
+    cdef int length = len(values)
+    if length < expected_length:
+        return fast_mean(values)
+
+    assert length == expected_length
+
+    cdef double value_to_drop = values[0] if drop_left else values[length - 1]
+    return current_value + ((next_value - value_to_drop) / length)
 
 
 cpdef double basis_points_as_percentage(double basis_points):
@@ -61,6 +88,7 @@ cpdef double basis_points_as_percentage(double basis_points):
     return basis_points * 0.0001
 
 
+# Closures in cpdef functions not yet supported (10/02/20)
 cdef long get_size_of(obj):
     Condition.not_none(obj, 'obj')
 

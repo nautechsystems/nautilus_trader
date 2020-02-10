@@ -10,7 +10,13 @@ from cpython.datetime cimport datetime
 
 
 cpdef double fast_round(double value, int precision)
-cpdef double fast_mean(iterable)
+cpdef double fast_mean(list values)
+cpdef double fast_mean_iterated(
+        list values,
+        double next_value,
+        double current_value,
+        int expected_length,
+        bint drop_left=*)
 cpdef double basis_points_as_percentage(double basis_points)
 cdef long get_size_of(obj)
 cpdef str format_bytes(double size)

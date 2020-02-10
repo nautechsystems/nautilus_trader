@@ -359,7 +359,7 @@ cdef class EMACross(TradingStrategy):
 
         :param tick: The received tick.
         """
-        # self.log.info(f"Received Tick({tick})")  # For debugging
+        # self.log.info(f"Received Tick({tick})")  # For debugging (affects performance)
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -370,7 +370,7 @@ cdef class EMACross(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging
+        # self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging (affects performance)
 
         # Check if indicators ready
         if not self.indicators_initialized():

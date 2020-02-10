@@ -6,6 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: boundscheck=False
+# cython: wraparound=False
+
 import psutil
 import pytz
 from cpython.datetime cimport datetime

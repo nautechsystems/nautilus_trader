@@ -6,8 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date, datetime, timedelta
+# cython: boundscheck=False
+# cython: wraparound=False
 
+from cpython.datetime cimport date, datetime, timedelta
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
@@ -34,7 +36,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from nautilus_trader.common.functions cimport fast_mean
+from nautilus_trader.common.functions cimport fast_mean_iterated
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
@@ -56,8 +58,8 @@ cdef class TradingStrategy:
                  bint flatten_on_stop=True,
                  bint flatten_on_sl_reject=True,
                  bint cancel_all_orders_on_stop=True,
-                 int tick_capacity=1000,
-                 int bar_capacity=1000,
+                 int tick_capacity=100,
+                 int bar_capacity=100,
                  Clock clock not None=LiveClock(),
                  GuidFactory guid_factory not None=LiveGuidFactory(),
                  Logger logger=None,
@@ -117,6 +119,7 @@ cdef class TradingStrategy:
         self._ticks = {}                        # type: {Symbol, [Tick]}
         self._bars = {}                         # type: {BarType, [Bar]}
         self._spreads = {}                      # type: {Symbol, [float]}
+        self._average_spreads = {}              # type: {Symbol, float}
         self._indicators = []                   # type: [object]
         self._indicator_updaters = {}           # type: {object, [IndicatorUpdater]}
         self._state_log = []                    # type: [(datetime, str)]
@@ -343,17 +346,41 @@ cdef class TradingStrategy:
         """
         Condition.not_none(tick, 'tick')
 
-        try:
-            self._ticks[tick.symbol].appendleft(tick)
-            self._spreads[tick.symbol].appendleft(tick.ask.as_double() - tick.bid.as_double())
-        except KeyError as ex:  # Symbol was not found
-            self._ticks[tick.symbol] = deque([tick], maxlen=self.tick_capacity)
-            spread = tick.ask.as_double() - tick.bid.as_double()
-            self._spreads[tick.symbol] = deque([spread], maxlen=self.tick_capacity)
-            self.log.warning(f"Received {repr(tick)} when not registered. "
-                             f"Handling now setup.")
+        cdef Symbol symbol = tick.symbol
+        cdef double spread = tick.ask.as_double() - tick.bid.as_double()
 
-        cdef list updaters = self._indicator_updaters.get(tick.symbol)
+        # Update ticks and spreads
+        ticks = self._ticks.get(symbol)
+        spreads = self._spreads.get(symbol)
+        if ticks is None:
+            # Symbol was not registered
+            ticks = deque(maxlen=self.tick_capacity)
+            spreads = deque(maxlen=self.tick_capacity)
+            self._ticks[symbol] = ticks
+            self._spreads[symbol] = spreads
+            self.log.warning(f"Received {repr(tick)} when symbol not registered. "
+                             f"Handling is now setup.")
+
+        ticks.appendleft(tick)
+        spreads.appendleft(spread)
+
+        # Update average spread
+        cdef double average_spread = self._average_spreads.get(symbol, -1)
+        if average_spread == -1:
+            average_spread = spread
+
+        cdef double new_average_spread = fast_mean_iterated(
+            values=list(spreads),
+            next_value=spread,
+            current_value=average_spread,
+            expected_length=self.tick_capacity,
+            drop_left=False
+        )
+
+        self._average_spreads[symbol] = new_average_spread
+
+        # Update indicators
+        cdef list updaters = self._indicator_updaters.get(symbol)  # Can be None
         cdef IndicatorUpdater updater
         if updaters is not None:
             for updater in updaters:
@@ -371,15 +398,17 @@ cdef class TradingStrategy:
         """
         System method. Handle the given list of ticks by handling each tick individually.
         """
-        Condition.not_none(ticks, 'ticks')  # Can be empty
+        Condition.not_none(ticks, 'ticks')  # Could be empty
 
         cdef int length = len(ticks)
         cdef str symbol = ticks[0].symbol.to_string() if length > 0 else '?'
         if length > 0:
             self.log.info(f"Received tick data for {symbol} of {length} ticks.")
+        else:
+            self.log.warning("Received tick data with no ticks.")
 
         cdef int i
-        for i in range(len(ticks)):
+        for i in range(length):
             self.handle_tick(ticks[i])
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
@@ -394,14 +423,19 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_none(bar, 'bar')
 
-        try:
-            self._bars[bar_type].appendleft(bar)
-        except KeyError as ex:
-            self._bars[bar_type] = deque([bar], maxlen=self.bar_capacity)
-            self.log.warning(f"Received {bar_type} {repr(bar)} when not registered. "
+        # Update bars
+        bars = self._bars.get(bar_type)
+        if bars is None:
+            # BarType was not registered
+            bars = deque(maxlen=self.bar_capacity)
+            self._bars[bar_type] = bars
+            self.log.warning(f"Received {bar_type} {repr(bar)} when bar type not registered. "
                              f"Handling now setup.")
 
-        cdef list updaters = self._indicator_updaters.get(bar_type)
+        bars.appendleft(bar)
+
+        # Update indicators
+        cdef list updaters = self._indicator_updaters.get(bar_type)  # Can be None
         cdef IndicatorUpdater updater
         if updaters is not None:
             for updater in updaters:
@@ -824,23 +858,18 @@ cdef class TradingStrategy:
 
         return self._spreads[symbol][0]
 
-    cpdef double average_spread(self, Symbol symbol, int window=0):
+    cpdef double average_spread(self, Symbol symbol):
         """
-        Return the average spread over the look back window.
+        Return the average spread of the ticks from the given symbol.
         
         :param symbol: The symbol for the average spread to get.
-        :param window: The optional custom window for the average (> 0).
         :return float.
         :raises ValueError: If the strategies ticks does not contain the symbol.
         """
-        if window == 0:
-            window = self.tick_capacity
         Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._spreads, 'symbol', 'ticks')
-        Condition.positive_int(window, 'window')
+        Condition.is_in(symbol, self._average_spreads, 'symbol', 'average_spreads')
 
-        cdef list spreads = list(self._spreads[symbol])[:window]
-        return fast_mean(spreads)
+        return self._average_spreads[symbol]
 
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------

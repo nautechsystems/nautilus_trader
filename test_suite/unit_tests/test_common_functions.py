@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import numpy as np
 import pandas as pd
 import pytz
 from datetime import datetime, timezone, timedelta
@@ -14,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from nautilus_trader.common.functions import (
     fast_round,
     fast_mean,
+    fast_mean_iterated,
     basis_points_as_percentage,
     format_bytes,
     pad_string,
@@ -47,23 +49,46 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange
-        iterable = []
+        values = []
 
         # Act
-        result = fast_mean(iterable)
+        result = fast_mean(values)
 
         # Assert
         self.assertEqual(0, result)
 
     def test_fast_mean_with_values(self):
         # Arrange
-        iterable = [0.0, 1.1, 2.2, 3.3, 4.4, 5.5]
+        values = [0.0, 1.1, 2.2, 3.3, 4.4, 5.5]
 
         # Act
-        result = fast_mean(iterable)
+        result = fast_mean(values)
 
         # Assert
         self.assertEqual(2.75, result)
+
+    def test_fast_mean_iterated_with_empty_list_returns_zero(self):
+        # Arrange
+        values = []
+
+        # Act
+        result = fast_mean_iterated(values, 0.0, 0.0, 6)
+
+        # Assert
+        self.assertEqual(0, result)
+
+    def test_fast_mean_iterated_with_values(self):
+        # Arrange
+        values1 = [0.0, 1.1, 2.2]
+        values2 = [0.0, 1.1, 2.2, 3.3, 4.4]
+
+        # Act
+        result1 = fast_mean_iterated(values1, 0.0, fast_mean(values1), 5)
+        result2 = fast_mean_iterated(values2, 5.5, np.mean(values2), 5)
+
+        # Assert
+        self.assertEqual(np.mean([0.0, 1.1, 2.2]), result1)
+        self.assertAlmostEqual(3.3, result2)
 
     def test_basis_points_as_percentage(self):
         # Arrange
