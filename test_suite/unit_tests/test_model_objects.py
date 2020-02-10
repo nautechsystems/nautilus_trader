@@ -398,8 +398,8 @@ class ObjectTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual('1.00000,1.00001,1,1,1970-01-01T00:00:00+00:00', result0)
-        self.assertTrue(result1.startswith('<Tick(AUDUSD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00+00:00) object at'))
+        self.assertEqual('1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z', result0)
+        self.assertTrue(result1.startswith('<Tick(AUDUSD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z) object at'))
         self.assertTrue(result1.endswith('>'))
 
     def test_can_parse_tick_from_string(self):

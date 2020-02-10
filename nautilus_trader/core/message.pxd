@@ -12,12 +12,12 @@ from nautilus_trader.core.types cimport GUID
 
 
 cpdef enum MessageType:
-    UNDEFINED = -1,  # Invalid value
-    MESSAGE = 0
-    COMMAND = 1,
-    EVENT = 2,
-    REQUEST = 3,
-    RESPONSE = 4
+    UNDEFINED = 0,  # Invalid value
+    MESSAGE = 1,
+    COMMAND = 2,
+    EVENT = 3,
+    REQUEST = 4,
+    RESPONSE = 5
 
 
 cdef class Message:

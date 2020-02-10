@@ -67,7 +67,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_can_convert_string_to_time_from_datetime(self):
         # Arrange
         # Act
-        result = convert_string_to_datetime('1970-01-01 00:00:00.000Z')
+        result = convert_string_to_datetime('1970-01-01T00:00:00.000Z')
 
         # Assert
         self.assertEqual(UNIX_EPOCH, result)

@@ -8,7 +8,6 @@
 
 import decimal
 from libc.math cimport round
-from cpython.unicode cimport PyUnicode_Contains
 
 from nautilus_trader.core.correctness cimport Condition
 
