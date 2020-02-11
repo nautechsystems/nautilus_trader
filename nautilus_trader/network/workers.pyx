@@ -37,6 +37,7 @@ cdef class MQWorker:
         Initializes a new instance of the MQWorker class.
 
         :param worker_name: The name of the worker.
+        :param host: The service name.
         :param host: The service host address.
         :param port: The service port.
         :param zmq_context: The ZeroMQ context.
