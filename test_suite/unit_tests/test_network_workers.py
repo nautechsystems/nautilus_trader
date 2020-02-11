@@ -15,9 +15,9 @@ from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.network.encryption import EncryptionConfig
 from test_kit.mocks import ObjectStorer, MockServer, MockPublisher
 
-LOCAL_HOST = "127.0.0.1"
+LOCALHOST = "127.0.0.1"
 TEST_PORT = 55557
-TEST_ADDRESS = f"tcp://{LOCAL_HOST}:{TEST_PORT}"
+TEST_ADDRESS = f"tcp://{LOCALHOST}:{TEST_PORT}"
 
 
 class RequestWorkerTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class RequestWorkerTests(unittest.TestCase):
         self.worker = RequestWorker(
             "TestRequester",
             "TestResponder",
-            LOCAL_HOST,
+            LOCALHOST,
             TEST_PORT,
             self.context,
             EncryptionConfig(),
@@ -84,7 +84,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.worker = SubscriberWorker(
             'TestSubscriber',
             'TestPublisher',
-            LOCAL_HOST,
+            LOCALHOST,
             TEST_PORT,
             self.zmq_context,
             self.response_handler.store_2,

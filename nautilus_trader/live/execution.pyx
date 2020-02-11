@@ -1064,10 +1064,10 @@ cdef class LiveExecClient(ExecutionClient):
             ExecutionEngine exec_engine not None,
             zmq_context: zmq.Context,
             str service_name='NautilusExecutor',
-            str service_address='localhost',
-            str events_topic='EVENTS',
+            str host='localhost',
             int commands_port=55555,
             int events_port=55556,
+            str events_topic='EVENTS',
             EncryptionConfig encryption not None=EncryptionConfig(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
@@ -1079,23 +1079,23 @@ cdef class LiveExecClient(ExecutionClient):
         :param exec_engine: The execution engine for the component.
         :param zmq_context: The ZMQ context.
         :param service_name: The name of the service.
-        :param service_address: The execution service host IP address (default='localhost').
-        :param events_topic: The execution service events topic (default='NAUTILUS:EXECUTION').
+        :param host: The execution service host IP address (default='localhost').
         :param commands_port: The execution service commands port (default=55555).
         :param events_port: The execution service events port (default=55556).
+        :param events_topic: The execution service events topic (default='EVENTS').
+        :param encryption: The encryption configuration.
         :param command_serializer: The command serializer for the client.
         :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
-        :param encryption: The encryption configuration.
         :param logger: The logger for the component (can be None).
         :raises ValueError: If the service_name is not a valid string.
-        :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the events_topic is not a valid string.
         :raises ValueError: If the commands_port is not in range [0, 65535].
         :raises ValueError: If the events_port is not in range [0, 65535].
         """
         Condition.valid_string(service_name, 'service_name')
-        Condition.valid_string(service_address, 'service_address')
+        Condition.valid_string(host, 'host')
         Condition.valid_string(events_topic, 'events_topic')
         Condition.in_range_int(commands_port, 0, 65535, 'commands_port')
         Condition.in_range_int(events_port, 0, 65535, 'events_port')
@@ -1106,7 +1106,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker = RequestWorker(
             f'{self.__class__.__name__}.CommandRequester',
             f'{service_name}.CommandRouter',
-            service_address,
+            host,
             commands_port,
             self._zmq_context,
             encryption,
@@ -1115,7 +1115,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._events_worker = SubscriberWorker(
             f'{self.__class__.__name__}.EventSubscriber',
             f'{service_name}.EventPublisher',
-            service_address,
+            host,
             events_port,
             self._zmq_context,
             self._event_handler,
