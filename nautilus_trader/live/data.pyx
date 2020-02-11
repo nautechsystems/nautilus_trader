@@ -30,6 +30,7 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure
+from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
@@ -48,6 +49,7 @@ cdef class LiveDataClient(DataClient):
                  int bar_pub_port=55504,
                  int inst_rep_port=55505,
                  int inst_pub_port=55506,
+                 EncryptionConfig encryption not None=EncryptionConfig(),
                  RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
                  ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
                  DataSerializer data_serializer not None=BsonDataSerializer(),
@@ -67,6 +69,7 @@ cdef class LiveDataClient(DataClient):
         :param bar_pub_port: The data service port for bar publications (default=55504).
         :param inst_rep_port: The data service port for instrument responses (default=55505).
         :param inst_pub_port: The data service port for instrument publications (default=55506).
+        :param encryption: The encryption configuration.
         :param request_serializer: The request serializer for the component.
         :param response_serializer: The response serializer for the component.
         :param data_serializer: The data serializer for the component.
@@ -97,6 +100,7 @@ cdef class LiveDataClient(DataClient):
             service_address,
             tick_rep_port,
             self._zmq_context,
+            encryption,
             logger)
 
         self._bar_req_worker = RequestWorker(
@@ -105,6 +109,7 @@ cdef class LiveDataClient(DataClient):
             service_address,
             bar_rep_port,
             self._zmq_context,
+            encryption,
             logger)
 
         self._inst_req_worker = RequestWorker(
@@ -113,6 +118,7 @@ cdef class LiveDataClient(DataClient):
             service_address,
             inst_rep_port,
             self._zmq_context,
+            encryption,
             logger)
 
         self._tick_sub_worker = SubscriberWorker(
@@ -122,6 +128,7 @@ cdef class LiveDataClient(DataClient):
             tick_pub_port,
             self._zmq_context,
             self._handle_tick_sub,
+            encryption,
             logger)
 
         self._bar_sub_worker = SubscriberWorker(
@@ -131,6 +138,7 @@ cdef class LiveDataClient(DataClient):
             bar_pub_port,
             self._zmq_context,
             self._handle_bar_sub,
+            encryption,
             logger)
 
         self._inst_sub_worker = SubscriberWorker(
@@ -140,6 +148,7 @@ cdef class LiveDataClient(DataClient):
             inst_pub_port,
             self._zmq_context,
             self._handle_inst_sub,
+            encryption,
             logger)
 
         self._request_serializer = request_serializer

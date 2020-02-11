@@ -5,6 +5,12 @@
     "check_residuals_delay": 1.0
   },
 
+  "account": {
+    "broker": "FXCM",
+    "account_number": "02851908",
+    "account_type": "DEMO"
+  },
+
   "logging": {
     "log_level_console": "INFO",
     "log_level_file": "DEBUG",
@@ -20,6 +26,12 @@
     "save_state": true
   },
 
+  "encryption": {
+    "use_encryption": false,
+    "encryption_type": "curve",
+    "keys_dir": "keys/"
+  },
+
   "data_client": {
     "service_name": "NautilusData",
     "service_address": "localhost",
@@ -30,12 +42,6 @@
     "bar_sub_port": 55504,
     "inst_req_port": 55505,
     "inst_sub_port": 55506
-  },
-
-  "account": {
-    "broker": "FXCM",
-    "account_number": "02851908",
-    "account_type": "DEMO"
   },
 
   "exec_database": {
