@@ -20,7 +20,7 @@ AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 
 UTF8 = 'utf8'
-LOCAL_HOST = "127.0.0.1"
+LOCALHOST = "127.0.0.1"
 
 # Requirements:
 #    - A Redis instance listening on the default port 6379

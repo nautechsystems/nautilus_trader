@@ -42,7 +42,7 @@ cdef class LiveDataClient(DataClient):
     def __init__(self,
                  zmq_context not None: zmq.Context,
                  str service_name not None='NautilusData',
-                 str service_address not None='localhost',
+                 str host not None='localhost',
                  int tick_rep_port=55501,
                  int tick_pub_port=55502,
                  int bar_rep_port=55503,
@@ -62,7 +62,7 @@ cdef class LiveDataClient(DataClient):
 
         :param zmq_context: The ZMQ context.
         :param service_name: The name of the service.
-        :param service_address: The data service host IP address (default=127.0.0.1).
+        :param host: The data service host address (default='localhost').
         :param tick_rep_port: The data service port for tick responses (default=55501).
         :param tick_pub_port: The data service port for tick publications (default=55502).
         :param bar_rep_port: The data service port for bar responses (default=55503).
@@ -76,6 +76,7 @@ cdef class LiveDataClient(DataClient):
         :param data_serializer: The instrument serializer for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the tick_req_port is not in range [0, 65535].
         :raises ValueError: If the tick_sub_port is not in range [0, 65535].
         :raises ValueError: If the bar_req_port is not in range [0, 65535].
@@ -83,7 +84,8 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the inst_req_port is not in range [0, 65535].
         :raises ValueError: If the inst_sub_port is not in range [0, 65535].
         """
-        Condition.valid_string(service_address, 'service_address')
+        Condition.valid_string(service_name, 'service_name')
+        Condition.valid_string(host, 'host')
         Condition.valid_port(tick_rep_port, 'tick_rep_port')
         Condition.valid_port(tick_pub_port, 'tick_pub_port')
         Condition.valid_port(bar_rep_port, 'bar_rep_port')
@@ -97,7 +99,7 @@ cdef class LiveDataClient(DataClient):
         self._tick_req_worker = RequestWorker(
             f'{self.__class__.__name__}.TickReqWorker',
             f'{service_name}.TickProvider',
-            service_address,
+            host,
             tick_rep_port,
             self._zmq_context,
             encryption,
@@ -106,7 +108,7 @@ cdef class LiveDataClient(DataClient):
         self._bar_req_worker = RequestWorker(
             f'{self.__class__.__name__}.BarReqWorker',
             f'{service_name}.BarProvider',
-            service_address,
+            host,
             bar_rep_port,
             self._zmq_context,
             encryption,
@@ -115,7 +117,7 @@ cdef class LiveDataClient(DataClient):
         self._inst_req_worker = RequestWorker(
             f'{self.__class__.__name__}.InstReqWorker',
             f'{service_name}.InstrumentProvider',
-            service_address,
+            host,
             inst_rep_port,
             self._zmq_context,
             encryption,
@@ -124,7 +126,7 @@ cdef class LiveDataClient(DataClient):
         self._tick_sub_worker = SubscriberWorker(
             f'{self.__class__.__name__}.TickSubWorker',
             f'{service_name}.TickPublisher',
-            service_address,
+            host,
             tick_pub_port,
             self._zmq_context,
             self._handle_tick_sub,
@@ -134,7 +136,7 @@ cdef class LiveDataClient(DataClient):
         self._bar_sub_worker = SubscriberWorker(
             f'{self.__class__.__name__}.BarSubWorker',
             f'{service_name}.BarPublisher',
-            service_address,
+            host,
             bar_pub_port,
             self._zmq_context,
             self._handle_bar_sub,
@@ -144,7 +146,7 @@ cdef class LiveDataClient(DataClient):
         self._inst_sub_worker = SubscriberWorker(
             f'{self.__class__.__name__}.InstSubWorker',
             f'{service_name}.InstrumentPublisher',
-            service_address,
+            host,
             inst_pub_port,
             self._zmq_context,
             self._handle_inst_sub,

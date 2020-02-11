@@ -27,8 +27,8 @@ cdef class MQWorker:
             self,
             str worker_name,
             str service_name,
-            str service_address,
-            int service_port,
+            str host,
+            int port,
             zmq_context not None: zmq.Context,
             int zmq_socket_type,
             EncryptionConfig encryption not None,
@@ -37,28 +37,27 @@ cdef class MQWorker:
         Initializes a new instance of the MQWorker class.
 
         :param worker_name: The name of the worker.
-        :param service_address: The service name.
-        :param service_address: The service host address.
-        :param service_port: The service port.
+        :param host: The service host address.
+        :param port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param zmq_socket_type: The ZeroMQ socket type.
         :param encryption: The encryption configuration.
         :param logger: The logger for the component.
         :raises ValueError: If the worker_name is not a valid string.
         :raises ValueError: If the service_name is not a valid string.
-        :raises ValueError: If the service_address is not a valid string.
-        :raises ValueError: If the service_port is not in range [0, 65535].
+        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the port is not in range [0, 65535].
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
-        Condition.valid_string(service_address, 'service_address')
-        Condition.valid_port(service_port, 'service_port')
+        Condition.valid_string(host, 'host')
+        Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
         super().__init__()
         self.name = worker_name
         self._service_name = service_name
-        self._service_address = f'tcp://{service_address}:{service_port}'
+        self._service_address = f'tcp://{host}:{port}'
         self._zmq_context = zmq_context
         self._zmq_socket = self._zmq_context.socket(zmq_socket_type)
         self._zmq_socket.setsockopt(zmq.LINGER, 0)
@@ -105,8 +104,8 @@ cdef class RequestWorker(MQWorker):
             self,
             str worker_name,
             str service_name,
-            str service_address,
-            int service_port,
+            str host,
+            int port,
             zmq_context not None: zmq.Context,
             EncryptionConfig encryption not None,
             Logger logger not None):
@@ -115,8 +114,8 @@ cdef class RequestWorker(MQWorker):
 
         :param worker_name: The name of the worker.
         :param service_name: The service name.
-        :param service_address: The service host address.
-        :param service_port: The service port.
+        :param host: The service host address.
+        :param port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param encryption: The encryption configuration.
         :param logger: The logger for the component.
@@ -127,15 +126,15 @@ cdef class RequestWorker(MQWorker):
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
-        Condition.valid_string(service_address, 'service_address')
-        Condition.valid_port(service_port, 'service_port')
+        Condition.valid_string(host, 'host')
+        Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
         super().__init__(
             worker_name,
             service_name,
-            service_address,
-            service_port,
+            host,
+            port,
             zmq_context,
             zmq.REQ,
             encryption,
@@ -176,8 +175,8 @@ cdef class SubscriberWorker(MQWorker):
             self,
             str worker_name,
             str service_name,
-            str service_address,
-            int service_port,
+            str host,
+            int port,
             zmq_context not None: zmq.Context,
             handler not None: callable,
             EncryptionConfig encryption not None,
@@ -187,8 +186,8 @@ cdef class SubscriberWorker(MQWorker):
 
         :param worker_name: The name of the worker.
         :param service_name: The service name.
-        :param service_address: The service host address.
-        :param service_port: The service port.
+        :param host: The service host address.
+        :param port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param handler: The message handler.
         :param encryption: The encryption configuration.
@@ -201,16 +200,16 @@ cdef class SubscriberWorker(MQWorker):
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
-        Condition.valid_string(service_address, 'service_address')
-        Condition.valid_port(service_port, 'port')
+        Condition.valid_string(host, 'host')
+        Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
         Condition.callable(handler, 'handler')
 
         super().__init__(
             worker_name,
             service_name,
-            service_address,
-            service_port,
+            host,
+            port,
             zmq_context,
             zmq.SUB,
             encryption,

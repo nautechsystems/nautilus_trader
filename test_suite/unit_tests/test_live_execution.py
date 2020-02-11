@@ -30,7 +30,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 UTF8 = 'utf8'
-LOCAL_HOST = "127.0.0.1"
+LOCALHOST = "127.0.0.1"
 
 
 class LiveExecutionTests(unittest.TestCase):

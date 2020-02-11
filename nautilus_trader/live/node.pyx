@@ -130,7 +130,7 @@ cdef class TradingNode:
         self._data_client = LiveDataClient(
             zmq_context=self._zmq_context,
             service_name=config_data['service_name'],
-            service_address=config_data['service_address'],
+            host=config_data['host'],
             tick_rep_port=config_data['tick_req_port'],
             tick_pub_port=config_data['tick_sub_port'],
             bar_rep_port=config_data['bar_req_port'],
@@ -177,10 +177,10 @@ cdef class TradingNode:
             exec_engine=self._exec_engine,
             zmq_context=self._zmq_context,
             service_name=config_exec_client['service_name'],
-            service_address=config_exec_client['service_address'],
-            events_topic=config_exec_client['events_topic'],
+            host=config_exec_client['host'],
             commands_port=config_exec_client['commands_port'],
             events_port=config_exec_client['events_port'],
+            events_topic=config_exec_client['events_topic'],
             encryption=encryption,
             logger=self._logger)
 

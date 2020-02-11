@@ -34,14 +34,14 @@
 
   "data_client": {
     "service_name": "NautilusData",
-    "service_address": "localhost",
-    "venue": "FXCM",
+    "host": "localhost",
     "tick_req_port": 55501,
     "tick_sub_port": 55502,
     "bar_req_port": 55503,
     "bar_sub_port": 55504,
     "inst_req_port": 55505,
-    "inst_sub_port": 55506
+    "inst_sub_port": 55506,
+    "venue": "FXCM"
   },
 
   "exec_database": {
@@ -52,7 +52,7 @@
 
   "exec_client": {
     "service_name": "NautilusExecutor",
-    "service_address": "localhost",
+    "host": "localhost",
     "events_topic": "EVENTS",
     "commands_port": 55555,
     "events_port": 55556
