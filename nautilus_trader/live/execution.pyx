@@ -37,6 +37,7 @@ from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
+from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.logger cimport LiveLogger
@@ -1067,6 +1068,7 @@ cdef class LiveExecClient(ExecutionClient):
             str events_topic='EVENTS',
             int commands_port=55555,
             int events_port=55556,
+            EncryptionConfig encryption not None=EncryptionConfig(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
             EventSerializer event_serializer not None=MsgPackEventSerializer(),
@@ -1084,7 +1086,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param command_serializer: The command serializer for the client.
         :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
-
+        :param encryption: The encryption configuration.
         :param logger: The logger for the component (can be None).
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the service_address is not a valid string.
@@ -1107,6 +1109,7 @@ cdef class LiveExecClient(ExecutionClient):
             service_address,
             commands_port,
             self._zmq_context,
+            encryption,
             logger)
 
         self._events_worker = SubscriberWorker(
@@ -1116,6 +1119,7 @@ cdef class LiveExecClient(ExecutionClient):
             events_port,
             self._zmq_context,
             self._event_handler,
+            encryption,
             logger)
 
         self._command_serializer = command_serializer

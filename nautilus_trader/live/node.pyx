@@ -23,6 +23,7 @@ from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, Executi
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
@@ -80,23 +81,27 @@ cdef class TradingNode:
         # Load the configuration from the file specified in config_path
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
+
         config_trader = config['trader']
+        config_account = config['account']
         config_log = config['logging']
         config_strategy = config['strategy']
+        config_encryption = config['encryption']
         config_data = config['data_client']
-        config_account = config['account']
         config_exec_db = config['exec_database']
         config_exec_client = config['exec_client']
 
+        # Setup identifiers
         self.trader_id = TraderId(
             name=config_trader['name'],
             order_id_tag=config_trader['order_id_tag'])
 
         self.account_id = AccountId(
-            config_account['broker'],
-            config_account['account_number'],
-            account_type_from_string(config_account['account_type']))
+            broker=config_account['broker'],
+            account_number=config_account['account_number'],
+            account_type=account_type_from_string(config_account['account_type']))
 
+        # Setup logging
         self._log_store = LogStore(
             trader_id=self.trader_id,
             host=config_log['host'],
@@ -115,6 +120,12 @@ cdef class TradingNode:
         self._log_header()
         self._log.info("Starting...")
 
+        # Setup encryption
+        encryption = EncryptionConfig(
+                use_encryption=config_encryption['use_encryption'],
+                encryption_type=config_encryption['encryption_type'],
+                keys_dir=config_encryption['keys_dir'])
+
         self._venue = Venue(config_data['venue'])
         self._data_client = LiveDataClient(
             zmq_context=self._zmq_context,
@@ -126,6 +137,7 @@ cdef class TradingNode:
             bar_pub_port=config_data['bar_sub_port'],
             inst_rep_port=config_data['inst_req_port'],
             inst_pub_port=config_data['inst_sub_port'],
+            encryption=encryption,
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
@@ -169,6 +181,7 @@ cdef class TradingNode:
             events_topic=config_exec_client['events_topic'],
             commands_port=config_exec_client['commands_port'],
             events_port=config_exec_client['events_port'],
+            encryption=encryption,
             logger=self._logger)
 
         self._exec_engine.register_client(self._exec_client)

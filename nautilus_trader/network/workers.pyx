@@ -6,18 +6,21 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import os
 import threading
 import zmq
+import zmq.auth
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.network.encryption cimport EncryptionConfig
 
 cdef str _UTF8 = 'utf-8'
 
 
 cdef class MQWorker:
     """
-    The base class for all MQ workers.
+    The base class for all message queue workers.
     """
 
     def __init__(
@@ -28,6 +31,7 @@ cdef class MQWorker:
             int service_port,
             zmq_context not None: zmq.Context,
             int zmq_socket_type,
+            EncryptionConfig encryption not None,
             Logger logger not None):
         """
         Initializes a new instance of the MQWorker class.
@@ -38,6 +42,7 @@ cdef class MQWorker:
         :param service_port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param zmq_socket_type: The ZeroMQ socket type.
+        :param encryption: The encryption configuration.
         :param logger: The logger for the component.
         :raises ValueError: If the worker_name is not a valid string.
         :raises ValueError: If the service_name is not a valid string.
@@ -56,11 +61,18 @@ cdef class MQWorker:
         self._service_address = f'tcp://{service_address}:{service_port}'
         self._zmq_context = zmq_context
         self._zmq_socket = self._zmq_context.socket(zmq_socket_type)
-        # noinspection PyUnresolvedReferences
-        # zmq references
         self._zmq_socket.setsockopt(zmq.LINGER, 0)
         self._log = LoggerAdapter(worker_name, logger)
         self._cycles = 0
+
+        if encryption.use_encryption:
+            key_file_client = os.path.join(encryption.keys_dir, "client.key")
+            key_file_server = os.path.join(encryption.keys_dir, "server.key")
+            client_public, client_secret = zmq.auth.load_certificate(key_file_client)
+            server_public, server_secret = zmq.auth.load_certificate(key_file_server)
+            self._zmq_socket.curve_secretkey = client_secret
+            self._zmq_socket.curve_publickey = client_public
+            self._zmq_socket.curve_serverkey = server_public
 
     cpdef void connect(self) except *:
         """
@@ -96,6 +108,7 @@ cdef class RequestWorker(MQWorker):
             str service_address,
             int service_port,
             zmq_context not None: zmq.Context,
+            EncryptionConfig encryption not None,
             Logger logger not None):
         """
         Initializes a new instance of the RequestWorker class.
@@ -105,6 +118,7 @@ cdef class RequestWorker(MQWorker):
         :param service_address: The service host address.
         :param service_port: The service port.
         :param zmq_context: The ZeroMQ context.
+        :param encryption: The encryption configuration.
         :param logger: The logger for the component.
         :raises ValueError: If the worker_name is not a valid string.
         :raises ValueError: If the service_name is not a valid string.
@@ -117,8 +131,6 @@ cdef class RequestWorker(MQWorker):
         Condition.valid_port(service_port, 'service_port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
-        # noinspection PyUnresolvedReferences
-        # zmq references
         super().__init__(
             worker_name,
             service_name,
@@ -126,6 +138,7 @@ cdef class RequestWorker(MQWorker):
             service_port,
             zmq_context,
             zmq.REQ,
+            encryption,
             logger)
 
     cpdef bytes send(self, bytes request):
@@ -167,6 +180,7 @@ cdef class SubscriberWorker(MQWorker):
             int service_port,
             zmq_context not None: zmq.Context,
             handler not None: callable,
+            EncryptionConfig encryption not None,
             Logger logger not None):
         """
         Initializes a new instance of the SubscriberWorker class.
@@ -177,6 +191,7 @@ cdef class SubscriberWorker(MQWorker):
         :param service_port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param handler: The message handler.
+        :param encryption: The encryption configuration.
         :param logger: The logger for the component.
         :raises ValueError: If the worker_name is not a valid string.
         :raises ValueError: If the service_name is not a valid string.
@@ -191,8 +206,6 @@ cdef class SubscriberWorker(MQWorker):
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
         Condition.callable(handler, 'handler')
 
-        # noinspection PyUnresolvedReferences
-        # zmq references
         super().__init__(
             worker_name,
             service_name,
@@ -200,6 +213,7 @@ cdef class SubscriberWorker(MQWorker):
             service_port,
             zmq_context,
             zmq.SUB,
+            encryption,
             logger)
         self._handler = handler
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
@@ -213,8 +227,6 @@ cdef class SubscriberWorker(MQWorker):
         """
         Condition.valid_string(topic, 'topic')
 
-        # noinspection PyUnresolvedReferences
-        # zmq references
         self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(_UTF8))
         self._log.debug(f"Subscribed to topic {topic}.")
 
@@ -226,8 +238,6 @@ cdef class SubscriberWorker(MQWorker):
         """
         Condition.valid_string(topic, 'topic')
 
-        # noinspection PyUnresolvedReferences
-        # zmq references
         self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(_UTF8))
         self._log.debug(f"Unsubscribed from topic {topic}.")
 

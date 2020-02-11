@@ -280,7 +280,10 @@ cdef class AccountId(Identifier):
     combination must be unique at the fund level.
     """
 
-    def __init__(self, str broker, str account_number, AccountType account_type):
+    def __init__(self,
+                 str broker,
+                 str account_number,
+                 AccountType account_type):
         """
         Initializes a new instance of the AccountId class.
 
