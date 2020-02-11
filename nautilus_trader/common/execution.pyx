@@ -39,7 +39,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, CMD, EVT, RECV
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionDatabase:

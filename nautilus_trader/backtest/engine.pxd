@@ -15,7 +15,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.trade.trader cimport Trader
+from nautilus_trader.trading.trader cimport Trader
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient

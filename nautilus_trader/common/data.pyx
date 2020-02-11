@@ -16,7 +16,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
 from nautilus_trader.common.market cimport BarAggregator, TickBarAggregator, TimeBarAggregator
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef list _TIME_BARS = [

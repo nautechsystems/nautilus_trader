@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport basis_points_as_percentage
+from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.objects cimport Quantity, Price, Money, Instrument
 
 

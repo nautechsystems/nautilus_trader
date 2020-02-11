@@ -12,8 +12,8 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, PriceType
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.trade.strategy import TradingStrategy
-from nautilus_trader.trade.sizing import FixedRiskSizer
+from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.sizing import FixedRiskSizer
 
 from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange

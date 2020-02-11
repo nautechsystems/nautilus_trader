@@ -22,7 +22,6 @@ from nautilus_trader.model.identifiers import (
     ExecutionId,
     PositionIdBroker)
 from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.events import AccountStateEvent
@@ -32,9 +31,10 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
-from nautilus_trader.trade.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategy
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 from test_kit.mocks import MockExecutionClient
 

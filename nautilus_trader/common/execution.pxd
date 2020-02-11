@@ -34,7 +34,7 @@ from nautilus_trader.model.commands cimport (  # noqa: E211
     ModifyOrder,
     CancelOrder)
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionDatabase:
