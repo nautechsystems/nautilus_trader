@@ -14,7 +14,7 @@ from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.common.functions cimport format_iso8601
+from nautilus_trader.core.functions cimport format_iso8601, fast_mean_iterated
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -29,23 +29,22 @@ from nautilus_trader.model.identifiers cimport (  # noqa: E211
     StrategyId,
     OrderId,
     PositionId)
-from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
-from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
-from nautilus_trader.model.position cimport Position
-from nautilus_trader.common.clock cimport Clock, LiveClock
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
-from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from nautilus_trader.common.functions cimport fast_mean_iterated
-from nautilus_trader.common.execution cimport ExecutionEngine
-from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.model.commands cimport (  # noqa: E211
     AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
     CancelOrder)
+from nautilus_trader.model.generators cimport PositionIdGenerator
+from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.common.clock cimport Clock, LiveClock
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
+from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
+from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.market cimport IndicatorUpdater
+from nautilus_trader.common.factories cimport OrderFactory
 
 
 cdef class TradingStrategy:

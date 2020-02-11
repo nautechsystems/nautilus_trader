@@ -14,8 +14,8 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions cimport (as_timestamp_utc, format_iso8601, format_bytes, # noqa: E211
-                                               pad_string, get_size_of)
+from nautilus_trader.core.functions cimport (as_timestamp_utc, format_iso8601, format_bytes, # noqa: E211
+                                             pad_string, get_size_of)
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
@@ -27,7 +27,7 @@ from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataContainer, BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient

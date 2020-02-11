@@ -31,7 +31,7 @@ from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer,
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure
 from nautilus_trader.network.encryption cimport EncryptionConfig
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class LiveDataClient(DataClient):

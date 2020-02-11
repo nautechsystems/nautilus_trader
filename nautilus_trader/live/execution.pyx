@@ -42,7 +42,7 @@ from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSeria
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef str _UTF8 = 'utf-8'
 

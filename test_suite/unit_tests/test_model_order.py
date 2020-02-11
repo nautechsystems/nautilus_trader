@@ -31,9 +31,10 @@ from nautilus_trader.model.identifiers import (
     ExecutionId,
     PositionIdBroker)
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.order import Order, OrderFactory
+from nautilus_trader.model.order import Order
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.factories import OrderFactory
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

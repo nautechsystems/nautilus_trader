@@ -16,8 +16,8 @@ from cpython.datetime cimport date, datetime
 from pandas import DatetimeIndex
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.functions import slice_dataframe
-from nautilus_trader.common.functions cimport get_size_of, format_bytes
+from nautilus_trader.core.functions import slice_dataframe
+from nautilus_trader.core.functions cimport get_size_of, format_bytes
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.objects cimport Instrument, Price, Volume, Tick, BarType

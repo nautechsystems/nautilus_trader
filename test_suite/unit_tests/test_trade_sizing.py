@@ -9,7 +9,7 @@
 import unittest
 
 from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.trade.sizing import FixedRiskSizer
+from nautilus_trader.trading.sizing import FixedRiskSizer
 from test_kit.stubs import TestStubs
 
 

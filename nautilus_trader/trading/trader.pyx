@@ -14,7 +14,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.analysis.reports cimport ReportProvider
 
 

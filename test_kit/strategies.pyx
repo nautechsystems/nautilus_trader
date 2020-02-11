@@ -23,13 +23,13 @@ from nautilus_trader.model.objects cimport (
     Instrument
 )
 from nautilus_trader.model.order cimport AtomicOrder
-from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock, TestClock
-from nautilus_trader.trade.sizing cimport PositionSizer, FixedRiskSizer
+from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.sizing cimport PositionSizer, FixedRiskSizer
 from test_kit.mocks cimport ObjectStorer
 
 

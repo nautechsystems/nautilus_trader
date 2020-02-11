@@ -14,6 +14,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.core.functions cimport format_iso8601
 from nautilus_trader.model.c_enums.bar_structure cimport (  # noqa: E211
     BarStructure,
     bar_structure_to_string,
@@ -25,7 +26,6 @@ from nautilus_trader.model.c_enums.price_type cimport (  # noqa: E211
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.common.functions cimport format_iso8601
 
 
 cdef Quantity _QUANTITY_ZERO = Quantity()

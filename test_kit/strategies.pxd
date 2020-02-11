@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.trade.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class EmptyStrategyCython(TradingStrategy):

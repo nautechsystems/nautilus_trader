@@ -38,7 +38,6 @@ from nautilus_trader.model.identifiers import (
     ExecutionId,
     PositionIdBroker)
 from nautilus_trader.model.generators import PositionIdGenerator
-from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import (
     AccountStateEvent,
@@ -48,6 +47,7 @@ from nautilus_trader.model.events import (
     PositionModified,
     PositionClosed)
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.factories import OrderFactory
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
