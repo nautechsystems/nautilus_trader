@@ -1467,7 +1467,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void cancel_order(self, Order order, str cancel_reason='NONE') except *:
+    cpdef void cancel_order(self, Order order, str cancel_reason=None) except *:
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
@@ -1477,8 +1477,10 @@ cdef class TradingStrategy:
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
+        if cancel_reason is None or cancel_reason.isspace():
+            cancel_reason = str(None)
         Condition.not_none(order, 'order')
-        Condition.not_none(cancel_reason, 'cancel_reason')  # Can be empty string
+        Condition.valid_string(cancel_reason, 'cancel_reason')
 
         if self._exec_engine is None:
             self.log.error("Cannot send command CancelOrder (execution client not registered).")
@@ -1495,7 +1497,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void cancel_all_orders(self, str cancel_reason='CANCEL_ON_STOP') except *:
+    cpdef void cancel_all_orders(self, str cancel_reason='CANCEL_ALL_ORDERS') except *:
         """
         Send a cancel order command for orders which are not completed in the
         order book with the given cancel_reason - to the execution engine.
@@ -1506,16 +1508,16 @@ cdef class TradingStrategy:
         Condition.not_none(cancel_reason, 'cancel_reason')  # Can be empty string
 
         if self._exec_engine is None:
-            self.log.error("Cannot execute CANCEL_ALL_ORDERS, execution client not registered.")
+            self.log.error("Cannot execute cancel_all_orders(), execution client not registered.")
             return
 
         cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
         cdef int working_orders_count = len(working_orders)
         if working_orders_count == 0:
-            self.log.info("CANCEL_ALL_ORDERS: No working orders to cancel.")
+            self.log.info("cancel_all_orders(): No working orders to cancel.")
             return
 
-        self.log.info(f"CANCEL_ALL_ORDERS: Cancelling {working_orders_count} working order(s)...")
+        self.log.info(f"cancel_all_orders(): Cancelling {working_orders_count} working order(s)...")
         cdef OrderId order_id
         cdef Order order
         cdef CancelOrder command

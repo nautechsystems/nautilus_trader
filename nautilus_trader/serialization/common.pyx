@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -19,7 +18,7 @@ from nautilus_trader.serialization.constants cimport *
 
 cpdef str convert_price_to_string(Price price):
     """
-    Return the converted string from the given price, can return a 'NONE' string..
+    Return the converted string from the given price, can return a 'None' string..
 
     :param price: The price to convert.
     :return str.
@@ -28,7 +27,7 @@ cpdef str convert_price_to_string(Price price):
 
 cpdef str convert_label_to_string(Label label):
     """
-    Return the converted string from the given label, can return a 'NONE' string.
+    Return the converted string from the given label, can return a 'None' string.
 
     :param label: The label to convert.
     :return str.
@@ -37,7 +36,7 @@ cpdef str convert_label_to_string(Label label):
 
 cpdef str convert_datetime_to_string(datetime time):
     """
-    Return the converted ISO8601 string from the given datetime, can return a 'NONE' string.
+    Return the converted ISO8601 string from the given datetime, can return a 'None' string.
 
     :param time: The datetime to convert
     :return str.

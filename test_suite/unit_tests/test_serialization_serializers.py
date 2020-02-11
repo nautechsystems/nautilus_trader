@@ -716,7 +716,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_working_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkNWRjNGY5YjYtZWIzZC00ZmMyLWEzMWUtNjFmMTdiNDhmZWQxqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlqlN0b3BNYXJrZXSoUXVhbnRpdHmmMTAwMDAwpVByaWNlozEuMKtUaW1lSW5Gb3JjZaNEQVmqRXhwaXJlVGltZaROT05Fq1dvcmtpbmdUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkYzUxNzIzMGItMjM3MC00ZTE2LTg5YTUtZjA2ZTg1YThmZmU1qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlpFN0b3CoUXVhbnRpdHmmMTAwMDAwpVByaWNloTGrVGltZUluRm9yY2WjREFZqkV4cGlyZVRpbWWkTm9uZatXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -729,7 +729,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(Label('E'), result.label)
-        self.assertEqual(OrderType.STOP_MARKET, result.order_type)
+        self.assertEqual(OrderType.STOP, result.order_type)
         self.assertEqual(Quantity(100000), result.quantity)
         self.assertEqual(Price(1, 1), result.price)
         self.assertEqual(TimeInForce.DAY, result.time_in_force)
@@ -741,7 +741,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkZjY2ZGMwMjMtMWRmZi00Mzk4LTk1MjYtOTUwNjYxMjQwNjI4qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlqlN0b3BNYXJrZXSoUXVhbnRpdHmmMTAwMDAwpVByaWNlozEuMKtUaW1lSW5Gb3JjZaNHVESqRXhwaXJlVGltZbgxOTcwLTAxLTAxVDAwOjAxOjAwLjAwMFqrV29ya2luZ1RpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkZGMyNjVmZjAtMWY1Ny00ZmUzLWJiY2UtMDZmN2M3YjQ2MjA4qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlpFN0b3CoUXVhbnRpdHmmMTAwMDAwpVByaWNloTGrVGltZUluRm9yY2WjR1REqkV4cGlyZVRpbWW4MTk3MC0wMS0wMVQwMDowMTowMC4wMDBaq1dvcmtpbmdUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -755,7 +755,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(Label('E'), result.label)
         self.assertEqual(OrderSide.BUY, result.order_side)
-        self.assertEqual(OrderType.STOP_MARKET, result.order_type)
+        self.assertEqual(OrderType.STOP, result.order_type)
         self.assertEqual(Quantity(100000), result.quantity)
         self.assertEqual(Price(1, 1), result.price)
         self.assertEqual(TimeInForce.GTD, result.time_in_force)

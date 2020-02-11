@@ -163,7 +163,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
-        self.strategy.cancel_order(order, 'ORDER_EXPIRED')
+        self.strategy.cancel_order(order, 'SIGNAL_GONE')
 
         # Assert
         time.sleep(0.3)

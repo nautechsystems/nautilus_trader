@@ -273,7 +273,7 @@ cdef class TestStrategy1(TradingStrategy):
 cdef class EMACross(TradingStrategy):
     """"
     A simple moving average cross example strategy. When the fast EMA crosses
-    the slow EMA then a STOP_MARKET atomic order is placed for that direction
+    the slow EMA then a STOP entry atomic order is placed for that direction
     with a trailing stop and profit target at 1R risk.
     """
     cdef readonly Instrument instrument
@@ -436,9 +436,9 @@ cdef class EMACross(TradingStrategy):
                 symbol=self.symbol,
                 order_side=OrderSide.BUY,
                 quantity=position_size,
-                price_entry=price_entry,
-                price_stop_loss=price_stop_loss,
-                price_take_profit=price_take_profit,
+                entry=price_entry,
+                stop_loss=price_stop_loss,
+                take_profit=price_take_profit,
                 label=Label('S1'),
                 time_in_force=TimeInForce.GTD,
                 expire_time=bar.timestamp + timedelta(minutes=1))
@@ -474,9 +474,9 @@ cdef class EMACross(TradingStrategy):
                 symbol=self.symbol,
                 order_side=OrderSide.SELL,
                 quantity=position_size,
-                price_entry=price_entry,
-                price_stop_loss=price_stop_loss,
-                price_take_profit=price_take_profit,
+                entry=price_entry,
+                stop_loss=price_stop_loss,
+                take_profit=price_take_profit,
                 label=Label('S1'),
                 time_in_force=TimeInForce.GTD,
                 expire_time=bar.timestamp + timedelta(minutes=1))

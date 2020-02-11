@@ -628,13 +628,13 @@ class ExecutionEngineTests(unittest.TestCase):
 
         position_id = strategy.position_id_generator.generate()
 
-        order1 = strategy.order_factory.stop_market(
+        order1 = strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5))
 
-        order2 = strategy.order_factory.stop_market(
+        order2 = strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
@@ -697,13 +697,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
 
-        order1 = strategy1.order_factory.stop_market(
+        order1 = strategy1.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5))
 
-        order2 = strategy2.order_factory.stop_market(
+        order2 = strategy2.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -779,19 +779,19 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
 
-        order1 = strategy1.order_factory.stop_market(
+        order1 = strategy1.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5))
 
-        order2 = strategy1.order_factory.stop_market(
+        order2 = strategy1.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Price(1.00000, 5))
 
-        order3 = strategy2.order_factory.stop_market(
+        order3 = strategy2.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

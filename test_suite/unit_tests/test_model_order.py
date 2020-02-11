@@ -107,7 +107,7 @@ class OrderTests(unittest.TestCase):
             OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
-            OrderType.STOP_MARKET,
+            OrderType.STOP,
             Quantity(100000),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -121,7 +121,7 @@ class OrderTests(unittest.TestCase):
             OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
-            OrderType.STOP_MARKET,
+            OrderType.STOP,
             Quantity(100000),
             GUID(uuid.uuid4()),
             UNIX_EPOCH,
@@ -269,14 +269,14 @@ class OrderTests(unittest.TestCase):
     def test_can_initialize_stop_market_order(self):
         # Arrange
         # Act
-        order = self.order_factory.stop_market(
+        order = self.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5))
 
         # Assert
-        self.assertEqual(OrderType.STOP_MARKET, order.type)
+        self.assertEqual(OrderType.STOP, order.type)
         self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed)

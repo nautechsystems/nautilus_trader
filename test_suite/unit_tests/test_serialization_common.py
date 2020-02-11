@@ -22,7 +22,7 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_price_to_string(None)
 
         # Assert
-        self.assertEqual('NONE', result)
+        self.assertEqual('None', result)
 
     def test_can_convert_price_to_string_from_decimal(self):
         # Arrange
@@ -35,7 +35,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_can_convert_string_to_price_from_none(self):
         # Arrange
         # Act
-        result = convert_string_to_price('NONE')
+        result = convert_string_to_price('None')
 
         # Assert
         self.assertEqual(None, result)
@@ -54,7 +54,7 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_datetime_to_string(None)
 
         # Assert
-        self.assertEqual('NONE', result)
+        self.assertEqual('None', result)
 
     def test_can_convert_datetime_to_string(self):
         # Arrange
@@ -75,7 +75,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_can_convert_string_to_time_from_none(self):
         # Arrange
         # Act
-        result = convert_string_to_datetime('NONE')
+        result = convert_string_to_datetime('None')
 
         # Assert
         self.assertEqual(None, result)

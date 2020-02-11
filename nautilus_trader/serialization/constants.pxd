@@ -7,8 +7,8 @@
 # -------------------------------------------------------------------------------------------------
 
 cdef str UTF8
-
 cdef str NONE
+
 cdef str TYPE
 cdef str ID
 cdef str CANCEL_REASON
