@@ -193,7 +193,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        order = strategy.order_factory.stop_market(
+        order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -278,7 +278,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        order = strategy.order_factory.stop_market(
+        order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -299,7 +299,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        order = strategy.order_factory.stop_market(
+        order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),

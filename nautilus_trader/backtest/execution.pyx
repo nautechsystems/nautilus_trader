@@ -57,7 +57,7 @@ from nautilus_trader.backtest.models cimport FillModel
 
 # Stop order types
 cdef set STOP_ORDER_TYPES = {
-    OrderType.STOP_MARKET,
+    OrderType.STOP,
     OrderType.STOP_LIMIT,
     OrderType.MIT}
 

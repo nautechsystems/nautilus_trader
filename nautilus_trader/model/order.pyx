@@ -45,7 +45,7 @@ from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 # Order types which require a price to be valid
 cdef set PRICED_ORDER_TYPES = {
     OrderType.LIMIT,
-    OrderType.STOP_MARKET,
+    OrderType.STOP,
     OrderType.STOP_LIMIT,
     OrderType.MIT}
 
@@ -592,7 +592,7 @@ cdef class OrderFactory:
             init_id=self._guid_factory.generate(),
             timestamp=self._clock.time_now())
 
-    cpdef Order stop_market(
+    cpdef Order stop(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -622,7 +622,7 @@ cdef class OrderFactory:
             self._id_generator.generate(),
             symbol,
             order_side,
-            OrderType.STOP_MARKET,
+            OrderType.STOP,
             quantity,
             price=price,
             label=label,
@@ -781,8 +781,8 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Price price_stop_loss,
-            Price price_take_profit=None,
+            Price stop_loss,
+            Price take_profit=None,
             Label label=None):
         """
         Return an atomic order with a market entry.
@@ -790,8 +790,8 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param price_stop_loss: The stop-loss order price.
-        :param price_take_profit: The optional take-profit order price.
+        :param stop_loss: The stop-loss order price.
+        :param take_profit: The optional take-profit order price.
         :param label: The optional order label / secondary identifier.
         :raises ValueError: If the quantity is not positive (> 0).
         :return AtomicOrder.
@@ -809,8 +809,8 @@ cdef class OrderFactory:
 
         return self._create_atomic_order(
             entry_order,
-            price_stop_loss,
-            price_take_profit,
+            stop_loss,
+            take_profit,
             label)
 
     cpdef AtomicOrder atomic_limit(
@@ -818,9 +818,9 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Price price_entry,
-            Price price_stop_loss,
-            Price price_take_profit=None,
+            Price entry,
+            Price stop_loss,
+            Price take_profit=None,
             Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
@@ -831,9 +831,9 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param price_entry: The parent orders entry price.
-        :param price_stop_loss: The stop-loss order price.
-        :param price_take_profit: The optional take-profit order price.
+        :param entry: The parent orders entry price.
+        :param stop_loss: The stop-loss order price.
+        :param take_profit: The optional take-profit order price.
         :param label: The optional order label / secondary identifier.
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
@@ -849,7 +849,7 @@ cdef class OrderFactory:
             symbol,
             order_side,
             quantity,
-            price_entry,
+            entry,
             label,
             OrderPurpose.ENTRY,
             time_in_force,
@@ -857,8 +857,8 @@ cdef class OrderFactory:
 
         return self._create_atomic_order(
             entry_order,
-            price_stop_loss,
-            price_take_profit,
+            stop_loss,
+            take_profit,
             label)
 
     cpdef AtomicOrder atomic_stop_market(
@@ -866,9 +866,9 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Price price_entry,
-            Price price_stop_loss,
-            Price price_take_profit=None,
+            Price entry,
+            Price stop_loss,
+            Price take_profit=None,
             Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
@@ -878,9 +878,9 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param price_entry: The parent orders entry price.
-        :param price_stop_loss: The stop-loss order price.
-        :param price_take_profit: The optional take-profit order price.
+        :param entry: The parent orders entry price.
+        :param stop_loss: The stop-loss order price.
+        :param take_profit: The optional take-profit order price.
         :param label: The orders The optional order label / secondary identifier.
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
@@ -892,11 +892,11 @@ cdef class OrderFactory:
         if label is not None:
             entry_label = Label(label.value + '_E')
 
-        cdef Order entry_order = self.stop_market(
+        cdef Order entry_order = self.stop(
             symbol,
             order_side,
             quantity,
-            price_entry,
+            entry,
             label,
             OrderPurpose.ENTRY,
             time_in_force,
@@ -904,17 +904,17 @@ cdef class OrderFactory:
 
         return self._create_atomic_order(
             entry_order,
-            price_stop_loss,
-            price_take_profit,
+            stop_loss,
+            take_profit,
             label)
 
     cdef AtomicOrder _create_atomic_order(
             self,
-            Order entry,
-            Price price_stop_loss,
-            Price price_take_profit,
+            Order entry_order,
+            Price stop_loss,
+            Price take_profit,
             Label original_label):
-        cdef OrderSide child_order_side = OrderSide.BUY if entry.side == OrderSide.SELL else OrderSide.SELL
+        cdef OrderSide child_order_side = OrderSide.BUY if entry_order.side == OrderSide.SELL else OrderSide.SELL
 
         cdef Label label_stop_loss = None
         cdef Label label_take_profit = None
@@ -922,26 +922,26 @@ cdef class OrderFactory:
             label_stop_loss = Label(original_label.value + "_SL")
             label_take_profit = Label(original_label.value + "_TP")
 
-        cdef Order stop_loss = self.stop_market(
-            entry.symbol,
+        cdef Order stop_loss_order = self.stop(
+            entry_order.symbol,
             child_order_side,
-            entry.quantity,
-            price_stop_loss,
+            entry_order.quantity,
+            stop_loss,
             label_stop_loss,
             OrderPurpose.STOP_LOSS,
             TimeInForce.GTC,
             expire_time=None)
 
-        cdef Order take_profit = None
-        if price_take_profit is not None:
-            take_profit = self.limit(
-                entry.symbol,
+        cdef Order take_profit_order = None
+        if take_profit is not None:
+            take_profit_order = self.limit(
+                entry_order.symbol,
                 child_order_side,
-                entry.quantity,
-                price_take_profit,
+                entry_order.quantity,
+                take_profit,
                 label_take_profit,
                 OrderPurpose.TAKE_PROFIT,
                 TimeInForce.GTC,
                 expire_time=None)
 
-        return AtomicOrder(entry, stop_loss, take_profit)
+        return AtomicOrder(entry_order, stop_loss_order, take_profit_order)

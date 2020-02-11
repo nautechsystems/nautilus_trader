@@ -7,8 +7,8 @@
 # -------------------------------------------------------------------------------------------------
 
 UTF8 = 'utf-8'
+NONE = str(None)
 
-NONE = 'NONE'
 TYPE = 'Type'
 ID = 'Id'
 CANCEL_REASON = 'CancelReason'

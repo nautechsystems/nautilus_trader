@@ -1067,7 +1067,7 @@ cdef class LiveExecClient(ExecutionClient):
             str host='localhost',
             int commands_port=55555,
             int events_port=55556,
-            str events_topic='EVENTS',
+            str events_topic='Events',
             EncryptionConfig encryption not None=EncryptionConfig(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),

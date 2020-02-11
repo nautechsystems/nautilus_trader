@@ -53,7 +53,7 @@
   "exec_client": {
     "service_name": "NautilusExecutor",
     "host": "localhost",
-    "events_topic": "EVENTS",
+    "events_topic": "Events",
     "commands_port": 55555,
     "events_port": 55556
   }

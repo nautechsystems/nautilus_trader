@@ -591,7 +591,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag='001')
         self.exec_engine.register_strategy(strategy)
 
-        order = strategy.order_factory.stop_market(
+        order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -600,7 +600,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Act
-        strategy.cancel_order(order, 'NONE')
+        strategy.cancel_order(order)
 
         # Assert
         self.assertEqual(order, strategy.orders()[order.id])
@@ -642,13 +642,13 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag='001')
         self.exec_engine.register_strategy(strategy)
 
-        order1 = strategy.order_factory.stop_market(
+        order1 = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(90.003, 3))
 
-        order2 = strategy.order_factory.stop_market(
+        order2 = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
