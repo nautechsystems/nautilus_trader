@@ -24,10 +24,10 @@ cdef class DataClient:
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
     cdef dict _ticks
-    cdef dict _spreads
-    cdef dict _average_spreads
-    cdef dict _bar_aggregators
     cdef dict _tick_handlers
+    cdef dict _spreads
+    cdef dict _spreads_average
+    cdef dict _bar_aggregators
     cdef dict _bar_handlers
     cdef dict _instrument_handlers
     cdef dict _instruments
@@ -74,7 +74,7 @@ cdef class DataClient:
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef double spread(self, Symbol symbol)
-    cpdef double average_spread(self, Symbol symbol)
+    cpdef double spread_average(self, Symbol symbol)
     cpdef double get_exchange_rate(
         self,
         Currency from_currency,

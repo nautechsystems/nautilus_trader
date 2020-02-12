@@ -6,29 +6,14 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.events cimport (  # noqa: E211
-    Event,
-    OrderEvent,
-    OrderCancelReject,
-    OrderFillEvent,
-    AccountStateEvent,
-    PositionEvent)
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    AccountId,
-    TraderId,
-    StrategyId,
-    OrderId,
-    PositionId,
-    PositionIdBroker)
+from nautilus_trader.model.events cimport Event, OrderEvent, OrderCancelReject, OrderFillEvent
+from nautilus_trader.model.events cimport AccountStateEvent, PositionEvent
+from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId
+from nautilus_trader.model.identifiers cimport OrderId, PositionId, PositionIdBroker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.commands cimport (  # noqa: E211
-    Command,
-    AccountInquiry,
-    SubmitOrder,
-    SubmitAtomicOrder,
-    ModifyOrder,
-    CancelOrder)
+from nautilus_trader.model.commands cimport Command, AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.account cimport Account

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_trade_strategy.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_trading_strategy.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -443,47 +443,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(True)  # No exceptions thrown
-
-    # TODO: Move tests to common_data
-    # def test_can_get_exchange_rate_with_conversion(self):
-    #     # Arrange
-    #     strategy = TradingStrategy(order_id_tag='001')
-    #     self.exec_engine.register_strategy(strategy)
-    #
-    #     tick = Tick(Symbol('USDJPY', Venue('FXCM')),
-    #                 Price(110.80000, 5),
-    #                 Price(110.80010, 5),
-    #                 Volume(1),
-    #                 Volume(1),
-    #                 datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
-    #
-    #     strategy.handle_tick(tick)
-    #
-    #     # Act
-    #     result = strategy.get_exchange_rate(Currency.JPY, Currency.USD)
-    #
-    #     # Assert
-    #     self.assertEqual(0.009025266685348969, result)
-    #
-    # def test_can_get_exchange_rate_with_no_conversion(self):
-    #     # Arrange
-    #     strategy = TradingStrategy(order_id_tag='001')
-    #     self.exec_engine.register_strategy(strategy)
-    #
-    #     tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
-    #                 Price(0.80000, 5),
-    #                 Price(0.80010, 5),
-    #                 Volume(1),
-    #                 Volume(1),
-    #                 datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
-    #
-    #     strategy.handle_tick(tick)
-    #
-    #     # Act
-    #     result = strategy.get_exchange_rate(Currency.AUD, Currency.USD)
-    #
-    #     # Assert
-    #     self.assertEqual(0.80005, result)
 
     def test_stopping_a_strategy_cancels_a_running_time_alert(self):
         # Arrange

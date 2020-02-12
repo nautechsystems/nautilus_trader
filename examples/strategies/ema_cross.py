@@ -136,7 +136,7 @@ class EMACrossPy(TradingStrategy):
             return  # Wait for ticks...
 
         # Get average spread
-        average_spread = self.average_spread(self.symbol)
+        average_spread = self.spread_average(self.symbol)
 
         # Check market liquidity
         if average_spread == 0.0:
