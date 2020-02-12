@@ -126,6 +126,7 @@ cdef class BacktestEngine:
         self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.data_client = BacktestDataClient(
             data=data,
+            tick_capacity=100,  # TODO: Configurable
             clock=self.test_clock,
             logger=self.test_logger)
 

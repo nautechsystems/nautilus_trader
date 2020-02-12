@@ -142,16 +142,21 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  BacktestDataContainer data not None,
+                 int tick_capacity,
                  TestClock clock not None,
                  Logger logger not None):
         """
         Initializes a new instance of the BacktestDataClient class.
 
-        :param data: The data needed for the backtest.
+        :param data: The data needed for the backtest data client.
+        :param tick_capacity: The length of the internal tick deques (also determines average spread).
         :param clock: The clock for the component.
         :param logger: The logger for the component.
+        :raises ValueError: If the tick_capacity is not positive (> 0).
         """
-        super().__init__(clock, TestGuidFactory(), logger)
+        Condition.positive_int(tick_capacity, 'tick_capacity')
+
+        super().__init__(tick_capacity, clock, TestGuidFactory(), logger)
 
         # Check data integrity
         data.check_integrity()

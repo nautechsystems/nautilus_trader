@@ -415,9 +415,14 @@ cdef class EMACross(TradingStrategy):
         cdef double risk = price_entry.as_double() - price_stop_loss.as_double()
         cdef Price price_take_profit = Price(price_entry + risk, self.precision)
 
-        cdef double exchange_rate = self.get_exchange_rate_for_account(
+        # Calculate exchange rate
+        cdef double exchange_rate = 0.0
+        try:
+            exchange_rate = self.get_exchange_rate_for_account(
                 quote_currency=self.instrument.quote_currency,
                 price_type=PriceType.ASK)
+        except ValueError as ex:
+            self.log.error(ex)
 
         cdef Quantity position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
@@ -453,9 +458,14 @@ cdef class EMACross(TradingStrategy):
         cdef double risk = price_stop_loss.as_double() - price_entry.as_double()
         cdef Price price_take_profit = Price(price_entry - risk, self.precision)
 
-        cdef double exchange_rate = self.get_exchange_rate_for_account(
+        # Calculate exchange rate
+        cdef double exchange_rate = 0.0
+        try:
+            exchange_rate = self.get_exchange_rate_for_account(
                 quote_currency=self.instrument.quote_currency,
                 price_type=PriceType.BID)
+        except ValueError as ex:
+            self.log.error(ex)
 
         cdef Quantity position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,

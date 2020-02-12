@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.model.enums import OrderSide, Currency
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
@@ -45,6 +45,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.logger = TestLogger()
 
         self.data_client = DataClient(
+            tick_capacity=100,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)
@@ -443,45 +444,46 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # No exceptions thrown
 
-    def test_can_get_exchange_rate_with_conversion(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
-        self.exec_engine.register_strategy(strategy)
-
-        tick = Tick(Symbol('USDJPY', Venue('FXCM')),
-                    Price(110.80000, 5),
-                    Price(110.80010, 5),
-                    Volume(1),
-                    Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
-
-        strategy.handle_tick(tick)
-
-        # Act
-        result = strategy.get_exchange_rate(Currency.JPY, Currency.USD)
-
-        # Assert
-        self.assertEqual(0.009025266685348969, result)
-
-    def test_can_get_exchange_rate_with_no_conversion(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
-        self.exec_engine.register_strategy(strategy)
-
-        tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
-                    Price(0.80000, 5),
-                    Price(0.80010, 5),
-                    Volume(1),
-                    Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
-
-        strategy.handle_tick(tick)
-
-        # Act
-        result = strategy.get_exchange_rate(Currency.AUD, Currency.USD)
-
-        # Assert
-        self.assertEqual(0.80005, result)
+    # TODO: Move tests to common_data
+    # def test_can_get_exchange_rate_with_conversion(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag='001')
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     tick = Tick(Symbol('USDJPY', Venue('FXCM')),
+    #                 Price(110.80000, 5),
+    #                 Price(110.80010, 5),
+    #                 Volume(1),
+    #                 Volume(1),
+    #                 datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
+    #
+    #     strategy.handle_tick(tick)
+    #
+    #     # Act
+    #     result = strategy.get_exchange_rate(Currency.JPY, Currency.USD)
+    #
+    #     # Assert
+    #     self.assertEqual(0.009025266685348969, result)
+    #
+    # def test_can_get_exchange_rate_with_no_conversion(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag='001')
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
+    #                 Price(0.80000, 5),
+    #                 Price(0.80010, 5),
+    #                 Volume(1),
+    #                 Volume(1),
+    #                 datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
+    #
+    #     strategy.handle_tick(tick)
+    #
+    #     # Act
+    #     result = strategy.get_exchange_rate(Currency.AUD, Currency.USD)
+    #
+    #     # Assert
+    #     self.assertEqual(0.80005, result)
 
     def test_stopping_a_strategy_cancels_a_running_time_alert(self):
         # Arrange

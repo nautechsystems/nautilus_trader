@@ -8,11 +8,14 @@
 
 from cpython.datetime cimport date, datetime
 
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.identifiers cimport Symbol, Venue
+from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
+from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.identifiers cimport Symbol, Venue
-from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -20,11 +23,17 @@ cdef class DataClient:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
+    cdef dict _ticks
+    cdef dict _spreads
+    cdef dict _average_spreads
     cdef dict _bar_aggregators
     cdef dict _tick_handlers
     cdef dict _bar_handlers
     cdef dict _instrument_handlers
     cdef dict _instruments
+    cdef ExchangeRateCalculator _exchange_calculator
+
+    cdef readonly int tick_capacity
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
     cpdef void connect(self) except *
@@ -64,6 +73,13 @@ cdef class DataClient:
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
+    cpdef double spread(self, Symbol symbol)
+    cpdef double average_spread(self, Symbol symbol)
+    cpdef double get_exchange_rate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=*)
 
     cdef void _self_generate_bars(self, BarType bar_type, handler) except *
     cdef void _add_tick_handler(self, Symbol symbol, handler) except *

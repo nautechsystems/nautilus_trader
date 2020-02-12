@@ -12,16 +12,9 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    Symbol,
-    TraderId,
-    StrategyId,
-    OrderId,
-    PositionId,
-    Label
-)
+from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId
+from nautilus_trader.model.identifiers cimport PositionId, Label
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
@@ -56,12 +49,9 @@ cdef class TradingStrategy:
 
     cdef dict _ticks
     cdef dict _bars
-    cdef dict _spreads
-    cdef dict _average_spreads
     cdef list _indicators
     cdef dict _indicator_updaters
     cdef list _state_log
-    cdef ExchangeRateCalculator _exchange_calculator
 
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine

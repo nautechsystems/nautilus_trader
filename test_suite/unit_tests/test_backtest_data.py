@@ -34,6 +34,7 @@ class BacktestDataClientTests(unittest.TestCase):
         # Arrange
         client = BacktestDataClient(
             data=self.data,
+            tick_capacity=100,
             clock=self.test_clock,
             logger=TestLogger())
 

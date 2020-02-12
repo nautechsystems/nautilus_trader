@@ -129,15 +129,15 @@ cdef class FixedRiskSizer(PositionSizer):
         :param risk_bp: The risk in basis points.
         :param entry: The entry price.
         :param stop_loss: The stop loss price.
-        :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
+        :param exchange_rate: The exchange rate for the instrument quote currency vs account currency (>= 0).
         :param commission_rate_bp: The commission rate as basis points of notional transaction value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (>= 0) If 0 then no batching applied.
         :raises ValueError: If the risk_bp is not positive (> 0).
-        :raises ValueError: If the exchange_rate is not positive (> 0).
+        :raises ValueError: If the exchange_rate is negative (< 0).
         :raises ValueError: If the commission_rate is negative (< 0).
-        :raises ValueError: If the units is not positive (> 0).
+        :raises ValueError: If the units are not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
 
         :return Quantity.
@@ -146,10 +146,13 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_none(entry, 'price_entry')
         Condition.not_none(stop_loss, 'price_stop_loss')
         Condition.positive(risk_bp, 'risk_bp')
-        Condition.positive(exchange_rate, 'exchange_rate')
+        Condition.not_negative(exchange_rate, 'exchange_rate')
         Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
         Condition.positive_int(units, 'units')
         Condition.not_negative_int(unit_batch_size, 'unit_batch_size')
+
+        if exchange_rate <= 0.0:
+            return Quantity(precision=self.instrument.size_precision)
 
         cdef double risk_points = self._calculate_risk_ticks(
             entry.as_double(),
