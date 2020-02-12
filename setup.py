@@ -50,10 +50,11 @@ Profile_Hooks = False
 
 # Cython compiler directives
 compiler_directives = {
-    'language_level': 3,
-    'embedsignature': True,
-    'emit_code_comments': True,
-    'profile': Profile_Hooks
+    'language_level': 3,         # If Python 3
+    'cdivision': True,           # If division is as per C with no check for zero (35% speed up)
+    'embedsignature': True,      # If docstrings should be embedded into C signatures
+    'emit_code_comments': True,  # If comments should be emitted to generated C code
+    'profile': Profile_Hooks     # See above
 }
 # -------------------------------------
 
