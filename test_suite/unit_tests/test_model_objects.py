@@ -8,7 +8,7 @@
 
 import unittest
 
-from nautilus_trader.model.enums import BarStructure, PriceType
+from nautilus_trader.model.enums import BarStructure, PriceType, Currency
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Quantity, Money, Price, Volume, Tick, BarSpecification, BarType, Bar
 from test_kit.stubs import TestStubs, UNIX_EPOCH
@@ -227,7 +227,7 @@ class ObjectTests(unittest.TestCase):
     def test_money_from_string_with_no_decimal(self):
         # Arrange
         # Act
-        money = Money(1)
+        money = Money(1, Currency.USD)
 
         # Assert
         self.assertEqual(1.00, money.as_double())
@@ -236,9 +236,9 @@ class ObjectTests(unittest.TestCase):
     def test_money_initialized_with_valid_inputs(self):
         # Arrange
         # Act
-        result1 = Money(1.00)
-        result2 = Money(1000.0)
-        result3 = Money(2)
+        result1 = Money(1.00, Currency.USD)
+        result2 = Money(1000.0, Currency.USD)
+        result3 = Money(2, Currency.USD)
 
         # Assert
         self.assertEqual(1.00, result1.as_double())
@@ -248,8 +248,8 @@ class ObjectTests(unittest.TestCase):
     def test_money_initialized_with_many_decimals(self):
         # Arrange
         # Act
-        result1 = Money(1000.333)
-        result2 = Money(5005.556666)
+        result1 = Money(1000.333, Currency.USD)
+        result2 = Money(5005.556666, Currency.USD)
 
         # Assert
         self.assertEqual('1,000.33', result1.to_string(format_commas=True))
@@ -257,9 +257,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_money_str(self):
         # Arrange
-        money0 = Money()
-        money1 = Money(1)
-        money2 = Money(1000000)
+        money0 = Money(0, Currency.USD)
+        money1 = Money(1, Currency.USD)
+        money2 = Money(1000000, Currency.USD)
 
         # Act
         # Assert
@@ -268,24 +268,25 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual('1.00', money1.to_string())
         self.assertEqual('1000000.00', str(money2))
         self.assertEqual('1,000,000.00', money2.to_string(format_commas=True))
+        self.assertEqual('1,000,000.00 USD', money2.to_string_formatted())
 
     def test_money_repr(self):
         # Arrange
-        money = Money(1)
+        money = Money(1, Currency.USD)
 
         # Act
         result = repr(money)
 
         # Assert
-        self.assertTrue(result.startswith('<Money(1.00) object at'))
+        self.assertTrue(result.startswith('<Money(1.00, currency=USD) object at'))
 
     def test_money_equality(self):
         # Arrange
         # Act
-        money1 = Money(1.00)
-        money2 = Money(1.00)
-        money3 = Money(2.00)
-        money4 = Money(1.01)
+        money1 = Money(1.00, Currency.USD)
+        money2 = Money(1.00, Currency.USD)
+        money3 = Money(2.00, Currency.USD)
+        money4 = Money(1.01, Currency.USD)
 
         # Assert
         self.assertEqual(money1, money2)
@@ -294,9 +295,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_money_equality_operators(self):
         # Arrange
-        money1 = Money(0.50)
-        money2 = Money(1.00)
-        money3 = Money(1.50)
+        money1 = Money(0.50, Currency.USD)
+        money2 = Money(1.00, Currency.USD)
+        money3 = Money(1.50, Currency.USD)
 
         # Act
         # Assert
@@ -309,19 +310,19 @@ class ObjectTests(unittest.TestCase):
     def test_money_arithmetic_operators(self):
         # Arrange
         # Act
-        result1 = Money(1.00) + 1.00
-        result2 = Money(1.00).add(Money(1.00))
-        result3 = Money(1.00) + 1
+        result1 = Money(1.00, Currency.USD) + 1.00
+        result2 = Money(1.00, Currency.USD).add(Money(1.00, Currency.USD))
+        result3 = Money(1.00, Currency.USD) + 1
 
-        result4 = Money(3.00) - 1.00
-        result5 = Money(3.00).subtract(Money(1.00))
-        result6 = Money(3.00) - 1
+        result4 = Money(3.00, Currency.USD) - 1.00
+        result5 = Money(3.00, Currency.USD).subtract(Money(1.00, Currency.USD))
+        result6 = Money(3.00, Currency.USD) - 1
 
-        result7 = Money(1.00) / 2.0
-        result8 = Money(1.00) / 2
+        result7 = Money(1.00, Currency.USD) / 2.0
+        result8 = Money(1.00, Currency.USD) / 2
 
-        result9 = Money(1.00) * 2.00
-        result10 = Money(1.00) * 2
+        result9 = Money(1.00, Currency.USD) * 2.00
+        result10 = Money(1.00, Currency.USD) * 2
 
         # Assert
         self.assertEqual(float, type(result1))
@@ -334,7 +335,7 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(float, type(result4))
         self.assertEqual(float(2.00), result4)
         self.assertEqual(Money, type(result5))
-        self.assertEqual(Money(2.00), result5)
+        self.assertEqual(Money(2.00, Currency.USD), result5)
         self.assertEqual(float, type(result6))
         self.assertEqual(float(2.00), result6)
 

@@ -9,10 +9,10 @@
 from cpython.datetime cimport date, datetime, timedelta
 
 from nautilus_trader.core.types cimport GUID
-from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.common.guid cimport GuidFactory, TestGuidFactory
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.events cimport TimeEvent
+from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.guid cimport GuidFactory, TestGuidFactory
 
 
 cdef class TimeEventHandler:

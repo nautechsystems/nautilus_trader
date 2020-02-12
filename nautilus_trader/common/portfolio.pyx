@@ -7,12 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.events cimport (  # noqa: E211
-    PositionEvent,
-    PositionOpened,
-    PositionModified,
-    PositionClosed,
-    OrderFillEvent)
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.events cimport PositionEvent, PositionOpened, PositionModified
+from nautilus_trader.model.events cimport PositionClosed, OrderFillEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.identifiers cimport Symbol, PositionId
 from nautilus_trader.model.position cimport Position
@@ -25,6 +22,7 @@ cdef class Portfolio:
     """
 
     def __init__(self,
+                 Currency currency,
                  Clock clock not None,
                  GuidFactory guid_factory not None,
                  Logger logger=None):
@@ -42,8 +40,9 @@ cdef class Portfolio:
         self._positions_open = {}    # type: [Symbol, {PositionId, Position}]
         self._positions_closed = {}  # type: [Symbol, {PositionId, Position}]
 
-        self.daily_pnl_realized = Money.zero()
-        self.total_pnl_realized = Money.zero()
+        self.currency = currency
+        self.daily_pnl_realized = Money(0, self.currency)
+        self.total_pnl_realized = Money(0, self.currency)
         self.date_now = self._clock.date_now()
 
     cpdef void update(self, PositionEvent event) except *:
@@ -56,7 +55,7 @@ cdef class Portfolio:
 
         if event.timestamp.date() != self.date_now:
             self.date_now = event.timestamp.date()
-            self.daily_pnl_realized = Money.zero()
+            self.daily_pnl_realized = Money(0, event.position.quote_currency)
 
         if isinstance(event, PositionOpened):
             self._handle_position_opened(event)
@@ -73,8 +72,8 @@ cdef class Portfolio:
 
         self._positions_open.clear()
         self._positions_closed.clear()
-        self.daily_pnl_realized = Money.zero()
-        self.total_pnl_realized = Money.zero()
+        self.daily_pnl_realized = Money(0, self.currency)
+        self.total_pnl_realized = Money(0, self.currency)
         self.date_now = self._clock.date_now()
 
         self._log.info("Reset.")

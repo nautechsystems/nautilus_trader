@@ -38,13 +38,13 @@ from nautilus_trader.model.commands cimport (  # noqa: E211
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
-from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.factories cimport OrderFactory
+from nautilus_trader.common.clock cimport Clock, LiveClock
 
 
 cdef class TradingStrategy:
@@ -190,7 +190,8 @@ cdef class TradingStrategy:
         Called when the strategy is started.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_start() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_start() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef void on_tick(self, Tick tick) except *:
         """
@@ -199,7 +200,8 @@ cdef class TradingStrategy:
         :param tick: The tick received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_tick() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_tick() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -209,7 +211,8 @@ cdef class TradingStrategy:
         :param bar: The bar received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_bar() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_bar() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef void on_instrument(self, Instrument instrument) except *:
         """
@@ -218,7 +221,8 @@ cdef class TradingStrategy:
         :param instrument: The instrument received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_instrument() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_instrument() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef void on_event(self, Event event) except *:
         """
@@ -227,42 +231,49 @@ cdef class TradingStrategy:
         :param event: The event received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_event() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_event() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef void on_stop(self) except *:
         """
         Called when the strategy is stopped.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_stop() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_stop() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef void on_reset(self) except *:
         """
         Called when the strategy is reset.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method reset() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method reset() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef dict on_save(self):
         """
-        Called when the strategy is saved. 'StateLog', 'OrderIdCount' and 'PositionIdCount' are reserved keys.
+        Called when the strategy is saved.
+        Note: 'StateLog', 'OrderIdCount' and 'PositionIdCount' are reserved keys.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_save() must be implemented in the strategy (or just return empty dictionary).")
+        raise NotImplementedError("Method on_save() must be implemented in the strategy "
+                                  "(or just return empty dictionary).")
 
     cpdef void on_load(self, dict state) except *:
         """
         Called when the strategy is loaded.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_load() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_load() must be implemented in the strategy "
+                                  "(or just add pass).")
 
     cpdef void on_dispose(self) except *:
         """
         Called when the strategy is disposed.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_dispose() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_dispose() must be implemented in the strategy "
+                                  "(or just add pass).")
 
 
 # -- REGISTRATION METHODS --------------------------------------------------------------------------
@@ -338,7 +349,7 @@ cdef class TradingStrategy:
     cpdef void handle_tick(self, Tick tick) except *:
         """"
         System method. Update the internal ticks with the given tick, update
-        indicators for the symbol, then call on_tick() and pass the tick 
+        indicators for the symbol, then call on_tick() and pass the tick
         (if the strategy is running).
 
         :param tick: The tick received.
@@ -412,8 +423,8 @@ cdef class TradingStrategy:
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
         """"
-        System method. Update the internal bars with the given bar, update 
-        indicators for the bar type, then call on_bar() and pass the arguments 
+        System method. Update the internal bars with the given bar, update
+        indicators for the bar type, then call on_bar() and pass the arguments
         (if the strategy is running).
 
         :param bar_type: The bar type received.
@@ -450,7 +461,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
-        System method. Handle the given bar type and bars by handling 
+        System method. Handle the given bar type and bars by handling
         each bar individually.
         """
         Condition.not_none(bar_type, 'bar_type')
@@ -977,7 +988,7 @@ cdef class TradingStrategy:
             Currency quote_currency,
             PriceType price_type=PriceType.MID):
         """
-        Return the calculated exchange rate for the give trading instrument quote 
+        Return the calculated exchange rate for the give trading instrument quote
         currency to the account currency.
 
         :param quote_currency: The quote currency to convert from.
@@ -1245,7 +1256,7 @@ cdef class TradingStrategy:
     cpdef void reset(self) except *:
         """
         Reset the strategy by returning all stateful values to their
-        initial value, the on_reset() implementation is then called. 
+        initial value, the on_reset() implementation is then called.
         Note: The strategy cannot be running otherwise an error is logged.
         """
         if self.is_running:
@@ -1377,7 +1388,7 @@ cdef class TradingStrategy:
 
     cpdef void submit_order(self, Order order, PositionId position_id) except *:
         """
-        Send a submit order command with the given order and position_id to the execution 
+        Send a submit order command with the given order and position_id to the execution
         service.
 
         :param order: The order to submit.
@@ -1404,7 +1415,7 @@ cdef class TradingStrategy:
 
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id) except *:
         """
-        Send a submit atomic order command with the given order and position_id to the 
+        Send a submit atomic order command with the given order and position_id to the
         execution service.
         
         :param atomic_order: The atomic order to submit.

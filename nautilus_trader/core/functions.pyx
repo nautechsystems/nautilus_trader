@@ -64,7 +64,7 @@ cpdef double fast_mean_iterated(
     :param next_value: The next input value for the average.
     :param current_value: The current value for the average.
     :param expected_length: The expected length of the inputs.
-    :param drop_left: If the value to be dropped should be from the left side 
+    :param drop_left: If the value to be dropped should be from the left side
     of the inputs (index 0).
     :return: double.
     """

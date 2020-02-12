@@ -27,10 +27,10 @@ from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, 
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.factories cimport OrderFactory
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.data cimport DataClient
@@ -140,14 +140,14 @@ cdef class TradingStrategy:
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
     cpdef double get_exchange_rate(
-            self,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type=*)
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=*)
     cpdef double get_exchange_rate_for_account(
-            self,
-            Currency quote_currency,
-            PriceType price_type=*)
+        self,
+        Currency quote_currency,
+        PriceType price_type=*)
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)

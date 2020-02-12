@@ -18,7 +18,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
 from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, order_side_from_string
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
 from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string, order_purpose_from_string
-from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string, currency_from_string
 from nautilus_trader.model.identifiers cimport (  # noqa: E211
     Symbol,
     OrderId,
@@ -516,15 +516,17 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef GUID event_id = GUID(UUID(unpacked[ID]))
         cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
+        cdef Currency currency
         if event_type == AccountStateEvent.__name__:
+            currency = currency_from_string(unpacked[CURRENCY])
             return AccountStateEvent(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                currency_from_string(unpacked[CURRENCY]),
-                Money.from_string(unpacked[CASH_BALANCE]),
-                Money.from_string(unpacked[CASH_START_DAY]),
-                Money.from_string(unpacked[CASH_ACTIVITY_DAY]),
-                Money.from_string(unpacked[MARGIN_USED_LIQUIDATION]),
-                Money.from_string(unpacked[MARGIN_USED_MAINTENANCE]),
+                currency,
+                Money.from_string(unpacked[CASH_BALANCE], currency),
+                Money.from_string(unpacked[CASH_START_DAY], currency),
+                Money.from_string(unpacked[CASH_ACTIVITY_DAY], currency),
+                Money.from_string(unpacked[MARGIN_USED_LIQUIDATION], currency),
+                Money.from_string(unpacked[MARGIN_USED_MAINTENANCE], currency),
                 Decimal.from_string_to_decimal(unpacked[MARGIN_RATIO]),
                 ValidString(unpacked[MARGIN_CALL_STATUS]),
                 event_id,

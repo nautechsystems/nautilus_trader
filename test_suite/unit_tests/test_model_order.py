@@ -11,30 +11,19 @@ import uuid
 
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.types import GUID, ValidString
-from nautilus_trader.model.enums import (
-    OrderSide,
-    OrderType,
-    OrderState,
-    OrderPurpose,
-    TimeInForce,
-    Currency)
-from nautilus_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, \
-    OrderRejected
-from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
-from nautilus_trader.model.identifiers import (
-    Label,
-    IdTag,
-    OrderId,
-    OrderIdBroker,
-    AtomicOrderId,
-    ExecutionId,
-    PositionIdBroker)
+from nautilus_trader.model.enums import OrderSide, OrderType, OrderState, OrderPurpose
+from nautilus_trader.model.enums import TimeInForce, Currency
+from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted
+from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderExpired
+from nautilus_trader.model.events import OrderModified, OrderCancelled, OrderCancelReject
+from nautilus_trader.model.events import OrderFilled, OrderPartiallyFilled
+from nautilus_trader.model.identifiers import Label, IdTag, OrderId, OrderIdBroker
+from nautilus_trader.model.identifiers import AtomicOrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import Order
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.clock import TestClock
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.price_type cimport (  # noqa: E211
     price_type_to_string,
     price_type_from_string)
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string, currency_to_string
 from nautilus_trader.model.identifiers cimport Venue
 
 
@@ -241,42 +241,37 @@ cdef class Volume(Decimal):
         return Volume(self._value - other._value, max(self.precision, other.precision))
 
 
-cdef Money _MONEY_ZERO = Money()
-
 cdef class Money(Decimal):
     """
-    Represents the 'concept' of money.
+    Represents the 'concept' of money including currency type.
     """
 
-    def __init__(self, double value=0.0):
+    def __init__(self, double value, Currency currency):
         """
         Initializes a new instance of the Money class.
         Note: The value is rounded to 2 decimal places of precision.
 
         :param value: The value of the money.
+        :param currency: The currency of the money.
         """
+        Condition.not_equal(currency, Currency.UNDEFINED, 'currency', 'UNDEFINED')
+
         super().__init__(value, precision=2)
 
-    @staticmethod
-    cdef Money zero():
-        """
-        Return money with a zero value.
-        
-        :return Money.
-        """
-        return _MONEY_ZERO
+        self.currency = currency
 
     @staticmethod
-    cdef Money from_string(str value):
+    cdef Money from_string(str value, Currency currency):
         """
         Return money parsed from the given string value.
         
         :param value: The string value to parse.
+        :param currency: The currency for the money.
         :return Money.
         """
         Condition.valid_string(value, 'value')
 
-        return Money(float(value))
+        return Money(float(value), currency)
 
     cpdef Money add(self, Money other):
         """
@@ -284,8 +279,12 @@ cdef class Money(Decimal):
 
         :param other: The other money to add.
         :return Money.
+        :raises ValueError: If the other currency is not equal to this money.
         """
-        return Money(self._value + other._value)
+        # TODO: Fix handling of multiple currencies
+        # Condition.equal(self.currency, other.currency, 'self.currency', 'other.currency')
+
+        return Money(self._value + other._value, self.currency)
 
     cpdef Money subtract(self, Money other):
         """
@@ -293,8 +292,32 @@ cdef class Money(Decimal):
 
         :param other: The other money to subtract.
         :return Money.
+        :raises ValueError: If the other currency is not equal to this money.
         """
-        return Money(self._value - other._value)
+        # TODO: Fix handling of multiple currencies
+        # Condition.equal(self.currency, other.currency, 'self.currency', 'other.currency')
+
+        return Money(self._value - other._value, self.currency)
+
+    cpdef bint equals(self, Decimal other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        :raises ValueError: If the other is not of type Money.
+        """
+        Condition.type(other, Money, 'other')
+
+        # noinspection PyProtectedMember
+        # direct access to protected member ok here
+        return self._value == other._value and self.currency == other.currency
+
+    cpdef str to_string_formatted(self):
+        """
+        Return the formatted string representation of this object.
+        """
+        return f'{self.to_string(format_commas=True)} {currency_to_string(self.currency)}'
 
     def __repr__(self) -> str:
         """
@@ -303,7 +326,8 @@ cdef class Money(Decimal):
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
+        return (f"<{self.__class__.__name__}({self.to_string()}, currency={currency_to_string(self.currency)}) "
+                f"object at {id(self)}>")
 
 
 cdef class Tick:
@@ -946,7 +970,7 @@ cdef class Instrument:
         Condition.not_negative_int(min_stop_distance, 'min_stop_distance')
         Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
         Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
-        #Condition.equal(price_precision, tick_size.precision, 'size_precision', 'tick_size.precision') # TODO
+        # Condition.equal(price_precision, tick_size.precision, 'size_precision', 'tick_size.precision') # TODO
         Condition.equal(size_precision, round_lot_size.precision, 'size_precision', 'round_lot_size.precision')
         Condition.equal(size_precision, min_trade_size.precision, 'size_precision', 'min_trade_size.precision')
         Condition.equal(size_precision, max_trade_size.precision, 'size_precision', 'max_trade_size.precision')

@@ -15,6 +15,7 @@ import zmq
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Venue, AccountId, TraderId
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.common.clock cimport LiveClock
@@ -142,7 +143,9 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
+        # TODO: Portfolio currency?
         self.portfolio = Portfolio(
+            currency=Currency.USD,
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)

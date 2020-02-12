@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
@@ -50,6 +50,7 @@ class TradeStrategyTests(unittest.TestCase):
             logger=self.logger)
 
         self.portfolio = Portfolio(
+            currency=Currency.USD,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)

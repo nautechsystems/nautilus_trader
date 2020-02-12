@@ -27,25 +27,13 @@ from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Decimal, Price, Tick, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.events cimport (  # noqa: E211
-    OrderFillEvent,
-    AccountStateEvent,
-    OrderSubmitted,
-    OrderAccepted,
-    OrderRejected,
-    OrderWorking,
-    OrderExpired,
-    OrderModified,
-    OrderCancelled,
-    OrderCancelReject,
-    OrderFilled)
+from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent, OrderSubmitted
+from nautilus_trader.model.events cimport OrderAccepted, OrderRejected, OrderWorking, OrderExpired
+from nautilus_trader.model.events cimport OrderModified, OrderCancelled, OrderCancelReject
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
-from nautilus_trader.model.commands cimport (  # noqa: E211
-    AccountInquiry,
-    SubmitOrder,
-    SubmitAtomicOrder,
-    ModifyOrder,
-    CancelOrder)
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport ModifyOrder,CancelOrder
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.clock cimport TestClock
@@ -104,7 +92,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_currency = config.account_currency
         self.account_capital = config.starting_capital
         self.account_cash_start_day = config.starting_capital
-        self.account_cash_activity_day = Money.zero()
+        self.account_cash_activity_day = Money(0, self.account_currency)
 
         self._account = Account(self.reset_account_event())
         self.exec_db = exec_engine.database
@@ -112,8 +100,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0 # Bank + Broker spread markup
-        self.total_commissions = Money.zero()
-        self.total_rollover = Money.zero()
+        self.total_commissions = Money(0, self.account_currency)
+        self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
 
         self._market = {}               # type: {Symbol, Tick}
@@ -189,9 +177,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.day_number = 0
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
-        self.account_cash_activity_day = Money.zero()
-        self.total_commissions = Money.zero()
-        self.total_rollover = Money.zero()
+        self.account_cash_activity_day = Money(0, self.account_currency)
+        self.total_commissions = Money(0, self.account_currency)
+        self.total_rollover = Money(0, self.account_currency)
 
         self._market = {}               # type: {Symbol, Tick}
         self._working_orders = {}       # type: {OrderId, Order}
@@ -215,9 +203,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_currency,
             self.starting_capital,
             self.starting_capital,
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
+            Money(0, self.account_currency),
+            Money(0, self.account_currency),
+            Money(0, self.account_currency),
             Decimal.zero(),
             ValidString('N'),
             self._guid_factory.generate(),
@@ -273,7 +261,7 @@ cdef class BacktestExecClient(ExecutionClient):
             # Set account statistics for new day
             self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
-            self.account_cash_activity_day = Money.zero()
+            self.account_cash_activity_day = Money(0, self.account_currency)
             self.rollover_applied = False
             self.rollover_time = dt.datetime(
                 time_now.year,
@@ -373,7 +361,8 @@ cdef class BacktestExecClient(ExecutionClient):
             symbol=event.symbol,
             filled_quantity=event.filled_quantity,
             filled_price=event.average_price,
-            exchange_rate=exchange_rate)
+            exchange_rate=exchange_rate,
+            currency=self.account_currency)
 
         self.total_commissions = self.total_commissions.subtract(commission)
         pnl = pnl.subtract(commission)
@@ -389,8 +378,8 @@ cdef class BacktestExecClient(ExecutionClient):
                 self.account_capital,
                 self.account_cash_start_day,
                 self.account_cash_activity_day,
-                margin_used_liquidation=Money.zero(),
-                margin_used_maintenance=Money.zero(),
+                margin_used_liquidation=Money(0, self.account_currency),
+                margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal.zero(),
                 margin_call_status=ValidString('N'),
                 event_id=self._guid_factory.generate(),
@@ -416,7 +405,7 @@ cdef class BacktestExecClient(ExecutionClient):
             raise ValueError(f'Cannot calculate the pnl of a '
                              f'{market_position_to_string(direction)} direction.')
 
-        return Money(difference * quantity.as_double() * exchange_rate)
+        return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, 'timestamp')
@@ -463,7 +452,7 @@ cdef class BacktestExecClient(ExecutionClient):
         elif iso_week_day == 5: # Book triple for Fridays (holding over weekend)
             rollover_cumulative = rollover_cumulative * 3.0
 
-        cdef Money rollover_final = Money(rollover_cumulative)
+        cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
         self.total_rollover = self.total_rollover.add(rollover_final)
 
         cdef AccountStateEvent account_event
@@ -477,8 +466,8 @@ cdef class BacktestExecClient(ExecutionClient):
                 self.account_capital,
                 self.account_cash_start_day,
                 self.account_cash_activity_day,
-                margin_used_liquidation=Money.zero(),
-                margin_used_maintenance=Money.zero(),
+                margin_used_liquidation=Money(0, self.account_currency),
+                margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal.zero(),
                 margin_call_status=ValidString('N'),
                 event_id=self._guid_factory.generate(),

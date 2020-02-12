@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport date
 
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport PositionEvent, PositionOpened, PositionModified, PositionClosed
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
@@ -25,6 +26,7 @@ cdef class Portfolio:
     cdef dict _positions_closed
 
     cdef readonly date date_now
+    cdef readonly Currency currency
     cdef readonly Money daily_pnl_realized
     cdef readonly Money total_pnl_realized
 

@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport date
 
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money, Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
@@ -18,7 +19,13 @@ cdef class CommissionCalculator:
     cdef double default_rate_bp
     cdef Money minimum
 
-    cpdef Money calculate(self, Symbol symbol, Quantity filled_quantity, Price filled_price, double exchange_rate)
+    cpdef Money calculate(
+        self,
+        Symbol symbol,
+        Quantity filled_quantity,
+        Price filled_price,
+        double exchange_rate,
+        Currency currency)
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value)
 
     cdef double _get_commission_rate(self, Symbol symbol)

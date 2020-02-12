@@ -130,6 +130,7 @@ cdef class BacktestEngine:
             logger=self.test_logger)
 
         self.portfolio = Portfolio(
+            currency=self.config.account_currency,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
             logger=self.test_logger)
@@ -368,7 +369,7 @@ cdef class BacktestEngine:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
             currency = currency_to_string(self.config.account_currency)
-            self.log.info(f"Account balance (starting): {self.config.starting_capital.to_string(format_commas=True)} {currency}")
+            self.log.info(f"Account balance (starting): {self.config.starting_capital.to_string_formatted()}")
         self.log.info("=================================================================")
 
     cdef void _backtest_footer(
@@ -377,9 +378,6 @@ cdef class BacktestEngine:
             datetime run_finished,
             datetime start,
             datetime stop) except *:
-        cdef str account_currency = currency_to_string(self.config.account_currency)
-        cdef int account_starting_length = len(self.config.starting_capital.to_string(format_commas=True))
-
         self.log.info("=================================================================")
         self.log.info(" BACKTEST DIAGNOSTICS")
         self.log.info("=================================================================")
@@ -396,14 +394,15 @@ cdef class BacktestEngine:
         self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total():,}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
-        account_balance_starting = self.config.starting_capital.to_string(format_commas=True)
-        account_balance_ending = pad_string(self.exec_client.account_capital.to_string(format_commas=True), account_starting_length)
-        commissions_total = pad_string(self.exec_client.total_commissions.to_string(format_commas=True), account_starting_length)
-        rollover_interest = pad_string(self.exec_client.total_rollover.to_string(format_commas=True), account_starting_length)
-        self.log.info(f"Account balance (starting): {account_balance_starting} {account_currency}")
-        self.log.info(f"Account balance (ending):   {account_balance_ending} {account_currency}")
-        self.log.info(f"Commissions (total):        {commissions_total} {account_currency}")
-        self.log.info(f"Rollover interest (total):  {rollover_interest} {account_currency}")
+        account_balance_starting = self.config.starting_capital.to_string_formatted()
+        account_starting_length = len(account_balance_starting)
+        account_balance_ending = pad_string(self.exec_client.account_capital.to_string_formatted(), account_starting_length)
+        commissions_total = pad_string(self.exec_client.total_commissions.to_string_formatted(), account_starting_length)
+        rollover_interest = pad_string(self.exec_client.total_rollover.to_string_formatted(), account_starting_length)
+        self.log.info(f"Account balance (starting): {account_balance_starting}")
+        self.log.info(f"Account balance (ending):   {account_balance_ending}")
+        self.log.info(f"Commissions (total):        {commissions_total}")
+        self.log.info(f"Rollover interest (total):  {rollover_interest}")
         self.log.info("")
 
         self.log.info("=================================================================")

@@ -17,6 +17,7 @@ from nautilus_trader.common.account cimport Account
 cdef class PerformanceAnalyzer:
     cdef Money _account_starting_capital
     cdef Money _account_capital
+    cdef Currency _account_currency
     cdef object _returns
     cdef object _positions
     cdef object _transactions

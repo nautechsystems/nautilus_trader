@@ -9,6 +9,7 @@
 import unittest
 import datetime
 
+from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Quantity, Money, Price
 from nautilus_trader.common.brokerage import CommissionCalculator, RolloverInterestCalculator
 from test_kit.stubs import TestStubs, UNIX_EPOCH
@@ -29,34 +30,31 @@ class CommissionCalculatorTests(unittest.TestCase):
             GBPUSD_FXCM,
             Quantity(1000000),
             filled_price=Price(1.63000, 5),
-            exchange_rate=1.00)
+            exchange_rate=1.00,
+            currency=Currency.USD)
 
         # Assert
-        self.assertEqual(Money(32.60), result)
+        self.assertEqual(Money(32.60, Currency.USD), result)
 
     def test_can_calculate_correct_minimum_commission(self):
         # Arrange
         calculator = CommissionCalculator()
 
         # Act
-        result = calculator.calculate_for_notional(
-            GBPUSD_FXCM,
-            Money(1000))
+        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD))
 
         # Assert
-        self.assertEqual(Money(2.00), result)
+        self.assertEqual(Money(2.00, Currency.USD), result)
 
     def test_can_calculate_correct_commission_for_notional(self):
         # Arrange
         calculator = CommissionCalculator()
 
         # Act
-        result = calculator.calculate_for_notional(
-            GBPUSD_FXCM,
-            Money(1000000))
+        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD))
 
         # Assert
-        self.assertEqual(Money(20.00), result)
+        self.assertEqual(Money(20.00, Currency.USD), result)
 
     def test_can_calculate_correct_commission_with_exchange_rate(self):
         # Arrange
@@ -67,10 +65,11 @@ class CommissionCalculatorTests(unittest.TestCase):
             USDJPY_FXCM,
             Quantity(1000000),
             filled_price=Price(95.000, 3),
-            exchange_rate=0.01052632)
+            exchange_rate=0.01052632,
+            currency=Currency.USD)
 
         # Assert
-        self.assertEqual(Money(20.00), result)
+        self.assertEqual(Money(20.00, Currency.USD), result)
 
 
 class RolloverInterestCalculatorTests(unittest.TestCase):

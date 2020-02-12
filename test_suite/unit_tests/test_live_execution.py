@@ -10,7 +10,7 @@ import unittest
 import time
 import zmq
 
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.common.guid import LiveGuidFactory
@@ -49,6 +49,7 @@ class LiveExecutionTests(unittest.TestCase):
         logger = LiveLogger()
 
         self.portfolio = Portfolio(
+            currency=Currency.USD,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)

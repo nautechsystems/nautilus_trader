@@ -37,6 +37,7 @@ cdef class PerformanceAnalyzer:
         """
         self._account_starting_capital = None
         self._account_capital = None
+        self._account_currency = Currency.UNDEFINED
         self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
@@ -72,6 +73,7 @@ cdef class PerformanceAnalyzer:
             # Initialize account data
             self._account_starting_capital = event.cash_balance
             self._account_capital = event.cash_balance
+            self._account_currency = event.currency
             return  # No transaction to handle
 
         if self._account_capital.equals(event.cash_balance):
@@ -132,6 +134,8 @@ cdef class PerformanceAnalyzer:
             if symbol not in columns:
                 self._positions[symbol] = 0
 
+            # noinspection PyProtectedMember
+            # direct access to protected member ok here
             self._positions.loc[index_date][symbol] += position._relative_quantity
 
     cpdef void reset(self) except *:
@@ -140,6 +144,7 @@ cdef class PerformanceAnalyzer:
         """
         self._account_starting_capital = None
         self._account_capital = None
+        self._account_currency = Currency.UNDEFINED
         self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
@@ -190,7 +195,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        if self._account_starting_capital == Money.zero():  # Protect divide by zero
+        if self._account_starting_capital.as_double() == 0:  # Protect divide by zero
             return 0.0
         cdef double current = self._account_capital.as_double()
         cdef double starting = self._account_starting_capital.as_double()

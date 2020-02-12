@@ -9,18 +9,18 @@
 import pandas as pd
 import unittest
 
+from nautilus_trader.model.enums import OrderSide, Currency
+from nautilus_trader.model.objects import Quantity, Price
+from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -55,6 +55,7 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=self.logger)
 
         self.portfolio = Portfolio(
+            currency=Currency.USD,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)
