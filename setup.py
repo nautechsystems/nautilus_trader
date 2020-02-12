@@ -52,6 +52,7 @@ Profile_Hooks = False
 compiler_directives = {
     'language_level': 3,
     'embedsignature': True,
+    'emit_code_comments': True,
     'profile': Profile_Hooks
 }
 # -------------------------------------
