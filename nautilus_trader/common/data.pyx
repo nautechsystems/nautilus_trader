@@ -6,6 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: boundscheck=False
+# cython: wraparound=False
+
 from cpython.datetime cimport date, datetime
 from collections import deque
 
