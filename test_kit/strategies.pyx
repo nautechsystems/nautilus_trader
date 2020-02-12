@@ -384,7 +384,7 @@ cdef class EMACross(TradingStrategy):
             return  # Wait for ticks...
 
         # Get average spread
-        cdef double average_spread = self.average_spread(self.symbol)
+        cdef double average_spread = self.spread_average(self.symbol)
         cdef double liquidity_ratio
 
         # Check market liquidity

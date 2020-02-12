@@ -8,16 +8,19 @@
 
 import unittest
 from pandas import Timestamp
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange
-
-from nautilus_trader.model.enums import BarStructure
-from nautilus_trader.model.objects import Price, Volume, Tick, Bar
-from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater, BarBuilder
+from nautilus_trader.model.enums import PriceType, BarStructure
+from nautilus_trader.model.objects import Price, Volume, Tick, Bar, BarSpecification, BarType
+from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater
+from nautilus_trader.common.market import BarBuilder, TickBarAggregator, TimeBarAggregator
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logger import TestLogger
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs, UNIX_EPOCH
+from test_kit.mocks import ObjectStorer
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
@@ -394,3 +397,106 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
+
+
+class TickBarAggregatorTests(unittest.TestCase):
+
+    def test_update_sends_bar_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store_2
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(3, BarStructure.TICK, PriceType.MID)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = TickBarAggregator(bar_type, handler, TestLogger())
+
+        tick1 = Tick(
+            symbol=AUDUSD_FXCM,
+            bid=Price(1.00001, 5),
+            ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
+            timestamp=UNIX_EPOCH)
+
+        tick2 = Tick(
+            symbol=AUDUSD_FXCM,
+            bid=Price(1.00002, 5),
+            ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
+            timestamp=UNIX_EPOCH)
+
+        tick3 = Tick(
+            symbol=AUDUSD_FXCM,
+            bid=Price(1.00000, 5),
+            ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
+            timestamp=UNIX_EPOCH)
+
+        # Act
+        aggregator.update(tick1)
+        aggregator.update(tick2)
+        aggregator.update(tick3)
+
+        # Assert
+        self.assertEqual(1, len(bar_store.get_store()))
+        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].open)
+        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
+        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
+        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
+        self.assertEqual(3, bar_store.get_store()[0][1].volume)
+
+
+class TimeBarAggregatorTests(unittest.TestCase):
+
+    def test_update_timed_with_test_clock_sends_bars_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store_2
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = TimeBarAggregator(bar_type, handler, TestClock(), TestLogger())
+
+        stop_time = UNIX_EPOCH + timedelta(minutes=2)
+
+        tick1 = Tick(
+            symbol=AUDUSD_FXCM,
+            bid=Price(1.00001, 5),
+            ask=Price(1.00004, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
+            timestamp=UNIX_EPOCH)
+
+        tick2 = Tick(
+            symbol=AUDUSD_FXCM,
+            bid=Price(1.00002, 5),
+            ask=Price(1.00005, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
+            timestamp=UNIX_EPOCH)
+
+        tick3 = Tick(
+            symbol=AUDUSD_FXCM,
+            bid=Price(1.00000, 5),
+            ask=Price(1.00003, 5),
+            bid_size=Volume(1),
+            ask_size=Volume(1),
+            timestamp=stop_time)
+
+        # Act
+        aggregator.update(tick1)
+        aggregator.update(tick2)
+        aggregator.update(tick3)
+
+        # Assert
+        self.assertEqual(2, len(bar_store.get_store()))
+        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].open)
+        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
+        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
+        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
+        self.assertEqual(3, bar_store.get_store()[0][1].volume)
+        self.assertEqual(0, bar_store.get_store()[1][1].volume)
+        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=timezone.utc), bar_store.get_store()[0][1].timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=timezone.utc), bar_store.get_store()[1][1].timestamp)

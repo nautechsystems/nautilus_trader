@@ -54,10 +54,10 @@ cdef class DataClient:
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._ticks = {}                # type: {Symbol, Tick}
-        self._spreads = {}              # type: {Symbol, [float]}
-        self._average_spreads = {}      # type: {Symbol, float}
-        self._bar_aggregators = {}      # type: {BarType, BarAggregator}
         self._tick_handlers = {}        # type: {Symbol, [TickHandler]}
+        self._spreads = {}              # type: {Symbol, [float]}
+        self._spreads_average = {}      # type: {Symbol, float}
+        self._bar_aggregators = {}      # type: {BarType, BarAggregator}
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
         self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
         self._instruments = {}          # type: {Symbol, Instrument}
@@ -224,7 +224,7 @@ cdef class DataClient:
 
         return self._spreads[symbol][0]
 
-    cpdef double average_spread(self, Symbol symbol):
+    cpdef double spread_average(self, Symbol symbol):
         """
         Return the average spread of the ticks from the given symbol.
         
@@ -233,9 +233,9 @@ cdef class DataClient:
         :raises ValueError: If the data clients ticks does not contain the symbol.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._average_spreads, 'symbol', 'average_spreads')
+        Condition.is_in(symbol, self._spreads_average, 'symbol', 'spreads_average')
 
-        return self._average_spreads[symbol]
+        return self._spreads_average[symbol]
 
     cpdef double get_exchange_rate(
             self,
@@ -278,7 +278,9 @@ cdef class DataClient:
         Subscribe to tick data for the given symbol and handler.
         """
         if symbol not in self._tick_handlers:
+            self._ticks[symbol] = deque(maxlen=self.tick_capacity)
             self._tick_handlers[symbol] = []  # type: [TickHandler]
+            self._spreads[symbol] = deque(maxlen=self.tick_capacity)
             self._log.info(f"Subscribed to {symbol} tick data.")
 
         cdef TickHandler tick_handler = TickHandler(handler)
@@ -415,7 +417,7 @@ cdef class DataClient:
         spreads.appendleft(spread)
 
         # Update average spread
-        cdef double average_spread = self._average_spreads.get(symbol, -1)
+        cdef double average_spread = self._spreads_average.get(symbol, -1)
         if average_spread == -1:
             average_spread = spread
 
@@ -427,7 +429,7 @@ cdef class DataClient:
             drop_left=False
         )
 
-        self._average_spreads[symbol] = new_average_spread
+        self._spreads_average[symbol] = new_average_spread
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._tick_handlers.get(tick.symbol)
@@ -465,10 +467,10 @@ cdef class DataClient:
         # Reset the class to its initial state
         self._clock.cancel_all_timers()
         self._ticks.clear()
-        self._spreads.clear()
-        self._average_spreads.clear()
-        self._bar_aggregators.clear()
         self._tick_handlers.clear()
+        self._spreads.clear()
+        self._spreads_average.clear()
+        self._bar_aggregators.clear()
         self._bar_handlers.clear()
         self._instrument_handlers.clear()
         self._instruments.clear()

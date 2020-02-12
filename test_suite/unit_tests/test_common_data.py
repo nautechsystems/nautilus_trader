@@ -7,117 +7,59 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.model.objects import Price, Volume, Tick, BarSpecification, BarType
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.objects import Price, Volume, Tick
+from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.common.market import TickBarAggregator, TimeBarAggregator
+from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
-from test_kit.mocks import ObjectStorer
-from test_kit.stubs import TestStubs, UNIX_EPOCH
+from test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
-class TickBarAggregatorTests(unittest.TestCase):
+class DataClientTests(unittest.TestCase):
 
-    def test_update_sends_bar_to_handler(self):
+    def setUp(self):
+        self.client = DataClient(
+            tick_capacity=100,
+            clock=TestClock(),
+            guid_factory=TestGuidFactory(),
+            logger=TestLogger())
+
+    def test_get_exchange_rate_returns_correct_rate(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store_2
-        symbol = TestStubs.symbol_audusd_fxcm()
-        bar_spec = BarSpecification(3, BarStructure.TICK, PriceType.MID)
-        bar_type = BarType(symbol, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger())
+        tick = Tick(USDJPY_FXCM,
+                    Price(110.80000, 5),
+                    Price(110.80010, 5),
+                    Volume(1),
+                    Volume(1),
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
-        tick1 = Tick(
-            symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
-            bid_size=Volume(1),
-            ask_size=Volume(1),
-            timestamp=UNIX_EPOCH)
-
-        tick2 = Tick(
-            symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
-            bid_size=Volume(1),
-            ask_size=Volume(1),
-            timestamp=UNIX_EPOCH)
-
-        tick3 = Tick(
-            symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
-            bid_size=Volume(1),
-            ask_size=Volume(1),
-            timestamp=UNIX_EPOCH)
+        self.client._handle_tick(tick)
 
         # Act
-        aggregator.update(tick1)
-        aggregator.update(tick2)
-        aggregator.update(tick3)
+        result = self.client.get_exchange_rate(Currency.JPY, Currency.USD)
 
         # Assert
-        self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].open)
-        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
-        self.assertEqual(3, bar_store.get_store()[0][1].volume)
+        self.assertEqual(0.009025266685348969, result)
 
-
-class TimeBarAggregatorTests(unittest.TestCase):
-
-    def test_update_timed_with_test_clock_sends_bars_to_handler(self):
+    def test_can_get_exchange_rate_with_no_conversion(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store_2
-        symbol = TestStubs.symbol_audusd_fxcm()
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
-        bar_type = BarType(symbol, bar_spec)
-        aggregator = TimeBarAggregator(bar_type, handler, TestClock(), TestLogger())
+        tick = Tick(AUDUSD_FXCM,
+                    Price(0.80000, 5),
+                    Price(0.80010, 5),
+                    Volume(1),
+                    Volume(1),
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
-        stop_time = UNIX_EPOCH + timedelta(minutes=2)
-
-        tick1 = Tick(
-            symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
-            bid_size=Volume(1),
-            ask_size=Volume(1),
-            timestamp=UNIX_EPOCH)
-
-        tick2 = Tick(
-            symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
-            bid_size=Volume(1),
-            ask_size=Volume(1),
-            timestamp=UNIX_EPOCH)
-
-        tick3 = Tick(
-            symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
-            bid_size=Volume(1),
-            ask_size=Volume(1),
-            timestamp=stop_time)
+        self.client._handle_tick(tick)
 
         # Act
-        aggregator.update(tick1)
-        aggregator.update(tick2)
-        aggregator.update(tick3)
+        result = self.client.get_exchange_rate(Currency.AUD, Currency.USD)
 
         # Assert
-        self.assertEqual(2, len(bar_store.get_store()))
-        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].open)
-        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
-        self.assertEqual(3, bar_store.get_store()[0][1].volume)
-        self.assertEqual(0, bar_store.get_store()[1][1].volume)
-        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=timezone.utc), bar_store.get_store()[0][1].timestamp)
-        self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=timezone.utc), bar_store.get_store()[1][1].timestamp)
+        self.assertEqual(0.80005, result)

@@ -828,7 +828,7 @@ cdef class TradingStrategy:
 
         return self._data_client.spread(symbol)
 
-    cpdef double average_spread(self, Symbol symbol):
+    cpdef double spread_average(self, Symbol symbol):
         """
         Return the average spread of the ticks from the given symbol.
         
@@ -838,7 +838,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(symbol, 'symbol')
 
-        return self._data_client.average_spread(symbol)
+        return self._data_client.spread_average(symbol)
 
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
