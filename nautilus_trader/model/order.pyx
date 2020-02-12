@@ -24,27 +24,18 @@ from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.identifiers cimport Label, Symbol, OrderId, ExecutionId
-from nautilus_trader.model.events cimport (  # noqa: E211
-    OrderEvent,
-    OrderFillEvent,
-    OrderInitialized,
-    OrderInvalid,
-    OrderDenied,
-    OrderSubmitted,
-    OrderAccepted,
-    OrderRejected,
-    OrderWorking,
-    OrderExpired,
-    OrderModified,
-    OrderCancelled)
-
+from nautilus_trader.model.events cimport OrderEvent, OrderInitialized, OrderInvalid, OrderDenied
+from nautilus_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected
+from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderCancelled, OrderModified
+from nautilus_trader.model.events cimport OrderFillEvent
 
 # Order types which require a price to be valid
 cdef set PRICED_ORDER_TYPES = {
     OrderType.LIMIT,
     OrderType.STOP,
     OrderType.STOP_LIMIT,
-    OrderType.MIT}
+    OrderType.MIT
+}
 
 
 cdef class Order:
@@ -120,10 +111,10 @@ cdef class Order:
             If the order_type should have a price and the price is None.
             If the time_in_force is GTD and the expire_time is None.
         """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'OrderSide.UNDEFINED')
-        Condition.not_equal(order_type, OrderType.UNDEFINED, 'order_type', 'OrderType.UNDEFINED')
-        Condition.not_equal(order_purpose, OrderPurpose.UNDEFINED, 'order_purpose', 'OrderPurpose.UNDEFINED')
-        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, 'time_in_force', 'TimeInForce.UNDEFINED')
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'UNDEFINED')
+        Condition.not_equal(order_type, OrderType.UNDEFINED, 'order_type', 'UNDEFINED')
+        Condition.not_equal(order_purpose, OrderPurpose.UNDEFINED, 'order_purpose', 'UNDEFINED')
+        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, 'time_in_force', 'UNDEFINED')
         Condition.positive(quantity.as_double(), 'quantity')
 
         # For orders which require a price

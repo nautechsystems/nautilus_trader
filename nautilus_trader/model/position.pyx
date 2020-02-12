@@ -52,8 +52,8 @@ cdef class Position:
         self.average_close_price = 0.0
         self.realized_points = 0.0
         self.realized_return = 0.0
-        self.realized_pnl = Money.zero()
-        self.realized_pnl_last = Money.zero()
+        self.realized_pnl = Money(0, event.transaction_currency)
+        self.realized_pnl_last = Money(0, event.transaction_currency)
 
         self.quantity = Quantity.zero()             # Initialized in _update()
         self.peak_quantity = Quantity.zero()        # Initialized in _update()
@@ -245,7 +245,7 @@ cdef class Position:
         elif self.market_position == MarketPosition.SHORT:
             return self._calculate_pnl(self.average_open_price, last.ask.as_double(), self.quantity)
         else:
-            return Money.zero()
+            return Money(0, self.quote_currency)
 
     cpdef Money total_pnl(self, Tick last):
         """
@@ -357,4 +357,5 @@ cdef class Position:
             return 0.0  # FLAT
 
     cdef Money _calculate_pnl(self, double opened_price, double closed_price, Quantity filled_quantity):
-        return Money(self._calculate_points(opened_price, closed_price) * filled_quantity.as_double())
+        cdef double value = self._calculate_points(opened_price, closed_price) * filled_quantity.as_double()
+        return Money(value, self.quote_currency)

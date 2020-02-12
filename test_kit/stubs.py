@@ -11,43 +11,18 @@ from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.core.decimal import Decimal
-from nautilus_trader.model.enums import (
-    BarStructure,
-    PriceType,
-    Currency,
-    AccountType,
-    OrderSide)
-from nautilus_trader.model.objects import (
-    Quantity,
-    Money,
-    Price,
-    Volume,
-    Tick,
-    BarSpecification,
-    BarType,
-    Bar,
-    ForexInstrument)
-from nautilus_trader.model.identifiers import (
-    Venue,
-    Symbol,
-    IdTag,
-    TraderId,
-    AccountId,
-    StrategyId,
-    OrderIdBroker,
-    ExecutionId,
-    PositionIdBroker)
+from nautilus_trader.model.enums import BarStructure, PriceType, Currency, AccountType, OrderSide
+from nautilus_trader.model.objects import Quantity, Money, Price, Volume, Tick
+from nautilus_trader.model.objects import BarSpecification, BarType, Bar, ForexInstrument
+from nautilus_trader.model.identifiers import Venue, Symbol, IdTag, TraderId, AccountId
+from nautilus_trader.model.identifiers import StrategyId, OrderIdBroker, ExecutionId, PositionIdBroker
 from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.events import (
-    AccountStateEvent,
-    OrderWorking,
-    OrderFilled,
-    PositionOpened,
-    PositionModified,
-    PositionClosed)
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.model.events import AccountStateEvent, OrderWorking, OrderFilled
+from nautilus_trader.model.events import PositionOpened, PositionModified, PositionClosed
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.clock import TestClock
+
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
@@ -195,11 +170,11 @@ class TestStubs:
         return AccountStateEvent(
             account_id,
             Currency.USD,
-            Money(1000000),
-            Money(1000000),
-            Money(0),
-            Money(0),
-            Money(0),
+            Money(1000000, Currency.USD),
+            Money(1000000, Currency.USD),
+            Money(0, Currency.USD),
+            Money(0, Currency.USD),
+            Money(0, Currency.USD),
             Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),

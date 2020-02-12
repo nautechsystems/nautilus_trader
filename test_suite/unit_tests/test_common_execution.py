@@ -27,10 +27,10 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.common.account import Account
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
@@ -185,11 +185,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         event = AccountStateEvent(
             AccountId.py_from_string('SIMULATED-123456-SIMULATED'),
             Currency.USD,
-            Money(1000000),
-            Money(1000000),
-            Money(0),
-            Money(0),
-            Money(0),
+            Money(1000000, Currency.USD),
+            Money(1000000, Currency.USD),
+            Money(0, Currency.USD),
+            Money(0, Currency.USD),
+            Money(0, Currency.USD),
             Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
@@ -208,11 +208,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         event = AccountStateEvent(
             AccountId.py_from_string('SIMULATED-123456-SIMULATED'),
             Currency.USD,
-            Money(1000000),
-            Money(1000000),
-            Money(0),
-            Money(0),
-            Money(0),
+            Money(1000000, Currency.USD),
+            Money(1000000, Currency.USD),
+            Money(0, Currency.USD),
+            Money(0, Currency.USD),
+            Money(0, Currency.USD),
             Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
@@ -412,6 +412,7 @@ class ExecutionEngineTests(unittest.TestCase):
             clock=self.clock)
 
         self.portfolio = Portfolio(
+            currency=Currency.USD,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=logger)
@@ -668,7 +669,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.handle_event(order1_filled)
         self.exec_engine.handle_event(order2_filled)
 
-        # Assert
+        # # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
         self.assertFalse(self.exec_db.is_position_open(position_id))
         self.assertTrue(self.exec_db.is_position_closed(position_id))

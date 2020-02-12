@@ -45,12 +45,13 @@ cdef class Volume(Decimal):
 
 
 cdef class Money(Decimal):
+    cdef readonly Currency currency
+
     @staticmethod
-    cdef Money zero()
-    @staticmethod
-    cdef Money from_string(str value)
+    cdef Money from_string(str value, Currency currency)
     cpdef Money add(self, Money other)
     cpdef Money subtract(self, Money other)
+    cpdef str to_string_formatted(self)
 
 
 cdef class Tick:

@@ -26,7 +26,7 @@ cdef class CommissionCalculator:
     def __init__(self,
                  dict rates=None,
                  double default_rate_bp=0.20,
-                 Money minimum=Money(2.00)):
+                 Money minimum=Money(2.00, Currency.USD)):
         """
         Initializes a new instance of the CommissionCalculator class.
         Note: Commission rates are expressed as basis points of notional transaction value.
@@ -48,7 +48,8 @@ cdef class CommissionCalculator:
             Symbol symbol,
             Quantity filled_quantity,
             Price filled_price,
-            double exchange_rate):
+            double exchange_rate,
+            Currency currency):
         """
         Return the calculated commission for the given arguments.
         
@@ -56,6 +57,7 @@ cdef class CommissionCalculator:
         :param filled_quantity: The filled quantity.
         :param filled_price: The filled price.
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
+        :param currency: The currency for the calculation.
         :return Money.
         """
         Condition.not_none(symbol, 'symbol')
@@ -64,7 +66,8 @@ cdef class CommissionCalculator:
         Condition.positive(exchange_rate, 'exchange_rate')
 
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        return Money(max(self.minimum.as_double(), filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent))
+        cdef double value = max(self.minimum.as_double(), filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent)
+        return Money(value, currency)
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """
@@ -78,7 +81,8 @@ cdef class CommissionCalculator:
         Condition.not_none(notional_value, 'notional_value')
 
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        return Money(max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent))
+        cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
+        return Money(value, notional_value.currency)
 
     cdef double _get_commission_rate(self, Symbol symbol):
         cdef double rate = self.rates.get(symbol, -1.0)

@@ -177,7 +177,7 @@ cdef class Trader:
 
     cpdef void reset(self) except *:
         """
-        Reset the trader by returning all stateful values of the portfolio, 
+        Reset the trader by returning all stateful values of the portfolio,
         and every strategy to their initial value.
         Note: The trader cannot be running otherwise an error is logged.
         """
@@ -192,8 +192,8 @@ cdef class Trader:
 
         self.portfolio.reset()
         self.analyzer.reset()
-        self.started_datetimes = []  # type: List[datetime]
-        self.stopped_datetimes = []  # type: List[datetime]
+        self.started_datetimes = []  # type: [datetime]
+        self.stopped_datetimes = []  # type: [datetime]
         self.is_running = False
 
         self._log.info("Reset.")

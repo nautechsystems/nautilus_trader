@@ -61,7 +61,7 @@ cdef class BacktestConfig:
         self.exec_db_type = exec_db_type
         self.exec_db_flush = exec_db_flush
         self.frozen_account = frozen_account
-        self.starting_capital = Money(starting_capital)
+        self.starting_capital = Money(starting_capital, account_currency)
         self.account_currency = account_currency
         self.short_term_interest_csv_path = short_term_interest_csv_path
         self.commission_rate_bp = commission_rate_bp
