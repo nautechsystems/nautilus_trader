@@ -54,6 +54,7 @@ cdef class LiveDataClient(DataClient):
                  ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
                  DataSerializer data_serializer not None=BsonDataSerializer(),
                  InstrumentSerializer instrument_serializer not None=BsonInstrumentSerializer(),
+                 int tick_capacity=100,
                  LiveClock clock not None=LiveClock(),
                  LiveGuidFactory guid_factory not None=LiveGuidFactory(),
                  LiveLogger logger not None=LiveLogger()):
@@ -73,7 +74,10 @@ cdef class LiveDataClient(DataClient):
         :param request_serializer: The request serializer for the component.
         :param response_serializer: The response serializer for the component.
         :param data_serializer: The data serializer for the component.
-        :param data_serializer: The instrument serializer for the component.
+        :param instrument_serializer: The instrument serializer for the component.
+        :param tick_capacity: The length for the internal tick deques.
+        :param clock: The clock for the component.
+        :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the service_address is not a valid string.
         :raises ValueError: If the host is not a valid string.
@@ -92,8 +96,9 @@ cdef class LiveDataClient(DataClient):
         Condition.valid_port(bar_pub_port, 'bar_pub_port')
         Condition.valid_port(inst_rep_port, 'inst_rep_port')
         Condition.valid_port(inst_pub_port, 'inst_pub_port')
+        Condition.positive_int(tick_capacity, 'tick_capacity')
 
-        super().__init__(clock, guid_factory, logger)
+        super().__init__(tick_capacity, clock, guid_factory, logger)
         self._zmq_context = zmq_context
 
         self._tick_req_worker = RequestWorker(

@@ -50,6 +50,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.logger = TestLogger()
 
         self.data_client = DataClient(
+            tick_capacity=100,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)

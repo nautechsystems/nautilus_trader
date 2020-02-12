@@ -14,27 +14,16 @@ from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.core.functions cimport format_iso8601, fast_mean_iterated
+from nautilus_trader.core.functions cimport format_iso8601
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    Symbol,
-    Label,
-    TraderId,
-    StrategyId,
-    OrderId,
-    PositionId)
-from nautilus_trader.model.commands cimport (  # noqa: E211
-    AccountInquiry,
-    SubmitOrder,
-    SubmitAtomicOrder,
-    ModifyOrder,
-    CancelOrder)
+from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
@@ -70,7 +59,8 @@ cdef class TradingStrategy:
         :param flatten_on_stop: If all strategy positions should be flattened on stop.
         :param flatten_on_sl_reject: If open positions should be flattened on SL reject.
         :param cancel_all_orders_on_stop: If all residual orders should be cancelled on stop.
-        :param bar_capacity: The capacity for the internal bar deque(s).
+        :param bar_capacity: The length for the internal ticks deque.
+        :param bar_capacity: The length for the internal bars deque.
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
@@ -117,12 +107,9 @@ cdef class TradingStrategy:
         self.bar_capacity = bar_capacity
         self._ticks = {}                        # type: {Symbol, [Tick]}
         self._bars = {}                         # type: {BarType, [Bar]}
-        self._spreads = {}                      # type: {Symbol, [float]}
-        self._average_spreads = {}              # type: {Symbol, float}
         self._indicators = []                   # type: [object]
         self._indicator_updaters = {}           # type: {object, [IndicatorUpdater]}
         self._state_log = []                    # type: [(datetime, str)]
-        self._exchange_calculator = ExchangeRateCalculator()
 
         # Registerable modules
         self._data_client = None                # Initialized when registered with the data client
@@ -357,37 +344,17 @@ cdef class TradingStrategy:
         Condition.not_none(tick, 'tick')
 
         cdef Symbol symbol = tick.symbol
-        cdef double spread = tick.ask.as_double() - tick.bid.as_double()
 
         # Update ticks and spreads
         ticks = self._ticks.get(symbol)
-        spreads = self._spreads.get(symbol)
         if ticks is None:
             # Symbol was not registered
             ticks = deque(maxlen=self.tick_capacity)
-            spreads = deque(maxlen=self.tick_capacity)
             self._ticks[symbol] = ticks
-            self._spreads[symbol] = spreads
             self.log.warning(f"Received {repr(tick)} when symbol not registered. "
                              f"Handling is now setup.")
 
         ticks.appendleft(tick)
-        spreads.appendleft(spread)
-
-        # Update average spread
-        cdef double average_spread = self._average_spreads.get(symbol, -1)
-        if average_spread == -1:
-            average_spread = spread
-
-        cdef double new_average_spread = fast_mean_iterated(
-            values=list(spreads),
-            next_value=spread,
-            current_value=average_spread,
-            expected_length=self.tick_capacity,
-            drop_left=False
-        )
-
-        self._average_spreads[symbol] = new_average_spread
 
         # Update indicators
         cdef list updaters = self._indicator_updaters.get(symbol)  # Can be None
@@ -575,9 +542,6 @@ cdef class TradingStrategy:
         if symbol not in self._ticks:
             self._ticks[symbol] = deque(maxlen=self.tick_capacity)
 
-        if symbol not in self._spreads:
-            self._spreads[symbol] = deque(maxlen=self.tick_capacity)
-
         self._data_client.request_ticks(
             symbol,
             from_date,
@@ -672,9 +636,6 @@ cdef class TradingStrategy:
 
         if symbol not in self._ticks:
             self._ticks[symbol] = deque(maxlen=self.tick_capacity)
-
-        if symbol not in self._spreads:
-            self._spreads[symbol] = deque(maxlen=self.tick_capacity)
 
         self._data_client.subscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Subscribed to {symbol} tick data.")
@@ -861,12 +822,11 @@ cdef class TradingStrategy:
         
         :param symbol: The symbol for the spread to get.
         :return float.
-        :raises ValueError: If the strategies ticks does not contain the symbol.
+        :raises ValueError: If the data clients ticks does not contain the symbol.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._spreads, 'symbol', 'spreads')
 
-        return self._spreads[symbol][0]
+        return self._data_client.spread(symbol)
 
     cpdef double average_spread(self, Symbol symbol):
         """
@@ -877,9 +837,8 @@ cdef class TradingStrategy:
         :raises ValueError: If the strategies ticks does not contain the symbol.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._average_spreads, 'symbol', 'average_spreads')
 
-        return self._average_spreads[symbol]
+        return self._data_client.average_spread(symbol)
 
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
@@ -967,21 +926,10 @@ cdef class TradingStrategy:
         :return float.
         :raises ValueError: If the quote type is LAST.
         """
-        cdef Account account = self.account()
-        if account is None:
-            self.log.error("Cannot get exchange rate (account is not initialized).")
-            return 0.0
-
-        cdef Symbol symbol
-        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._ticks.items()}
-        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._ticks.items()}
-
-        return self._exchange_calculator.get_rate(
+        return self._data_client.get_exchange_rate(
             from_currency=from_currency,
             to_currency=to_currency,
-            price_type=price_type,
-            bid_rates=bid_rates,
-            ask_rates=ask_rates)
+            price_type=price_type)
 
     cpdef double get_exchange_rate_for_account(
             self,
@@ -1001,16 +949,10 @@ cdef class TradingStrategy:
             self.log.error("Cannot get exchange rate (account is not initialized).")
             return 0.0
 
-        cdef Symbol symbol
-        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._ticks.items()}
-        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._ticks.items()}
-
-        return self._exchange_calculator.get_rate(
+        return self._data_client.get_exchange_rate(
             from_currency=quote_currency,
             to_currency=self.account().currency,
-            price_type=price_type,
-            bid_rates=bid_rates,
-            ask_rates=ask_rates)
+            price_type=price_type)
 
     cpdef Order order(self, OrderId order_id):
         """
@@ -1269,7 +1211,6 @@ cdef class TradingStrategy:
         self.position_id_generator.reset()
         self._ticks.clear()
         self._bars.clear()
-        self._spreads.clear()
         self._indicators.clear()
         self._indicator_updaters.clear()
         self._state_log.clear()

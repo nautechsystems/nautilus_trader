@@ -167,9 +167,17 @@ class EMACrossPy(TradingStrategy):
         risk = price_entry.as_double() - price_stop_loss.as_double()
         price_take_profit = Price(price_entry.as_double() + risk, self.precision)
 
-        exchange_rate = self.get_exchange_rate_for_account(
-            quote_currency=self.instrument.quote_currency,
-            price_type=PriceType.ASK)
+        # Calculate exchange rate
+        exchange_rate = 0.0
+        try:
+            exchange_rate = self.get_exchange_rate_for_account(
+                quote_currency=self.instrument.quote_currency,
+                price_type=PriceType.ASK)
+        except ValueError as ex:
+            self.log.error(ex)
+
+        if exchange_rate == 0.0:
+            return
 
         position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,
@@ -203,9 +211,17 @@ class EMACrossPy(TradingStrategy):
         risk = price_stop_loss.as_double() - price_entry.as_double()
         price_take_profit = Price(price_entry.as_double() - risk, self.precision)
 
-        exchange_rate = self.get_exchange_rate_for_account(
-            quote_currency=self.instrument.quote_currency,
-            price_type=PriceType.ASK)
+        # Calculate exchange rate
+        exchange_rate = 0.0
+        try:
+            exchange_rate = self.get_exchange_rate_for_account(
+                quote_currency=self.instrument.quote_currency,
+                price_type=PriceType.BID)
+        except ValueError as ex:
+            self.log.error(ex)
+
+        if exchange_rate == 0.0:
+            return
 
         position_size = self.position_sizer.calculate(
             equity=self.account().free_equity,

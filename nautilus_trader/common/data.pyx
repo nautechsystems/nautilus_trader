@@ -7,8 +7,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport date, datetime
+from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
@@ -33,24 +35,35 @@ cdef class DataClient:
     """
 
     def __init__(self,
+                 int tick_capacity,
                  Clock clock not None,
                  GuidFactory guid_factory not None,
                  Logger logger not None):
         """
         Initializes a new instance of the DataClient class.
 
+        :param tick_capacity: The length for the internal bars deque (> 0).
         :param clock: The clock for the component.
         :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component.
+        :raises ValueError: If the tick_capacity is not positive (> 0).
         """
+        Condition.positive_int(tick_capacity, 'tick_capacity')
+
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._ticks = {}                # type: {Symbol, Tick}
+        self._spreads = {}              # type: {Symbol, [float]}
+        self._average_spreads = {}      # type: {Symbol, float}
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
         self._tick_handlers = {}        # type: {Symbol, [TickHandler]}
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
         self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
         self._instruments = {}          # type: {Symbol, Instrument}
+        self._exchange_calculator = ExchangeRateCalculator()
+
+        self.tick_capacity = tick_capacity
 
         self._log.info("Initialized.")
 
@@ -198,6 +211,57 @@ cdef class DataClient:
 
         return self._instruments[symbol]
 
+    cpdef double spread(self, Symbol symbol):
+        """
+        Return the current spread for the given symbol.
+        
+        :param symbol: The symbol for the spread to get.
+        :return float.
+        :raises ValueError: If the data clients ticks does not contain the symbol.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._spreads, 'symbol', 'spreads')
+
+        return self._spreads[symbol][0]
+
+    cpdef double average_spread(self, Symbol symbol):
+        """
+        Return the average spread of the ticks from the given symbol.
+        
+        :param symbol: The symbol for the average spread to get.
+        :return float.
+        :raises ValueError: If the data clients ticks does not contain the symbol.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._average_spreads, 'symbol', 'average_spreads')
+
+        return self._average_spreads[symbol]
+
+    cpdef double get_exchange_rate(
+            self,
+            Currency from_currency,
+            Currency to_currency,
+            PriceType price_type=PriceType.MID):
+        """
+        Return the calculated exchange rate for the given currencies.
+
+        :param from_currency: The currency to convert from.
+        :param to_currency: The currency to convert to.
+        :param price_type: The quote type for the exchange rate (default=MID).
+        :return float.
+        :raises ValueError: If the quote type is LAST.
+        """
+        cdef Symbol symbol
+        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._ticks.items()}
+        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._ticks.items()}
+
+        return self._exchange_calculator.get_rate(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            price_type=price_type,
+            bid_rates=bid_rates,
+            ask_rates=ask_rates)
+
     cdef void _self_generate_bars(self, BarType bar_type, handler) except *:
         if bar_type not in self._bar_aggregators:
             if bar_type.specification.structure == BarStructure.TICK:
@@ -332,7 +396,40 @@ cdef class DataClient:
         self.request_ticks(bar_type.symbol, from_date, to_date, ticks_to_order, bar_builder.deliver)
 
     cpdef void _handle_tick(self, Tick tick) except *:
-        # Handle the given tick by sending it to all tick handlers for that symbol
+        cdef Symbol symbol = tick.symbol
+        cdef double spread = tick.ask.as_double() - tick.bid.as_double()
+
+        # Update ticks and spreads
+        ticks = self._ticks.get(symbol)
+        spreads = self._spreads.get(symbol)
+        if ticks is None:
+            # Symbol was not registered
+            ticks = deque(maxlen=self.tick_capacity)
+            spreads = deque(maxlen=self.tick_capacity)
+            self._ticks[symbol] = ticks
+            self._spreads[symbol] = spreads
+            self._log.warning(f"Received {repr(tick)} when symbol not registered. "
+                              f"Handling is now setup.")
+
+        ticks.appendleft(tick)
+        spreads.appendleft(spread)
+
+        # Update average spread
+        cdef double average_spread = self._average_spreads.get(symbol, -1)
+        if average_spread == -1:
+            average_spread = spread
+
+        cdef double new_average_spread = fast_mean_iterated(
+            values=list(spreads),
+            next_value=spread,
+            current_value=average_spread,
+            expected_length=self.tick_capacity,
+            drop_left=False
+        )
+
+        self._average_spreads[symbol] = new_average_spread
+
+        # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._tick_handlers.get(tick.symbol)
         cdef TickHandler handler
         if tick_handlers is not None:
@@ -367,6 +464,9 @@ cdef class DataClient:
     cpdef void _reset(self) except *:
         # Reset the class to its initial state
         self._clock.cancel_all_timers()
+        self._ticks.clear()
+        self._spreads.clear()
+        self._average_spreads.clear()
         self._bar_aggregators.clear()
         self._tick_handlers.clear()
         self._bar_handlers.clear()
