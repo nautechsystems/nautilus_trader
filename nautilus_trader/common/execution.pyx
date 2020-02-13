@@ -1249,20 +1249,21 @@ cdef class ExecutionEngine:
 
     cdef void _handle_account_event(self, AccountStateEvent event) except *:
         cdef Account account = self.database.get_account(event.account_id)
-
         if account is None:
             account = Account(event)
             if self.account_id.equals(account.id):
                 self.account = account
-            self.database.add_account(self.account)
+                self.database.add_account(self.account)
+                return
         elif account.id == event.account_id:
             account.apply(event)
             self.database.update_account(account)
-        else:
-            self._log.warning(f"Cannot process event {event} "
-                              f"(event {event.account_id.to_string(with_class=True)} "
-                              f"does not match this account "
-                              f"{account.id.to_string(with_class=True)}).")
+            return
+
+        self._log.warning(f"Cannot process event {event} "
+                          f"(event {event.account_id.to_string(with_class=True)} "
+                          f"does not match this account "
+                          f"{account.id.to_string(with_class=True)}).")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef PositionOpened position_opened = PositionOpened(
