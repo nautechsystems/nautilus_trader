@@ -31,7 +31,6 @@ from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer,
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
-from test_kit.stubs import TestStubs
 
 
 cdef class TradingNode:
@@ -173,8 +172,6 @@ cdef class TradingNode:
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
-
-        self._exec_engine.handle_event(TestStubs.account_event(self.account_id))
 
         self._exec_client = LiveExecClient(
             exec_engine=self._exec_engine,
