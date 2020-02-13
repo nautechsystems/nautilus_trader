@@ -135,17 +135,17 @@ class EMACrossPy(TradingStrategy):
             self.log.info(f"Waiting for {self.symbol.value} ticks...")
             return  # Wait for ticks...
 
-        # Get average spread
+        # Check average spread
         average_spread = self.spread_average(self.symbol)
-
-        # Check market liquidity
         if average_spread == 0.0:
+            self.log.warning(f"average_spread == {average_spread} (not initialized).")
             return  # Protect divide by zero
-        else:
-            liquidity_ratio = self.atr.value / average_spread
-            if liquidity_ratio < 2.0:
-                self.log.info(f"Liquidity Ratio == {liquidity_ratio} (no liquidity).")
-                return
+
+        # Check liquidity
+        liquidity_ratio = self.atr.value / average_spread
+        if liquidity_ratio < 2.0:
+            self.log.info(f"liquidity_ratio == {liquidity_ratio} (no liquidity).")
+            return
 
         spread_buffer = max(average_spread, self.spread(self.symbol))
         sl_buffer = self.atr.value * self.SL_atr_multiple

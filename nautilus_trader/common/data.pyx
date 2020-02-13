@@ -214,6 +214,17 @@ cdef class DataClient:
 
         return self._instruments[symbol]
 
+    cpdef bint has_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the data client has ticks for the given symbol.
+        
+        :param symbol: The symbol of the ticks.
+        :return bool.
+        """
+        Condition.not_none(symbol, 'symbol')
+
+        return symbol in self._ticks and len(self._ticks[symbol]) > 0
+
     cpdef double spread(self, Symbol symbol):
         """
         Return the current spread for the given symbol.
@@ -238,7 +249,7 @@ cdef class DataClient:
         Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._spreads_average, 'symbol', 'spreads_average')
 
-        return self._spreads_average[symbol]
+        return self._spreads_average.get(symbol, 0.0)
 
     cpdef double get_exchange_rate(
             self,
@@ -255,8 +266,8 @@ cdef class DataClient:
         :raises ValueError: If the quote type is LAST.
         """
         cdef Symbol symbol
-        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._ticks.items()}
-        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._ticks.items()}
+        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._ticks.items() if len(ticks) > 0}
+        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._ticks.items() if len(ticks) > 0}
 
         return self._exchange_calculator.get_rate(
             from_currency=from_currency,
