@@ -10,6 +10,7 @@ import unittest
 import time
 import zmq
 
+
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.network.encryption import EncryptionConfig

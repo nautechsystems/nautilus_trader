@@ -61,7 +61,7 @@ cdef class MQWorker:
         self._service_address = f'tcp://{host}:{port}'
         self._zmq_context = zmq_context
         self._zmq_socket = self._zmq_context.socket(zmq_socket_type)
-        self._zmq_socket.setsockopt(zmq.LINGER, 0)
+        self._zmq_socket.setsockopt(zmq.LINGER, 1)
         self._log = LoggerAdapter(worker_name, logger)
         self._cycles = 0
 
@@ -94,6 +94,14 @@ cdef class MQWorker:
         """
         self._zmq_socket.close()
         self._log.debug(f"Disposed.")
+
+    cpdef bint is_disposed(self):
+        """
+        Return a value indicating whether the internal socket is disposed.
+
+        :return bool.
+        """
+        return self._zmq_socket.closed
 
 
 cdef class RequestWorker(MQWorker):
