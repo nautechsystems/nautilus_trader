@@ -266,32 +266,14 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(bar, result)
 
-    def test_can_get_last_bar(self):
-        strategy = TradingStrategy(order_id_tag='001')
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
-
-        strategy.handle_bar(bar_type, bar)
-
-        # Act
-        result = strategy.bar(bar_type, 0)
-
-        # Assert
-        self.assertEqual(bar, result)
-
-    def test_getting_last_tick_with_unknown_symbol_raises_exception(self):
+    def test_getting_tick_with_unknown_symbol_raises_exception(self):
         strategy = TradingStrategy(order_id_tag='001')
 
         # Act
         # Assert
         self.assertRaises(ValueError, strategy.tick, AUDUSD_FXCM, 0)
 
-    def test_can_get_last_tick(self):
+    def test_can_get_tick(self):
         strategy = TradingStrategy(order_id_tag='001')
 
         tick = Tick(Symbol('AUDUSD', Venue('FXCM')),

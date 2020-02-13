@@ -20,39 +20,54 @@ from examples.strategies.ema_cross import EMACrossPy
 #   - A NautilusData instance listening on the default ports
 #   - A NautilusExecutor instance listening on the default ports
 
+BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
-# BAR_SPEC = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-BAR_SPEC = BarSpecification(100, BarStructure.TICK, PriceType.BID)
+# BAR_SPEC_FX = BarSpecification(100, BarStructure.TICK, PriceType.BID)
+# BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
 
-symbols_to_trade = [
+symbols_fx = [
     Symbol('AUDUSD', Venue('FXCM')),
     Symbol('EURUSD', Venue('FXCM')),
     Symbol('GBPUSD', Venue('FXCM')),
     Symbol('USDJPY', Venue('FXCM')),
+]
+
+symbols_cfd = [
     Symbol('XAUUSD', Venue('FXCM')),
     Symbol('SPX500', Venue('FXCM')),
     Symbol('AUS200', Venue('FXCM')),
     Symbol('WTIUSD', Venue('FXCM')),
     Symbol('DE30EUR', Venue('FXCM')),
-    Symbol('DE10YB', Venue('FXCM')),
 ]
+
+strategies_fx = []
+for symbol in symbols_fx:
+    strategies_fx.append(EMACrossPy(
+        symbol,
+        BAR_SPEC_FX,
+        risk_bp=10.0,
+        fast_ema=10,
+        slow_ema=20,
+        atr_period=20))
+
+strategies_cfd = []
+for symbol in symbols_cfd:
+    strategies_fx.append(EMACrossPy(
+        symbol,
+        BAR_SPEC_CFD,
+        risk_bp=10.0,
+        fast_ema=10,
+        slow_ema=20,
+        atr_period=20))
 
 
 if __name__ == "__main__":
 
-    strategies = []
-    for symbol in symbols_to_trade:
-        strategies.append(EMACrossPy(
-            symbol,
-            BAR_SPEC,
-            risk_bp=10.0,
-            fast_ema=10,
-            slow_ema=20,
-            atr_period=20))
-
     node = TradingNode(
         config_path='config.json',
-        strategies=strategies)
+        strategies=strategies_fx + strategies_cfd
+    )
 
     node.connect()
     node.start()

@@ -73,6 +73,7 @@ cdef class DataClient:
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
+    cpdef bint has_ticks(self, Symbol symbol)
     cpdef double spread(self, Symbol symbol)
     cpdef double spread_average(self, Symbol symbol)
     cpdef double get_exchange_rate(

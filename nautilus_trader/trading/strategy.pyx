@@ -51,7 +51,7 @@ cdef class TradingStrategy:
                  Clock clock not None=LiveClock(),
                  GuidFactory guid_factory not None=LiveGuidFactory(),
                  Logger logger=None,
-                 bint propagate_exceptions=True):
+                 bint reraise_exceptions=True):
         """
         Initializes a new instance of the TradingStrategy class.
 
@@ -64,7 +64,7 @@ cdef class TradingStrategy:
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
-        :param propagate_exceptions: If exceptions thrown in handling methods should be re-raised.
+        :param reraise_exceptions: If exceptions raised in handling methods should be re-raised.
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the tick_capacity is not positive (> 0).
         :raises ValueError: If the bar_capacity is not positive (> 0).
@@ -89,7 +89,7 @@ cdef class TradingStrategy:
         self.flatten_on_stop = flatten_on_stop
         self.flatten_on_sl_reject = flatten_on_sl_reject
         self.cancel_all_orders_on_stop = cancel_all_orders_on_stop
-        self.propagate_exceptions = propagate_exceptions
+        self.reraise_exceptions = reraise_exceptions
 
         # Order / Position components
         self.order_factory = OrderFactory(
@@ -368,7 +368,7 @@ cdef class TradingStrategy:
                 self.on_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.propagate_exceptions:
+                if self.reraise_exceptions:
                     raise ex  # Re-raise
 
     cpdef void handle_ticks(self, list ticks) except *:
@@ -423,7 +423,7 @@ cdef class TradingStrategy:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.propagate_exceptions:
+                if self.reraise_exceptions:
                     raise ex  # Re-raise
 
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
@@ -451,7 +451,7 @@ cdef class TradingStrategy:
                 self.on_instrument(instrument)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.propagate_exceptions:
+                if self.reraise_exceptions:
                     raise ex  # Re-raise
 
     cpdef void handle_event(self, Event event) except *:
@@ -477,7 +477,7 @@ cdef class TradingStrategy:
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.propagate_exceptions:
+                if self.reraise_exceptions:
                     raise ex  # Re-raise
 
 
@@ -727,7 +727,9 @@ cdef class TradingStrategy:
         """
         Condition.not_none(symbol, 'symbol')
 
-        return symbol in self._ticks and len(self._ticks[symbol]) > 0
+        return (self._data_client.has_ticks(symbol)
+                and symbol in self._ticks
+                and len(self._ticks[symbol]) > 0)
 
     cpdef bint has_bars(self, BarType bar_type):
         """
