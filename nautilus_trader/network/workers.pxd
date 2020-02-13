@@ -22,6 +22,7 @@ cdef class MQWorker:
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void dispose(self) except *
+    cpdef bint is_disposed(self)
 
 
 cdef class RequestWorker(MQWorker):
