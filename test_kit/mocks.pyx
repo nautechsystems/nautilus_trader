@@ -68,6 +68,7 @@ cdef class MockExecutionClient(ExecutionClient):
         :param logger: The logger for the component.
         """
         super().__init__(exec_engine, logger)
+
         self.received_commands = []
 
     cpdef void connect(self):

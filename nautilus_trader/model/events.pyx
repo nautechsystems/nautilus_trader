@@ -63,8 +63,8 @@ cdef class AccountStateEvent(Event):
         """
         Condition.not_equal(currency, Currency.UNDEFINED, 'currency', 'UNDEFINED')
         Condition.not_negative(margin_ratio.as_double(), 'margin_ratio')
-
         super().__init__(event_id, event_timestamp)
+
         self.account_id = account_id
         self.broker = self.account_id.broker
         self.number = self.account_id.account_number
@@ -115,6 +115,7 @@ cdef class OrderEvent(Event):
         :param event_timestamp: The event timestamp.
         """
         super().__init__(event_id, event_timestamp)
+
         self.order_id = order_id
 
     def __str__(self) -> str:
@@ -172,6 +173,7 @@ cdef class OrderFillEvent(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.execution_id = execution_id
         self.position_id_broker = position_id_broker
@@ -220,6 +222,7 @@ cdef class OrderInitialized(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.symbol = symbol
         self.label = label
         self.order_side = order_side
@@ -254,6 +257,7 @@ cdef class OrderSubmitted(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.submitted_time = submitted_time
 
@@ -289,6 +293,7 @@ cdef class OrderInvalid(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.invalid_reason = invalid_reason
 
     def __str__(self) -> str:
@@ -323,6 +328,7 @@ cdef class OrderDenied(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.denied_reason = denied_reason
 
     def __str__(self) -> str:
@@ -361,6 +367,7 @@ cdef class OrderRejected(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.rejected_time = rejected_time
         self.rejected_reason = rejected_reason
@@ -404,6 +411,7 @@ cdef class OrderAccepted(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.order_id_broker = order_id_broker
         self.label = label
@@ -466,6 +474,7 @@ cdef class OrderWorking(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.order_id_broker = order_id_broker
         self.symbol = symbol
@@ -521,6 +530,7 @@ cdef class OrderCancelReject(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.rejected_time = rejected_time
         self.rejected_response_to = rejected_response_to
@@ -562,6 +572,7 @@ cdef class OrderCancelled(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.cancelled_time = cancelled_time
 
@@ -605,6 +616,7 @@ cdef class OrderModified(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.order_id_broker = order_id_broker
         self.modified_quantity = modified_quantity
@@ -647,6 +659,7 @@ cdef class OrderExpired(OrderEvent):
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
+
         self.account_id = account_id
         self.expired_time = expired_time
 
@@ -709,6 +722,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                          execution_time,
                          event_id,
                          event_timestamp)
+
         self.leaves_quantity = leaves_quantity
 
     def __str__(self) -> str:

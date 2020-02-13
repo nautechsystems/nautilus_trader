@@ -43,6 +43,7 @@ class PyStrategy(TradingStrategy):
         Initializes a new instance of the PyStrategy class.
         """
         super().__init__(order_id_tag='001')
+
         self.bar_type = bar_type
         self.object_storer = ObjectStorer()
 
@@ -204,6 +205,7 @@ cdef class TestStrategy1(TradingStrategy):
         Initializes a new instance of the TestStrategy1 class.
         """
         super().__init__(order_id_tag=id_tag_strategy, clock=clock)
+
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
 
@@ -310,7 +312,6 @@ cdef class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: The extra tag to appends to the strategies identifier tag.
         """
-        # Order id tag must be unique at trader level
         super().__init__(order_id_tag=instrument.symbol.code + extra_id_tag)
 
         # Custom strategy variables

@@ -45,7 +45,6 @@ class EMACrossPy(TradingStrategy):
         :param atr_period: The ATR period.
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
-        # Order id tag must be unique at trader level
         super().__init__(order_id_tag=symbol.code, bar_capacity=40)
 
         # Custom strategy variables

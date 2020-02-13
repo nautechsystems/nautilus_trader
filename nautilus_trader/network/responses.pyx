@@ -33,6 +33,7 @@ cdef class MessageReceived(Response):
         """
         Condition.valid_string(received_type, 'received_type')
         super().__init__(correlation_id, response_id, response_timestamp)
+
         self.received_type = received_type
 
     def __str__(self) -> str:
@@ -53,7 +54,7 @@ cdef class MessageRejected(Response):
     """
 
     def __init__(self,
-                 str rejected_message not None,
+                 str rejected_message not None,  # Could be an empty string
                  GUID correlation_id not None,
                  GUID response_id not None,
                  datetime response_timestamp not None):
@@ -65,8 +66,8 @@ cdef class MessageRejected(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
-        # rejected_message could be an empty string
         super().__init__(correlation_id, response_id, response_timestamp)
+
         self.message = rejected_message
 
     def __str__(self) -> str:
@@ -87,7 +88,7 @@ cdef class QueryFailure(Response):
     """
 
     def __init__(self,
-                 str failure_message not None,
+                 str failure_message not None,  # Could be an empty string
                  GUID correlation_id not None,
                  GUID response_id not None,
                  datetime response_timestamp not None):
@@ -99,8 +100,8 @@ cdef class QueryFailure(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
-        # failure_message could be an empty string
         super().__init__(correlation_id, response_id, response_timestamp)
+
         self.message = failure_message
 
     def __str__(self) -> str:

@@ -152,6 +152,7 @@ cdef class Response(Message):
         :param timestamp: The response timestamp.
         """
         super().__init__(MessageType.RESPONSE, identifier, timestamp)
+
         self.correlation_id = correlation_id
 
     def __str__(self) -> str:

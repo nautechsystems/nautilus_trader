@@ -1079,7 +1079,6 @@ cdef class ForexInstrument(Instrument):
         :param timestamp: The timestamp the instrument was created/updated at.
         """
         Condition.equal(len(symbol.code), 6, 'len(symbol.code)', '6')
-
         super().__init__(
             symbol,
             broker_symbol,
