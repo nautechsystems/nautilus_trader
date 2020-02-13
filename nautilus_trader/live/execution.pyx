@@ -15,20 +15,10 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, Message, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    AccountId,
-    TraderId,
-    StrategyId,
-    OrderId,
-    PositionId,
-    PositionIdBroker)
-from nautilus_trader.model.commands cimport (  # noqa: E211
-    Command,
-    AccountInquiry,
-    SubmitOrder,
-    SubmitAtomicOrder,
-    ModifyOrder,
-    CancelOrder)
+from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId
+from nautilus_trader.model.identifiers cimport OrderId, PositionId, PositionIdBroker
+from nautilus_trader.model.commands cimport Command, AccountInquiry
+from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport Event, AccountStateEvent, OrderFillEvent, OrderInitialized
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
@@ -75,7 +65,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  CommandSerializer command_serializer not None,
                  EventSerializer event_serializer not None,
                  Logger logger not None,
-                 bint option_load_cache=True):
+                 bint load_cache=True):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
@@ -84,7 +74,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param port: The redis port for the database connection.
         :param command_serializer: The command serializer for database transactions.
         :param event_serializer: The event serializer for database transactions.
-        :param option_load_cache: The option flag to load caches from Redis on instantiation.
+        :param load_cache: If the caches should be loaded from Redis on instantiation.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         """
@@ -120,16 +110,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._redis = redis.Redis(host=host, port=port, db=0)
 
         # Options
-        self.OPTION_LOAD_CACHES = option_load_cache
+        self.LOAD_CACHES = load_cache
 
-        if self.OPTION_LOAD_CACHES:
-            self._log.info(f"The OPTION_LOAD_CACHES is {self.OPTION_LOAD_CACHES}")
+        if self.LOAD_CACHES:
+            self._log.info(f"The OPTION_LOAD_CACHES is {self.LOAD_CACHES}")
             # Load cache
             self.load_accounts_cache()
             self.load_orders_cache()
             self.load_positions_cache()
         else:
-            self._log.warning(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHES} "
+            self._log.warning(f"The OPTION_LOAD_CACHE is {self.LOAD_CACHES} "
                               f"(this should only be done in a testing environment).")
 
 

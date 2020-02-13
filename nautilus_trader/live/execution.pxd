@@ -35,7 +35,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef EventSerializer _event_serializer
     cdef object _redis
 
-    cdef readonly bint OPTION_LOAD_CACHES
+    cdef readonly bint LOAD_CACHES
 
     cpdef void load_accounts_cache(self) except *
     cpdef void load_orders_cache(self) except *
