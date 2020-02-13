@@ -54,8 +54,8 @@ cdef class MQWorker:
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
-
         super().__init__()
+
         self.name = worker_name
         self._service_name = service_name
         self._service_address = f'tcp://{host}:{port}'
@@ -130,7 +130,6 @@ cdef class RequestWorker(MQWorker):
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
-
         super().__init__(
             worker_name,
             service_name,
@@ -205,7 +204,6 @@ cdef class SubscriberWorker(MQWorker):
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
         Condition.callable(handler, 'handler')
-
         super().__init__(
             worker_name,
             service_name,
@@ -215,6 +213,7 @@ cdef class SubscriberWorker(MQWorker):
             zmq.SUB,
             encryption,
             logger)
+
         self._handler = handler
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()

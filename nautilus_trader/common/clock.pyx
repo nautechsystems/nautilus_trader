@@ -544,6 +544,7 @@ cdef class TestClock(Clock):
         :param initial_time: The initial time for the clock.
         """
         super().__init__(TestGuidFactory())
+
         self._time = initial_time
         self.is_test_clock = True
 

@@ -132,7 +132,7 @@ cdef class Identifier(ValidString):
         """
         super().__init__(value)
 
-        self._id_type = self.__class__.__name__
+        self.id_type = self.__class__.__name__
 
     cpdef bint equals(self, Identifier other):
         """
@@ -141,9 +141,7 @@ cdef class Identifier(ValidString):
         :param other: The other object to compare
         :return bool.
         """
-        # noinspection PyProtectedMember
-        # direct access to protected member ok here
-        return self._id_type == other._id_type and self.value == other.value
+        return self.id_type == other.id_type and self.value == other.value
 
 
 cdef class GUID(Identifier):
@@ -152,7 +150,7 @@ cdef class GUID(Identifier):
     (universally unique identifier).
     """
 
-    def __init__(self, value: UUID):
+    def __init__(self, value not None: UUID):
         """
         Initializes a new instance of the GUID class.
 
@@ -160,5 +158,4 @@ cdef class GUID(Identifier):
         :raises ValueError: If the value is not of type UUID.
         """
         Condition.type(value, UUID, 'value')
-
         super().__init__(str(value))

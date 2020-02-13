@@ -29,4 +29,5 @@ cdef class DataRequest(Request):
         :param request_timestamp: The request timestamp.
         """
         super().__init__(request_id, request_timestamp)
+
         self.query = query

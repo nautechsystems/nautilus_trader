@@ -14,7 +14,7 @@ cdef class ValidString:
 
 
 cdef class Identifier(ValidString):
-    cdef str _id_type
+    cdef readonly str id_type
 
     cpdef bint equals(self, Identifier other)
 

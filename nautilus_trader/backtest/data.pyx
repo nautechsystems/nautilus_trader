@@ -155,7 +155,6 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the tick_capacity is not positive (> 0).
         """
         Condition.positive_int(tick_capacity, 'tick_capacity')
-
         super().__init__(tick_capacity, clock, TestGuidFactory(), logger)
 
         # Check data integrity

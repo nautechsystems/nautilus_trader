@@ -76,7 +76,6 @@ cdef class BacktestExecClient(ExecutionClient):
         :raises ValueError: If the instruments list contains a type other than Instrument.
         """
         Condition.dict_types(instruments, Symbol, Instrument, 'instruments')
-
         super().__init__(exec_engine, logger)
 
         self._clock = clock

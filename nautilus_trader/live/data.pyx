@@ -97,8 +97,8 @@ cdef class LiveDataClient(DataClient):
         Condition.valid_port(inst_rep_port, 'inst_rep_port')
         Condition.valid_port(inst_pub_port, 'inst_pub_port')
         Condition.positive_int(tick_capacity, 'tick_capacity')
-
         super().__init__(tick_capacity, clock, guid_factory, logger)
+
         self._zmq_context = zmq_context
 
         self._tick_req_worker = RequestWorker(

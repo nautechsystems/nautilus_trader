@@ -36,6 +36,7 @@ cdef class TestGuidFactory(GuidFactory):
         Initializes a new instance of the TestGuidFactory class.
         """
         super().__init__()
+
         self._guid = GUID(uuid.uuid4())
 
     cpdef GUID generate(self):

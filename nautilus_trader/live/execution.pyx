@@ -90,7 +90,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
-
         super().__init__(trader_id, logger)
 
         # Database keys

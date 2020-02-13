@@ -32,9 +32,7 @@ cdef class Symbol(Identifier):
         :raises ValueError: If the code is not a valid string.
         """
         Condition.valid_string(code, 'code')
-        assert code.isupper()              # TODO: Design time check only
-        assert not code.__contains__('/')  # TODO: Design time check only
-        self.code = code.replace('/', '').upper()  # Remove potential '/' from currency pairs
+        self.code = code.replace('/', '').replace('.', '').upper()  # Removes potential '/' and '.'
         self.venue = venue
         super().__init__(f'{self.code}.{self.venue.value}')
 
@@ -364,9 +362,8 @@ cdef class AtomicOrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
-        super().__init__(value)
-
         Condition.true(value.startswith('AO-'), f'value must begin with \'AO-\', was {value}.')
+        super().__init__(value)
 
 
 cdef class OrderId(Identifier):
@@ -381,9 +378,8 @@ cdef class OrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
-        super().__init__(value)
-
         Condition.true(value.startswith('O-'), f'value must begin with \'O-\', was {value}.')
+        super().__init__(value)
 
 
 cdef class OrderIdBroker(Identifier):
@@ -412,9 +408,8 @@ cdef class PositionId(Identifier):
 
         :param value: The position identifier value.
         """
-        super().__init__(value)
-
         Condition.true(value.startswith('P-'), f' value must begin with \'P-\', was {value}.')
+        super().__init__(value)
 
 
 cdef class ExecutionId(Identifier):

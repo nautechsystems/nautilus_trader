@@ -33,6 +33,7 @@ cdef class AccountInquiry(Command):
         :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
+
         self.trader_id = trader_id
         self.account_id = account_id
 
@@ -72,6 +73,7 @@ cdef class SubmitOrder(Command):
         :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
+
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -117,6 +119,7 @@ cdef class SubmitAtomicOrder(Command):
         :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
+
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -162,6 +165,7 @@ cdef class ModifyOrder(Command):
         :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
+
         self.trader_id = trader_id
         self.account_id = account_id
         self.order_id = order_id
@@ -205,6 +209,7 @@ cdef class CancelOrder(Command):
         :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
+
         self.trader_id = trader_id
         self.account_id = account_id
         self.order_id = order_id
