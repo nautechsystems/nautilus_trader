@@ -19,13 +19,8 @@ from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, ord
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
 from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string, order_purpose_from_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string, currency_from_string
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    Symbol,
-    OrderId,
-    OrderIdBroker,
-    PositionId,
-    ExecutionId,
-    PositionIdBroker)
+from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker, ExecutionId
+from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
 from nautilus_trader.model.objects cimport Quantity, Decimal, Money
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
