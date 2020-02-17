@@ -46,7 +46,7 @@ The trader must assemble a directory including the following;
 To deploy a live ```TradingNode```, pull and run the latest docker image;
 
     $ docker pull nautilus_trader
-    $ docker run nautilus_trader
+    $ docker run nautilus_trader -d <path_to_trading_directory>
 
 ## Development
 [Development Documentation](docs/development)
