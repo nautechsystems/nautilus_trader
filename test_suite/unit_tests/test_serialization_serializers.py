@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import snappy
 
 from base64 import b64encode, b64decode
 
@@ -26,6 +27,30 @@ from nautilus_trader.network.responses import *
 from test_kit.stubs import *
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+
+
+class LZ4InteroperabilityTests(unittest.TestCase):
+
+    def test_can_decompress_lz4_from_csharp(self):
+        # Arrange
+        hex_from_csharp = bytearray.fromhex('0C-2C-68-65-6C-6C-6F-20-77-6F-72-6C-64-21'.replace('-', ' '))
+
+        # Act
+        decompressed = snappy.decompress(hex_from_csharp)
+
+        # Assert
+        self.assertEqual(b'hello world!', decompressed)
+
+    def test_can_compress_lz4_to_csharp(self):
+        # Arrange
+        message = b'hello world!'
+
+        # Act
+        compressed = snappy.compress(message)
+        print(b64encode(compressed))
+
+        # Assert
+        # self.assertEqual('hello world!', decoded)
 
 
 class SerializerBaseTests(unittest.TestCase):
@@ -215,6 +240,17 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
+    def test_can_deserialize_account_inquiry_command_from_csharp(self):
+        # Arrange
+        base64 = 'haRUeXBlxA5BY2NvdW50SW5xdWlyeaJJZMQkNjcxODYxMzQtZTI0Yy00NWZiLTk0NGUtNzNmMDUxZDMxMmIzqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqUFjY291bnRJZMQYRlhDTS0wMjg5OTk5OTktU0lNVUxBVEVE'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, AccountInquiry))
+
     def test_can_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         order = self.order_factory.market(
@@ -238,8 +274,24 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
-        print(b64encode(serialized))
         print(command)
+        print(len(serialized))
+        print(len(snappy.compress(serialized)))
+        print(serialized)
+        print(snappy.compress(serialized))
+        print(b64encode(serialized))
+        print(b64encode(snappy.compress(serialized)))
+
+    def test_can_deserialize_submit_order_commands_from_csharp(self):
+        # Arrange
+        base64 = 'iKRUeXBlxAtTdWJtaXRPcmRlcqJJZMQkMjJhMDY3NmQtMjUxMC00ZDE1LWIxYWEtMDI5ZmY2ZTI0YTBmqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqlN0cmF0ZWd5SWTEDEVNQUNyb3NzLTAwMalBY2NvdW50SWTEGEZYQ00tMDI4OTk5OTk5LVNJTVVMQVRFRKpQb3NpdGlvbklkxAhQLTEyMzQ1NqVPcmRlcsT4jKJJZMQITy0xMjM0NTamU3ltYm9sxAtBVURVU0QuRlhDTaVMYWJlbMQKVEVTVF9PUkRFUqlPcmRlclNpZGXEA0J1ealPcmRlclR5cGXEBk1hcmtldKxPcmRlclB1cnBvc2XEBE5vbmWoUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQETm9uZatUaW1lSW5Gb3JjZcQDREFZqkV4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqmSW5pdElkxCQzMjgwNWYyOS1kYmE5LTRlMWUtOTBmMC04NDhjMzc2OGQzMWU='
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, SubmitOrder))
 
     def test_can_serialize_and_deserialize_submit_atomic_order_no_take_profit_commands(self):
         # Arrange
@@ -267,6 +319,17 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.assertEqual(atomic_order, deserialized.atomic_order)
         print(b64encode(serialized))
         print(command)
+
+    def test_can_deserialize_submit_atomic_order_no_take_profit_from_csharp(self):
+        # Arrange
+        base64 = 'iqRUeXBlxBFTdWJtaXRBdG9taWNPcmRlcqJJZMQkNGI4OGNlN2ItNjMxOC00ZGExLWFlZmQtYjk0NDA2YTJlYzYyqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqlN0cmF0ZWd5SWTEDEVNQUNyb3NzLTAwMalBY2NvdW50SWTEGEZYQ00tMDI4OTk5OTk5LVNJTVVMQVRFRKpQb3NpdGlvbklkxAhQLTEyMzQ1NqVFbnRyecT4jKJJZMQITy0xMjM0NTamU3ltYm9sxAtBVURVU0QuRlhDTaVMYWJlbMQKVEVTVF9PUkRFUqlPcmRlclNpZGXEA0J1ealPcmRlclR5cGXEBk1hcmtldKxPcmRlclB1cnBvc2XEBE5vbmWoUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQETm9uZatUaW1lSW5Gb3JjZcQDREFZqkV4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqmSW5pdElkxCQwYWM1NjkxMi1hNTk3LTRiNjQtYjJkYy0zYzVkZjY0MWM2MGKoU3RvcExvc3PE84yiSWTECE8tMTIzNDU2plN5bWJvbMQLQVVEVVNELkZYQ02lTGFiZWzEClRFU1RfT1JERVKpT3JkZXJTaWRlxANCdXmpT3JkZXJUeXBlxARTdG9wrE9yZGVyUHVycG9zZcQETm9uZahRdWFudGl0ecQGMTAwMDAwpVByaWNlxAExq1RpbWVJbkZvcmNlxANEQVmqRXhwaXJlVGltZcQETm9uZalUaW1lc3RhbXDEGDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqZJbml0SWTEJDlmOTA4YTZmLTI5MjUtNDBhYi1iMDY2LTVkZWY2N2EwZTdjNKpUYWtlUHJvZml0xAGA'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, SubmitAtomicOrder))
 
     def test_can_serialize_and_deserialize_submit_atomic_order_with_take_profit_commands(self):
         # Arrange

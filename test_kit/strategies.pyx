@@ -348,10 +348,6 @@ cdef class EMACross(TradingStrategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
 
-        # Kick off strategy immediately with last bar
-        if self.bar_count(self.bar_type) > 0:
-            self.on_bar(self.bar_type, self.bar(self.bar_type, 0))
-
     cpdef void on_tick(self, Tick tick):
         """
         This method is called whenever a Tick is received by the strategy, and 

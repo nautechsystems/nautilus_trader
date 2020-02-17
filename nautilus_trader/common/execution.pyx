@@ -1260,10 +1260,9 @@ cdef class ExecutionEngine:
             self.database.update_account(account)
             return
 
-        self._log.warning(f"Cannot process event {event} "
-                          f"(event {event.account_id.to_string(with_class=True)} "
-                          f"does not match this account "
-                          f"{account.id.to_string(with_class=True)}).")
+        self._log.warning(f"Cannot process event {event}, "
+                          f"event {event.account_id.to_string(with_class=True)} "
+                          f"does not match traders {self.account_id.to_string(with_class=True)}.")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef PositionOpened position_opened = PositionOpened(
