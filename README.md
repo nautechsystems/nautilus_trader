@@ -1,5 +1,10 @@
 # Nautilus Trader
 
+Nautilus Trader is a framework allowing quantitative traders to backtest portfolios of automated
+algorithmic trading strategies on historical data. These same portfolios of strategies can then be
+hosted on a ```TradingNode``` and traded live with with no changes to the ```TradingStrategy```
+scripts.
+
 ## Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
 * **Flexible:** Any FIX or REST broker API can be integrated into the platform, with no changes to your strategy scripts.
@@ -12,9 +17,21 @@
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
 ## Installation
-To install via pip run the below command;
+To install via pip;
 
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
+
+To pull and run the latest docker image;
+
+    $ docker pull nautilus_trader
+    $ docker run nautilus_trader
+
+## Generate Curve Encryption Keys
+
+From a python console or .py run the following;
+
+    import zmq
+    keys = zmq.auth('client.key', '')
 
 ## Development
 [Development Documentation](docs/development)
