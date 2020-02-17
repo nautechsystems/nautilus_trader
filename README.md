@@ -21,20 +21,6 @@ To run backtesting research locally install via pip;
 
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
-## Live Deployment
-
-The trader must assemble a directory including the following;
-
-- ```config.json``` for configuration settings
-- ```keys/``` directory containing the ```client.key```, ```client.key_secret```, ```server.key```
-- ```launch.py``` referring to the strategies to run
-- trading strategy python or cython files
-
-To deploy live ```TradingNode```s pull and run the latest docker image;
-
-    $ docker pull nautilus_trader
-    $ docker run nautilus_trader
-
 ## Encryption
 
 For effective remote deployment of ```TradingNode``` (s) on boxes, encryption keys must be generated
@@ -47,6 +33,20 @@ To generate new key pairs from a python console or .py run the following;
 
     import zmq
     keys = zmq.auth('client.key', '')
+
+## Live Deployment
+
+The trader must assemble a directory including the following;
+
+- ```config.json``` for configuration settings
+- ```keys/``` directory containing the ```client.key```, ```client.key_secret```, ```server.key```
+- ```launch.py``` referring to the strategies to run
+- trading strategy python or cython files
+
+To deploy a live ```TradingNode```, pull and run the latest docker image;
+
+    $ docker pull nautilus_trader
+    $ docker run nautilus_trader
 
 ## Development
 [Development Documentation](docs/development)
