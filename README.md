@@ -26,9 +26,15 @@ To pull and run the latest docker image;
     $ docker pull nautilus_trader
     $ docker run nautilus_trader
 
-## Generate Curve Encryption Keys
+## Generate Encryption Keys
 
-From a python console or .py run the following;
+For effective remote deployment of ```TradingNode``` (s) on boxes, encryption keys must be generated
+by the client trader. The currently supported encryption scheme is that which is built into ZeroMQ
+being Curve25519 elliptic curve algorithms. This allows perfect forward security with ephemeral keys
+being exchanged per connection. The public ```server.key``` must be shared with the trader ahead of
+time and contained in the ```keys\``` directory.
+
+To generate new key pairs from a python console or .py run the following;
 
     import zmq
     keys = zmq.auth('client.key', '')
