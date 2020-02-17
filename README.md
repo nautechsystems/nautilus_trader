@@ -23,12 +23,12 @@ To run backtesting research locally install via pip;
 
 # Live Deployment
 
-The trader must assemble a directory including the following
+The trader must assemble a directory including the following;
 
-    - ```config.json``` for configuration settings
-    - ```keys/``` directory containing the ```client.key```, ```client.key_secret```, ```server.key```
-    - ```launch.py``` referring to the strategies to run
-    - trading strategy python or cython files
+- ```config.json``` for configuration settings
+- ```keys/``` directory containing the ```client.key```, ```client.key_secret```, ```server.key```
+- ```launch.py``` referring to the strategies to run
+- trading strategy python or cython files
 
 To deploy live ```TradingNode```s pull and run the latest docker image;
 
