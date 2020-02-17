@@ -86,7 +86,7 @@ cdef class TradingNode:
         config_account = config['account']
         config_log = config['logging']
         config_strategy = config['strategy']
-        config_encryption = config['encryption']
+        config_messaging = config['messaging']
         config_data = config['data_client']
         config_exec_db = config['exec_database']
         config_exec_client = config['exec_client']
@@ -120,11 +120,11 @@ cdef class TradingNode:
         self._log_header()
         self._log.info("Starting...")
 
-        # Setup encryption
+        # Setup messaging
         encryption = EncryptionConfig(
-                use_encryption=config_encryption['use_encryption'],
-                encryption_type=config_encryption['encryption_type'],
-                keys_dir=config_encryption['keys_dir'])
+                use_encryption=config_messaging['use_encryption'],
+                encryption_type=config_messaging['encryption_type'],
+                keys_dir=config_messaging['keys_dir'])
 
         self._venue = Venue(config_data['venue'])
         self._data_client = LiveDataClient(

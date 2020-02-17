@@ -26,10 +26,11 @@
     "save_state": true
   },
 
-  "encryption": {
-    "use_encryption": false,
-    "encryption_type": "curve",
-    "keys_dir": "keys/"
+  "messaging": {
+    "version": "1.0",
+    "compression": "none",
+    "encryption": "curve",
+    "key_dir": "keys/"
   },
 
   "data_client": {

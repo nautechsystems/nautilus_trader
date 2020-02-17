@@ -7,8 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import snappy
-
 from base64 import b64encode, b64decode
 
 from nautilus_trader.common.logger import *
@@ -27,30 +25,6 @@ from nautilus_trader.network.responses import *
 from test_kit.stubs import *
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-
-
-class LZ4InteroperabilityTests(unittest.TestCase):
-
-    def test_can_decompress_lz4_from_csharp(self):
-        # Arrange
-        hex_from_csharp = bytearray.fromhex('0C-2C-68-65-6C-6C-6F-20-77-6F-72-6C-64-21'.replace('-', ' '))
-
-        # Act
-        decompressed = snappy.decompress(hex_from_csharp)
-
-        # Assert
-        self.assertEqual(b'hello world!', decompressed)
-
-    def test_can_compress_lz4_to_csharp(self):
-        # Arrange
-        message = b'hello world!'
-
-        # Act
-        compressed = snappy.compress(message)
-        print(b64encode(compressed))
-
-        # Assert
-        # self.assertEqual('hello world!', decoded)
 
 
 class SerializerBaseTests(unittest.TestCase):
@@ -276,11 +250,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.assertEqual(order, deserialized.order)
         print(command)
         print(len(serialized))
-        print(len(snappy.compress(serialized)))
         print(serialized)
-        print(snappy.compress(serialized))
         print(b64encode(serialized))
-        print(b64encode(snappy.compress(serialized)))
 
     def test_can_deserialize_submit_order_commands_from_csharp(self):
         # Arrange
