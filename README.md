@@ -31,15 +31,20 @@ time and contained in the ```keys\``` directory.
 
 To generate new key pairs from a python console or .py run the following;
 
-    import zmq
-    keys = zmq.auth('client.key', '')
+    import zmq.auth
+    from pathlib import Path
+
+    keys_dir = 'path/to/your/keys'
+    Path(keys_dir).mkdir(parents=True, exist_ok=True)
+
+    zmq.auth.create_certificates(keys_dir, "client")
 
 ## Live Deployment
 
 The trader must assemble a directory including the following;
 
 - ```config.json``` for configuration settings
-- ```keys/``` directory containing the ```client.key```, ```client.key_secret```, ```server.key```
+- ```keys/``` directory containing the ```client.key_secret``` and ```server.key```
 - ```launch.py``` referring to the strategies to run
 - trading strategy python or cython files
 
