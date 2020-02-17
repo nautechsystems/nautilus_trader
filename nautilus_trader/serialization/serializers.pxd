@@ -8,15 +8,9 @@
 
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.serialization.base cimport (  # noqa: E211
-    QuerySerializer,
-    OrderSerializer,
-    EventSerializer,
-    CommandSerializer,
-    RequestSerializer,
-    ResponseSerializer,
-    LogSerializer
-)
+from nautilus_trader.serialization.base cimport QuerySerializer, OrderSerializer, EventSerializer
+from nautilus_trader.serialization.base cimport CommandSerializer, RequestSerializer, ResponseSerializer
+from nautilus_trader.serialization.base cimport LogSerializer
 
 
 cdef class MsgPackQuerySerializer(QuerySerializer):

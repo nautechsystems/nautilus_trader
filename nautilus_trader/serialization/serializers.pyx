@@ -26,52 +26,19 @@ from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.common.logger cimport LogMessage, log_level_from_string
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.base cimport (  # noqa: E211
-    OrderSerializer,
-    CommandSerializer,
-    EventSerializer,
-    RequestSerializer,
-    ResponseSerializer,
-    LogSerializer
-)
-from nautilus_trader.serialization.common cimport (
-    convert_price_to_string,
-    convert_label_to_string,
-    convert_datetime_to_string,
-    convert_string_to_datetime,
-    convert_string_to_price,
-    convert_string_to_label
-)
-from nautilus_trader.model.commands cimport (
-    AccountInquiry,
-    SubmitOrder,
-    SubmitAtomicOrder,
-    ModifyOrder,
-    CancelOrder
-)
-from nautilus_trader.model.events cimport (
-    AccountStateEvent,
-    OrderInitialized,
-    OrderInvalid,
-    OrderDenied,
-    OrderSubmitted,
-    OrderAccepted,
-    OrderRejected,
-    OrderWorking,
-    OrderExpired,
-    OrderModified,
-    OrderCancelled,
-    OrderCancelReject,
-    OrderPartiallyFilled,
-    OrderFilled
-)
+from nautilus_trader.serialization.base cimport OrderSerializer, CommandSerializer, EventSerializer
+from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer, LogSerializer
+from nautilus_trader.serialization.common cimport convert_string_to_price, convert_price_to_string
+from nautilus_trader.serialization.common cimport convert_string_to_label, convert_label_to_string
+from nautilus_trader.serialization.common cimport convert_string_to_datetime, convert_datetime_to_string
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
+from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, OrderInvalid
+from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
+from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
+from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
 from nautilus_trader.network.requests cimport DataRequest
-from nautilus_trader.network.responses cimport (
-    MessageReceived,
-    MessageRejected,
-    QueryFailure,
-    DataResponse
-)
+from nautilus_trader.network.responses cimport MessageReceived, MessageRejected, QueryFailure, DataResponse
 
 
 cdef class MsgPackSerializer:
@@ -92,43 +59,23 @@ cdef class MsgPackSerializer:
         return msgpack.packb(message)
 
     @staticmethod
-    cdef dict deserialize(bytes message_bytes):
+    cdef dict deserialize(bytes message_bytes, bint raw_values=True):
         """
         Deserialize the given MessagePack specification bytes to a dictionary.
 
         :param message_bytes: The message bytes to deserialize.
-        
+        :param raw_values: If the values should be deserialized as raw bytes.
         :return Dict.
         """
         Condition.not_none(message_bytes, 'message_bytes')
 
-        return msgpack.unpackb(message_bytes, raw=False)
+        cdef dict raw_unpacked = msgpack.unpackb(message_bytes, raw=True)
 
-    @staticmethod
-    cdef dict deserialize_partial(bytes message_bytes, tuple ignore):
-        """
-        Deserialize the given MessagePack specification bytes to a dictionary.
-        The values of the keys in the ignore tuple of bytes are not deserialized.
-
-        :param message_bytes: The message bytes to deserialize.
-        :param ignore: The tuple of byte keys to not deserialize.
-        
-        :return Dict.
-        """
-        Condition.not_none(message_bytes, 'message_bytes')
-        Condition.not_none(ignore, 'ignore')
-
-        cdef dict unpacked_raw = msgpack.unpackb(message_bytes)
-        cdef dict unpacked = {}
-
-        # Manually decode
-        for k, v in unpacked_raw.items():
-            if k in ignore or isinstance(v, int):
-                unpacked[k.decode(UTF8)] = v
-            else:
-                unpacked[k.decode(UTF8)] = v.decode(UTF8)
-
-        return unpacked
+        cdef bytes k
+        cdef bytes v
+        if raw_values:
+            return { k.decode(UTF8): v for k, v in raw_unpacked.items()}
+        return { k.decode(UTF8): v.decode(UTF8) for k, v in raw_unpacked.items()}
 
 
 cdef class MsgPackQuerySerializer(QuerySerializer):
@@ -162,7 +109,7 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         """
         Condition.not_none(query_bytes, 'query_bytes')
 
-        return MsgPackSerializer.deserialize(query_bytes)
+        return MsgPackSerializer.deserialize(query_bytes, raw_values=False)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -218,18 +165,18 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if not unpacked:
             return None  # Null order
 
-        return Order(order_id=OrderId(unpacked[ID]),
-                     symbol=self.symbol_cache.get(unpacked[SYMBOL]),
-                     order_side=order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                     order_type=order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
-                     quantity=Quantity.from_string(unpacked[QUANTITY]),
-                     price=convert_string_to_price(unpacked[PRICE]),
-                     label=convert_string_to_label(unpacked[LABEL]),
-                     order_purpose=order_purpose_from_string(self.convert_camel_to_snake(unpacked[ORDER_PURPOSE])),
-                     time_in_force=time_in_force_from_string(unpacked[TIME_IN_FORCE]),
-                     expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]),
-                     init_id=GUID(UUID(unpacked[INIT_ID])),
-                     timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]))
+        return Order(order_id=OrderId(unpacked[ID].decode(UTF8)),
+                     symbol=self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8)),
+                     order_side=order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                     order_type=order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
+                     quantity=Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                     price=convert_string_to_price(unpacked[PRICE].decode(UTF8)),
+                     label=convert_string_to_label(unpacked[LABEL].decode(UTF8)),
+                     order_purpose=order_purpose_from_string(self.convert_camel_to_snake(unpacked[ORDER_PURPOSE].decode(UTF8))),
+                     time_in_force=time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
+                     expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
+                     init_id=GUID(UUID(unpacked[INIT_ID].decode(UTF8))),
+                     timestamp=convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8)))
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
@@ -306,35 +253,33 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Condition.not_empty(command_bytes, 'command_bytes')
 
-        cdef dict unpacked = MsgPackSerializer.deserialize_partial(
-            message_bytes=command_bytes,
-            ignore=(b'Order', b'Entry', b'StopLoss', b'TakeProfit'))
+        cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: {str, bytes}
 
-        cdef str command_type = unpacked[TYPE]
-        cdef GUID command_id = GUID(UUID(unpacked[ID]))
-        cdef datetime command_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
+        cdef str command_type = unpacked[TYPE].decode(UTF8)
+        cdef GUID command_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef datetime command_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if command_type == AccountInquiry.__name__:
             return AccountInquiry(
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 command_id,
                 command_timestamp)
         if command_type == SubmitOrder.__name__:
             return SubmitOrder(
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
-                PositionId(unpacked[POSITION_ID]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
+                PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp)
         if command_type == SubmitAtomicOrder.__name__:
             return SubmitAtomicOrder(
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
-                PositionId(unpacked[POSITION_ID]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
+                PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 AtomicOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
                             self.order_serializer.deserialize(unpacked[STOP_LOSS]),
                             self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
@@ -342,19 +287,19 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_timestamp)
         if command_type == ModifyOrder.__name__:
             return ModifyOrder(
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                Quantity.from_string(unpacked[MODIFIED_QUANTITY]),
-                convert_string_to_price(unpacked[MODIFIED_PRICE]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                Quantity.from_string(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
                 command_id,
                 command_timestamp)
         if command_type == CancelOrder.__name__:
             return CancelOrder(
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                ValidString(unpacked[CANCEL_REASON]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ValidString(unpacked[CANCEL_REASON].decode(UTF8)),
                 command_id,
                 command_timestamp)
         else:
@@ -505,153 +450,153 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Condition.not_empty(event_bytes, 'event_bytes')
 
-        cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)
+        cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: {str, bytes}
 
-        cdef str event_type = unpacked[TYPE]
-        cdef GUID event_id = GUID(UUID(unpacked[ID]))
-        cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
+        cdef str event_type = unpacked[TYPE].decode(UTF8)
+        cdef GUID event_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         cdef Currency currency
         if event_type == AccountStateEvent.__name__:
-            currency = currency_from_string(unpacked[CURRENCY])
+            currency = currency_from_string(unpacked[CURRENCY].decode(UTF8))
             return AccountStateEvent(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 currency,
-                Money.from_string(unpacked[CASH_BALANCE], currency),
-                Money.from_string(unpacked[CASH_START_DAY], currency),
-                Money.from_string(unpacked[CASH_ACTIVITY_DAY], currency),
-                Money.from_string(unpacked[MARGIN_USED_LIQUIDATION], currency),
-                Money.from_string(unpacked[MARGIN_USED_MAINTENANCE], currency),
-                Decimal.from_string_to_decimal(unpacked[MARGIN_RATIO]),
-                ValidString(unpacked[MARGIN_CALL_STATUS]),
+                Money.from_string(unpacked[CASH_BALANCE].decode(UTF8), currency),
+                Money.from_string(unpacked[CASH_START_DAY].decode(UTF8), currency),
+                Money.from_string(unpacked[CASH_ACTIVITY_DAY].decode(UTF8), currency),
+                Money.from_string(unpacked[MARGIN_USED_LIQUIDATION].decode(UTF8), currency),
+                Money.from_string(unpacked[MARGIN_USED_MAINTENANCE].decode(UTF8), currency),
+                Decimal.from_string_to_decimal(unpacked[MARGIN_RATIO].decode(UTF8)),
+                ValidString(unpacked[MARGIN_CALL_STATUS].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderInitialized.__name__:
             return OrderInitialized(
-                OrderId(unpacked[ORDER_ID]),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
-                convert_string_to_label(unpacked[LABEL]),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
-                Quantity.from_string(unpacked[QUANTITY]),
-                convert_string_to_price(unpacked[PRICE]),
-                order_purpose_from_string(self.convert_camel_to_snake(unpacked[ORDER_PURPOSE])),
-                time_in_force_from_string(unpacked[TIME_IN_FORCE]),
-                convert_string_to_datetime(unpacked[EXPIRE_TIME]),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
+                convert_string_to_label(unpacked[LABEL].decode(UTF8)),
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
+                Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[PRICE].decode(UTF8)),
+                order_purpose_from_string(self.convert_camel_to_snake(unpacked[ORDER_PURPOSE].decode(UTF8))),
+                time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
+                convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                convert_string_to_datetime(unpacked[SUBMITTED_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                convert_string_to_datetime(unpacked[SUBMITTED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderInvalid.__name__:
             return OrderInvalid(
-                OrderId(unpacked[ORDER_ID]),
-                unpacked[INVALID_REASON],
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                unpacked[INVALID_REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
         if event_type == OrderDenied.__name__:
             return OrderDenied(
-                OrderId(unpacked[ORDER_ID]),
-                unpacked[DENIED_REASON],
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                unpacked[DENIED_REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
         if event_type == OrderAccepted.__name__:
             return OrderAccepted(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                convert_string_to_label(unpacked[LABEL]),
-                convert_string_to_datetime(unpacked[ACCEPTED_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                OrderIdBroker(unpacked[ORDER_ID_BROKER].decode(UTF8)),
+                convert_string_to_label(unpacked[LABEL].decode(UTF8)),
+                convert_string_to_datetime(unpacked[ACCEPTED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderRejected.__name__:
             return OrderRejected(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                convert_string_to_datetime(unpacked[REJECTED_TIME]),
-                ValidString(unpacked[REJECTED_REASON]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                convert_string_to_datetime(unpacked[REJECTED_TIME].decode(UTF8)),
+                ValidString(unpacked[REJECTED_REASON].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderWorking.__name__:
             return OrderWorking(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                Symbol.from_string(unpacked[SYMBOL]),
-                convert_string_to_label(unpacked[LABEL]),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
-                Quantity.from_string(unpacked[QUANTITY]),
-                convert_string_to_price(unpacked[PRICE]),
-                time_in_force_from_string(unpacked[TIME_IN_FORCE]),
-                convert_string_to_datetime(unpacked[WORKING_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                OrderIdBroker(unpacked[ORDER_ID_BROKER].decode(UTF8)),
+                Symbol.from_string(unpacked[SYMBOL].decode(UTF8)),
+                convert_string_to_label(unpacked[LABEL].decode(UTF8)),
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
+                Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[PRICE].decode(UTF8)),
+                time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
+                convert_string_to_datetime(unpacked[WORKING_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp,
-                convert_string_to_datetime(unpacked[EXPIRE_TIME]))
+                convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)))
         if event_type == OrderCancelled.__name__:
             return OrderCancelled(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                convert_string_to_datetime(unpacked[CANCELLED_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                convert_string_to_datetime(unpacked[CANCELLED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderCancelReject.__name__:
             return OrderCancelReject(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                convert_string_to_datetime(unpacked[REJECTED_TIME]),
-                ValidString(unpacked[REJECTED_RESPONSE_TO]),
-                ValidString(unpacked[REJECTED_REASON]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                convert_string_to_datetime(unpacked[REJECTED_TIME].decode(UTF8)),
+                ValidString(unpacked[REJECTED_RESPONSE_TO].decode(UTF8)),
+                ValidString(unpacked[REJECTED_REASON].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderModified.__name__:
             return OrderModified(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                Quantity.from_string(unpacked[MODIFIED_QUANTITY]),
-                convert_string_to_price(unpacked[MODIFIED_PRICE]),
-                convert_string_to_datetime(unpacked[MODIFIED_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                OrderIdBroker(unpacked[ORDER_ID_BROKER].decode(UTF8)),
+                Quantity.from_string(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
+                convert_string_to_datetime(unpacked[MODIFIED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderExpired.__name__:
             return OrderExpired(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                convert_string_to_datetime(unpacked[EXPIRED_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                convert_string_to_datetime(unpacked[EXPIRED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderPartiallyFilled.__name__:
             return OrderPartiallyFilled(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                ExecutionId(unpacked[EXECUTION_ID]),
-                PositionIdBroker(unpacked[POSITION_ID_BROKER]),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                Quantity.from_string(unpacked[FILLED_QUANTITY]),
-                Quantity.from_string(unpacked[LEAVES_QUANTITY]),
-                convert_string_to_price(unpacked[AVERAGE_PRICE]),
-                currency_from_string(unpacked[CURRENCY]),
-                convert_string_to_datetime(unpacked[EXECUTION_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
+                PositionIdBroker(unpacked[POSITION_ID_BROKER].decode(UTF8)),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
+                Quantity.from_string(unpacked[LEAVES_QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                currency_from_string(unpacked[CURRENCY].decode(UTF8)),
+                convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         if event_type == OrderFilled.__name__:
             return OrderFilled(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                ExecutionId(unpacked[EXECUTION_ID]),
-                PositionIdBroker(unpacked[POSITION_ID_BROKER]),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                Quantity.from_string(unpacked[FILLED_QUANTITY]),
-                convert_string_to_price(unpacked[AVERAGE_PRICE]),
-                currency_from_string(unpacked[CURRENCY]),
-                convert_string_to_datetime(unpacked[EXECUTION_TIME]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
+                PositionIdBroker(unpacked[POSITION_ID_BROKER].decode(UTF8)),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
+                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                currency_from_string(unpacked[CURRENCY].decode(UTF8)),
+                convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         else:
@@ -704,13 +649,11 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         """
         Condition.not_empty(request_bytes, 'request_bytes')
 
-        cdef dict unpacked = MsgPackSerializer.deserialize_partial(
-            message_bytes=request_bytes,
-            ignore=(b'', b'Query'))
+        cdef dict unpacked = MsgPackSerializer.deserialize(request_bytes)  # type: {str, bytes}
 
-        cdef str request_type = unpacked[TYPE]
-        cdef GUID request_id = GUID(UUID(unpacked[ID]))
-        cdef datetime request_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
+        cdef str request_type = unpacked[TYPE].decode(UTF8)
+        cdef GUID request_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef datetime request_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if request_type == DataRequest.__name__:
             return DataRequest(
@@ -772,38 +715,36 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         """
         Condition.not_empty(response_bytes, 'response_bytes')
 
-        cdef dict unpacked = MsgPackSerializer.deserialize_partial(
-            message_bytes=response_bytes,
-            ignore=(b'', b'Data'))
+        cdef dict unpacked = MsgPackSerializer.deserialize(response_bytes)  # type: {str, bytes}
 
-        cdef str response_type = unpacked[TYPE]
-        cdef GUID correlation_id = GUID(UUID(unpacked[CORRELATION_ID]))
-        cdef GUID response_id = GUID(UUID(unpacked[ID]))
-        cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
+        cdef str response_type = unpacked[TYPE].decode(UTF8)
+        cdef GUID correlation_id = GUID(UUID(unpacked[CORRELATION_ID].decode(UTF8)))
+        cdef GUID response_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if response_type == MessageReceived.__name__:
             return MessageReceived(
-                unpacked[RECEIVED_TYPE],
+                unpacked[RECEIVED_TYPE].decode(UTF8),
                 correlation_id,
                 response_id,
                 response_timestamp)
         if response_type == MessageRejected.__name__:
             return MessageRejected(
-                unpacked[MESSAGE],
+                unpacked[MESSAGE].decode(UTF8),
                 correlation_id,
                 response_id,
                 response_timestamp)
         if response_type == QueryFailure.__name__:
             return QueryFailure(
-                unpacked[MESSAGE],
+                unpacked[MESSAGE].decode(UTF8),
                 correlation_id,
                 response_id,
                 response_timestamp)
         if response_type == DataResponse.__name__:
             return DataResponse(
-                bytes(unpacked[DATA]),
-                unpacked[DATA_TYPE],
-                unpacked[DATA_ENCODING],
+                unpacked[DATA],
+                unpacked[DATA_TYPE].decode(UTF8),
+                unpacked[DATA_ENCODING].decode(UTF8),
                 correlation_id,
                 response_id,
                 response_timestamp)
@@ -835,7 +776,7 @@ cdef class MsgPackLogSerializer(LogSerializer):
             TIMESTAMP: convert_datetime_to_string(message.timestamp),
             LOG_LEVEL: message.level_string(),
             LOG_TEXT: message.text,
-            THREAD_ID: message.thread_id,
+            THREAD_ID: str(message.thread_id),
         }
 
         return MsgPackSerializer.serialize(package)
@@ -852,7 +793,7 @@ cdef class MsgPackLogSerializer(LogSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(message_bytes)
 
         return LogMessage(
-            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]),
-            level=log_level_from_string(unpacked[LOG_LEVEL]),
-            text=unpacked[LOG_TEXT],
-            thread_id=unpacked[THREAD_ID])
+            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8)),
+            level=log_level_from_string(unpacked[LOG_LEVEL].decode(UTF8)),
+            text=unpacked[LOG_TEXT].decode(UTF8),
+            thread_id=int(unpacked[THREAD_ID].decode(UTF8)))
