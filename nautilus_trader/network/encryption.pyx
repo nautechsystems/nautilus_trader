@@ -14,21 +14,18 @@ cdef class EncryptionConfig:
     Provides an encryption configuration.
     """
 
-    def __init__(self,
-                 bint use_encryption=False,
-                 str encryption_type not None='',
-                 str keys_dir not None=''):
+    def __init__(self, str algorithm not None='none', str keys_dir not None=''):
         """
         Initializes a new instance of the EncryptionConfig class.
 
-        :param use_encryption: If encryption should be used.
-        :param encryption_type: The encryption type to be used.
+        :param algorithm: The cryptographic algorithm type to be used.
         :param keys_dir: The path to the key certificates directory.
         """
+        use_encryption = algorithm != 'none'
         if use_encryption:
-            Condition.valid_string(encryption_type, 'encryption_type')
+            Condition.valid_string(algorithm, 'algorithm')
             Condition.valid_string(keys_dir, 'key_dir')
 
         self.use_encryption = use_encryption
-        self.encryption_type = encryption_type
+        self.algorithm = algorithm
         self.keys_dir = keys_dir

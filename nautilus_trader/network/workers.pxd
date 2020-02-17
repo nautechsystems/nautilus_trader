@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.network.compression cimport Compressor
 
 
 cdef class MQWorker:
@@ -15,6 +16,7 @@ cdef class MQWorker:
     cdef str _service_address
     cdef object _zmq_context
     cdef object _zmq_socket
+    cdef Compressor _compressor
     cdef int _cycles
 
     cdef readonly str name

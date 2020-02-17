@@ -8,11 +8,17 @@
 
 
 cdef class Compressor:
-    cpdef bytes compress(self, bytes source)
-    cpdef bytes decompress(self, bytes source)
+    cpdef bytes compress(self, bytes data)
+    cpdef bytes decompress(self, bytes data)
+
+
+cdef class CompressorBypass(Compressor):
+
+    cpdef bytes compress(self, bytes data)
+    cpdef bytes decompress(self, bytes data)
 
 
 cdef class SnappyCompressor(Compressor):
 
-    cpdef bytes compress(self, bytes source)
-    cpdef bytes decompress(self, bytes source)
+    cpdef bytes compress(self, bytes data)
+    cpdef bytes decompress(self, bytes data)

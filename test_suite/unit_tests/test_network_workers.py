@@ -13,6 +13,7 @@ import zmq
 
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
+from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionConfig
 from test_kit.mocks import ObjectStorer, MockServer, MockPublisher
 
@@ -37,6 +38,7 @@ class RequestWorkerTests(unittest.TestCase):
             LOCALHOST,
             TEST_PORT,
             self.context,
+            CompressorBypass(),
             EncryptionConfig(),
             logger)
 
@@ -89,6 +91,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             TEST_PORT,
             self.zmq_context,
             self.response_handler.store_2,
+            CompressorBypass(),
             EncryptionConfig(),
             logger)
 

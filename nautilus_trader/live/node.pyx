@@ -24,6 +24,7 @@ from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, Executi
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.network.compression cimport CompressorBypass, SnappyCompressor
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trading.trader cimport Trader
@@ -120,11 +121,20 @@ cdef class TradingNode:
         self._log_header()
         self._log.info("Starting...")
 
-        # Setup messaging
+        # Setup compressor
+        compressor_type = config_messaging['compression']
+        if compressor_type == 'none':
+            compressor = CompressorBypass()
+        elif compressor_type == 'snappy':
+            compressor = SnappyCompressor()
+        else:
+            raise RuntimeError(f"Compressor type {compressor_type} not recognized. "
+                               f"Must be either 'none', or 'snappy'.")
+
+        # Setup encryption
         encryption = EncryptionConfig(
-                use_encryption=config_messaging['use_encryption'],
-                encryption_type=config_messaging['encryption_type'],
-                keys_dir=config_messaging['keys_dir'])
+            algorithm=config_messaging['encryption'],
+            keys_dir=config_messaging['keys_dir'])
 
         self._venue = Venue(config_data['venue'])
         self._data_client = LiveDataClient(
@@ -137,6 +147,7 @@ cdef class TradingNode:
             bar_pub_port=config_data['bar_sub_port'],
             inst_rep_port=config_data['inst_req_port'],
             inst_pub_port=config_data['inst_sub_port'],
+            compressor=compressor,
             encryption=encryption,
             clock=self._clock,
             guid_factory=self._guid_factory,
@@ -181,6 +192,7 @@ cdef class TradingNode:
             commands_port=config_exec_client['commands_port'],
             events_port=config_exec_client['events_port'],
             events_topic=config_exec_client['events_topic'],
+            compressor=compressor,
             encryption=encryption,
             logger=self._logger)
 

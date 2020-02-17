@@ -27,6 +27,7 @@ from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
+from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
@@ -1057,6 +1058,7 @@ cdef class LiveExecClient(ExecutionClient):
             int commands_port=55555,
             int events_port=55556,
             str events_topic='Events',
+            Compressor compressor not None=CompressorBypass(),
             EncryptionConfig encryption not None=EncryptionConfig(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
@@ -1098,6 +1100,7 @@ cdef class LiveExecClient(ExecutionClient):
             host,
             commands_port,
             self._zmq_context,
+            compressor,
             encryption,
             logger)
 
@@ -1108,6 +1111,7 @@ cdef class LiveExecClient(ExecutionClient):
             events_port,
             self._zmq_context,
             self._event_handler,
+            compressor,
             encryption,
             logger)
 
