@@ -30,7 +30,7 @@
     "version": "1.0",
     "compression": "snappy",
     "encryption": "none",
-    "keys_dir": "keys/"
+    "keys_dir": ""
   },
 
   "data_client": {

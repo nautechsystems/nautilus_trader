@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import os
 import time
 import json
 import pymongo
@@ -123,7 +124,7 @@ cdef class TradingNode:
 
         # Setup compressor
         compressor_type = config_messaging['compression']
-        if compressor_type == 'none':
+        if compressor_type in ('', 'none'):
             compressor = CompressorBypass()
         elif compressor_type == 'snappy':
             compressor = SnappyCompressor()
@@ -132,9 +133,11 @@ cdef class TradingNode:
                                f"Must be either 'none', or 'snappy'.")
 
         # Setup encryption
+        working_directory = os.getcwd()
+        keys_dir = os.path.join(working_directory, config_messaging['keys_dir'])
         encryption = EncryptionConfig(
             algorithm=config_messaging['encryption'],
-            keys_dir=config_messaging['keys_dir'])
+            keys_dir=keys_dir)
 
         self._venue = Venue(config_data['venue'])
         self._data_client = LiveDataClient(

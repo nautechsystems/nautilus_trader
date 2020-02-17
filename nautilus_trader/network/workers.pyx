@@ -70,13 +70,18 @@ cdef class MQWorker:
         self._cycles = 0
 
         if encryption.use_encryption:
-            key_file_client = os.path.join(encryption.keys_dir, "client.key")
+            if encryption.algorithm != 'curve':
+                raise ValueError(f'Invalid encryption specified, was \'{encryption.algorithm}\'')
+            key_file_client = os.path.join(encryption.keys_dir, "client.key_secret")
             key_file_server = os.path.join(encryption.keys_dir, "server.key")
             client_public, client_secret = zmq.auth.load_certificate(key_file_client)
             server_public, server_secret = zmq.auth.load_certificate(key_file_server)
             self._zmq_socket.curve_secretkey = client_secret
             self._zmq_socket.curve_publickey = client_public
             self._zmq_socket.curve_serverkey = server_public
+            self._log.info(f"Curve25519 encryption setup for {self._service_address}")
+        else:
+            self._log.warning(f"No encryption setup for {self._service_address}")
 
     cpdef void connect(self) except *:
         """

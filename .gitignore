@@ -8,6 +8,8 @@
 *.html
 *.log
 *.prof
+*.key
+*.key_secret
 .cache
 .git
 .idea

@@ -21,6 +21,8 @@ cdef class EncryptionConfig:
         :param algorithm: The cryptographic algorithm type to be used.
         :param keys_dir: The path to the key certificates directory.
         """
+        if algorithm == '':
+            algorithm = 'none'
         use_encryption = algorithm != 'none'
         if use_encryption:
             Condition.valid_string(algorithm, 'algorithm')
