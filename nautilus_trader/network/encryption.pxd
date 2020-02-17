@@ -9,5 +9,5 @@
 
 cdef class EncryptionConfig:
     cdef readonly bint use_encryption
-    cdef readonly str encryption_type
+    cdef readonly str algorithm
     cdef readonly str keys_dir

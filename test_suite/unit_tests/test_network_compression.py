@@ -9,10 +9,22 @@
 import unittest
 from base64 import b64encode
 
-from nautilus_trader.network.compression import SnappyCompressor
+from nautilus_trader.network.compression import CompressorBypass, SnappyCompressor
 
 
 class CompressorTests(unittest.TestCase):
+
+    def test_compressor_bypass_returns_given_bytes(self):
+        # Arrange
+        message = b'hello world!'
+        compressor = CompressorBypass()
+
+        # Act
+        compressed = compressor.compress(message)
+        decompressed = compressor.decompress(compressed)
+
+        # Assert
+        self.assertEqual(message, decompressed)
 
     def test_snappy_compressor_can_compress_and_decompress(self):
         # Arrange

@@ -28,9 +28,9 @@
 
   "messaging": {
     "version": "1.0",
-    "compression": "none",
-    "encryption": "curve",
-    "key_dir": "keys/"
+    "compression": "snappy",
+    "encryption": "none",
+    "keys_dir": "keys/"
   },
 
   "data_client": {

@@ -21,15 +21,13 @@ from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
-from nautilus_trader.serialization.data cimport (  # noqa: E211
-    Utf8TickSerializer,
-    Utf8BarSerializer,
-    BsonDataSerializer,
-    BsonInstrumentSerializer)
+from nautilus_trader.serialization.data cimport Utf8TickSerializer, Utf8BarSerializer
+from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure
+from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -49,6 +47,7 @@ cdef class LiveDataClient(DataClient):
                  int bar_pub_port=55504,
                  int inst_rep_port=55505,
                  int inst_pub_port=55506,
+                 Compressor compressor not None=CompressorBypass(),
                  EncryptionConfig encryption not None=EncryptionConfig(),
                  RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
                  ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
@@ -70,7 +69,8 @@ cdef class LiveDataClient(DataClient):
         :param bar_pub_port: The data service port for bar publications (default=55504).
         :param inst_rep_port: The data service port for instrument responses (default=55505).
         :param inst_pub_port: The data service port for instrument publications (default=55506).
-        :param encryption: The encryption configuration.
+        :param encryption: The messaging compressor.
+        :param encryption: The messaging encryption configuration.
         :param request_serializer: The request serializer for the component.
         :param response_serializer: The response serializer for the component.
         :param data_serializer: The data serializer for the component.
@@ -107,6 +107,7 @@ cdef class LiveDataClient(DataClient):
             host,
             tick_rep_port,
             self._zmq_context,
+            compressor,
             encryption,
             logger)
 
@@ -116,6 +117,7 @@ cdef class LiveDataClient(DataClient):
             host,
             bar_rep_port,
             self._zmq_context,
+            compressor,
             encryption,
             logger)
 
@@ -125,6 +127,7 @@ cdef class LiveDataClient(DataClient):
             host,
             inst_rep_port,
             self._zmq_context,
+            compressor,
             encryption,
             logger)
 
@@ -135,6 +138,7 @@ cdef class LiveDataClient(DataClient):
             tick_pub_port,
             self._zmq_context,
             self._handle_tick_sub,
+            compressor,
             encryption,
             logger)
 
@@ -145,6 +149,7 @@ cdef class LiveDataClient(DataClient):
             bar_pub_port,
             self._zmq_context,
             self._handle_bar_sub,
+            compressor,
             encryption,
             logger)
 
@@ -155,6 +160,7 @@ cdef class LiveDataClient(DataClient):
             inst_pub_port,
             self._zmq_context,
             self._handle_inst_sub,
+            compressor,
             encryption,
             logger)
 

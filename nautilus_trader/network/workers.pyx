@@ -13,6 +13,7 @@ import zmq.auth
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionConfig
 
 cdef str _UTF8 = 'utf-8'
@@ -31,6 +32,7 @@ cdef class MQWorker:
             int port,
             zmq_context not None: zmq.Context,
             int zmq_socket_type,
+            Compressor compressor not None,
             EncryptionConfig encryption not None,
             Logger logger not None):
         """
@@ -42,6 +44,7 @@ cdef class MQWorker:
         :param port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param zmq_socket_type: The ZeroMQ socket type.
+        :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param logger: The logger for the component.
         :raises ValueError: If the worker_name is not a valid string.
@@ -62,6 +65,7 @@ cdef class MQWorker:
         self._zmq_context = zmq_context
         self._zmq_socket = self._zmq_context.socket(zmq_socket_type)
         self._zmq_socket.setsockopt(zmq.LINGER, 1)
+        self._compressor = compressor
         self._log = LoggerAdapter(worker_name, logger)
         self._cycles = 0
 
@@ -116,6 +120,7 @@ cdef class RequestWorker(MQWorker):
             str host,
             int port,
             zmq_context not None: zmq.Context,
+            Compressor compressor not None,
             EncryptionConfig encryption not None,
             Logger logger not None):
         """
@@ -145,6 +150,7 @@ cdef class RequestWorker(MQWorker):
             port,
             zmq_context,
             zmq.REQ,
+            compressor,
             encryption,
             logger)
 
@@ -159,12 +165,12 @@ cdef class RequestWorker(MQWorker):
         Condition.not_empty(request, 'request')
 
         self._cycles += 1
-        self._zmq_socket.send(request)
+        self._zmq_socket.send(self._compressor.compress(request))
         self._log.verbose(f"[{self._cycles}]--> Request of {len(request)} bytes.")
 
         cdef bytes response
         try:
-            response = self._zmq_socket.recv(flags=0)  # None blocking
+            response = self._compressor.decompress(self._zmq_socket.recv(flags=0))  # Blocking
         except zmq.ZMQError as ex:
             self._log.error(str(ex))
             return None
@@ -187,6 +193,7 @@ cdef class SubscriberWorker(MQWorker):
             int port,
             zmq_context not None: zmq.Context,
             handler not None: callable,
+            Compressor compressor not None,
             EncryptionConfig encryption not None,
             Logger logger not None):
         """
@@ -219,6 +226,7 @@ cdef class SubscriberWorker(MQWorker):
             port,
             zmq_context,
             zmq.SUB,
+            compressor,
             encryption,
             logger)
 
@@ -256,7 +264,7 @@ cdef class SubscriberWorker(MQWorker):
         while True:
             self._cycles += 1
             topic = self._zmq_socket.recv().decode(_UTF8)
-            body = self._zmq_socket.recv()
+            body = self._compressor.decompress(self._zmq_socket.recv())
 
             self._log.verbose(f"[{self._cycles}]<-- topic={topic}, message={body}")
             self._handler(topic, body)
