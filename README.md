@@ -21,7 +21,7 @@ To run backtesting research locally install via pip;
 
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
-# Live Deployment
+## Live Deployment
 
 The trader must assemble a directory including the following;
 
