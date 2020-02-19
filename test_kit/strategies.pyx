@@ -389,7 +389,7 @@ cdef class EMACross(TradingStrategy):
         # Check market liquidity
         cdef double liquidity_ratio = self.atr.value / average_spread
         if liquidity_ratio < 2.0:
-            self.log.info(f"liquidity_ratio == {liquidity_ratio} (no liquidity).")
+            self.log.debug(f"liquidity_ratio == {liquidity_ratio} (no liquidity).")
             return
 
         cdef double spread_buffer = max(average_spread, self.spread(self.symbol))
