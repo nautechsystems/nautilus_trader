@@ -37,7 +37,7 @@ To generate a new client key pair from a python console or .py run the following
     keys_dir = 'path/to/your/keys'
     Path(keys_dir).mkdir(parents=True, exist_ok=True)
 
-    zmq.auth.create_certificates(keys_dir, "client")
+    zmq.auth.create_certificates(keys_dir, 'client')
 
 ## Live Deployment
 
