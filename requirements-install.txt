@@ -8,4 +8,4 @@ pyzmq>=18.0.0
 pymongo>=3.8.0
 msgpack>=0.6.1
 redis>=3.3.6
-snappy>=1.1.7
+python-snappy>=0.5.4
