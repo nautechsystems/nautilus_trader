@@ -28,7 +28,7 @@ class RequestWorkerTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
-        logger = LiveLogger()
+        self.logger = LiveLogger()
         self.context = zmq.Context()
         self.response_handler = ObjectStorer()
 
@@ -40,14 +40,35 @@ class RequestWorkerTests(unittest.TestCase):
             self.context,
             CompressorBypass(),
             EncryptionConfig(),
-            logger)
+            self.logger)
 
-        self.server = MockServer(self.context, TEST_PORT, logger)
+        self.server = MockServer(self.context, TEST_PORT, self.logger)
 
     def tearDown(self):
         # Tear Down
         self.worker.disconnect()
         self.server.stop()
+
+    # TODO
+    # def test_send_message_to_wrong_address_times_out(self):
+    #     # Arrange
+    #     worker = RequestWorker(
+    #         "TestRequester",
+    #         "TestResponder",
+    #         LOCALHOST,
+    #         TEST_PORT + 1,
+    #         self.context,
+    #         CompressorBypass(),
+    #         EncryptionConfig(),
+    #         self.logger)
+    #
+    #     worker.connect()
+    #
+    #     # Act
+    #     response = self.worker.send(b'hello')
+    #
+    #     # Assert
+    #     self.assertEqual(b'OK', response)
 
     def test_can_send_one_message_and_receive_response(self):
         # Arrange
@@ -80,7 +101,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
-        logger = LiveLogger()
+        self.logger = LiveLogger()
         self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
 
@@ -93,9 +114,9 @@ class SubscriberWorkerTests(unittest.TestCase):
             self.response_handler.store_2,
             CompressorBypass(),
             EncryptionConfig(),
-            logger)
+            self.logger)
 
-        self.publisher = MockPublisher(self.zmq_context, TEST_PORT, logger)
+        self.publisher = MockPublisher(self.zmq_context, TEST_PORT, self.logger)
 
     def tearDown(self):
         # Tear Down

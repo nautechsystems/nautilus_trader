@@ -18,7 +18,7 @@ from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.network.responses import MessageReceived
+from nautilus_trader.network.messages import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.execution import LiveExecutionEngine, LiveExecClient
 from nautilus_trader.live.logger import LiveLogger
