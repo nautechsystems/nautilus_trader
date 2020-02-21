@@ -16,7 +16,7 @@ from nautilus_trader.model.objects import Price, Volume, Tick, Bar
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
-from nautilus_trader.network.responses import DataResponse
+from nautilus_trader.network.messages import DataResponse
 from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper, BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from test_kit.stubs import TestStubs

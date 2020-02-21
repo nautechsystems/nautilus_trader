@@ -63,7 +63,7 @@ cdef class MQWorker:
         self._service_name = service_name
         self._service_address = f'tcp://{host}:{port}'
         self._zmq_context = zmq_context
-        self._zmq_socket = self._zmq_context.socket(zmq_socket_type)
+        self._zmq_socket = self._zmq_context.socket(zmq_socket_type,)
         self._zmq_socket.setsockopt(zmq.LINGER, 1)
         self._compressor = compressor
         self._log = LoggerAdapter(worker_name, logger)
@@ -139,6 +139,7 @@ cdef class RequestWorker(MQWorker):
         :param host: The service host address.
         :param port: The service port.
         :param zmq_context: The ZeroMQ context.
+        :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param logger: The logger for the component.
         :raises ValueError: If the worker_name is not a valid string.
@@ -213,6 +214,7 @@ cdef class SubscriberWorker(MQWorker):
         :param port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param handler: The message handler.
+        :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
         :param logger: The logger for the component.
         :raises ValueError: If the worker_name is not a valid string.

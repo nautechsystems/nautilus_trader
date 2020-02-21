@@ -15,7 +15,7 @@ from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitA
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.network.responses cimport MessageReceived
+from nautilus_trader.network.messages cimport MessageReceived
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from test_kit.stubs import TestStubs
 

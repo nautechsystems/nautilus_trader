@@ -25,8 +25,7 @@ from nautilus_trader.serialization.data cimport Utf8TickSerializer, Utf8BarSeria
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.network.requests cimport DataRequest
-from nautilus_trader.network.responses cimport MessageRejected, QueryFailure
+from nautilus_trader.network.messages cimport DataRequest, MessageRejected, QueryFailure
 from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.trading.strategy cimport TradingStrategy

@@ -37,8 +37,8 @@ from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, O
 from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.network.requests cimport DataRequest
-from nautilus_trader.network.responses cimport MessageReceived, MessageRejected, QueryFailure, DataResponse
+from nautilus_trader.network.messages cimport DataRequest, DataResponse
+from nautilus_trader.network.messages cimport MessageReceived, MessageRejected, QueryFailure
 
 
 cdef class MsgPackSerializer:

@@ -20,8 +20,7 @@ from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.data import *
 from nautilus_trader.serialization.serializers import *
 from nautilus_trader.serialization.common import *
-from nautilus_trader.network.requests import *
-from nautilus_trader.network.responses import *
+from nautilus_trader.network.messages import *
 from test_kit.stubs import *
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
