@@ -87,8 +87,11 @@ cdef class MQWorker:
         """
         Connect to the service.
         """
+        self._log.info(f"Connecting to {self._service_name} at {self._service_address}...")
         self._zmq_socket.connect(self._service_address)
-        self._log.info(f"Connected to {self._service_name} at {self._service_address}")
+        # TODO: Send CONNECT message
+        # TODO: Receive CONNECTED message within timeout or fail
+        # TODO: Log connected or fail
 
     cpdef void disconnect(self) except *:
         """
