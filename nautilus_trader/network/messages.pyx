@@ -9,29 +9,119 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.types cimport GUID, Identifier
 from nautilus_trader.core.message cimport Request
+from nautilus_trader.model.identifiers cimport TraderId
 
 
-cdef class DataRequest(Request):
+cdef class SessionId(Identifier):
     """
-    Represents a request for data.
+    Represents a unique network session identifier
+    """
+
+    def __init__(self, str value not None):
+        """
+        Initializes a new instance of the SessionId class.
+
+        :param value: The session identifier value.
+        """
+        super().__init__(value)
+
+
+cdef class Connect(Request):
+    """
+    Represents a request to connect to a session.
     """
 
     def __init__(self,
-                 dict query not None,
+                 TraderId trader_id not None,
                  GUID request_id not None,
                  datetime request_timestamp not None):
         """
-        Initializes a new instance of the DataRequest class.
+        Initializes a new instance of the Connect class.
 
-        :param query: The data query.
+        :param trader_id: The trader identifier.
         :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
         super().__init__(request_id, request_timestamp)
 
-        self.query = query
+        self.trader_id = trader_id
+
+
+cdef class Connected(Response):
+    """
+    Represents a response confirming connection to a session.
+    """
+
+    def __init__(self,
+                 str service_name not None,
+                 str message not None,
+                 SessionId session_id not None,
+                 GUID response_id not None,
+                 datetime response_timestamp not None):
+        """
+        Initializes a new instance of the Connected class.
+
+        :param service_name: The service name connected to.
+        :param message: The connected message.
+        :param message: The connected session identifier.
+        :param response_id: The response identifier.
+        :param response_timestamp: The response timestamp.
+        """
+        super().__init__(response_id, response_timestamp)
+
+        self.service_name = service_name
+        self.message = message
+        self.session_id = session_id
+
+
+cdef class Disconnect(Request):
+    """
+    Represents a request to disconnect from a session.
+    """
+
+    def __init__(self,
+                 TraderId trader_id not None,
+                 GUID request_id not None,
+                 datetime request_timestamp not None):
+        """
+        Initializes a new instance of the Disconnect class.
+
+        :param trader_id: The trader identifier.
+        :param request_id: The request identifier.
+        :param request_timestamp: The request timestamp.
+        """
+        super().__init__(request_id, request_timestamp)
+
+        self.trader_id = trader_id
+
+
+cdef class Disconnected(Response):
+    """
+    Represents a response confirming disconnection from a session.
+    """
+
+    def __init__(self,
+                 str service_name not None,
+                 str message not None,
+                 SessionId session_id not None,
+                 GUID response_id not None,
+                 datetime response_timestamp not None):
+        """
+        Initializes a new instance of the Disconnected class.
+
+        :param service_name: The service name disconnected from.
+        :param message: The disconnected message.
+        :param message: The disconnected session identifier.
+        :param response_id: The response identifier.
+        :param response_timestamp: The response timestamp.
+        """
+        super().__init__(response_id, response_timestamp)
+
+        self.service_name = service_name
+        self.message = message
+        self.session_id = session_id
 
 
 cdef class MessageReceived(Response):
@@ -135,6 +225,27 @@ cdef class QueryFailure(Response):
                 f"message='{self.message}', "
                 f"id={self.id.value}, "
                 f"correlation_id={self.id.value})")
+
+
+cdef class DataRequest(Request):
+    """
+    Represents a request for data.
+    """
+
+    def __init__(self,
+                 dict query not None,
+                 GUID request_id not None,
+                 datetime request_timestamp not None):
+        """
+        Initializes a new instance of the DataRequest class.
+
+        :param query: The data query.
+        :param request_id: The request identifier.
+        :param request_timestamp: The request timestamp.
+        """
+        super().__init__(request_id, request_timestamp)
+
+        self.query = query
 
 
 cdef class DataResponse(Response):

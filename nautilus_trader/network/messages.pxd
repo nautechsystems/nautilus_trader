@@ -6,11 +6,33 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.core.message cimport Request, Response
+from nautilus_trader.model.identifiers cimport TraderId
 
 
-cdef class DataRequest(Request):
-    cdef readonly dict query
+cdef class SessionId(Identifier):
+    pass
+
+
+cdef class Connect(Request):
+    cdef readonly TraderId trader_id
+
+
+cdef class Connected(Response):
+    cdef readonly str service_name
+    cdef readonly str message
+    cdef SessionId session_id
+
+
+cdef class Disconnect(Request):
+    cdef readonly TraderId trader_id
+
+
+cdef class Disconnected(Response):
+    cdef readonly str service_name
+    cdef readonly str message
+    cdef SessionId session_id
 
 
 cdef class MessageReceived(Response):
@@ -23,6 +45,10 @@ cdef class MessageRejected(Response):
 
 cdef class QueryFailure(Response):
     cdef readonly str message
+
+
+cdef class DataRequest(Request):
+    cdef readonly dict query
 
 
 cdef class DataResponse(Response):
