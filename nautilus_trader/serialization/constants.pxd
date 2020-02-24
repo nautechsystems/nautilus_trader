@@ -82,6 +82,8 @@ cdef str MAX_TRADE_SIZE
 cdef str ROLL_OVER_INTEREST_BUY
 cdef str ROLL_OVER_INTEREST_SELL
 
+cdef str SERVICE_NAME
+cdef str SESSION_ID
 cdef str RECEIVED_TYPE
 cdef str CORRELATION_ID
 cdef str MESSAGE

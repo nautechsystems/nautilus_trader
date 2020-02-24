@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, ord
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
 from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string, order_purpose_from_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string, currency_from_string
-from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker, ExecutionId
+from nautilus_trader.model.identifiers cimport Symbol, TraderId, OrderId, OrderIdBroker, ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
 from nautilus_trader.model.objects cimport Quantity, Decimal, Money
 from nautilus_trader.model.order cimport Order, AtomicOrder
@@ -37,8 +37,9 @@ from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, O
 from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.network.messages cimport DataRequest, DataResponse
+from nautilus_trader.network.messages cimport SessionId, Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.network.messages cimport MessageReceived, MessageRejected, QueryFailure
+from nautilus_trader.network.messages cimport DataRequest, DataResponse
 
 
 cdef class MsgPackSerializer:
@@ -71,8 +72,7 @@ cdef class MsgPackSerializer:
 
         cdef dict raw_unpacked = msgpack.unpackb(message_bytes, raw=True)
 
-        cdef bytes k
-        cdef bytes v
+        cdef bytes k, v
         if raw_values:
             return { k.decode(UTF8): v for k, v in raw_unpacked.items()}
         return { k.decode(UTF8): v.decode(UTF8) for k, v in raw_unpacked.items()}
@@ -265,7 +265,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 command_id,
                 command_timestamp)
-        if command_type == SubmitOrder.__name__:
+        elif command_type == SubmitOrder.__name__:
             return SubmitOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
@@ -274,7 +274,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp)
-        if command_type == SubmitAtomicOrder.__name__:
+        elif command_type == SubmitAtomicOrder.__name__:
             return SubmitAtomicOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
@@ -285,7 +285,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                             self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
                 command_id,
                 command_timestamp)
-        if command_type == ModifyOrder.__name__:
+        elif command_type == ModifyOrder.__name__:
             return ModifyOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
@@ -294,7 +294,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
                 command_id,
                 command_timestamp)
-        if command_type == CancelOrder.__name__:
+        elif command_type == CancelOrder.__name__:
             return CancelOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
@@ -471,7 +471,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ValidString(unpacked[MARGIN_CALL_STATUS].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderInitialized.__name__:
+        elif event_type == OrderInitialized.__name__:
             return OrderInitialized(
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
@@ -485,26 +485,26 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderSubmitted.__name__:
+        elif event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[SUBMITTED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderInvalid.__name__:
+        elif event_type == OrderInvalid.__name__:
             return OrderInvalid(
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 unpacked[INVALID_REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
-        if event_type == OrderDenied.__name__:
+        elif event_type == OrderDenied.__name__:
             return OrderDenied(
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 unpacked[DENIED_REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
-        if event_type == OrderAccepted.__name__:
+        elif event_type == OrderAccepted.__name__:
             return OrderAccepted(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -513,7 +513,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_datetime(unpacked[ACCEPTED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderRejected.__name__:
+        elif event_type == OrderRejected.__name__:
             return OrderRejected(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -521,7 +521,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ValidString(unpacked[REJECTED_REASON].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderWorking.__name__:
+        elif event_type == OrderWorking.__name__:
             return OrderWorking(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -537,14 +537,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 event_timestamp,
                 convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)))
-        if event_type == OrderCancelled.__name__:
+        elif event_type == OrderCancelled.__name__:
             return OrderCancelled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[CANCELLED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderCancelReject.__name__:
+        elif event_type == OrderCancelReject.__name__:
             return OrderCancelReject(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -553,7 +553,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ValidString(unpacked[REJECTED_REASON].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderModified.__name__:
+        elif event_type == OrderModified.__name__:
             return OrderModified(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -563,14 +563,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_datetime(unpacked[MODIFIED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderExpired.__name__:
+        elif event_type == OrderExpired.__name__:
             return OrderExpired(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXPIRED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderPartiallyFilled.__name__:
+        elif event_type == OrderPartiallyFilled.__name__:
             return OrderPartiallyFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -585,7 +585,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
-        if event_type == OrderFilled.__name__:
+        elif event_type == OrderFilled.__name__:
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -632,7 +632,11 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
             TIMESTAMP: convert_datetime_to_string(request.timestamp)
         }
 
-        if isinstance(request, DataRequest):
+        if isinstance(request, Connect):
+            package[TRADER_ID] = request.trader_id.value
+        elif isinstance(request, Disconnect):
+            package[TRADER_ID] = request.trader_id.value
+        elif isinstance(request, DataRequest):
             package[QUERY] = self.query_serializer.serialize(request.query)
         else:
             raise RuntimeError("Cannot serialize request (unrecognized request.")
@@ -655,7 +659,17 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         cdef GUID request_id = GUID(UUID(unpacked[ID].decode(UTF8)))
         cdef datetime request_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
-        if request_type == DataRequest.__name__:
+        if request_type == Connect.__name__:
+            return Connect(
+                TraderId(unpacked[TRADER_ID].decode(UTF8)),
+                request_id,
+                request_timestamp)
+        elif request_type == Disconnect.__name__:
+            return Disconnect(
+                TraderId(unpacked[TRADER_ID].decode(UTF8)),
+                request_id,
+                request_timestamp)
+        elif request_type == DataRequest.__name__:
             return DataRequest(
                 self.query_serializer.deserialize(unpacked[QUERY]),
                 request_id,
@@ -692,7 +706,15 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
             TIMESTAMP: convert_datetime_to_string(response.timestamp)
         }
 
-        if isinstance(response, MessageReceived):
+        if isinstance(response, Connected):
+            package[SERVICE_NAME] = response.service_name
+            package[MESSAGE] = response.message_type
+            package[SESSION_ID] = response.session_id.value
+        elif isinstance(response, Disconnected):
+            package[SERVICE_NAME] = response.service_name
+            package[MESSAGE] = response.message_type
+            package[SESSION_ID] = response.session_id.value
+        elif isinstance(response, MessageReceived):
             package[RECEIVED_TYPE] = response.received_type
         elif isinstance(response, MessageRejected):
             package[MESSAGE] = response.received_type
@@ -722,25 +744,41 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         cdef GUID response_id = GUID(UUID(unpacked[ID].decode(UTF8)))
         cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
-        if response_type == MessageReceived.__name__:
+        if response_type == Connected.__name__:
+            return Connected(
+                unpacked[SERVICE_NAME].decode(UTF8),
+                unpacked[MESSAGE].decode(UTF8),
+                SessionId(unpacked[SESSION_ID].decode(UTF8)),
+                correlation_id,
+                response_id,
+                response_timestamp)
+        elif response_type == Disconnected.__name__:
+            return Disconnected(
+                unpacked[SERVICE_NAME].decode(UTF8),
+                unpacked[MESSAGE].decode(UTF8),
+                SessionId(unpacked[SESSION_ID].decode(UTF8)),
+                correlation_id,
+                response_id,
+                response_timestamp)
+        elif response_type == MessageReceived.__name__:
             return MessageReceived(
                 unpacked[RECEIVED_TYPE].decode(UTF8),
                 correlation_id,
                 response_id,
                 response_timestamp)
-        if response_type == MessageRejected.__name__:
+        elif response_type == MessageRejected.__name__:
             return MessageRejected(
                 unpacked[MESSAGE].decode(UTF8),
                 correlation_id,
                 response_id,
                 response_timestamp)
-        if response_type == QueryFailure.__name__:
+        elif response_type == QueryFailure.__name__:
             return QueryFailure(
                 unpacked[MESSAGE].decode(UTF8),
                 correlation_id,
                 response_id,
                 response_timestamp)
-        if response_type == DataResponse.__name__:
+        elif response_type == DataResponse.__name__:
             return DataResponse(
                 unpacked[DATA],
                 unpacked[DATA_TYPE].decode(UTF8),

@@ -83,6 +83,8 @@ MAX_TRADE_SIZE = 'MaxTradeSize'
 ROLL_OVER_INTEREST_BUY = 'RolloverInterestBuy'
 ROLL_OVER_INTEREST_SELL = 'RolloverInterestSell'
 
+SERVICE_NAME = 'ServiceName'
+SESSION_ID = 'SessionId'
 RECEIVED_TYPE = 'ReceivedType'
 CORRELATION_ID = 'CorrelationId'
 MESSAGE = 'Message'
