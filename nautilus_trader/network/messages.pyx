@@ -9,23 +9,9 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID, Identifier
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.message cimport Request
-from nautilus_trader.model.identifiers cimport TraderId
-
-
-cdef class SessionId(Identifier):
-    """
-    Represents a unique network session identifier
-    """
-
-    def __init__(self, str value not None):
-        """
-        Initializes a new instance of the SessionId class.
-
-        :param value: The session identifier value.
-        """
-        super().__init__(value)
+from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
 
 
 cdef class Connect(Request):
@@ -34,19 +20,19 @@ cdef class Connect(Request):
     """
 
     def __init__(self,
-                 TraderId trader_id not None,
+                 ClientId client_id not None,
                  GUID request_id not None,
                  datetime request_timestamp not None):
         """
         Initializes a new instance of the Connect class.
 
-        :param trader_id: The trader identifier.
+        :param client_id: The client identifier.
         :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
         super().__init__(request_id, request_timestamp)
 
-        self.trader_id = trader_id
+        self.client_id = client_id
 
 
 cdef class Connected(Response):
@@ -55,24 +41,26 @@ cdef class Connected(Response):
     """
 
     def __init__(self,
-                 str service_name not None,
                  str message not None,
+                 ServerId server_id not None,
                  SessionId session_id not None,
+                 GUID correlation_id not None,
                  GUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the Connected class.
 
-        :param service_name: The service name connected to.
         :param message: The connected message.
+        :param server_id: The service name connected to.
         :param message: The connected session identifier.
+        :param correlation_id: The correlation identifier.
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
-        super().__init__(response_id, response_timestamp)
+        super().__init__(correlation_id, response_id, response_timestamp)
 
-        self.service_name = service_name
         self.message = message
+        self.server_id = server_id
         self.session_id = session_id
 
 
@@ -82,19 +70,22 @@ cdef class Disconnect(Request):
     """
 
     def __init__(self,
-                 TraderId trader_id not None,
+                 ClientId client_id not None,
+                 SessionId session_id not None,
                  GUID request_id not None,
                  datetime request_timestamp not None):
         """
         Initializes a new instance of the Disconnect class.
 
-        :param trader_id: The trader identifier.
+        :param client_id: The client identifier.
+        :param session_id: The session to disconnect from.
         :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
         super().__init__(request_id, request_timestamp)
 
-        self.trader_id = trader_id
+        self.client_id = client_id
+        self.session_id = session_id
 
 
 cdef class Disconnected(Response):
@@ -103,24 +94,26 @@ cdef class Disconnected(Response):
     """
 
     def __init__(self,
-                 str service_name not None,
                  str message not None,
+                 ServerId server_id not None,
                  SessionId session_id not None,
+                 GUID correlation_id not None,
                  GUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the Disconnected class.
 
-        :param service_name: The service name disconnected from.
         :param message: The disconnected message.
-        :param message: The disconnected session identifier.
+        :param server_id: The server identifier to disconnected from.
+        :param session_id: The session disconnected from.
+        :param correlation_id: The correlation identifier.
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
-        super().__init__(response_id, response_timestamp)
+        super().__init__(correlation_id, response_id, response_timestamp)
 
-        self.service_name = service_name
         self.message = message
+        self.server_id = server_id
         self.session_id = session_id
 
 

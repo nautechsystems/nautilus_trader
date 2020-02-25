@@ -6,33 +6,29 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.core.message cimport Request, Response
-from nautilus_trader.model.identifiers cimport TraderId
-
-
-cdef class SessionId(Identifier):
-    pass
+from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
 
 
 cdef class Connect(Request):
-    cdef readonly TraderId trader_id
+    cdef readonly ClientId client_id
 
 
 cdef class Connected(Response):
-    cdef readonly str service_name
     cdef readonly str message
-    cdef SessionId session_id
+    cdef readonly ServerId server_id
+    cdef readonly SessionId session_id
 
 
 cdef class Disconnect(Request):
-    cdef readonly TraderId trader_id
+    cdef readonly ClientId client_id
+    cdef readonly SessionId session_id
 
 
 cdef class Disconnected(Response):
-    cdef readonly str service_name
     cdef readonly str message
-    cdef SessionId session_id
+    cdef readonly ServerId server_id
+    cdef readonly SessionId session_id
 
 
 cdef class MessageReceived(Response):
