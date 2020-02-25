@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, ord
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
 from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string, order_purpose_from_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string, currency_from_string
-from nautilus_trader.model.identifiers cimport Symbol, TraderId, OrderId, OrderIdBroker, ExecutionId
+from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker, ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
 from nautilus_trader.model.objects cimport Quantity, Decimal, Money
 from nautilus_trader.model.order cimport Order, AtomicOrder
@@ -37,7 +37,8 @@ from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, O
 from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.network.messages cimport SessionId, Connect, Connected, Disconnect, Disconnected
+from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
+from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.network.messages cimport MessageReceived, MessageRejected, QueryFailure
 from nautilus_trader.network.messages cimport DataRequest, DataResponse
 
@@ -633,9 +634,10 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         }
 
         if isinstance(request, Connect):
-            package[TRADER_ID] = request.trader_id.value
+            package[CLIENT_ID] = request.client_id.value
         elif isinstance(request, Disconnect):
-            package[TRADER_ID] = request.trader_id.value
+            package[CLIENT_ID] = request.client_id.value
+            package[SESSION_ID] = request.session_id.value
         elif isinstance(request, DataRequest):
             package[QUERY] = self.query_serializer.serialize(request.query)
         else:
@@ -661,12 +663,13 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
 
         if request_type == Connect.__name__:
             return Connect(
-                TraderId(unpacked[TRADER_ID].decode(UTF8)),
+                ClientId(unpacked[CLIENT_ID].decode(UTF8)),
                 request_id,
                 request_timestamp)
         elif request_type == Disconnect.__name__:
             return Disconnect(
-                TraderId(unpacked[TRADER_ID].decode(UTF8)),
+                ClientId(unpacked[CLIENT_ID].decode(UTF8)),
+                SessionId(unpacked[SESSION_ID].decode(UTF8)),
                 request_id,
                 request_timestamp)
         elif request_type == DataRequest.__name__:
@@ -707,12 +710,12 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         }
 
         if isinstance(response, Connected):
-            package[SERVICE_NAME] = response.service_name
-            package[MESSAGE] = response.message_type
+            package[MESSAGE] = response.message
+            package[SERVER_ID] = response.server_id.value
             package[SESSION_ID] = response.session_id.value
         elif isinstance(response, Disconnected):
-            package[SERVICE_NAME] = response.service_name
-            package[MESSAGE] = response.message_type
+            package[MESSAGE] = response.message
+            package[SERVER_ID] = response.server_id.value
             package[SESSION_ID] = response.session_id.value
         elif isinstance(response, MessageReceived):
             package[RECEIVED_TYPE] = response.received_type
@@ -746,16 +749,16 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
 
         if response_type == Connected.__name__:
             return Connected(
-                unpacked[SERVICE_NAME].decode(UTF8),
                 unpacked[MESSAGE].decode(UTF8),
+                ServerId(unpacked[SERVER_ID].decode(UTF8)),
                 SessionId(unpacked[SESSION_ID].decode(UTF8)),
                 correlation_id,
                 response_id,
                 response_timestamp)
         elif response_type == Disconnected.__name__:
             return Disconnected(
-                unpacked[SERVICE_NAME].decode(UTF8),
                 unpacked[MESSAGE].decode(UTF8),
+                ServerId(unpacked[SERVER_ID].decode(UTF8)),
                 SessionId(unpacked[SESSION_ID].decode(UTF8)),
                 correlation_id,
                 response_id,

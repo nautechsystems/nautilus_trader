@@ -20,6 +20,7 @@ from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.data import *
 from nautilus_trader.serialization.serializers import *
 from nautilus_trader.serialization.common import *
+from nautilus_trader.network.identifiers import *
 from nautilus_trader.network.messages import *
 from test_kit.stubs import *
 
@@ -989,6 +990,38 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackRequestSerializer()
 
+    def test_can_serialize_and_deserialize_connect_requests(self):
+        # Arrange
+        request = Connect(
+            ClientId("Trader-001"),
+            GUID(uuid.uuid4()),
+            TestStubs.unix_epoch())
+
+        # Act
+        serialized = self.serializer.serialize(request)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, Connect))
+        self.assertEqual("Trader-001", deserialized.client_id.value)
+
+    def test_can_serialize_and_deserialize_disconnect_requests(self):
+        # Arrange
+        request = Disconnect(
+            ClientId("Trader-001"),
+            SessionId("Trader-001-1970-1-1-0"),
+            GUID(uuid.uuid4()),
+            TestStubs.unix_epoch())
+
+        # Act
+        serialized = self.serializer.serialize(request)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, Disconnect))
+        self.assertEqual("Trader-001", deserialized.client_id.value)
+        self.assertEqual("Trader-001-1970-1-1-0", deserialized.session_id.value)
+
     def test_can_serialize_and_deserialize_tick_data_requests(self):
         # Arrange
         query = {
@@ -1082,6 +1115,46 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.serializer = MsgPackResponseSerializer()
+
+    def test_can_serialize_and_deserialize_connected_responses(self):
+        # Arrange
+        request = Connected(
+            "Trader-001 connected to session",
+            ServerId("NautilusData.CommandServer"),
+            SessionId("Trader-001-1970-1-1-0"),
+            GUID(uuid.uuid4()),
+            GUID(uuid.uuid4()),
+            TestStubs.unix_epoch())
+
+        # Act
+        serialized = self.serializer.serialize(request)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, Connected))
+        self.assertEqual("Trader-001 connected to session", deserialized.message)
+        self.assertEqual("NautilusData.CommandServer", deserialized.server_id.value)
+        self.assertEqual("Trader-001-1970-1-1-0", deserialized.session_id.value)
+
+    def test_can_serialize_and_deserialize_disconnected_responses(self):
+        # Arrange
+        request = Disconnected(
+            "Trader-001 disconnected from session",
+            ServerId("NautilusData.CommandServer"),
+            SessionId("Trader-001-1970-1-1-0"),
+            GUID(uuid.uuid4()),
+            GUID(uuid.uuid4()),
+            TestStubs.unix_epoch())
+
+        # Act
+        serialized = self.serializer.serialize(request)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, Disconnected))
+        self.assertEqual("Trader-001 disconnected from session", deserialized.message)
+        self.assertEqual("NautilusData.CommandServer", deserialized.server_id.value)
+        self.assertEqual("Trader-001-1970-1-1-0", deserialized.session_id.value)
 
     def test_can_serialize_and_deserialize_data_responses(self):
         # Arrange
