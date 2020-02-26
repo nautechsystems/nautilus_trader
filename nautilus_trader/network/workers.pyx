@@ -66,7 +66,6 @@ cdef class MQWorker:
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
-        super().__init__()
 
         self._clock = clock
         self._guid_factory = guid_factory
@@ -183,7 +182,7 @@ cdef class DealerWorker(MQWorker):
         :param host: The service host address.
         :param port: The service port.
         :param zmq_context: The ZeroMQ context.
-        :param response_handler: The handler for the response messages.
+        :param response_handler: The handler for response messages.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
         :param compressor: The message compressor.
