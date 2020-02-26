@@ -16,7 +16,7 @@ from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.network.messages cimport MessageReceived
-from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
+from nautilus_trader.serialization.base cimport CommandSerializer, RequestSerializer, ResponseSerializer
 from test_kit.stubs import TestStubs
 
 
@@ -150,7 +150,7 @@ cdef class MockServer:
         """
         Start the consumption loop to receive published messages.
         """
-        self._log.info("Starting message consumption loop...")
+        self._log.info("Ready to consume messages...")
 
         cdef bytes response
         if len(self._responses) > self._cycles:
@@ -202,7 +202,7 @@ cdef class MockPublisher:
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
-        self._socket.send_multipart([topic.encode('utf-8'), message])
+        self._socket.send_multipart([topic.encode('utf-8'), bytes([len(message)]), message])
         self._cycles += 1
         self._log.debug(f"Publishing[{self._cycles}] topic={topic}, message={message}")
 

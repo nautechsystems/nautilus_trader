@@ -13,11 +13,41 @@ from nautilus_trader.core.types cimport GUID
 
 cpdef enum MessageType:
     UNDEFINED = 0,  # Invalid value
-    MESSAGE = 1,
-    COMMAND = 2,
+    COMMAND = 1,
+    DOCUMENT = 2,
     EVENT = 3,
     REQUEST = 4,
     RESPONSE = 5
+
+
+cdef inline str message_type_to_string(int value):
+    if value == 1:
+        return 'COMMAND'
+    elif value == 2:
+        return 'DOCUMENT'
+    elif value == 3:
+        return 'EVENT'
+    elif value == 4:
+        return 'REQUEST'
+    elif value == 5:
+        return 'RESPONSE'
+    else:
+        return 'UNDEFINED'
+
+
+cdef inline MessageType message_type_from_string(str value):
+    if value == 'COMMAND':
+        return MessageType.COMMAND
+    elif value == 'DOCUMENT':
+        return MessageType.DOCUMENT
+    elif value == 'EVENT':
+        return MessageType.EVENT
+    elif value == 'REQUEST':
+        return MessageType.REQUEST
+    elif value == 'RESPONSE':
+        return MessageType.RESPONSE
+    else:
+        return MessageType.UNDEFINED
 
 
 cdef class Message:

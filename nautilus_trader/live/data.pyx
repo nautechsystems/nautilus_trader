@@ -19,7 +19,7 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
+from nautilus_trader.network.workers cimport DealerWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport Utf8TickSerializer, Utf8BarSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
@@ -100,7 +100,7 @@ cdef class LiveDataClient(DataClient):
 
         self._zmq_context = zmq_context
 
-        self._tick_req_worker = RequestWorker(
+        self._tick_req_worker = DealerWorker(
             f'{self.__class__.__name__}.TickReqWorker',
             f'{service_name}.TickProvider',
             host,
@@ -110,7 +110,7 @@ cdef class LiveDataClient(DataClient):
             encryption,
             logger)
 
-        self._bar_req_worker = RequestWorker(
+        self._bar_req_worker = DealerWorker(
             f'{self.__class__.__name__}.BarReqWorker',
             f'{service_name}.BarProvider',
             host,
@@ -120,7 +120,7 @@ cdef class LiveDataClient(DataClient):
             encryption,
             logger)
 
-        self._inst_req_worker = RequestWorker(
+        self._inst_req_worker = DealerWorker(
             f'{self.__class__.__name__}.InstReqWorker',
             f'{service_name}.InstrumentProvider',
             host,
@@ -496,14 +496,14 @@ cdef class LiveDataClient(DataClient):
         self._inst_sub_worker.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)
 
-    cpdef void _handle_tick_sub(self, str topic, bytes message) except *:
+    cpdef void _handle_tick_sub(self, str topic, bytes payload) except *:
         # Handle the given tick message published for the given topic
-        self._handle_tick(Utf8TickSerializer.deserialize(self._cached_symbols.get(topic), message))
+        self._handle_tick(Utf8TickSerializer.deserialize(self._cached_symbols.get(topic), payload))
 
-    cpdef void _handle_bar_sub(self, str topic, bytes message) except *:
+    cpdef void _handle_bar_sub(self, str topic, bytes payload) except *:
         # Handle the given bar message published for the given topic
-        self._handle_bar(self._cached_bar_types.get(topic), Utf8BarSerializer.deserialize(message))
+        self._handle_bar(self._cached_bar_types.get(topic), Utf8BarSerializer.deserialize(payload))
 
-    cpdef void _handle_inst_sub(self, str topic, bytes message) except *:
+    cpdef void _handle_inst_sub(self, str topic, bytes payload) except *:
         # Handle the given instrument message published for the given topic
-        self._handle_instrument(self._instrument_serializer.deserialize(message))
+        self._handle_instrument(self._instrument_serializer.deserialize(payload))

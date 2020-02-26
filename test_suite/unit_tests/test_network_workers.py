@@ -10,39 +10,46 @@ import unittest
 import time
 import zmq
 
-
+from nautilus_trader.common.guid import LiveGuidFactory
 from nautilus_trader.live.logger import LiveLogger
-from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
+from nautilus_trader.network.workers import DealerWorker, SubscriberWorker
 from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionConfig
+from nautilus_trader.network.identifiers import ClientId
+from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from test_kit.mocks import ObjectStorer, MockServer, MockPublisher
+from nautilus_trader.common.clock import LiveClock
 
 LOCALHOST = "127.0.0.1"
 TEST_PORT = 55557
 TEST_ADDRESS = f"tcp://{LOCALHOST}:{TEST_PORT}"
 
 
-class RequestWorkerTests(unittest.TestCase):
+class DealerWorkerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        print("\n")
-
-        self.logger = LiveLogger()
+        clock = LiveClock()
+        guid_factory = LiveGuidFactory()
+        logger = LiveLogger()
         self.context = zmq.Context()
         self.response_handler = ObjectStorer()
 
-        self.worker = RequestWorker(
-            "TestRequester",
-            "TestResponder",
+        self.worker = DealerWorker(
+            ClientId("Trader-001"),
             LOCALHOST,
             TEST_PORT,
             self.context,
+            self.response_handler,
+            MsgPackRequestSerializer(),
+            MsgPackResponseSerializer(),
             CompressorBypass(),
             EncryptionConfig(),
-            self.logger)
+            clock,
+            guid_factory,
+            logger)
 
-        self.server = MockServer(self.context, TEST_PORT, self.logger)
+        self.server = MockServer(self.context, TEST_PORT, logger)
 
     def tearDown(self):
         # Tear Down
@@ -99,14 +106,14 @@ class SubscriberWorkerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        print("\n")
-
-        self.logger = LiveLogger()
+        clock = LiveClock()
+        guid_factory = LiveGuidFactory()
+        logger = LiveLogger()
         self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
 
         self.worker = SubscriberWorker(
-            'TestSubscriber',
+            ClientId("Subscriber-001"),
             'TestPublisher',
             LOCALHOST,
             TEST_PORT,
@@ -114,9 +121,11 @@ class SubscriberWorkerTests(unittest.TestCase):
             self.response_handler.store_2,
             CompressorBypass(),
             EncryptionConfig(),
-            self.logger)
+            clock,
+            guid_factory,
+            logger)
 
-        self.publisher = MockPublisher(self.zmq_context, TEST_PORT, self.logger)
+        self.publisher = MockPublisher(self.zmq_context, TEST_PORT, logger)
 
     def tearDown(self):
         # Tear Down
