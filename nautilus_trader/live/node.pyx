@@ -194,7 +194,6 @@ cdef class TradingNode:
             host=config_exec_client['host'],
             commands_port=config_exec_client['commands_port'],
             events_port=config_exec_client['events_port'],
-            events_topic=config_exec_client['events_topic'],
             compressor=compressor,
             encryption=encryption,
             logger=self._logger)

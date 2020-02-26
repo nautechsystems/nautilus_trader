@@ -26,11 +26,13 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
+from nautilus_trader.network.workers cimport DealerWorker, SubscriberWorker
 from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -1057,12 +1059,13 @@ cdef class LiveExecClient(ExecutionClient):
             str host='localhost',
             int commands_port=55555,
             int events_port=55556,
-            str events_topic='Events',
             Compressor compressor not None=CompressorBypass(),
             EncryptionConfig encryption not None=EncryptionConfig(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
             EventSerializer event_serializer not None=MsgPackEventSerializer(),
+            Clock clock not None=LiveClock(),
+            GuidFactory guid_factory not None=LiveGuidFactory(),
             Logger logger not None=LiveLogger()):
         """
         Initializes a new instance of the LiveExecClient class.
@@ -1073,12 +1076,13 @@ cdef class LiveExecClient(ExecutionClient):
         :param host: The execution service host IP address (default='localhost').
         :param commands_port: The execution service commands port (default=55555).
         :param events_port: The execution service events port (default=55556).
-        :param events_topic: The execution service events topic (default='EVENTS').
         :param encryption: The encryption configuration.
         :param command_serializer: The command serializer for the client.
         :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
-        :param logger: The logger for the component (can be None).
+        :param clock: The clock for the component.
+        :param guid_factory: The guid factory for the component.
+        :param logger: The logger for the component.
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the events_topic is not a valid string.
@@ -1087,25 +1091,26 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(host, 'host')
-        Condition.valid_string(events_topic, 'events_topic')
         Condition.in_range_int(commands_port, 0, 65535, 'commands_port')
         Condition.in_range_int(events_port, 0, 65535, 'events_port')
 
         super().__init__(exec_engine, logger)
         self._zmq_context = zmq_context
 
-        self._commands_worker = RequestWorker(
-            f'{self.__class__.__name__}.CommandRequester',
-            f'{service_name}.CommandRouter',
+        self._commands_worker = DealerWorker(
+            exec_engine.trader_id.value,
             host,
             commands_port,
             self._zmq_context,
+            self._response_handler,
             compressor,
             encryption,
+            clock,
+            guid_factory,
             logger)
 
         self._events_worker = SubscriberWorker(
-            f'{self.__class__.__name__}.EventSubscriber',
+            exec_engine.trader_id.value,
             f'{service_name}.EventPublisher',
             host,
             events_port,
@@ -1113,13 +1118,13 @@ cdef class LiveExecClient(ExecutionClient):
             self._event_handler,
             compressor,
             encryption,
+            clock,
+            guid_factory,
             logger)
 
         self._command_serializer = command_serializer
         self._response_serializer = response_serializer
         self._event_serializer = event_serializer
-
-        self.events_topic = events_topic
 
     cpdef void connect(self) except *:
         """
@@ -1127,13 +1132,13 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._events_worker.connect()
         self._commands_worker.connect()
-        self._events_worker.subscribe(self.events_topic)
+        self._events_worker.subscribe('Events')
 
     cpdef void disconnect(self) except *:
         """
         Disconnect from the execution service.
         """
-        self._events_worker.unsubscribe(self.events_topic)
+        self._events_worker.unsubscribe('Events')
         self._commands_worker.disconnect()
         self._events_worker.disconnect()
 
@@ -1166,12 +1171,14 @@ cdef class LiveExecClient(ExecutionClient):
         self._command_handler(command)
 
     cpdef void _command_handler(self, Command command) except *:
-        self._log.debug(f"Sending command {command}...")
-        cdef bytes command_bytes = self._command_serializer.serialize(command)
-        cdef bytes response_bytes = self._commands_worker.send(command_bytes)
-        cdef Response response =  self._response_serializer.deserialize(response_bytes)
+        cdef bytes payload = self._command_serializer.serialize(command)
+        self._commands_worker.send(command.message_type, payload)
+        self._log.debug(f"Sent command {command}")
+
+    cpdef void _response_handler(self, Response response) except *:
         self._log.debug(f"Received response {response}")
 
     cpdef void _event_handler(self, str topic, bytes event_bytes) except *:
         cdef Event event = self._event_serializer.deserialize(event_bytes)
+        self._log.debug(f"Received event {event}")
         self._exec_engine.handle_event(event)

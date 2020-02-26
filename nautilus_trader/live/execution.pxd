@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Command, Response
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
 
@@ -61,7 +61,6 @@ cdef class LiveExecClient(ExecutionClient):
     cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
 
-    cdef readonly str events_topic
-
     cpdef void _command_handler(self, Command command) except *
+    cpdef void _response_handler(self, Response response) except *
     cpdef void _event_handler(self, str topic, bytes event_bytes) except *
