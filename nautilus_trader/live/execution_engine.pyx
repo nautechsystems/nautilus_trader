@@ -997,7 +997,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             guid_factory=guid_factory,
             logger=logger)
 
-        self._message_bus = queue.Queue()
+        self._queue = queue.Queue()
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
@@ -1009,7 +1009,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Condition.not_none(command, 'command')
 
-        self._message_bus.put(command)
+        self._queue.put(command)
 
     cpdef void handle_event(self, Event event) except *:
         """
@@ -1019,14 +1019,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Condition.not_none(event, 'event')
 
-        self._message_bus.put(event)
+        self._queue.put(event)
 
     cpdef void _consume_messages(self) except *:
         self._log.info("Running...")
 
         cdef Message message
         while True:
-            message = self._message_bus.get()
+            message = self._queue.get()
 
             if message.message_type == MessageType.EVENT:
                 self._handle_event(message)

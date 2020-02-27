@@ -205,7 +205,7 @@ cdef class MessageServer(ServerNode):
         receiver : ClientId
             The client to send the response to.
         """
-        cdef MessageRejected response = MessageReceived(
+        cdef MessageRejected response = MessageRejected(
             rejected_message,
             correlation_id,
             self._guid_factory.generate(),
@@ -246,14 +246,14 @@ cdef class MessageServer(ServerNode):
         cdef bytes serialized = self._response_serializer.serialize(response)
 
         cdef bytes send_address = receiver.value.encode(_UTF8)
-        cdef bytes header_type = response.__class__.__name__.encode(_UTF8)
+        cdef bytes header_type = message_type_to_string(response.message_type).encode(_UTF8)
         cdef bytes header_size = str(len(serialized)).encode(_UTF8)
         cdef bytes payload = self._compressor.compress(serialized)
 
         self._send([send_address, header_type, header_size, payload])
 
     cpdef void _consume_messages(self) except *:
-        self._log.info("Ready to consume messages...")
+        self._log.debug("Message consumption loop starting...")
 
         while True:
             try:

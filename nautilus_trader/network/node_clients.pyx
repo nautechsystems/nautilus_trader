@@ -116,7 +116,7 @@ cdef class ClientNode(NetworkNode):
         self._log.info(f"Disconnected from {self._network_address}")
 
     cpdef void _consume_messages(self) except *:
-        self._log.info("Ready to consume messages...")
+        self._log.debug("Message consumption loop starting...")
 
         while True:
             self.recv_count += 1
@@ -273,7 +273,7 @@ cdef class MessageClient(ClientNode):
 
         cdef MessageType message_type = message_type_from_string(recv_type)
         if message_type != MessageType.RESPONSE:
-            self._log.error(f"Not a valid response, was {message_type}")
+            self._log.error(f"Not a valid response, was {recv_type}")
 
         cdef Response response = self._response_serializer.deserialize(payload)
 
