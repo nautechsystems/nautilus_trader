@@ -43,8 +43,8 @@ cdef class LogStore:
 
         self._key = f'Trader-{trader_id.value}:LogStore'
         self._redis = redis.Redis(host=host, port=port, db=0)
-        self._message_bus = multiprocessing.Queue()
         self._serializer = serializer
+        self._queue = multiprocessing.Queue()
         self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
         self._process.start()
 
@@ -56,12 +56,12 @@ cdef class LogStore:
         """
         Condition.not_none(message, 'message')
 
-        self._message_bus.put(message)
+        self._queue.put(message)
 
     cpdef void _consume_messages(self) except *:
         cdef LogMessage message
         while True:
-            message = self._message_bus.get()
+            message = self._queue.get()
             self._redis.rpush(f'{self._key}:{message.level_string()}', self._serializer.serialize(message))
 
 
@@ -108,8 +108,8 @@ cdef class LiveLogger(Logger):
                          log_file_path,
                          clock)
 
-        self._message_bus = queue.Queue()
         self._store = store
+        self._queue = queue.Queue()
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
@@ -121,12 +121,12 @@ cdef class LiveLogger(Logger):
         """
         Condition.not_none(message, 'message')
 
-        self._message_bus.put(message)
+        self._queue.put(message)
 
     cpdef void _consume_messages(self) except *:
         cdef LogMessage message
         while True:
-            message = self._message_bus.get()
+            message = self._queue.get()
             self._log(message)
 
             if self._store is not None and message.level >= self._log_level_store:

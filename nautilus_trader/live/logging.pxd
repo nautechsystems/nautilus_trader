@@ -12,7 +12,7 @@ from nautilus_trader.serialization.base cimport LogSerializer
 
 cdef class LogStore:
     cdef str _key
-    cdef object _message_bus
+    cdef object _queue
     cdef object _process
     cdef object _redis
     cdef LogSerializer _serializer
@@ -22,7 +22,7 @@ cdef class LogStore:
 
 
 cdef class LiveLogger(Logger):
-    cdef object _message_bus
+    cdef object _queue
     cdef object _thread
     cdef LogStore _store
 
