@@ -10,7 +10,6 @@ import unittest
 import time
 import zmq
 
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.guid import LiveGuidFactory
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
@@ -20,6 +19,7 @@ from nautilus_trader.network.encryption import EncryptionConfig
 from nautilus_trader.network.identifiers import ClientId, ServerId
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from test_kit.mocks import ObjectStorer
+from nautilus_trader.common.clock import LiveClock
 
 LOCALHOST = "127.0.0.1"
 TEST_PORT = 55557
@@ -39,8 +39,8 @@ class MessageClientTests(unittest.TestCase):
             ClientId("Trader-001"),
             LOCALHOST,
             TEST_PORT,
-            self.context,
             4,
+            self.context,
             self.response_handler,
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
@@ -53,12 +53,21 @@ class MessageClientTests(unittest.TestCase):
         self.server = MessageServer(
             ServerId("Server-001"),
             TEST_PORT,
+            3,
             self.context,
-            TEST_PORT,
+            MsgPackRequestSerializer(),
+            MsgPackResponseSerializer(),
+            CompressorBypass(),
+            EncryptionConfig(),
+            clock,
+            guid_factory,
             logger)
+
+        self.server.start()
 
     def tearDown(self):
         # Tear Down
+        time.sleep(0.1)
         self.client.disconnect()
         self.server.stop()
 
@@ -82,6 +91,17 @@ class MessageClientTests(unittest.TestCase):
     #
     #     # Assert
     #     self.assertEqual(b'OK', response)
+
+    def test_can_connect_to_server_and_receive_response(self):
+        # Arrange
+        self.client.connect()
+
+        time.sleep(1)
+        # Act
+        #response = self.client.send(b'hello')
+
+        # Assert
+        #self.assertEqual(b'OK', response)
 
     def test_can_send_one_message_and_receive_response(self):
         # Arrange

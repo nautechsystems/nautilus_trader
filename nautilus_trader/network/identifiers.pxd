@@ -21,4 +21,4 @@ cdef class ServerId(Identifier):
 
 cdef class SessionId(Identifier):
     @staticmethod
-    cdef SessionId create(str client_id, datetime now)
+    cdef SessionId create(ClientId client_id, datetime now)

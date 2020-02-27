@@ -14,6 +14,7 @@ from nautilus_trader.network.node_base cimport NetworkNode
 from nautilus_trader.network.messages cimport Response
 from nautilus_trader.network.messages cimport Connect, Disconnect
 
+
 cdef class ServerNode(NetworkNode):
 
     cdef readonly ServerId server_id
