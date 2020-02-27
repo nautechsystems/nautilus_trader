@@ -10,22 +10,22 @@ import unittest
 import time
 import zmq
 
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.guid import LiveGuidFactory
 from nautilus_trader.live.logger import LiveLogger
-from nautilus_trader.network.workers import DealerWorker, SubscriberWorker
+from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
+from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionConfig
-from nautilus_trader.network.identifiers import ClientId
+from nautilus_trader.network.identifiers import ClientId, ServerId
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
-from test_kit.mocks import ObjectStorer, MockServer, MockPublisher
-from nautilus_trader.common.clock import LiveClock
+from test_kit.mocks import ObjectStorer
 
 LOCALHOST = "127.0.0.1"
 TEST_PORT = 55557
-TEST_ADDRESS = f"tcp://{LOCALHOST}:{TEST_PORT}"
 
 
-class DealerWorkerTests(unittest.TestCase):
+class MessageClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -35,11 +35,12 @@ class DealerWorkerTests(unittest.TestCase):
         self.context = zmq.Context()
         self.response_handler = ObjectStorer()
 
-        self.worker = DealerWorker(
+        self.client = MessageClient(
             ClientId("Trader-001"),
             LOCALHOST,
             TEST_PORT,
             self.context,
+            4,
             self.response_handler,
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
@@ -49,11 +50,16 @@ class DealerWorkerTests(unittest.TestCase):
             guid_factory,
             logger)
 
-        self.server = MockServer(self.context, TEST_PORT, logger)
+        self.server = MessageServer(
+            ServerId("Server-001"),
+            TEST_PORT,
+            self.context,
+            TEST_PORT,
+            logger)
 
     def tearDown(self):
         # Tear Down
-        self.worker.disconnect()
+        self.client.disconnect()
         self.server.stop()
 
     # TODO
@@ -79,22 +85,22 @@ class DealerWorkerTests(unittest.TestCase):
 
     def test_can_send_one_message_and_receive_response(self):
         # Arrange
-        self.worker.connect()
+        self.client.connect()
 
         # Act
-        response = self.worker.send(b'hello')
+        response = self.client.send(b'hello')
 
         # Assert
         self.assertEqual(b'OK', response)
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
-        self.worker.connect()
+        self.client.connect()
 
         # Act
-        response1 = self.worker.send(b'hello1')
-        response2 = self.worker.send(b'hello2')
-        response3 = self.worker.send(b'hello3')
+        response1 = self.client.send(b'hello1')
+        response2 = self.client.send(b'hello2')
+        response3 = self.client.send(b'hello3')
 
         # Assert
         self.assertEqual(b'OK', response1)
@@ -112,7 +118,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
 
-        self.worker = SubscriberWorker(
+        self.worker = MessageSubscriber(
             ClientId("Subscriber-001"),
             'TestPublisher',
             LOCALHOST,
@@ -125,7 +131,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             guid_factory,
             logger)
 
-        self.publisher = MockPublisher(self.zmq_context, TEST_PORT, logger)
+        self.publisher = MessagePublisher(self.zmq_context, TEST_PORT, logger)
 
     def tearDown(self):
         # Tear Down

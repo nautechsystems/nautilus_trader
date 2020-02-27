@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 
 cdef class ClientId(Identifier):
     """
@@ -47,3 +49,10 @@ cdef class SessionId(Identifier):
         :param value: The session identifier value.
         """
         super().__init__(value)
+
+    @staticmethod
+    cdef SessionId create(str client_id, datetime now):
+        cdef str timestamp = (f'{datetime.hour:02d}'
+                              f'{datetime.minute:02d}'
+                              f'{datetime.second:02d}')
+        return SessionId(f'{client_id}-{datetime.date}-{timestamp}')

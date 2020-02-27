@@ -17,10 +17,11 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.messages import DataResponse
+from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper, BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from test_kit.stubs import TestStubs
-from test_kit.mocks import ObjectStorer, MockPublisher, MockServer
+from test_kit.mocks import ObjectStorer
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -40,9 +41,9 @@ class LiveDataClientTests(unittest.TestCase):
         self.tick_req_port = 55501
         self.bar_req_port = 55503
         self.inst_req_port = 55505
-        self.tick_publisher = MockPublisher(zmq_context=self.zmq_context, port=55502, logger=self.logger)
-        self.bar_publisher = MockPublisher(zmq_context=self.zmq_context, port=55504, logger=self.logger)
-        self.inst_publisher = MockPublisher(zmq_context=self.zmq_context, port=55506, logger=self.logger)
+        self.tick_publisher = MessagePublisher(zmq_context=self.zmq_context, port=55502, logger=self.logger)
+        self.bar_publisher = MessagePublisher(zmq_context=self.zmq_context, port=55504, logger=self.logger)
+        self.inst_publisher = MessagePublisher(zmq_context=self.zmq_context, port=55506, logger=self.logger)
 
         self.data_client = LiveDataClient(zmq_context=zmq.Context(), logger=self.logger)
 
@@ -218,7 +219,7 @@ class LiveDataClientTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(
+        server = MessagePublisher(
             zmq_context=self.zmq_context,
             port=self.tick_req_port,
             logger=self.logger,
@@ -266,7 +267,7 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(
+        server = MessageServer(
             zmq_context=self.zmq_context,
             port=self.bar_req_port,
             logger=self.logger,
@@ -308,7 +309,7 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(
+        server = MessageServer(
             zmq_context=self.zmq_context,
             port=self.inst_req_port,
             logger=self.logger,
@@ -344,7 +345,7 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(
+        server = MessageServer(
             zmq_context=self.zmq_context,
             port=self.inst_req_port,
             logger=self.logger,

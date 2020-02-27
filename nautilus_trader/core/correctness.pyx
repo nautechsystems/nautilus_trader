@@ -783,7 +783,7 @@ cdef class Condition:
     @staticmethod
     cdef void valid_port(int value, str param, ex_type=None) except *:
         """
-        Check the port value is valid in range [0, 65535].
+        Check the port value is valid in range [49152, 65535].
         
         Parameters
         ----------
@@ -797,10 +797,10 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If the value is not in range [0, 65535].
+              If the value is not in range [49152, 65535].
 
         """
-        Condition.in_range_int(value, 0, 65535, param, ex_type)
+        Condition.in_range_int(value, 49152, 65535, param, ex_type)
 
 
 class PyCondition:
@@ -1349,7 +1349,7 @@ class PyCondition:
     @staticmethod
     def valid_port(int value, param, ex_type=None):
         """
-        Check the port integer value is valid in range [0, 65535].
+        Check the port integer value is valid in range [49152, 65535].
 
         Parameters
         ----------
@@ -1363,7 +1363,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If the value is not in range [0, 65535].
+              If the value is not in range [49152, 65535].
 
         """
         Condition.valid_port(value, param, ex_type)

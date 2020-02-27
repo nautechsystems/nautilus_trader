@@ -19,11 +19,12 @@ from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.network.messages import MessageReceived
+from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
-from nautilus_trader.live.execution import LiveExecutionEngine, LiveExecClient
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.execution_client import LiveExecClient
 from nautilus_trader.live.logger import LiveLogger
 from test_kit.stubs import TestStubs
-from test_kit.mocks import MockCommandRouter, MockPublisher
 from test_kit.strategies import TestStrategy1
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -79,14 +80,14 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_client.connect()
 
-        self.command_router = MockCommandRouter(
+        self.command_router = MessageServer(
             zmq_context,
             commands_port,
             MsgPackCommandSerializer(),
             MsgPackResponseSerializer(),
             logger)
 
-        self.event_publisher = MockPublisher(zmq_context, events_port, logger)
+        self.event_publisher = MessagePublisher(zmq_context, events_port, logger)
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
         self.strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')

@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from uuid import UUID
+import uuid
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -150,12 +150,34 @@ cdef class GUID(Identifier):
     (universally unique identifier).
     """
 
-    def __init__(self, value not None: UUID):
+    def __init__(self, value not None: uuid.UUID):
         """
         Initializes a new instance of the GUID class.
 
-        :param value: The value of the GUID (input must be of type UUID).
+        :param value: The UUID value.
         :raises ValueError: If the value is not of type UUID.
         """
-        Condition.type(value, UUID, 'value')
+        Condition.type(value, uuid.UUID, 'value')
         super().__init__(str(value))
+
+    @staticmethod
+    cdef GUID none():
+        """
+        Return an empty GUID.
+
+        Returns
+        -------
+            GUID
+        """
+        return GUID(uuid.UUID('00000000-0000-0000-0000-000000000000'))
+
+    @staticmethod
+    def py_none() -> GUID:
+        """
+        Return an empty GUID.
+
+        Returns
+        -------
+            GUID
+        """
+        return GUID.none()

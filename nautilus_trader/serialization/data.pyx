@@ -323,7 +323,7 @@ cdef class DataMapper:
 
         return {
             DATA: Utf8TickSerializer.serialize_ticks_list(ticks),
-            DATA_TYPE: 'Tick[]',
+            DATA_TYPE: TICK_ARRAY,
             METADATA: { SYMBOL: ticks[0].symbol.value },
         }
 
@@ -334,7 +334,7 @@ cdef class DataMapper:
 
         return {
             DATA: Utf8BarSerializer.serialize_bars_list(bars),
-            DATA_TYPE: 'Bar[]',
+            DATA_TYPE: BAR_ARRAY,
             METADATA: { SYMBOL: bar_type.symbol.value,
                         SPECIFICATION: bar_type.specification.to_string()},
         }
@@ -345,5 +345,5 @@ cdef class DataMapper:
 
         return {
             DATA: [self.instrument_serializer.serialize(instrument) for instrument in instruments],
-            DATA_TYPE: 'Instrument[]',
+            DATA_TYPE: INSTRUMENT_ARRAY,
         }

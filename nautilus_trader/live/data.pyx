@@ -6,26 +6,30 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import queue
+import threading
 import zmq
 from cpython.datetime cimport date
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.message cimport Response
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.identifiers cimport Symbol, Venue
+from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
 from nautilus_trader.model.objects cimport BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.network.workers cimport DealerWorker, SubscriberWorker
+from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport Utf8TickSerializer, Utf8BarSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.network.messages cimport DataRequest, MessageRejected, QueryFailure
+from nautilus_trader.live.logger cimport LiveLogger
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.messages cimport Response, MessageReceived, MessageRejected
+from nautilus_trader.network.messages cimport DataRequest, DataResponse, QueryFailure
 from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -37,14 +41,14 @@ cdef class LiveDataClient(DataClient):
     """
 
     def __init__(self,
+                 TraderId trader_id,
                  zmq_context not None: zmq.Context,
-                 str service_name not None='NautilusData',
-                 str host not None='localhost',
-                 int tick_rep_port=55501,
+                 str server_host not None='localhost',
+                 int tick_server_port=55501,
                  int tick_pub_port=55502,
-                 int bar_rep_port=55503,
+                 int bar_server_port=55503,
                  int bar_pub_port=55504,
-                 int inst_rep_port=55505,
+                 int inst_server_port=55505,
                  int inst_pub_port=55506,
                  Compressor compressor not None=CompressorBypass(),
                  EncryptionConfig encryption not None=EncryptionConfig(),
@@ -59,15 +63,15 @@ cdef class LiveDataClient(DataClient):
         """
         Initializes a new instance of the LiveDataClient class.
 
+        :param server_host: The trader identifier for the client.
+        :param server_host: The data server host address (default='localhost').
+        :param tick_server_port: The port for tick requests (default=55501).
+        :param tick_pub_port: The port for tick subscriptions (default=55502).
+        :param bar_server_port: The port for bar requests (default=55503).
+        :param bar_pub_port: The port for bar subscriptions (default=55504).
+        :param inst_server_port: The port for instrument requests (default=55505).
+        :param inst_pub_port: The port for instrument subscriptions (default=55506).
         :param zmq_context: The ZMQ context.
-        :param service_name: The name of the service.
-        :param host: The data service host address (default='localhost').
-        :param tick_rep_port: The data service port for tick responses (default=55501).
-        :param tick_pub_port: The data service port for tick publications (default=55502).
-        :param bar_rep_port: The data service port for bar responses (default=55503).
-        :param bar_pub_port: The data service port for bar publications (default=55504).
-        :param inst_rep_port: The data service port for instrument responses (default=55505).
-        :param inst_pub_port: The data service port for instrument publications (default=55506).
         :param encryption: The messaging compressor.
         :param encryption: The messaging encryption configuration.
         :param request_serializer: The request serializer for the component.
@@ -78,8 +82,7 @@ cdef class LiveDataClient(DataClient):
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the service_address is not a valid string.
-        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the server_host is not a valid string.
         :raises ValueError: If the tick_req_port is not in range [0, 65535].
         :raises ValueError: If the tick_sub_port is not in range [0, 65535].
         :raises ValueError: If the bar_req_port is not in range [0, 65535].
@@ -87,84 +90,104 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the inst_req_port is not in range [0, 65535].
         :raises ValueError: If the inst_sub_port is not in range [0, 65535].
         """
-        Condition.valid_string(service_name, 'service_name')
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(tick_rep_port, 'tick_rep_port')
+        Condition.valid_string(server_host, 'server_host')
+        Condition.valid_port(tick_server_port, 'tick_server_port')
         Condition.valid_port(tick_pub_port, 'tick_pub_port')
-        Condition.valid_port(bar_rep_port, 'bar_rep_port')
+        Condition.valid_port(bar_server_port, 'bar_server_port')
         Condition.valid_port(bar_pub_port, 'bar_pub_port')
-        Condition.valid_port(inst_rep_port, 'inst_rep_port')
+        Condition.valid_port(inst_server_port, 'inst_server_port')
         Condition.valid_port(inst_pub_port, 'inst_pub_port')
         Condition.positive_int(tick_capacity, 'tick_capacity')
         super().__init__(tick_capacity, clock, guid_factory, logger)
 
         self._zmq_context = zmq_context
+        self._response_queue = queue.Queue()
+        self._response_thread = threading.Thread(target=self._pop_response, daemon=True)
+        self._correlation_index = {}  # type: {GUID, callable}
 
-        self._tick_req_worker = DealerWorker(
-            f'{self.__class__.__name__}.TickReqWorker',
-            f'{service_name}.TickProvider',
-            host,
-            tick_rep_port,
+        self.trader_id = trader_id
+        self.client_id = ClientId(trader_id.value)
+
+        expected_frames = 4
+
+        self._tick_client = MessageClient(
+            self.client_id,
+            server_host,
+            tick_server_port,
             self._zmq_context,
+            expected_frames,
+            self._handle_response,
+            request_serializer,
+            response_serializer,
             compressor,
             encryption,
+            clock,
+            guid_factory,
             logger)
 
-        self._bar_req_worker = DealerWorker(
-            f'{self.__class__.__name__}.BarReqWorker',
-            f'{service_name}.BarProvider',
-            host,
-            bar_rep_port,
+        self._bar_client = MessageClient(
+            self.client_id,
+            server_host,
+            bar_server_port,
             self._zmq_context,
+            expected_frames,
+            self._handle_response,
+            request_serializer,
+            response_serializer,
             compressor,
             encryption,
+            clock,
+            guid_factory,
             logger)
 
-        self._inst_req_worker = DealerWorker(
-            f'{self.__class__.__name__}.InstReqWorker',
-            f'{service_name}.InstrumentProvider',
-            host,
-            inst_rep_port,
+        self._inst_client = MessageClient(
+            self.client_id,
+            server_host,
+            inst_server_port,
             self._zmq_context,
+            expected_frames,
+            self._handle_response,
+            request_serializer,
+            response_serializer,
             compressor,
             encryption,
+            clock,
+            guid_factory,
             logger)
 
-        self._tick_sub_worker = SubscriberWorker(
-            f'{self.__class__.__name__}.TickSubWorker',
-            f'{service_name}.TickPublisher',
-            host,
+        self._tick_subscriber = MessageSubscriber(
+            self.client_id,
+            server_host,
             tick_pub_port,
             self._zmq_context,
+            expected_frames,
             self._handle_tick_sub,
             compressor,
             encryption,
             logger)
 
-        self._bar_sub_worker = SubscriberWorker(
-            f'{self.__class__.__name__}.BarSubWorker',
-            f'{service_name}.BarPublisher',
-            host,
+        self._bar_subscriber = MessageSubscriber(
+            self.client_id,
+            server_host,
             bar_pub_port,
             self._zmq_context,
+            expected_frames,
             self._handle_bar_sub,
             compressor,
             encryption,
             logger)
 
-        self._inst_sub_worker = SubscriberWorker(
-            f'{self.__class__.__name__}.InstSubWorker',
-            f'{service_name}.InstrumentPublisher',
-            host,
+        self._instrument_subscriber = MessageSubscriber(
+            self.client_id,
+            server_host,
             inst_pub_port,
             self._zmq_context,
+            expected_frames,
             self._handle_inst_sub,
             compressor,
             encryption,
             logger)
 
-        self._request_serializer = request_serializer
-        self._response_serializer = response_serializer
         self._data_serializer = data_serializer
         self._instrument_serializer = instrument_serializer
 
@@ -175,24 +198,24 @@ cdef class LiveDataClient(DataClient):
         """
         Connect to the data service.
         """
-        self._tick_req_worker.connect()
-        self._tick_sub_worker.connect()
-        self._bar_req_worker.connect()
-        self._bar_sub_worker.connect()
-        self._inst_req_worker.connect()
-        self._inst_sub_worker.connect()
+        self._tick_client.connect()
+        self._tick_subscriber.connect()
+        self._bar_client.connect()
+        self._bar_subscriber.connect()
+        self._inst_client.connect()
+        self._instrument_subscriber.connect()
 
     cpdef void disconnect(self) except *:
         """
         Disconnect from the data service.
         """
         try:
-            self._tick_req_worker.disconnect()
-            self._tick_sub_worker.disconnect()
-            self._bar_req_worker.disconnect()
-            self._bar_sub_worker.disconnect()
-            self._inst_req_worker.disconnect()
-            self._inst_sub_worker.disconnect()
+            self._tick_client.disconnect()
+            self._tick_subscriber.disconnect()
+            self._bar_client.disconnect()
+            self._bar_subscriber.disconnect()
+            self._inst_client.disconnect()
+            self._instrument_subscriber.disconnect()
         except zmq.ZMQError as ex:
             self._log.exception(ex)
 
@@ -208,12 +231,12 @@ cdef class LiveDataClient(DataClient):
         """
         Disposes of the data client.
         """
-        self._tick_req_worker.dispose()
-        self._tick_sub_worker.dispose()
-        self._bar_req_worker.dispose()
-        self._bar_sub_worker.dispose()
-        self._inst_req_worker.dispose()
-        self._inst_sub_worker.dispose()
+        self._tick_client.dispose()
+        self._tick_subscriber.dispose()
+        self._bar_client.dispose()
+        self._bar_subscriber.dispose()
+        self._inst_client.dispose()
+        self._instrument_subscriber.dispose()
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
@@ -262,21 +285,11 @@ cdef class LiveDataClient(DataClient):
         cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
         self._log.info(f"Requesting {symbol} ticks from {from_date} to {to_date} {limit_string}...")
 
-        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
-        cdef bytes request_bytes = self._request_serializer.serialize(request)
-        cdef bytes response_bytes = self._tick_req_worker.send(request_bytes)
-        cdef Response response = self._response_serializer.deserialize(response_bytes)
+        cdef GUID request_id = self._guid_factory.generate()
+        self._set_callback(request_id, callback)
 
-        if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(str(response))
-            return
-
-        cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef dict metadata = data[METADATA]
-        cdef Symbol received_symbol = self._cached_symbols.get(metadata[SYMBOL])
-        assert(received_symbol == symbol)
-
-        callback(Utf8TickSerializer.deserialize_bytes_list(received_symbol, data[DATA]))
+        cdef DataRequest request = DataRequest(query, request_id, self.time_now())
+        self._tick_client.send(request)
 
     cpdef void request_bars(
             self,
@@ -318,21 +331,11 @@ cdef class LiveDataClient(DataClient):
         cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
         self._log.info(f"Requesting {bar_type} bars from {from_date} to {to_date} {limit_string}...")
 
-        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
-        cdef bytes request_bytes = self._request_serializer.serialize(request)
-        cdef bytes response_bytes = self._bar_req_worker.send(request_bytes)
-        cdef Response response = self._response_serializer.deserialize(response_bytes)
+        cdef GUID request_id = self._guid_factory.generate()
+        self._set_callback(request_id, callback)
 
-        if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(str(response))
-            return
-
-        cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef dict metadata = data[METADATA]
-        cdef BarType received_bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
-        assert(received_bar_type == bar_type)
-
-        callback(received_bar_type, Utf8BarSerializer.deserialize_bytes_list(data[DATA]))
+        cdef DataRequest request = DataRequest(query, request_id, self.time_now())
+        self._bar_client.send(request)
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
@@ -352,20 +355,11 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting instrument for {symbol}...")
 
-        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
-        cdef bytes request_bytes = self._request_serializer.serialize(request)
-        cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
-        cdef Response response = self._response_serializer.deserialize(response_bytes)
+        cdef GUID request_id = self._guid_factory.generate()
+        self._set_callback(request_id, callback)
 
-        if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(str(response))
-            return
-
-        cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef Instrument instrument = self._instrument_serializer.deserialize(data[DATA][0])
-        assert(instrument.symbol == symbol)
-
-        callback(instrument)
+        cdef DataRequest request = DataRequest(query, request_id, self.time_now())
+        self._inst_client.send(request)
 
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
@@ -384,18 +378,11 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting all instruments for {venue}...")
 
-        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
-        cdef bytes request_bytes = self._request_serializer.serialize(request)
-        cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
-        cdef Response response = self._response_serializer.deserialize(response_bytes)
+        cdef GUID request_id = self._guid_factory.generate()
+        self._set_callback(request_id, callback)
 
-        if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(str(response))
-            return
-
-        cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef list instruments = [self._instrument_serializer.deserialize(inst) for inst in data[DATA]]
-        callback(instruments)
+        cdef DataRequest request = DataRequest(query, request_id, self.time_now())
+        self._inst_client.send(request)
 
     cpdef void update_instruments(self, Venue venue) except *:
         """
@@ -421,7 +408,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         self._add_tick_handler(symbol, handler)
-        self._tick_sub_worker.subscribe(symbol.to_string())
+        self._tick_subscriber.subscribe(symbol.to_string())
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
@@ -438,7 +425,7 @@ cdef class LiveDataClient(DataClient):
             self._self_generate_bars(bar_type, handler)
         else:
             self._add_bar_handler(bar_type, handler)
-            self._bar_sub_worker.subscribe(bar_type.to_string())
+            self._bar_subscriber.subscribe(bar_type.to_string())
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
@@ -452,7 +439,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         self._add_instrument_handler(symbol, handler)
-        self._inst_sub_worker.subscribe(symbol.value)
+        self._instrument_subscriber.subscribe(symbol.value)
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: callable) except *:
         """
@@ -465,7 +452,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
-        self._tick_sub_worker.unsubscribe(symbol.to_string())
+        self._tick_subscriber.unsubscribe(symbol.to_string())
         self._remove_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
@@ -479,7 +466,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
 
-        self._bar_sub_worker.unsubscribe(bar_type.to_string())
+        self._bar_subscriber.unsubscribe(bar_type.to_string())
         self._remove_bar_handler(bar_type, handler)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
@@ -493,8 +480,59 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
-        self._inst_sub_worker.unsubscribe(symbol.value)
+        self._instrument_subscriber.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)
+
+    cpdef void _set_callback(self, GUID request_id, handler: callable) except *:
+        self._correlation_index[request_id] = handler
+
+    cpdef void _pop_callback(self, GUID correlation_id, list data) except *:
+        handler = self._correlation_index.pop(correlation_id)
+        if handler is not None:
+            handler(data)
+        else:
+            self._log.error(f"No callback found for correlation identifier {correlation_id.value}")
+
+    cpdef void _handle_response(self, Response response) except *:
+        if isinstance(response, MessageRejected):
+            self._log.error(response.message)
+        elif isinstance(response, MessageReceived):
+            self._log.info(response)
+        elif isinstance(response, QueryFailure):
+            self._log.warning(response)
+        elif isinstance(response, DataResponse):
+            self._handle_data_response(response)
+        else:
+            self._log.error(f"Cannot handle {response}")
+
+    cpdef void _handle_data_response(self, DataResponse response) except *:
+        cdef dict data_package = self._data_serializer.deserialize(response.data)
+        cdef dict metadata = data_package[METADATA]
+
+        cdef str data_type = data_package[DATA_TYPE]
+        cdef list data
+        if data_type == TICK_ARRAY:
+            symbol = self._cached_symbols.get(metadata[SYMBOL])
+            data = Utf8TickSerializer.deserialize_bytes_list(symbol, data_package[DATA])
+        elif data_type == BAR_ARRAY:
+            received_bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
+            data = Utf8BarSerializer.deserialize_bytes_list(data_package[DATA])
+        elif data_type == INSTRUMENT_ARRAY:
+            data = self._instrument_serializer.deserialize(data_package[DATA])
+        else:
+            self._log.error(f"The received data type {data_type} is not recognized.")
+            return
+
+        self._pop_callback(response.correlation_id, data)
+
+    cpdef void _put_response(self, Response response) except *:
+        self._response_queue.put(response)
+
+    cpdef void _pop_response(self) except *:
+        self._log.debug("Ready to consume messages...")
+
+        while True:
+            self._handle_response(self._response_queue.get())
 
     cpdef void _handle_tick_sub(self, str topic, bytes payload) except *:
         # Handle the given tick message published for the given topic

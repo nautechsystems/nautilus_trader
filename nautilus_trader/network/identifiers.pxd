@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.core.types cimport Identifier
 
 
@@ -18,4 +20,5 @@ cdef class ServerId(Identifier):
 
 
 cdef class SessionId(Identifier):
-    pass
+    @staticmethod
+    cdef SessionId create(str client_id, datetime now)

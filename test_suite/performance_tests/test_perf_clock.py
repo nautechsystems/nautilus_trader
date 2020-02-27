@@ -13,7 +13,7 @@ from datetime import timedelta
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import LogLevel, LoggerAdapter, TestLogger
-from test_kit.performance import PerformanceProfiler
+from test_kit.performance import PerformanceHarness
 from test_kit.stubs import UNIX_EPOCH
 
 clock = TestClock()
@@ -38,6 +38,6 @@ class TestClockPerformanceTests(unittest.TestCase):
         clock.set_timer(Label('test'), timedelta(seconds=1), handler=store.append)
 
         iterations = 1
-        result = PerformanceProfiler.profile_function(TestClockTests.advance_time, 1, iterations)
+        result = PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)
         # ~1036ms (1036473μs) minimum of 1 runs @ 1000000 iterations each run.
         self.assertTrue(result < 1.5)

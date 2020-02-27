@@ -9,7 +9,7 @@
 import unittest
 
 from nautilus_trader.model.objects import Price, Volume, Bar
-from test_kit.performance import PerformanceProfiler
+from test_kit.performance import PerformanceHarness
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 
 
@@ -51,21 +51,21 @@ class ObjectTests:
 class ObjectPerformanceTests(unittest.TestCase):
 
     def test_symbol_using_str(self):
-        result = PerformanceProfiler.profile_function(ObjectTests.symbol_using_str, 3, 1000000)
+        result = PerformanceHarness.profile_function(ObjectTests.symbol_using_str, 3, 1000000)
         # ~140ms (140233μs) minimum of 3 runs @ 1,000,000 iterations each run.
         self.assertTrue(result < 0.2)
 
     def test_symbol_using_to_string(self):
-        result = PerformanceProfiler.profile_function(ObjectTests.symbol_using_to_string, 3, 1000000)
+        result = PerformanceHarness.profile_function(ObjectTests.symbol_using_to_string, 3, 1000000)
         # ~103ms (103260μs) minimum of 3 runs @ 1,000,000 iterations each run.
         self.assertTrue(result < 0.2)
 
     def test_build_bar_no_checking(self):
-        result = PerformanceProfiler.profile_function(ObjectTests.build_bar_no_checking, 3, 100000)
+        result = PerformanceHarness.profile_function(ObjectTests.build_bar_no_checking, 3, 100000)
         # ~146ms (146283μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 0.2)
 
     def test_build_bar_with_checking(self):
-        result = PerformanceProfiler.profile_function(ObjectTests.build_bar_with_checking, 3, 100000)
+        result = PerformanceHarness.profile_function(ObjectTests.build_bar_with_checking, 3, 100000)
         # ~143ms (143914μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 0.2)

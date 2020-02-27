@@ -17,7 +17,7 @@ cdef int _MILLISECONDS_IN_SECOND = 1000
 cdef int _MICROSECONDS_IN_SECOND = 1000000
 
 
-cdef class PerformanceProfiler:
+cdef class PerformanceHarness:
 
     @staticmethod
     def profile_function(function, int runs, int iterations, bint print_output=True) -> float:
