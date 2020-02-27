@@ -16,7 +16,6 @@ from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger
-from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
@@ -35,9 +34,9 @@ cdef class ServerNode(NetworkNode):
             self,
             ServerId server_id not None,
             int port,
+            int expected_frames,
             zmq_context not None: zmq.Context,
             int zmq_socket_type,
-            int expected_frames,
             Compressor compressor not None,
             EncryptionConfig encryption not None,
             Clock clock not None,
@@ -65,9 +64,9 @@ cdef class ServerNode(NetworkNode):
         super().__init__(
             '127.0.0.1',
             port,
+            expected_frames,
             zmq_context,
             zmq_socket_type,
-            expected_frames,
             compressor,
             encryption,
             clock,
@@ -75,6 +74,7 @@ cdef class ServerNode(NetworkNode):
             logger)
 
         self.server_id = server_id
+        self._socket.setsockopt(zmq.IDENTITY, self.server_id.value.encode(_UTF8))  # noqa (zmq reference)
 
     cpdef void start(self) except *:
         # Raise exception if not overridden in implementation
@@ -130,11 +130,10 @@ cdef class MessageServer(ServerNode):
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
         super().__init__(
             server_id,
-            '127.0.0.1',
             port,
-            zmq_context,
-            zmq.RTR,
             expected_frames,
+            zmq_context,
+            zmq.ROUTER,  # noqa (zmq reference)
             compressor,
             encryption,
             clock,
@@ -248,11 +247,10 @@ cdef class MessageServer(ServerNode):
 
         cdef bytes send_address = receiver.value.encode(_UTF8)
         cdef bytes header_type = response.__class__.__name__.encode(_UTF8)
-        cdef bytes header_size = int.to_bytes(len(serialized), byteorder='big', signed=True)
+        cdef bytes header_size = str(len(serialized)).encode(_UTF8)
         cdef bytes payload = self._compressor.compress(serialized)
 
-        self._socket.send_multipart(send_address, header_type, header_size, payload)
-        self.sent_count += 1
+        self._send([send_address, header_type, header_size, payload])
 
     cpdef void _consume_messages(self) except *:
         self._log.info("Ready to consume messages...")
@@ -278,7 +276,7 @@ cdef class MessageServer(ServerNode):
             return
 
         cdef str header_type = frames[1].decode(_UTF8)
-        cdef int recv_size = int.from_bytes(frames[2], byteorder='big', signed=True)
+        cdef int recv_size = int(frames[2].decode(_UTF8))
         cdef bytes payload = self._compressor.decompress(frames[3])
 
         self._log.verbose(f"[{self.recv_count}]<-- "
@@ -324,7 +322,7 @@ cdef class MessageServer(ServerNode):
         cdef Connected response = Connected(
             message,
             self.server_id,
-            client_id,
+            session_id,
             request.id,
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -349,7 +347,7 @@ cdef class MessageServer(ServerNode):
         cdef Disconnected response = Disconnected(
             message,
             self.server_id,
-            client_id,
+            session_id,
             request.id,
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -367,9 +365,6 @@ cdef class MessagePublisher(ServerNode):
                  int port,
                  int expected_frames,
                  zmq_context: zmq.Context,
-                 CommandSerializer command_serializer not None,
-                 RequestSerializer request_serializer not None,
-                 ResponseSerializer response_serializer not None,
                  Compressor compressor not None,
                  EncryptionConfig encryption not None,
                  Clock clock not None,
@@ -386,9 +381,9 @@ cdef class MessagePublisher(ServerNode):
             server_id,
             '127.0.0.1',
             port,
+            expected_frames,
             zmq_context,
             zmq.PUB,
-            expected_frames,
             compressor,
             encryption,
             clock,
@@ -414,6 +409,5 @@ cdef class MessagePublisher(ServerNode):
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
-        self._socket.send_multipart([topic.encode('utf-8'), bytes([len(message)]), message])
-        self.sent_count += 1
+        self._send([topic.encode('utf-8'), bytes([len(message)]), message])
         self._log.debug(f"[{self.sent_count}]--> topic={topic}, message={message}")

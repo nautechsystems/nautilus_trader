@@ -51,8 +51,8 @@ cdef class SessionId(Identifier):
         super().__init__(value)
 
     @staticmethod
-    cdef SessionId create(str client_id, datetime now):
-        cdef str timestamp = (f'{datetime.hour:02d}'
-                              f'{datetime.minute:02d}'
-                              f'{datetime.second:02d}')
-        return SessionId(f'{client_id}-{datetime.date}-{timestamp}')
+    cdef SessionId create(ClientId client_id, datetime now):
+        cdef str timestamp = (f'{datetime.hour}'
+                              f'{datetime.minute}'
+                              f'{datetime.second}')
+        return SessionId(f'{client_id.value}-') # {str(datetime.date)}-{timestamp}')

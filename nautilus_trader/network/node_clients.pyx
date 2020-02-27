@@ -34,9 +34,9 @@ cdef class ClientNode(NetworkNode):
             ClientId client_id not None,
             str host not None,
             int port,
+            int expected_frames,
             zmq_context not None: zmq.Context,
             int zmq_socket_type,
-            int expected_frames,
             frames_handler not None: callable,
             Compressor compressor not None,
             EncryptionConfig encryption not None,
@@ -49,6 +49,7 @@ cdef class ClientNode(NetworkNode):
         :param client_id: The client identifier for the worker.
         :param host: The service host address.
         :param port: The service port.
+        :param expected_frames: The expected message frame count.
         :param zmq_context: The ZeroMQ context.
         :param zmq_socket_type: The ZeroMQ socket type.
         :param frames_handler: The frames handler.
@@ -68,9 +69,9 @@ cdef class ClientNode(NetworkNode):
         super().__init__(
             host,
             port,
+            expected_frames,
             zmq_context,
             zmq_socket_type,
-            expected_frames,
             compressor,
             encryption,
             clock,
@@ -78,6 +79,7 @@ cdef class ClientNode(NetworkNode):
             logger)
 
         self.client_id = client_id
+        self._socket.setsockopt(zmq.IDENTITY, self.client_id.value.encode(_UTF8))  # noqa (zmq reference)
 
         self._frames_handler = frames_handler
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
@@ -136,8 +138,8 @@ cdef class MessageClient(ClientNode):
             ClientId client_id not None,
             str host not None,
             int port,
-            zmq_context not None: zmq.Context,
             int expected_frames,
+            zmq_context not None: zmq.Context,
             response_handler not None: callable,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
@@ -152,8 +154,8 @@ cdef class MessageClient(ClientNode):
         :param client_id: The client identifier for the worker.
         :param host: The server host address.
         :param port: The server port.
-        :param zmq_context: The ZeroMQ context.
         :param expected_frames: The expected message frame count.
+        :param zmq_context: The ZeroMQ context.
         :param response_handler: The handler for response messages.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
@@ -172,9 +174,9 @@ cdef class MessageClient(ClientNode):
             client_id,
             host,
             port,
-            zmq_context,
-            zmq.REQ,
             expected_frames,
+            zmq_context,
+            zmq.DEALER,  # noqa (zmq reference)
             self._handle_frames,
             compressor,
             encryption,
@@ -251,7 +253,7 @@ cdef class MessageClient(ClientNode):
 
         # Encode frames
         cdef bytes header_type = send_type_str.encode(_UTF8)
-        cdef bytes header_size = bytes([send_size])
+        cdef bytes header_size = str(send_size).encode(_UTF8)
         cdef bytes compressed = self._compressor.compress(payload)
 
         self._send([header_type, header_size, compressed])
@@ -264,7 +266,7 @@ cdef class MessageClient(ClientNode):
             return
 
         cdef str recv_type = frames[0].decode(_UTF8)
-        cdef int recv_size = int.from_bytes(frames[1], byteorder='big', signed=True)
+        cdef int recv_size = int(frames[1].decode(_UTF8))
         cdef bytes payload = self._compressor.decompress(frames[2])
 
         self._log.verbose(f"[{self.recv_count}]<-- type={recv_type}, size={recv_size} bytes")
@@ -303,8 +305,8 @@ cdef class MessageSubscriber(ClientNode):
             ClientId client_id,
             str host,
             int port,
-            zmq_context not None: zmq.Context,
             int expected_frames,
+            zmq_context not None: zmq.Context,
             sub_handler not None: callable,
             Compressor compressor not None,
             EncryptionConfig encryption not None,
@@ -317,8 +319,8 @@ cdef class MessageSubscriber(ClientNode):
         :param client_id: The client identifier for the worker.
         :param host: The service host address.
         :param port: The service port.
-        :param zmq_context: The ZeroMQ context.
         :param expected_frames: The expected message frame count.
+        :param zmq_context: The ZeroMQ context.
         :param sub_handler: The message handler.
         :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
