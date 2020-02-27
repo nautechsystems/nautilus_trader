@@ -32,7 +32,8 @@ from nautilus_trader.trading.trader cimport Trader
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
-from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
+from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase, LiveExecutionEngine
+from nautilus_trader.live.execution_client cimport LiveExecClient
 
 
 cdef class TradingNode:

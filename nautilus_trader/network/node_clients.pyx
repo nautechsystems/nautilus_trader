@@ -1,12 +1,11 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="workers.pyx" company="Nautech Systems Pty Ltd">
+# <copyright file="node_clients.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import os
 import time
 import threading
 import zmq
@@ -16,17 +15,18 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, message_type_to_string, message_type_from_string
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionConfig
-from nautilus_trader.network.messages cimport Connect, Disconnect, Response
+from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
+from nautilus_trader.network.messages cimport Request, Response
 
 cdef str _UTF8 = 'utf-8'
 
 
-cdef class MQWorker:
+cdef class ClientNode(NetworkNode):
     """
-    The base class for all ZMQ messaging workers.
+    The base class for all client nodes.
     """
 
     def __init__(
@@ -51,7 +51,6 @@ cdef class MQWorker:
         :param port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param zmq_socket_type: The ZeroMQ socket type.
-        :param expected_frames: The expected received frame count.
         :param frames_handler: The frames handler.
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
@@ -66,33 +65,19 @@ cdef class MQWorker:
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
-
-        self._clock = clock
-        self._guid_factory = guid_factory
-        self._log = LoggerAdapter(client_id.value, logger)
-        self._server_address = f'tcp://{host}:{port}'
-        self._zmq_context = zmq_context
-        self._zmq_socket = self._zmq_context.socket(zmq_socket_type)
-        self._zmq_socket.setsockopt(zmq.LINGER, 1)
-        self._expected_frames = expected_frames
-        self._compressor = compressor
-        self._cycles = 0
+        super().__init__(
+            host,
+            port,
+            zmq_context,
+            zmq_socket_type,
+            expected_frames,
+            compressor,
+            encryption,
+            clock,
+            guid_factory,
+            logger)
 
         self.client_id = client_id
-
-        if encryption.use_encryption:
-            if encryption.algorithm != 'curve':
-                raise ValueError(f'Invalid encryption specified, was \'{encryption.algorithm}\'')
-            key_file_client = os.path.join(encryption.keys_dir, "client.key_secret")
-            key_file_server = os.path.join(encryption.keys_dir, "server.key")
-            client_public, client_secret = zmq.auth.load_certificate(key_file_client)
-            server_public, server_secret = zmq.auth.load_certificate(key_file_server)
-            self._zmq_socket.curve_secretkey = client_secret
-            self._zmq_socket.curve_publickey = client_public
-            self._zmq_socket.curve_serverkey = server_public
-            self._log.info(f"Curve25519 encryption setup for {self._server_address}")
-        else:
-            self._log.warning(f"No encryption setup for {self._server_address}")
 
         self._frames_handler = frames_handler
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
@@ -101,14 +86,6 @@ cdef class MQWorker:
     cpdef bint is_connected(self):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef bint is_disposed(self):
-        """
-         Return a value indicating whether the internal socket is disposed.
-    
-        :return bool.
-        """
-        return self._zmq_socket.closed
 
     cpdef void connect(self) except *:
         # Raise exception if not overridden in implementation
@@ -122,41 +99,34 @@ cdef class MQWorker:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the MQWorker which close the socket (call disconnect first).
-        """
-        self._zmq_socket.close()
-        self._log.debug(f"Disposed.")
-
     cpdef void _connect_socket(self) except *:
         """
         Connect to the ZMQ socket.
         """
-        self._log.info(f"Connecting to {self._server_address}...")
-        self._zmq_socket.connect(self._server_address)
+        self._log.info(f"Connecting to {self._network_address}...")
+        self._socket.connect(self._network_address)
 
     cpdef void _disconnect_socket(self) except *:
         """
         Disconnect from the ZMQ socket.
         """
-        self._zmq_socket.disconnect(self._server_address)
-        self._log.info(f"Disconnected from {self._server_address}")
+        self._socket.disconnect(self._network_address)
+        self._log.info(f"Disconnected from {self._network_address}")
 
     cpdef void _consume_messages(self) except *:
         self._log.info("Ready to consume messages...")
 
         while True:
-            self._cycles += 1
+            self.recv_count += 1
 
             try:
-                self._frames_handler(self._zmq_socket.recv_multipart(flags=0)) # Blocking per message
+                self._frames_handler(self._socket.recv_multipart(flags=0)) # Blocking per message
             except zmq.ZMQError as ex:
                 self._log.error(str(ex))
-                return
+                continue
 
 
-cdef class DealerWorker(MQWorker):
+cdef class MessageClient(ClientNode):
     """
     Provides an asynchronous worker for ZMQ dealer messaging.
     """
@@ -167,6 +137,7 @@ cdef class DealerWorker(MQWorker):
             str host not None,
             int port,
             zmq_context not None: zmq.Context,
+            int expected_frames,
             response_handler not None: callable,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
@@ -179,9 +150,10 @@ cdef class DealerWorker(MQWorker):
         Initializes a new instance of the DealerWorker class.
 
         :param client_id: The client identifier for the worker.
-        :param host: The service host address.
-        :param port: The service port.
+        :param host: The server host address.
+        :param port: The server port.
         :param zmq_context: The ZeroMQ context.
+        :param expected_frames: The expected message frame count.
         :param response_handler: The handler for response messages.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
@@ -202,7 +174,7 @@ cdef class DealerWorker(MQWorker):
             port,
             zmq_context,
             zmq.REQ,
-            4,
+            expected_frames,
             self._handle_frames,
             compressor,
             encryption,
@@ -250,6 +222,19 @@ cdef class DealerWorker(MQWorker):
 
         self.send(disconnect.message_type, self._request_serializer.serialize(disconnect))
 
+    cpdef void send_request(self, Request request) except *:
+        """
+        Send the given request.
+        
+        Parameters
+        ----------
+        request : Request
+            The request to send.
+        """
+        cdef bytes payload = self._request_serializer.serialize(request)
+
+        self.send(request.message_type, payload)
+
     cpdef void send(self, MessageType message_type, bytes payload) except *:
         """
         Send the given request message to the service socket.
@@ -261,8 +246,6 @@ cdef class DealerWorker(MQWorker):
         Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
         Condition.not_empty(payload, 'payload')
 
-        self._cycles += 1
-
         cdef str send_type_str = message_type_to_string(message_type)
         cdef int send_size = (len(payload))
 
@@ -271,18 +254,20 @@ cdef class DealerWorker(MQWorker):
         cdef bytes header_size = bytes([send_size])
         cdef bytes compressed = self._compressor.compress(payload)
 
-        self._zmq_socket.send_multipart(header_type, header_size, compressed)
-        self._log.verbose(f"[{self._cycles}]--> {send_type_str} of {send_size} bytes.")
+        self._send([header_type, header_size, compressed])
+        self._log.verbose(f"[{self.sent_count}]--> {send_type_str} of {send_size} bytes.")
 
     cpdef void _handle_frames(self, list frames) except *:
         cdef int frames_count = len(frames)
         if frames_count != self._expected_frames:
-            self._log.error("Received unexpected frames count")
+            self._log.error(f"Received unexpected frames count {frames_count}, expected {self._expected_frames}")
             return
 
         cdef str recv_type = frames[0].decode(_UTF8)
         cdef int recv_size = int.from_bytes(frames[1], byteorder='big', signed=True)
         cdef bytes payload = self._compressor.decompress(frames[2])
+
+        self._log.verbose(f"[{self.recv_count}]<-- type={recv_type}, size={recv_size} bytes")
 
         cdef MessageType message_type = message_type_from_string(recv_type)
         if message_type != MessageType.RESPONSE:
@@ -290,16 +275,14 @@ cdef class DealerWorker(MQWorker):
 
         cdef Response response = self._response_serializer.deserialize(payload)
 
-        self._log.verbose(f"[{self._cycles}]<-- type={recv_type}, size={recv_size} bytes")
-
-        if isinstance(response, Connect):
+        if isinstance(response, Connected):
             if self.session_id is not None:
                 self._log.warning(response.message)
             else:
                 self._log.info(response.message)
-            self.session_id = response
+            self.session_id = response.session_id
             return
-        elif isinstance(response, Disconnect):
+        elif isinstance(response, Disconnected):
             if self.session_id is None:
                 self._log.warning(response.message)
             else:
@@ -310,18 +293,18 @@ cdef class DealerWorker(MQWorker):
             self._response_handler(response)
 
 
-cdef class SubscriberWorker(MQWorker):
+cdef class MessageSubscriber(ClientNode):
     """
-    Provides an asynchronous worker for ZMQ subscriber messaging.
+    Provides an asynchronous messaging subscriber.
     """
 
     def __init__(
             self,
             ClientId client_id,
-            str service_name,
             str host,
             int port,
             zmq_context not None: zmq.Context,
+            int expected_frames,
             sub_handler not None: callable,
             Compressor compressor not None,
             EncryptionConfig encryption not None,
@@ -332,10 +315,10 @@ cdef class SubscriberWorker(MQWorker):
         Initializes a new instance of the SubscriberWorker class.
 
         :param client_id: The client identifier for the worker.
-        :param service_name: The service name to connect to.
         :param host: The service host address.
         :param port: The service port.
         :param zmq_context: The ZeroMQ context.
+        :param expected_frames: The expected message frame count.
         :param sub_handler: The message handler.
         :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
@@ -347,7 +330,6 @@ cdef class SubscriberWorker(MQWorker):
         :raises ValueError: If the topic is not a valid string.
         :raises TypeError: If the handler is not of type callable.
         """
-        Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
@@ -358,7 +340,7 @@ cdef class SubscriberWorker(MQWorker):
             port,
             zmq_context,
             zmq.SUB,
-            3,
+            expected_frames,
             self._handle_frames,
             compressor,
             encryption,
@@ -366,7 +348,6 @@ cdef class SubscriberWorker(MQWorker):
             guid_factory,
             logger)
 
-        self.service_name = service_name
         self._sub_handler = sub_handler
 
     cpdef bint is_connected(self):
@@ -392,8 +373,8 @@ cdef class SubscriberWorker(MQWorker):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(_UTF8))
-        self._log.debug(f"Subscribed to topic {topic} at {self.service_name}")
+        self._socket.setsockopt(zmq.SUBSCRIBE, topic.encode(_UTF8))
+        self._log.debug(f"Subscribed to topic {topic}")
 
     cpdef void unsubscribe(self, str topic) except *:
         """
@@ -403,8 +384,8 @@ cdef class SubscriberWorker(MQWorker):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(_UTF8))
-        self._log.debug(f"Unsubscribed from topic {topic} at {self.service_name}")
+        self._socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(_UTF8))
+        self._log.debug(f"Unsubscribed from topic {topic}")
 
     cpdef void _handle_frames(self, list frames) except *:
         cdef int frames_count = len(frames)

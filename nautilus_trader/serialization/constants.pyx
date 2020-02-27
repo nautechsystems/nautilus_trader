@@ -100,6 +100,10 @@ FROM_DATE = 'FromDate'
 TO_DATE = 'ToDate'
 LIMIT = 'Limit'
 
+TICK_ARRAY = 'Tick[]'
+BAR_ARRAY = 'Bar[]'
+INSTRUMENT_ARRAY = 'Instrument[]'
+
 LOG_LEVEL = 'LogLevel'
 LOG_TEXT = 'LogText'
 THREAD_ID = 'ThreadId'

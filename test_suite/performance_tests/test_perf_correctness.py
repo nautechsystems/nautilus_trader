@@ -10,7 +10,7 @@ import unittest
 
 from nautilus_trader.core.correctness import PyCondition
 from test_kit.stubs import TestStubs
-from test_kit.performance import PerformanceProfiler
+from test_kit.performance import PerformanceHarness
 
 USDJPY_FXCM = TestStubs.instrument_usdjpy()
 
@@ -35,13 +35,13 @@ class CorrectnessConditionPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_condition_true():
         # Test
-        PerformanceProfiler.profile_function(CorrectnessTests.none, 3, 100000)
+        PerformanceHarness.profile_function(CorrectnessTests.none, 3, 100000)
         # ~11ms (11827μs) minimum of 3 runs @ 100,000 iterations each run
 
     @staticmethod
     def test_condition_not_none():
         # Test
-        PerformanceProfiler.profile_function(CorrectnessTests.true, 3, 100000)
+        PerformanceHarness.profile_function(CorrectnessTests.true, 3, 100000)
         # ~12ms (12012μs) minimum of 5 runs @ 100000 iterations
 
         # 100000 iterations @ 12ms with boolean except returning False
@@ -50,5 +50,5 @@ class CorrectnessConditionPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_condition_valid_string():
         # Test
-        PerformanceProfiler.profile_function(CorrectnessTests.valid_string, 3, 100000)
+        PerformanceHarness.profile_function(CorrectnessTests.valid_string, 3, 100000)
         # ~15ms (15622μs) minimum of 5 runs @ 100000 iterations

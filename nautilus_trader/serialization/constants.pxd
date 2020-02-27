@@ -100,6 +100,10 @@ cdef str FROM_DATE
 cdef str TO_DATE
 cdef str LIMIT
 
+cdef str TICK_ARRAY
+cdef str BAR_ARRAY
+cdef str INSTRUMENT_ARRAY
+
 cdef str LOG_LEVEL
 cdef str LOG_TEXT
 cdef str THREAD_ID

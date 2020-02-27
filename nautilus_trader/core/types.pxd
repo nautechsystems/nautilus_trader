@@ -20,4 +20,5 @@ cdef class Identifier(ValidString):
 
 
 cdef class GUID(Identifier):
-    pass
+    @staticmethod
+    cdef GUID none()

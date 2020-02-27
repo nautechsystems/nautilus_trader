@@ -88,7 +88,7 @@ class ValidStringTests(unittest.TestCase):
 
 class GUIDTests(unittest.TestCase):
 
-    def test_GUIDS_passed_different_UUID_are_not_equal(self):
+    def test_GUID_passed_different_UUID_are_not_equal(self):
         # Arrange
         # Act
         guid1 = GUID(uuid.uuid4()),
@@ -107,3 +107,10 @@ class GUIDTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(guid1, guid2)
+
+    def test_none_returns_empty_guid(self):
+        # Arrange
+        value = GUID.py_none()
+
+        # Act
+        self.assertEqual('00000000-0000-0000-0000-000000000000', value.value)

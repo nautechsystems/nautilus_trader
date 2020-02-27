@@ -1,14 +1,13 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="execution.pxd" company="Nautech Systems Pty Ltd">
+# <copyright file="execution_engine.pxd" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Command, Response
-from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
-from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
+from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine
+from nautilus_trader.serialization.base cimport CommandSerializer, EventSerializer
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
@@ -50,17 +49,3 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _thread
 
     cpdef void _consume_messages(self) except *
-
-
-cdef class LiveExecClient(ExecutionClient):
-    cdef object _zmq_context
-
-    cdef object _commands_worker
-    cdef object _events_worker
-    cdef CommandSerializer _command_serializer
-    cdef ResponseSerializer _response_serializer
-    cdef EventSerializer _event_serializer
-
-    cpdef void _command_handler(self, Command command) except *
-    cpdef void _response_handler(self, Response response) except *
-    cpdef void _event_handler(self, str topic, bytes event_bytes) except *

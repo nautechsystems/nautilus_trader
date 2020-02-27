@@ -403,13 +403,13 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.valid_port, -1, "port")
+        self.assertRaises(ValueError, PyCondition.valid_port, 49151, "port")
         self.assertRaises(ValueError, PyCondition.valid_port, 65536, "port")
 
     def test_condition_valid_port_when_in_range_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.valid_port(1, "port")
+        PyCondition.valid_port(55555, "port")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised
