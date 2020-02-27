@@ -10,19 +10,33 @@ import unittest
 import time
 import zmq
 
-from nautilus_trader.live.guid import LiveGuidFactory
-from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionConfig
-from nautilus_trader.network.identifiers import ClientId, ServerId
+from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
-from test_kit.mocks import ObjectStorer
 from nautilus_trader.live.clock import LiveClock
+from nautilus_trader.live.guid import LiveGuidFactory
+from nautilus_trader.live.logging import LiveLogger
+from test_kit.stubs import UNIX_EPOCH
+from test_kit.mocks import ObjectStorer
 
 LOCALHOST = "127.0.0.1"
 TEST_PORT = 55557
+
+
+class NetworkIdentifiersTests(unittest.TestCase):
+
+    def test_can_generate_new_session_id(self):
+        # Arrange
+        client_id = ClientId('Trader-001')
+
+        # Act
+        session_id = SessionId.py_create(client_id, UNIX_EPOCH, 'None')
+
+        # Assert
+        self.assertEqual('Trader-001-3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f', session_id.value)
 
 
 class MessageClientTests(unittest.TestCase):
