@@ -17,8 +17,10 @@ from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.identifiers cimport Label, Symbol, IdTag
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.model.order cimport Order, AtomicOrder
-from nautilus_trader.common.clock cimport Clock, LiveClock
-from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.live.clock cimport LiveClock
+from nautilus_trader.live.guid cimport LiveGuidFactory
 
 
 cdef class OrderFactory:

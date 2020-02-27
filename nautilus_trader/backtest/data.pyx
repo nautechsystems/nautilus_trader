@@ -24,7 +24,7 @@ from nautilus_trader.model.objects cimport Instrument, Price, Volume, Tick, BarT
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.common.clock cimport TimeEventHandler, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
-from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport TickDataWrangler
 

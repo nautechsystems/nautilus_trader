@@ -9,8 +9,8 @@
 import unittest
 from datetime import datetime
 
-from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, PriceType, Currency
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine

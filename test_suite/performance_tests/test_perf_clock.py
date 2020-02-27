@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logger import LogLevel, LoggerAdapter, TestLogger
+from nautilus_trader.common.logging import LogLevel, LoggerAdapter, TestLogger
 from test_kit.performance import PerformanceHarness
 from test_kit.stubs import UNIX_EPOCH
 

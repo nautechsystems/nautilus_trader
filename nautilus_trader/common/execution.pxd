@@ -17,7 +17,7 @@ from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 

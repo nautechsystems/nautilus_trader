@@ -14,7 +14,7 @@ import zmq
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.live.logger import LiveLogger
+from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.messages import DataResponse
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher

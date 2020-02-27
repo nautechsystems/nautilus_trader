@@ -17,7 +17,7 @@ from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.analysis.performance import PerformanceAnalyzer

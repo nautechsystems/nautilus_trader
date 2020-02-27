@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Price, Volume, Tick
 from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
 from test_kit.stubs import TestStubs

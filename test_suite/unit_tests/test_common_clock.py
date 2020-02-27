@@ -14,8 +14,9 @@ from datetime import date, datetime, timezone, timedelta
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.model.events import TimeEvent
-from nautilus_trader.common.logger import LoggerAdapter, TestLogger
-from nautilus_trader.common.clock import TimeEventHandler, LiveClock, TestClock
+from nautilus_trader.common.logging import LoggerAdapter, TestLogger
+from nautilus_trader.common.clock import TimeEventHandler, TestClock
+from nautilus_trader.live.clock import LiveClock
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

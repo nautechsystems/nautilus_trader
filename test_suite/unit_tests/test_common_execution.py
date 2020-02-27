@@ -28,7 +28,7 @@ from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory

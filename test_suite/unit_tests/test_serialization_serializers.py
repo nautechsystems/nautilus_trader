@@ -9,13 +9,13 @@
 import unittest
 from base64 import b64encode, b64decode
 
-from nautilus_trader.common.logger import *
 from nautilus_trader.model.enums import *
 from nautilus_trader.model.commands import *
 from nautilus_trader.model.events import *
 from nautilus_trader.model.identifiers import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.model.order import *
+from nautilus_trader.common.logging import *
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.data import *
 from nautilus_trader.serialization.serializers import *

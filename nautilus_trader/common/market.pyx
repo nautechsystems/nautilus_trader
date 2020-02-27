@@ -25,7 +25,7 @@ from nautilus_trader.model.objects cimport (  # noqa: E211
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.common.clock cimport TimeEventHandler, Clock
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 
 

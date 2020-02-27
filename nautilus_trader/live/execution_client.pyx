@@ -15,18 +15,19 @@ from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, Modi
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
+from nautilus_trader.live.clock cimport LiveClock
+from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.logging cimport LiveLogger
+
 
 cdef str _UTF8 = 'utf-8'
 

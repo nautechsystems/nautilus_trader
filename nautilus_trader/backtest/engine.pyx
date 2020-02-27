@@ -16,26 +16,24 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport as_timestamp_utc, format_iso8601, format_bytes
 from nautilus_trader.core.functions cimport pad_string, get_size_of
-from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
-from nautilus_trader.common.clock cimport LiveClock, TestClock, TimeEventHandler
+from nautilus_trader.common.clock cimport TestClock, TimeEventHandler
 from nautilus_trader.common.guid cimport TestGuidFactory
-from nautilus_trader.common.logger cimport TestLogger, nautilus_header
+from nautilus_trader.common.logging cimport LogLevel, LoggerAdapter, TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
+from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataContainer, BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase
-from nautilus_trader.serialization.serializers cimport (  # noqa: E211
-    MsgPackCommandSerializer,
-    MsgPackEventSerializer)
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer  # noqa
 
 
 cdef class BacktestEngine:

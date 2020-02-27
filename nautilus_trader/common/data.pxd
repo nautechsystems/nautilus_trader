@@ -15,7 +15,7 @@ from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 

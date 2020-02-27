@@ -15,7 +15,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, message_type_to_string, message_type_from_string
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionConfig
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected

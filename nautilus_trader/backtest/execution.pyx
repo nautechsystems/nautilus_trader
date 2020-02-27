@@ -38,7 +38,7 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
-from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.models cimport FillModel

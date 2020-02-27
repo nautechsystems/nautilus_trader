@@ -11,8 +11,8 @@ import threading
 import unittest
 
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
-from nautilus_trader.common.logger import LogMessage, LogLevel
-from nautilus_trader.live.logger import LogStore
+from nautilus_trader.common.logging import LogMessage, LogLevel
+from nautilus_trader.live.logging import LogStore
 
 from test_kit.stubs import UNIX_EPOCH
 

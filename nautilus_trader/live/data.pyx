@@ -16,9 +16,7 @@ from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
-from nautilus_trader.model.objects cimport BarType, Instrument
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.guid cimport LiveGuidFactory
+from nautilus_trader.model.objects cimport BarType
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
@@ -26,7 +24,9 @@ from nautilus_trader.serialization.data cimport Utf8TickSerializer, Utf8BarSeria
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.live.logger cimport LiveLogger
+from nautilus_trader.live.clock cimport LiveClock
+from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.messages cimport Response, MessageReceived, MessageRejected
 from nautilus_trader.network.messages cimport DataRequest, DataResponse, QueryFailure
