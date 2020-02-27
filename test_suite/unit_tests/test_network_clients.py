@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_network_workers.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_network_clients.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -35,25 +35,10 @@ class MessageClientTests(unittest.TestCase):
         self.context = zmq.Context()
         self.response_handler = ObjectStorer()
 
-        self.client = MessageClient(
-            ClientId("Trader-001"),
-            LOCALHOST,
-            TEST_PORT,
-            4,
-            self.context,
-            self.response_handler,
-            MsgPackRequestSerializer(),
-            MsgPackResponseSerializer(),
-            CompressorBypass(),
-            EncryptionConfig(),
-            clock,
-            guid_factory,
-            logger)
-
         self.server = MessageServer(
             ServerId("Server-001"),
             TEST_PORT,
-            3,
+            4,
             self.context,
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
@@ -64,6 +49,21 @@ class MessageClientTests(unittest.TestCase):
             logger)
 
         self.server.start()
+
+        self.client = MessageClient(
+            ClientId("Trader-001"),
+            LOCALHOST,
+            TEST_PORT,
+            3,
+            self.context,
+            self.response_handler,
+            MsgPackRequestSerializer(),
+            MsgPackResponseSerializer(),
+            CompressorBypass(),
+            EncryptionConfig(),
+            clock,
+            guid_factory,
+            logger)
 
     def tearDown(self):
         # Tear Down
@@ -96,7 +96,7 @@ class MessageClientTests(unittest.TestCase):
         # Arrange
         self.client.connect()
 
-        time.sleep(1)
+        time.sleep(0.1)
         # Act
         #response = self.client.send(b'hello')
 

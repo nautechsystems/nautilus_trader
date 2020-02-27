@@ -720,7 +720,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         elif isinstance(response, MessageReceived):
             package[RECEIVED_TYPE] = response.received_type
         elif isinstance(response, MessageRejected):
-            package[MESSAGE] = response.received_type
+            package[MESSAGE] = response.message
         elif isinstance(response, DataResponse):
             package[DATA] = response.data
             package[DATA_TYPE] = response.data_type

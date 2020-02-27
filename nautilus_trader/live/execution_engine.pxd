@@ -45,7 +45,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
-    cdef object _message_bus
+    cdef object _queue
     cdef object _thread
 
     cpdef void _consume_messages(self) except *
