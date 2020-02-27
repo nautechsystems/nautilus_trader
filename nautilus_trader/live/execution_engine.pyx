@@ -77,24 +77,24 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader                   = f'{_TRADER}-{trader_id.value}'
-        self.key_accounts                 = f'{self.key_trader}:{_ACCOUNTS}:'
-        self.key_orders                   = f'{self.key_trader}:{_ORDERS}:'
-        self.key_positions                = f'{self.key_trader}:{_POSITIONS}:'
-        self.key_strategies               = f'{self.key_trader}:{_STRATEGIES}:'
-        self.key_index_order_position     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_POSITION}'      # HASH
-        self.key_index_order_strategy     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}'      # HASH
-        self.key_index_broker_position    = f'{self.key_trader}:{_INDEX}:{_BROKER}{_POSITION}'     # HASH
-        self.key_index_position_strategy  = f'{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}'   # HASH
-        self.key_index_position_orders    = f'{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:'    # SET
-        self.key_index_strategy_orders    = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:'    # SET
-        self.key_index_strategy_positions = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:' # SET
-        self.key_index_orders             = f'{self.key_trader}:{_INDEX}:{_ORDERS}'                # SET
-        self.key_index_orders_working     = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_WORKING}'     # SET
-        self.key_index_orders_completed   = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_COMPLETED}'   # SET
-        self.key_index_positions          = f'{self.key_trader}:{_INDEX}:{_POSITIONS}'             # SET
-        self.key_index_positions_open     = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}'     # SET
-        self.key_index_positions_closed   = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}'   # SET
+        self.key_trader                   = f'{_TRADER}-{trader_id.value}'                                 # noqa
+        self.key_accounts                 = f'{self.key_trader}:{_ACCOUNTS}:'                              # noqa
+        self.key_orders                   = f'{self.key_trader}:{_ORDERS}:'                                # noqa
+        self.key_positions                = f'{self.key_trader}:{_POSITIONS}:'                             # noqa
+        self.key_strategies               = f'{self.key_trader}:{_STRATEGIES}:'                            # noqa
+        self.key_index_order_position     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_POSITION}'      # HASH  # noqa
+        self.key_index_order_strategy     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}'      # HASH  # noqa
+        self.key_index_broker_position    = f'{self.key_trader}:{_INDEX}:{_BROKER}{_POSITION}'     # HASH  # noqa
+        self.key_index_position_strategy  = f'{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}'   # HASH  # noqa
+        self.key_index_position_orders    = f'{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:'    # SET   # noqa
+        self.key_index_strategy_orders    = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:'    # SET   # noqa
+        self.key_index_strategy_positions = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:' # SET   # noqa
+        self.key_index_orders             = f'{self.key_trader}:{_INDEX}:{_ORDERS}'                # SET   # noqa
+        self.key_index_orders_working     = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_WORKING}'     # SET   # noqa
+        self.key_index_orders_completed   = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_COMPLETED}'   # SET   # noqa
+        self.key_index_positions          = f'{self.key_trader}:{_INDEX}:{_POSITIONS}'             # SET   # noqa
+        self.key_index_positions_open     = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}'     # SET   # noqa
+        self.key_index_positions_closed   = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}'   # SET   # noqa
 
         # Serializers
         self._command_serializer = command_serializer

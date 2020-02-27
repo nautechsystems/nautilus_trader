@@ -13,15 +13,8 @@ from nautilus_indicators.average.ema cimport ExponentialMovingAverage
 
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
-from nautilus_trader.model.objects cimport (
-    Quantity,
-    Price,
-    Tick,
-    BarSpecification,
-    BarType,
-    Bar,
-    Instrument
-)
+from nautilus_trader.model.objects cimport Quantity, Price, Tick, Instrument
+from nautilus_trader.model.objects cimport BarSpecification, BarType, Bar
 from nautilus_trader.model.order cimport AtomicOrder
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -133,7 +126,7 @@ cdef class TickTock(TradingStrategy):
     cdef readonly bint timer_running
     cdef readonly int time_alert_counter
 
-    def __init__(self, Instrument instrument,  BarType bar_type,):
+    def __init__(self, Instrument instrument, BarType bar_type):
         """
         Initializes a new instance of the TickTock class.
         """
@@ -157,13 +150,13 @@ cdef class TickTock(TradingStrategy):
         self.log.info(f'Received {bar_type} Bar({bar})')
         self.store.append(bar)
         if not self.timer_running:
-            self.clock.set_timer(label=Label(f'Test-Timer'),
-                                 interval=timedelta(seconds=10))
+            self.clock.set_timer(label=Label(f'Test-Timer'), interval=timedelta(seconds=10))
             self.timer_running = True
 
         self.time_alert_counter += 1
-        self.clock.set_time_alert(label=Label(f'Test-Alert-{self.time_alert_counter}'),
-                            alert_time=bar.timestamp + timedelta(seconds=30))
+        self.clock.set_time_alert(
+            label=Label(f'Test-Alert-{self.time_alert_counter}'),
+            alert_time=bar.timestamp + timedelta(seconds=30))
 
     cpdef void on_instrument(self, Instrument instrument):
         pass
@@ -350,7 +343,7 @@ cdef class EMACross(TradingStrategy):
 
     cpdef void on_tick(self, Tick tick):
         """
-        This method is called whenever a Tick is received by the strategy, and 
+        This method is called whenever a Tick is received by the strategy, and
         after the Tick has been processed by the base class.
         The received Tick object is then passed into this method.
 
