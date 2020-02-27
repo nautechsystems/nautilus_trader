@@ -14,7 +14,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class Portfolio:

@@ -13,7 +13,7 @@ from nautilus_trader.model.events cimport PositionClosed, OrderFillEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.identifiers cimport Symbol, PositionId
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 
 
 cdef class Portfolio:

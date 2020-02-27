@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logger cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure

@@ -13,7 +13,7 @@ from nautilus_trader.model.identifiers import IdTag, PositionId
 from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.position import Position
 from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock

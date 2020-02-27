@@ -8,7 +8,7 @@
 
 import unittest
 
-from nautilus_trader.common.logger import LogLevel, TestLogger, LoggerAdapter
+from nautilus_trader.common.logging import LogLevel, TestLogger, LoggerAdapter
 
 
 class TestLoggerTests(unittest.TestCase):

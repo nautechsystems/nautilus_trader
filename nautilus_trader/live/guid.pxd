@@ -6,12 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.common.guid cimport GuidFactory
 
 
-cdef class GuidFactory:
-    cpdef GUID generate(self)
-
-
-cdef class TestGuidFactory(GuidFactory):
-    cdef GUID _guid
+cdef class LiveGuidFactory(GuidFactory):
+    pass

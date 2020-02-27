@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
 from nautilus_trader.model.objects cimport Quantity, Decimal, Money
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.common.logger cimport LogMessage, log_level_from_string
+from nautilus_trader.common.logging cimport LogMessage, log_level_from_string
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport OrderSerializer, CommandSerializer, EventSerializer
 from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer, LogSerializer

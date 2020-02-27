@@ -27,13 +27,15 @@ from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
-from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.logging cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.factories cimport OrderFactory
-from nautilus_trader.common.clock cimport Clock, LiveClock
+from nautilus_trader.live.clock cimport LiveClock
+from nautilus_trader.live.guid cimport LiveGuidFactory
 
 
 cdef class TradingStrategy:

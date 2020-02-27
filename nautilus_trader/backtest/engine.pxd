@@ -11,7 +11,7 @@ from cpython.datetime cimport datetime, timedelta
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer

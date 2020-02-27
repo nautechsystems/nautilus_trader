@@ -8,8 +8,8 @@
 
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
-from nautilus_trader.common.logger cimport Logger
 
 
 cdef class ObjectStorer:

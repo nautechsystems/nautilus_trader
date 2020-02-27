@@ -17,7 +17,7 @@ from nautilus_trader.model.objects import Price, Volume, Tick, Bar, BarSpecifica
 from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater
 from nautilus_trader.common.market import BarBuilder, TickBarAggregator, TimeBarAggregator
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.logging import TestLogger
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 from test_kit.mocks import ObjectStorer

@@ -17,15 +17,9 @@ from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    Label,
-    Symbol,
-    OrderId,
-    OrderIdBroker,
-    AtomicOrderId,
-    AccountId,
-    ExecutionId,
-    PositionIdBroker)
+from nautilus_trader.model.identifiers cimport Label, Symbol, OrderId, OrderIdBroker
+from nautilus_trader.model.identifiers cimport AtomicOrderId, AccountId, ExecutionId
+from nautilus_trader.model.identifiers cimport PositionIdBroker
 
 
 cdef class Order:

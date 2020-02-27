@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="logger.pyx" company="Nautech Systems Pty Ltd">
+# <copyright file="logging.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -23,8 +23,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_iso8601
-from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
-from nautilus_trader.common.logger cimport LogLevel
+from nautilus_trader.common.clock cimport Clock, TestClock
+from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.live.clock cimport LiveClock
 
 # Private constants
 cdef str _HEADER = '\033[95m'

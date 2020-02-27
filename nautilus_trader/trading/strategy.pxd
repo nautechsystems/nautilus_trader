@@ -21,7 +21,7 @@ from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.execution cimport ExecutionEngine

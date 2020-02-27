@@ -13,7 +13,7 @@ import zmq.auth
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionConfig
 

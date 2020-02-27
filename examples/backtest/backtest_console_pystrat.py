@@ -10,9 +10,9 @@
 import pandas as pd
 from datetime import datetime
 
-from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import BarStructure, Currency, PriceType
 from nautilus_trader.model.objects import BarSpecification
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig

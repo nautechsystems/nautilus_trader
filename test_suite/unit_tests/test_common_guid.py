@@ -9,7 +9,8 @@
 import unittest
 
 from nautilus_trader.core.types import GUID
-from nautilus_trader.common.guid import TestGuidFactory, LiveGuidFactory
+from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.live.guid import LiveGuidFactory
 
 
 class TestGuidFactoryTests(unittest.TestCase):

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="logger.pxd" company="Nautech Systems Pty Ltd">
+# <copyright file="logging.pxd" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -27,6 +27,7 @@ cpdef enum LogLevel:
     CRITICAL = 6,
     FATAL = 7,
 
+
 cdef inline str log_level_to_string(int value):
     if value == 1:
         return 'VRB'
@@ -44,6 +45,7 @@ cdef inline str log_level_to_string(int value):
         return 'FTL'
     else:
         return 'UNDEFINED'
+
 
 cdef inline LogLevel log_level_from_string(str value):
     if value == 'VRB':

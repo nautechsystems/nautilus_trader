@@ -10,8 +10,8 @@ import unittest
 import time
 import zmq
 
-from nautilus_trader.common.guid import LiveGuidFactory
-from nautilus_trader.live.logger import LiveLogger
+from nautilus_trader.live.guid import LiveGuidFactory
+from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import CompressorBypass
@@ -19,7 +19,7 @@ from nautilus_trader.network.encryption import EncryptionConfig
 from nautilus_trader.network.identifiers import ClientId, ServerId
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from test_kit.mocks import ObjectStorer
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.live.clock import LiveClock
 
 LOCALHOST = "127.0.0.1"
 TEST_PORT = 55557

@@ -11,8 +11,8 @@ from cpython.datetime cimport date, datetime, timedelta
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.guid cimport GuidFactory, TestGuidFactory
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class TimeEventHandler:
@@ -42,13 +42,6 @@ cdef class TestTimer(Timer):
     cpdef list advance(self, datetime to_time)
 
 
-cdef class LiveTimer(Timer):
-    cdef object _internal
-
-    cpdef void repeat(self, datetime now) except *
-    cdef object _start_timer(self, datetime now)
-
-
 cdef class Clock:
     cdef LoggerAdapter _log
     cdef GuidFactory _guid_factory
@@ -71,11 +64,24 @@ cdef class Clock:
     cpdef void register_logger(self, LoggerAdapter logger) except *
     cpdef void register_default_handler(self, handler) except *
     cpdef void set_time_alert(self, Label label, datetime alert_time, handler=*) except *
-    cpdef void set_timer(self, Label label, timedelta interval, datetime start_time=*, datetime stop_time=*, handler=*) except *
+    cpdef void set_timer(
+        self,
+        Label label,
+        timedelta interval,
+        datetime start_time=*,
+        datetime stop_time=*,
+        handler=*) except *
     cpdef void cancel_timer(self, Label label) except *
     cpdef void cancel_all_timers(self) except *
 
-    cdef object _get_timer(self, Label label, callback, timedelta interval, datetime now, datetime start_time, datetime stop_time)
+    cdef object _get_timer(
+        self,
+        Label label,
+        callback,
+        timedelta interval,
+        datetime now,
+        datetime start_time,
+        datetime stop_time)
     cdef void _add_timer(self, Timer timer, handler) except *
     cdef void _remove_timer(self, Timer timer) except *
     cdef void _update_stack(self) except *
@@ -88,9 +94,3 @@ cdef class TestClock(Clock):
 
     cpdef void set_time(self, datetime to_time) except *
     cpdef list advance_time(self, datetime to_time)
-
-
-cdef class LiveClock(Clock):
-    cpdef void _raise_time_event(self, LiveTimer timer) except *
-
-    cdef void _handle_time_event(self, TimeEvent event) except *
