@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import hashlib
+
 from cpython.datetime cimport datetime
 
 
@@ -51,8 +53,10 @@ cdef class SessionId(Identifier):
         super().__init__(value)
 
     @staticmethod
-    cdef SessionId create(ClientId client_id, datetime now):
-        cdef str timestamp = (f'{datetime.hour}'
-                              f'{datetime.minute}'
-                              f'{datetime.second}')
-        return SessionId(f'{client_id.value}-') # {str(datetime.date)}-{timestamp}')
+    cdef SessionId create(ClientId client_id, datetime now, str secret):
+        cdef bytes hashable = f'{client_id.value}-{datetime}-{secret}'.encode('utf-8')
+        return SessionId(f'{client_id.value}-{hashlib.sha256(hashable).hexdigest()}')
+
+    @staticmethod
+    def py_create(ClientId client_id, datetime now, str secret):
+        return SessionId.create(client_id, now, secret)

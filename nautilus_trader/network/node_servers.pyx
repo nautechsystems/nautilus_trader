@@ -310,13 +310,13 @@ cdef class MessageServer(ServerNode):
         cdef str message
         if session_id is None:
             # Peer not previously connected to a session
-            session_id = SessionId.create(client_id, self._clock.time_now())
+            session_id = SessionId.create(client_id, self._clock.time_now(), 'None')  # TODO
             self._peers[client_id] = session_id
-            message = f"{client_id.value} connected to session {session_id.value} at {self._network_address}"
+            message = f"Connected to session {session_id.value} at {self._network_address}"
             self._log.info(message)
         else:
             # Peer already connected to a session
-            message = f"{client_id.value} already connected to session {session_id.value} at {self._network_address}"
+            message = f"Already connected to session {session_id.value} at {self._network_address}"
             self._log.warning(message)
 
         cdef Connected response = Connected(
@@ -336,12 +336,12 @@ cdef class MessageServer(ServerNode):
         if session_id is None:
             # Peer not previously connected to a session
             session_id = SessionId(str(None))
-            message = f"{client_id.value} had no session to disconnect at {self._network_address}"
+            message = f"No session to disconnect at {self._network_address}"
             self._log.warning(message)
         else:
             # Peer connected to session
             del self._peers[client_id]
-            message = f"{client_id.value} disconnected from {session_id} at {self._network_address}"
+            message = f"Disconnected from {session_id} at {self._network_address}"
             self._log.info(message)
 
         cdef Disconnected response = Disconnected(
