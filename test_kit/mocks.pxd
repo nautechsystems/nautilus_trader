@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-
 cdef class ObjectStorer:
     cdef list _store
     cdef readonly int count

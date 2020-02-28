@@ -27,4 +27,5 @@ cdef class NetworkNode:
 
     cpdef void dispose(self) except *
     cpdef bint is_disposed(self)
+    cdef void _send_string(self, bytes receiver, str message)
     cdef void _send(self, list frames) except *

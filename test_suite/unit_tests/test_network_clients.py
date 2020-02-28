@@ -10,6 +10,8 @@ import unittest
 import time
 import zmq
 
+from nautilus_trader.core.message import MessageType
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import CompressorBypass
@@ -45,9 +47,10 @@ class MessageClientTests(unittest.TestCase):
         # Fixture Setup
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
-        logger = LiveLogger()
+        logger = LiveLogger(level_console=LogLevel.VERBOSE)
         self.context = zmq.Context()
-        self.response_handler = ObjectStorer()
+        self.client_sink = []
+        self.server_sink = []
 
         self.server = MessageServer(
             ServerId("Server-001"),
@@ -62,6 +65,7 @@ class MessageClientTests(unittest.TestCase):
             guid_factory,
             logger)
 
+        self.server.register_handler(MessageType.STRING, self.server_sink.append)
         self.server.start()
 
         self.client = MessageClient(
@@ -70,7 +74,7 @@ class MessageClientTests(unittest.TestCase):
             TEST_PORT,
             3,
             self.context,
-            self.response_handler,
+            self.client_sink.append,
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
             CompressorBypass(),
@@ -85,56 +89,50 @@ class MessageClientTests(unittest.TestCase):
         self.client.disconnect()
         self.server.stop()
 
-    # TODO
-    # def test_send_message_to_wrong_address_times_out(self):
+    # def test_connect_to_wrong_address_times_out(self):
     #     # Arrange
-    #     worker = RequestWorker(
-    #         "TestRequester",
-    #         "TestResponder",
-    #         LOCALHOST,
-    #         TEST_PORT + 1,
-    #         self.context,
-    #         CompressorBypass(),
-    #         EncryptionConfig(),
-    #         self.logger)
-    #
-    #     worker.connect()
     #
     #     # Act
-    #     response = self.worker.send(b'hello')
     #
     #     # Assert
-    #     self.assertEqual(b'OK', response)
 
     def test_can_connect_to_server_and_receive_response(self):
         # Arrange
+        # Act
         self.client.connect()
 
         time.sleep(0.1)
-        # Act
-        #response = self.client.send(b'hello')
 
         # Assert
-        #self.assertEqual(b'OK', response)
+        self.assertTrue(self.client.is_connected())
 
-    def test_can_send_one_message_and_receive_response(self):
+    def test_can_send_one_string_message(self):
         # Arrange
         self.client.connect()
 
         # Act
-        response = self.client.send(b'hello')
+        self.client.send(MessageType.STRING, b'hello')
+
+        time.sleep(0.2)
 
         # Assert
-        self.assertEqual(b'OK', response)
+        self.assertEqual(2, self.client.sent_count)
+        self.assertEqual(5, self.client.recv_count)
+        # self.assertEqual(4, self.server.sent_count)
+        # self.assertEqual(4, self.server.recv_count)
+        # self.assertEqual(1, self.client_sink.count)
+        # self.assertEqual(1, self.server_sink.count)
+        self.assertTrue('hello' in self.server_sink)
+        self.assertTrue('OK' in self.client_sink)
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
         self.client.connect()
 
         # Act
-        response1 = self.client.send(b'hello1')
-        response2 = self.client.send(b'hello2')
-        response3 = self.client.send(b'hello3')
+        response1 = self.client.send(MessageType.STRING, b'hello1')
+        response2 = self.client.send(MessageType.STRING, b'hello2')
+        response3 = self.client.send(MessageType.STRING, b'hello3')
 
         # Assert
         self.assertEqual(b'OK', response1)
