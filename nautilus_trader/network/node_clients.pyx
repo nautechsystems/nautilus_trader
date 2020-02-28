@@ -235,9 +235,7 @@ cdef class MessageClient(ClientNode):
         request : Request
             The request to send.
         """
-        cdef bytes payload = self._request_serializer.serialize(request)
-
-        self.send(request.message_type, payload)
+        self.send(request.message_type, self._request_serializer.serialize(request))
 
     cpdef void send(self, MessageType message_type, bytes payload) except *:
         """
@@ -262,6 +260,8 @@ cdef class MessageClient(ClientNode):
         self._log.verbose(f"[{self.sent_count}]--> {send_type_str} of {send_size} bytes.")
 
     cpdef void _handle_frames(self, list frames) except *:
+        self.recv_count += 1
+
         cdef int frames_count = len(frames)
         if frames_count != self._expected_frames:
             self._log.error(f"Received unexpected frames count {frames_count}, expected {self._expected_frames}")
@@ -274,8 +274,13 @@ cdef class MessageClient(ClientNode):
         self._log.verbose(f"[{self.recv_count}]<-- type={recv_type}, size={recv_size} bytes")
 
         cdef MessageType message_type = message_type_from_string(recv_type)
+        if message_type == MessageType.STRING:
+            self._response_handler(payload.decode(_UTF8))
+            return
+
         if message_type != MessageType.RESPONSE:
             self._log.error(f"Not a valid response, was {recv_type}")
+            return
 
         cdef Response response = self._response_serializer.deserialize(payload)
 
@@ -392,6 +397,8 @@ cdef class MessageSubscriber(ClientNode):
         self._log.debug(f"Unsubscribed from topic {topic}")
 
     cpdef void _handle_frames(self, list frames) except *:
+        self.recv_count += 1
+
         cdef int frames_count = len(frames)
         if frames_count != self._expected_frames:
             self._log.error(f"Message was malformed (expected {self._expected_frames} frames, received {frames_count}).")

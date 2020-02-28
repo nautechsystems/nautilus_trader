@@ -103,6 +103,23 @@ cdef class Command(Message):
         super().__init__(MessageType.COMMAND, identifier, timestamp)
 
 
+cdef class Document(Message):
+    """
+    The base class for all documents.
+    """
+
+    def __init__(self,
+                 GUID identifier not None,
+                 datetime timestamp not None):
+        """
+        Initializes a new instance of the Document class.
+
+        :param identifier: The event identifier.
+        :param timestamp: The event timestamp.
+        """
+        super().__init__(MessageType.DOCUMENT, identifier, timestamp)
+
+
 cdef class Event(Message):
     """
     The base class for all events.

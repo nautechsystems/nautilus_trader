@@ -264,12 +264,16 @@ cdef class MessageServer(ServerNode):
             self.sent_count += 1
 
     cpdef void _handle_frames(self, list frames) except *:
+        self.recv_count += 1
+
         cdef int frames_count = len(frames)
         if frames_count <= 0:
             self._log.error(f'Received zero frames with no reply address.')
             return
 
-        cdef ClientId client_id = ClientId(frames[0].decode(_UTF8))
+        cdef bytes sender = frames[0]
+        cdef ClientId client_id = ClientId(sender.decode(_UTF8))
+
         if frames_count != self._expected_frames:
             message = f"Received unexpected frames count {frames_count}, expected {self._expected_frames}."
             self.send_rejected(message, GUID.none(), client_id)
@@ -285,7 +289,12 @@ cdef class MessageServer(ServerNode):
                           f"payload={len(payload)} bytes")
 
         cdef MessageType message_type = message_type_from_string(header_type)
-        if message_type == MessageType.REQUEST:
+        if message_type == MessageType.STRING:
+            handler = self._handlers.get(message_type)
+            if handler is not None:
+                handler(payload.decode(_UTF8))
+                self._send_string(sender, 'OK')
+        elif message_type == MessageType.REQUEST:
             self._handle_request(payload, client_id)
         else:
             handler = self._handlers.get(message_type)
