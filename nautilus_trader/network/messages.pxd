@@ -12,6 +12,7 @@ from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
 
 cdef class Connect(Request):
     cdef readonly ClientId client_id
+    cdef readonly str authentication
 
 
 cdef class Connected(Response):

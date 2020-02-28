@@ -6,10 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import time
 import threading
 import zmq
 import zmq.auth
+from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, message_type_to_string, message_type_from_string
@@ -199,12 +199,14 @@ cdef class MessageClient(ClientNode):
         Connect to the server.
         """
         self._connect_socket()
-        time.sleep(0.1) # TODO: Temporary delay
+
+        cdef datetime timestamp = self._clock.time_now()
 
         cdef Connect connect = Connect(
             self.client_id,
+            SessionId.create(self.client_id, timestamp, 'None').value,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            timestamp)
 
         self.send(connect.message_type, self._request_serializer.serialize(connect))
 

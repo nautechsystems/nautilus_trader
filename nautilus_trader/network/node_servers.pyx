@@ -310,7 +310,7 @@ cdef class MessageServer(ServerNode):
         cdef str message
         if session_id is None:
             # Peer not previously connected to a session
-            session_id = SessionId.create(client_id, self._clock.time_now(), 'None')  # TODO
+            session_id = SessionId(request.authentication)
             self._peers[client_id] = session_id
             message = f"Connected to session {session_id.value} at {self._network_address}"
             self._log.info(message)

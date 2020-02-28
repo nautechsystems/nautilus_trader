@@ -83,6 +83,8 @@ MAX_TRADE_SIZE = 'MaxTradeSize'
 ROLL_OVER_INTEREST_BUY = 'RolloverInterestBuy'
 ROLL_OVER_INTEREST_SELL = 'RolloverInterestSell'
 
+AUTHENTICATION = 'Authentication'
+AUTHORIZATION = 'Authorization'
 CLIENT_ID = 'ClientId'
 SERVER_ID = 'ServerId'
 SESSION_ID = 'SessionId'

@@ -21,18 +21,21 @@ cdef class Connect(Request):
 
     def __init__(self,
                  ClientId client_id not None,
+                 str authentication not None,
                  GUID request_id not None,
                  datetime request_timestamp not None):
         """
         Initializes a new instance of the Connect class.
 
         :param client_id: The client identifier.
+        :param authentication: The client authentication.
         :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
         super().__init__(request_id, request_timestamp)
 
         self.client_id = client_id
+        self.authentication = authentication
 
 
 cdef class Connected(Response):
