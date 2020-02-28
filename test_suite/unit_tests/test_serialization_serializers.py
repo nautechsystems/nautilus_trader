@@ -992,8 +992,13 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_connect_requests(self):
         # Arrange
+        client_id = ClientId("Trader-001")
+        timestamp = TestStubs.unix_epoch()
+        authentication = SessionId.py_create(client_id, timestamp, 'None')
+
         request = Connect(
             ClientId("Trader-001"),
+            authentication.value,
             GUID(uuid.uuid4()),
             TestStubs.unix_epoch())
 
@@ -1004,6 +1009,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(deserialized, Connect))
         self.assertEqual("Trader-001", deserialized.client_id.value)
+        self.assertEqual("Trader-001-3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f", deserialized.authentication)
 
     def test_can_serialize_and_deserialize_disconnect_requests(self):
         # Arrange

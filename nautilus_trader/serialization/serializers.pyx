@@ -635,6 +635,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
 
         if isinstance(request, Connect):
             package[CLIENT_ID] = request.client_id.value
+            package[AUTHENTICATION] = request.authentication
         elif isinstance(request, Disconnect):
             package[CLIENT_ID] = request.client_id.value
             package[SESSION_ID] = request.session_id.value
@@ -664,6 +665,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         if request_type == Connect.__name__:
             return Connect(
                 ClientId(unpacked[CLIENT_ID].decode(UTF8)),
+                unpacked[AUTHENTICATION].decode(UTF8),
                 request_id,
                 request_timestamp)
         elif request_type == Disconnect.__name__:

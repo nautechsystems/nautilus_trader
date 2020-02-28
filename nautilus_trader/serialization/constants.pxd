@@ -82,6 +82,8 @@ cdef str MAX_TRADE_SIZE
 cdef str ROLL_OVER_INTEREST_BUY
 cdef str ROLL_OVER_INTEREST_SELL
 
+cdef str AUTHENTICATION
+cdef str AUTHORIZATION
 cdef str CLIENT_ID
 cdef str SERVER_ID
 cdef str SESSION_ID
