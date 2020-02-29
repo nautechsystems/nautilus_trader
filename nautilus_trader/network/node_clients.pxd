@@ -50,3 +50,4 @@ cdef class MessageClient(ClientNode):
 cdef class MessageSubscriber(ClientNode):
     cpdef void subscribe(self, str topic) except *
     cpdef void unsubscribe(self, str topic) except *
+    cpdef void _no_subscriber_handler(self, str topic, bytes payload) except *
