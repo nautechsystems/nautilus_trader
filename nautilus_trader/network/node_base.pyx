@@ -52,15 +52,14 @@ cdef class NetworkNode:
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the expected frames is not positive (> 0).
+        :raises ValueError: If the expected frames is negative (<>> 0).
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.positive(expected_frames, 'expected_frames')
+        Condition.not_negative_int(expected_frames, 'expected_frames')
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(context, zmq.Context, 'zmq_context')
-        super().__init__()
 
         self._clock = clock
         self._guid_factory = guid_factory

@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 import unittest
 import time
 import zmq
@@ -18,6 +19,7 @@ from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionConfig
 from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
+from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.live.guid import LiveGuidFactory
 from nautilus_trader.live.logging import LiveLogger
@@ -47,7 +49,7 @@ class MessageClientTests(unittest.TestCase):
         # Fixture Setup
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
-        logger = LiveLogger(level_console=LogLevel.DEBUG)
+        logger = LiveLogger(level_console=LogLevel.VERBOSE)
         self.context = zmq.Context()
         self.client_sink = []
         self.server_sink = []
@@ -65,8 +67,12 @@ class MessageClientTests(unittest.TestCase):
             guid_factory,
             logger)
 
+        # Register test handlers
         self.server.register_handler(MessageType.STRING, self.server_sink.append)
         self.server.start()
+
+        self.command_serializer = MsgPackCommandSerializer()
+        self.server.register_handler(MessageType.COMMAND, self.command_handler)
 
         self.client = MessageClient(
             ClientId("Trader-001"),
@@ -74,7 +80,6 @@ class MessageClientTests(unittest.TestCase):
             TEST_PORT,
             3,
             self.context,
-            self.client_sink.append,
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
             CompressorBypass(),
@@ -82,6 +87,8 @@ class MessageClientTests(unittest.TestCase):
             clock,
             guid_factory,
             logger)
+
+        self.client.register_handler(self.client_sink.append)
 
     def tearDown(self):
         # Tear Down
@@ -93,6 +100,10 @@ class MessageClientTests(unittest.TestCase):
         self.client.dispose()
         self.server.dispose()
         time.sleep(0.1)
+
+    def command_handler(self, message):
+        command = self.command_serializer.deserialize(message)
+        self.server_sink.append(command)
 
     def test_can_connect_to_server_and_receive_response(self):
         # Arrange
@@ -159,31 +170,43 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
 
-        self.worker = MessageSubscriber(
+        self.subscriber = MessageSubscriber(
             ClientId("Subscriber-001"),
-            'TestPublisher',
             LOCALHOST,
             TEST_PORT,
+            3,
             self.zmq_context,
-            self.response_handler.store_2,
             CompressorBypass(),
             EncryptionConfig(),
             clock,
             guid_factory,
             logger)
 
-        self.publisher = MessagePublisher(self.zmq_context, TEST_PORT, logger)
+        self.subscriber.register_handler(self.response_handler.store_2)
+
+        self.publisher = MessagePublisher(
+            ServerId("Publisher-001"),
+            TEST_PORT,
+            self.zmq_context,
+            CompressorBypass(),
+            EncryptionConfig(),
+            clock,
+            guid_factory,
+            logger)
+
+        self.publisher.start()
 
     def tearDown(self):
         # Tear Down
-        self.worker.disconnect()
-        self.worker.dispose()
+        self.subscriber.disconnect()
+        self.subscriber.dispose()
         self.publisher.stop()
+        self.publisher.dispose()
 
     def test_can_subscribe_to_topic_and_receive_one_published_message(self):
         # Arrange
-        self.worker.connect()
-        self.worker.subscribe('test_topic')
+        self.subscriber.connect()
+        self.subscriber.subscribe('test_topic')
 
         time.sleep(0.1)
         # Act
@@ -195,8 +218,8 @@ class SubscriberWorkerTests(unittest.TestCase):
 
     def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange
-        self.worker.connect()
-        self.worker.subscribe('test_topic')
+        self.subscriber.connect()
+        self.subscriber.subscribe('test_topic')
 
         time.sleep(0.1)
         # Act
