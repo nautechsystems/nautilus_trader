@@ -102,8 +102,9 @@ cdef class ClientNode(NetworkNode):
         Condition.callable(handler, 'handler')
 
         if self._message_handler is not None:
-            self._log.error(f"A handler was was already registered.")
-            return
+            self._log.debug(f"Registered message handler {handler} by replacing {self._message_handler}.")
+        else:
+            self._log.debug(f"Registered message handler {handler}.")
 
         self._message_handler = handler
 
@@ -455,6 +456,8 @@ cdef class MessageSubscriber(ClientNode):
             guid_factory,
             logger)
 
+        self.register_handler(self._no_subscriber_handler)
+
     cpdef bint is_connected(self):
         return True # TODO: Keep alive heartbeat polling
 
@@ -493,8 +496,6 @@ cdef class MessageSubscriber(ClientNode):
         self._log.debug(f"Unsubscribed from topic {topic}")
 
     cpdef void _handle_frames(self, list frames) except *:
-        self.recv_count += 1
-
         cdef int frames_count = len(frames)
         if frames_count != self._expected_frames:
             self._log.error(f"Message was malformed (expected {self._expected_frames} frames, received {frames_count}).")
@@ -504,7 +505,7 @@ cdef class MessageSubscriber(ClientNode):
         cdef int recv_size = int.from_bytes(frames[1], byteorder='big', signed=True)
         cdef bytes payload = self._compressor.decompress(frames[2])
 
-        if self._message_handler is not None:
-            self._message_handler(recv_topic, payload)
-        else:
-            self._log.warning("No subscription handler registered.")
+        self._message_handler(recv_topic, payload)
+
+    cpdef void _no_subscriber_handler(self, str topic, bytes payload) except *:
+        self._log.warning(f"Received message from topic {topic} with no handler registered.")

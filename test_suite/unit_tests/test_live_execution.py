@@ -75,6 +75,8 @@ class LiveExecutionTests(unittest.TestCase):
             zmq_context=zmq_context,
             commands_port=commands_port,
             events_port=events_port,
+            clock=clock,
+            guid_factory=guid_factory,
             logger=logger)
 
         self.exec_engine.register_client(self.exec_client)

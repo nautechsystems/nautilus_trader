@@ -182,8 +182,6 @@ class SubscriberWorkerTests(unittest.TestCase):
             guid_factory,
             logger)
 
-        self.subscriber.register_handler(self.response_handler.store_2)
-
         self.publisher = MessagePublisher(
             ServerId("Publisher-001"),
             TEST_PORT,
@@ -203,7 +201,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.publisher.stop()
         self.publisher.dispose()
 
-    def test_can_subscribe_to_topic_and_receive_one_published_message(self):
+    def test_can_subscribe_to_topic_with_no_registered_handler(self):
         # Arrange
         self.subscriber.connect()
         self.subscriber.subscribe('test_topic')
@@ -214,10 +212,28 @@ class SubscriberWorkerTests(unittest.TestCase):
 
         time.sleep(0.1)
         # Assert
+        self.assertEqual(1, self.publisher.sent_count)
+        self.assertEqual(1, self.subscriber.recv_count)
+
+    def test_can_subscribe_to_topic_and_receive_one_published_message(self):
+        # Arrange
+        self.subscriber.register_handler(self.response_handler.store_2)
+        self.subscriber.connect()
+        self.subscriber.subscribe('test_topic')
+
+        time.sleep(0.1)
+        # Act
+        self.publisher.publish('test_topic', b'hello subscribers')
+
+        time.sleep(0.1)
+        # Assert
+        self.assertEqual(1, self.publisher.sent_count)
+        self.assertEqual(1, self.subscriber.recv_count)
         self.assertEqual(('test_topic', b'hello subscribers'), self.response_handler.get_store()[0])
 
     def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange
+        self.subscriber.register_handler(self.response_handler.store_2)
         self.subscriber.connect()
         self.subscriber.subscribe('test_topic')
 
@@ -229,6 +245,8 @@ class SubscriberWorkerTests(unittest.TestCase):
 
         time.sleep(0.1)
         # Assert
+        self.assertEqual(3, self.publisher.sent_count)
+        self.assertEqual(3, self.subscriber.recv_count)
         self.assertEqual(('test_topic', b'hello1'), self.response_handler.get_store()[0])
         self.assertEqual(('test_topic', b'hello2'), self.response_handler.get_store()[1])
         self.assertEqual(('test_topic', b'hello3'), self.response_handler.get_store()[2])
