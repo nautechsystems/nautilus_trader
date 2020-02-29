@@ -54,13 +54,10 @@ cdef class ServerNode(NetworkNode):
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the expected frames is not positive (> 0).
+        :raises ValueError: If the expected frames is negative (< 0).
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         """
-        Condition.positive(expected_frames, 'expected_frames')
-        Condition.valid_port(port, 'port')
-        Condition.type(zmq_context, zmq.Context, 'zmq_context')
         super().__init__(
             '127.0.0.1',
             port,
@@ -126,8 +123,6 @@ cdef class MessageServer(ServerNode):
         :param response_serializer: The response serializer.
         :param logger: The logger for the component.
         """
-        Condition.valid_port(port, 'port')
-        Condition.type(zmq_context, zmq.Context, 'zmq_context')
         super().__init__(
             server_id,
             port,
@@ -384,7 +379,6 @@ cdef class MessagePublisher(ServerNode):
     def __init__(self,
                  ServerId server_id,
                  int port,
-                 int expected_frames,
                  zmq_context: zmq.Context,
                  Compressor compressor not None,
                  EncryptionConfig encryption not None,
@@ -400,9 +394,8 @@ cdef class MessagePublisher(ServerNode):
         """
         super().__init__(
             server_id,
-            '127.0.0.1',
             port,
-            expected_frames,
+            0,
             zmq_context,
             zmq.PUB,
             compressor,
@@ -430,5 +423,12 @@ cdef class MessagePublisher(ServerNode):
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
-        self._send([topic.encode('utf-8'), bytes([len(message)]), message])
-        self._log.debug(f"[{self.sent_count}]--> topic={topic}, message={message}")
+        cdef bytes payload = self._compressor.compress(message)
+        cdef int header_size = len(message)
+
+        self._log.verbose(f"[{self.sent_count}]--> "
+                        f"topic={topic}, "
+                        f"size={header_size}, "
+                        f"payload={(len(payload))} bytes.")
+
+        self._send([topic.encode('utf-8'), bytes([header_size]), payload])

@@ -17,9 +17,11 @@ from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSeria
 cdef class ClientNode(NetworkNode):
     cdef object _thread
     cdef object _frames_handler
+    cdef object _message_handler
 
     cdef readonly ClientId client_id
 
+    cpdef void register_handler(self, handler) except *
     cpdef bint is_connected(self)
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
@@ -32,7 +34,6 @@ cdef class ClientNode(NetworkNode):
 cdef class MessageClient(ClientNode):
     cdef RequestSerializer _request_serializer
     cdef ResponseSerializer _response_serializer
-    cdef object _response_handler
     cdef dict _awaiting_reply
 
     cdef readonly SessionId session_id
@@ -47,7 +48,5 @@ cdef class MessageClient(ClientNode):
 
 
 cdef class MessageSubscriber(ClientNode):
-    cdef object _subscription_handler
-
     cpdef void subscribe(self, str topic) except *
     cpdef void unsubscribe(self, str topic) except *

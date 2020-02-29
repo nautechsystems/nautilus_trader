@@ -86,8 +86,26 @@ cdef class ClientNode(NetworkNode):
         self._socket.setsockopt(zmq.IDENTITY, self.client_id.value.encode(_UTF8))  # noqa (zmq reference)
 
         self._frames_handler = frames_handler
+        self._message_handler = None
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
+
+    cpdef void register_handler(self, handler: callable) except *:
+        """
+        Register a received message handler.
+
+        Parameters
+        ----------
+        handler : callable
+            The handler to register.
+        """
+        Condition.callable(handler, 'handler')
+
+        if self._message_handler is not None:
+            self._log.error(f"A handler was was already registered.")
+            return
+
+        self._message_handler = handler
 
     cpdef bint is_connected(self):
         # Raise exception if not overridden in implementation
@@ -143,7 +161,6 @@ cdef class MessageClient(ClientNode):
             int port,
             int expected_frames,
             zmq_context not None: zmq.Context,
-            response_handler not None: callable,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
             Compressor compressor not None,
@@ -159,7 +176,6 @@ cdef class MessageClient(ClientNode):
         :param port: The server port.
         :param expected_frames: The expected message frame count.
         :param zmq_context: The ZeroMQ context.
-        :param response_handler: The handler for response messages.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
         :param compressor: The message compressor.
@@ -189,7 +205,6 @@ cdef class MessageClient(ClientNode):
 
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
-        self._response_handler = response_handler
         self._awaiting_reply = {}  # type: {GUID, Message}
 
     cpdef bint is_connected(self):
@@ -315,7 +330,8 @@ cdef class MessageClient(ClientNode):
         if message_type == MessageType.STRING:
             message = payload.decode(_UTF8)
             self._log.verbose(f"<--[{self.recv_count}] '{message}'")
-            self._response_handler(message)
+            if self._message_handler is not None:
+                self._message_handler(message)
             return
 
         self._log.verbose(f"<--[{self.recv_count}] "
@@ -346,7 +362,8 @@ cdef class MessageClient(ClientNode):
             self.session_id = None
             self._disconnect_socket()
         else:
-            self._response_handler(response)
+            if self._message_handler is not None:
+                self._message_handler(response)
 
     cpdef void _check_connection(self, TimeEvent event):
         if event.label == _IS_CONNECTED:
@@ -398,7 +415,6 @@ cdef class MessageSubscriber(ClientNode):
             int port,
             int expected_frames,
             zmq_context not None: zmq.Context,
-            subscription_handler not None: callable,
             Compressor compressor not None,
             EncryptionConfig encryption not None,
             Clock clock not None,
@@ -412,7 +428,6 @@ cdef class MessageSubscriber(ClientNode):
         :param port: The service port.
         :param expected_frames: The expected message frame count.
         :param zmq_context: The ZeroMQ context.
-        :param subscription_handler: The message handler.
         :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
@@ -426,22 +441,19 @@ cdef class MessageSubscriber(ClientNode):
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
-        Condition.callable(subscription_handler, 'handler')
         super().__init__(
             client_id,
             host,
             port,
+            expected_frames,
             zmq_context,
             zmq.SUB,
-            expected_frames,
             self._handle_frames,
             compressor,
             encryption,
             clock,
             guid_factory,
             logger)
-
-        self._subscription_handler = subscription_handler
 
     cpdef bint is_connected(self):
         return True # TODO: Keep alive heartbeat polling
@@ -492,4 +504,7 @@ cdef class MessageSubscriber(ClientNode):
         cdef int recv_size = int.from_bytes(frames[1], byteorder='big', signed=True)
         cdef bytes payload = self._compressor.decompress(frames[2])
 
-        self._subscription_handler(recv_topic, payload)
+        if self._message_handler is not None:
+            self._message_handler(recv_topic, payload)
+        else:
+            self._log.warning("No subscription handler registered.")

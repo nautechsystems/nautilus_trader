@@ -9,7 +9,6 @@
 import zmq
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.commands cimport Command, AccountInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport Event
@@ -70,8 +69,8 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the events_topic is not a valid string.
-        :raises ValueError: If the commands_port is not in range [0, 65535].
-        :raises ValueError: If the events_port is not in range [0, 65535].
+        :raises ValueError: If the commands_port is not in range [49152, 65535].
+        :raises ValueError: If the events_port is not in range [49152, 65535].
         """
         Condition.valid_string(host, 'host')
         Condition.in_range_int(commands_port, 0, 65535, 'commands_port')
@@ -91,7 +90,6 @@ cdef class LiveExecClient(ExecutionClient):
             commands_port,
             self._zmq_context,
             expected_frames,
-            self._response_handler,
             compressor,
             encryption,
             clock,
@@ -104,15 +102,15 @@ cdef class LiveExecClient(ExecutionClient):
             events_port,
             self._zmq_context,
             expected_frames,
-            self._event_handler,
             compressor,
             encryption,
             clock,
             guid_factory,
             logger)
 
+        self._events_subscriber.register_handler(self._recv_event)
+
         self._command_serializer = command_serializer
-        self._response_serializer = response_serializer
         self._event_serializer = event_serializer
 
     cpdef void connect(self) except *:
@@ -145,29 +143,24 @@ cdef class LiveExecClient(ExecutionClient):
         self._reset()
 
     cpdef void account_inquiry(self, AccountInquiry command) except *:
-        self._command_handler(command)
+        self._send_command(command)
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        self._command_handler(command)
+        self._send_command(command)
 
     cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *:
-        self._command_handler(command)
+        self._send_command(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        self._command_handler(command)
+        self._send_command(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        self._command_handler(command)
+        self._send_command(command)
 
-    cpdef void _command_handler(self, Command command) except *:
+    cdef void _send_command(self, Command command) except *:
         cdef bytes payload = self._command_serializer.serialize(command)
-        self._commands_worker.send(command.message_type, payload)
-        self._log.debug(f"Sent command {command}")
+        self._commands_client.send(command.message_type, payload)
 
-    cpdef void _response_handler(self, Response response) except *:
-        self._log.debug(f"Received response {response}")
-
-    cpdef void _event_handler(self, str topic, bytes event_bytes) except *:
+    cdef void _recv_event(self, str topic, bytes event_bytes) except *:
         cdef Event event = self._event_serializer.deserialize(event_bytes)
-        self._log.debug(f"Received event {event}")
         self._exec_engine.handle_event(event)
