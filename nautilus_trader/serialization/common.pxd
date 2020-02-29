@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.identifiers cimport Label
+from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.objects cimport Price
 
 

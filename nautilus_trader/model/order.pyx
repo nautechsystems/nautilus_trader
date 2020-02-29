@@ -15,7 +15,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.types cimport GUID, Label
 from nautilus_trader.core.functions cimport format_iso8601
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_t
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.objects cimport Quantity, Price
-from nautilus_trader.model.identifiers cimport Label, Symbol, OrderId, ExecutionId
+from nautilus_trader.model.identifiers cimport Symbol, OrderId, ExecutionId
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized, OrderInvalid, OrderDenied
 from nautilus_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderCancelled, OrderModified

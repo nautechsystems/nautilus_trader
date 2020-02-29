@@ -10,14 +10,14 @@ import unittest
 import uuid
 
 from nautilus_trader.core.decimal import Decimal
-from nautilus_trader.core.types import GUID, ValidString
+from nautilus_trader.core.types import GUID, ValidString, Label
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderState, OrderPurpose
 from nautilus_trader.model.enums import TimeInForce, Currency
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted
 from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderExpired
 from nautilus_trader.model.events import OrderModified, OrderCancelled, OrderCancelReject
 from nautilus_trader.model.events import OrderFilled, OrderPartiallyFilled
-from nautilus_trader.model.identifiers import Label, IdTag, OrderId, OrderIdBroker
+from nautilus_trader.model.identifiers import IdTag, OrderId, OrderIdBroker
 from nautilus_trader.model.identifiers import AtomicOrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import Order

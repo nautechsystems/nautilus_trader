@@ -8,10 +8,9 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
-from nautilus_trader.model.c_enums.account_type cimport (  # noqa: E211
-    AccountType,
-    account_type_to_string,
-    account_type_from_string)
+from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
+from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 
 
 cdef class Symbol(Identifier):
@@ -115,21 +114,6 @@ cdef class Brokerage(Identifier):
         :raises ValueError: If the name is not a valid string.
         """
         super().__init__(name.upper())
-
-
-cdef class Label(Identifier):
-    """
-    Represents a valid label.
-    """
-
-    def __init__(self, str value):
-        """
-        Initializes a new instance of the Label class.
-
-        :param value: The label identifier value.
-        :raises ValueError: If the value is not a valid string.
-        """
-        super().__init__(value)
 
 
 cdef class IdTag(Identifier):

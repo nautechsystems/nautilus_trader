@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.core.types cimport ValidString, Label
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -16,18 +16,9 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.objects cimport Quantity, Decimal, Price, Money
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    Symbol,
-    Label,
-    Brokerage,
-    AccountNumber,
-    AccountId,
-    ExecutionId,
-    PositionIdBroker,
-    StrategyId,
-    OrderId,
-    OrderIdBroker
-)
+from nautilus_trader.model.identifiers cimport Symbol, Brokerage, AccountNumber, AccountId
+from nautilus_trader.model.identifiers cimport ExecutionId, PositionIdBroker, StrategyId
+from nautilus_trader.model.identifiers cimport OrderId, OrderIdBroker
 from nautilus_trader.model.position cimport Position
 
 
@@ -162,7 +153,3 @@ cdef class PositionModified(PositionEvent):
 
 cdef class PositionClosed(PositionEvent):
     pass
-
-
-cdef class TimeEvent(Event):
-    cdef readonly Label label

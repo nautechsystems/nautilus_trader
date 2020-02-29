@@ -119,6 +119,21 @@ cdef class ValidString:
         return f"<{str(self.__class__.__name__)}({str(self.value)}) object at {id(self)}>"
 
 
+cdef class Label(ValidString):
+    """
+    Represents a label with a valid string value.
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the Label class.
+
+        :param value: The label identifier value.
+        :raises ValueError: If the value is not a valid string.
+        """
+        super().__init__(value)
+
+
 cdef class Identifier(ValidString):
     """
     The base class for all identifiers.

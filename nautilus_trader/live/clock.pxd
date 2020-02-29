@@ -8,8 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.common.clock cimport Clock, Timer
+from nautilus_trader.common.clock cimport Clock, Timer, TimeEvent
 
 
 cdef class LiveTimer(Timer):

@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.types cimport GUID, Label
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -17,7 +17,7 @@ from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized
-from nautilus_trader.model.identifiers cimport Label, Symbol, OrderId, OrderIdBroker
+from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker
 from nautilus_trader.model.identifiers cimport AtomicOrderId, AccountId, ExecutionId
 from nautilus_trader.model.identifiers cimport PositionIdBroker
 

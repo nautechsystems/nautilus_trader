@@ -13,7 +13,7 @@ from cpython.datetime cimport date, datetime, timedelta
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.core.types cimport ValidString, Label
 from nautilus_trader.core.functions cimport format_iso8601
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -21,7 +21,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
-from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.generators cimport PositionIdGenerator

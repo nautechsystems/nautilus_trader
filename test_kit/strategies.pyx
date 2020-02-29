@@ -11,8 +11,9 @@ from datetime import timedelta
 from nautilus_indicators.atr cimport AverageTrueRange
 from nautilus_indicators.average.ema cimport ExponentialMovingAverage
 
+from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
+from nautilus_trader.model.identifiers cimport Symbol,PositionId
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, Instrument
 from nautilus_trader.model.objects cimport BarSpecification, BarType, Bar
 from nautilus_trader.model.order cimport AtomicOrder

@@ -9,11 +9,13 @@
 import threading
 import zmq
 import zmq.auth
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport MessageType, message_type_to_string, message_type_from_string
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.core.types cimport GUID, Label
+from nautilus_trader.core.message cimport Message, MessageType
+from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
+from nautilus_trader.common.clock cimport Clock, TimeEvent
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
@@ -22,6 +24,8 @@ from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Di
 from nautilus_trader.network.messages cimport Request, Response
 
 cdef str _UTF8 = 'utf-8'
+cdef str _IS_CONNECTED = 'is_connected?'
+cdef str _IS_DISCONNECTED = 'is_disconnected?'
 
 
 cdef class ClientNode(NetworkNode):
@@ -119,10 +123,9 @@ cdef class ClientNode(NetworkNode):
         self._log.debug("Message consumption loop starting...")
 
         while True:
-            self.recv_count += 1
-
             try:
                 self._frames_handler(self._socket.recv_multipart(flags=0)) # Blocking per message
+                self.recv_count += 1
             except zmq.ZMQError as ex:
                 self._log.error(str(ex))
                 continue
@@ -130,7 +133,7 @@ cdef class ClientNode(NetworkNode):
 
 cdef class MessageClient(ClientNode):
     """
-    Provides an asynchronous worker for ZMQ dealer messaging.
+    Provides an asynchronous messaging client.
     """
 
     def __init__(
@@ -187,6 +190,7 @@ cdef class MessageClient(ClientNode):
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
         self._response_handler = response_handler
+        self._awaiting_reply = {}  # type: {GUID, Message}
 
     cpdef bint is_connected(self):
         """
@@ -208,7 +212,10 @@ cdef class MessageClient(ClientNode):
             self._guid_factory.generate(),
             timestamp)
 
-        self.send(connect.message_type, self._request_serializer.serialize(connect))
+        # Set check connected alert
+        self._clock.set_time_alert(Label(_IS_CONNECTED), timestamp + timedelta(seconds=2), self._check_connection)
+
+        self.send_message(connect, self._request_serializer.serialize(connect))
 
     cpdef void disconnect(self) except *:
         """
@@ -218,13 +225,18 @@ cdef class MessageClient(ClientNode):
             self._log.warning("No session to disconnect from.")
             return # TODO: Assess how this works
 
+        cdef datetime timestamp = self._clock.time_now()
+
         cdef Disconnect disconnect = Disconnect(
             self.client_id,
             self.session_id,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            timestamp)
 
-        self.send(disconnect.message_type, self._request_serializer.serialize(disconnect))
+        # Set check disconnected alert
+        self._clock.set_time_alert(Label(_IS_DISCONNECTED), timestamp + timedelta(seconds=2), self._check_connection)
+
+        self.send_message(disconnect, self._request_serializer.serialize(disconnect))
 
     cpdef void send_request(self, Request request) except *:
         """
@@ -235,54 +247,78 @@ cdef class MessageClient(ClientNode):
         request : Request
             The request to send.
         """
-        self.send(request.message_type, self._request_serializer.serialize(request))
+        self.send_message(request, self._request_serializer.serialize(request))
 
-    cpdef void send(self, MessageType message_type, bytes payload) except *:
+    cpdef void send_message(self, Message message, bytes serialized) except *:
         """
-        Send the given request message to the service socket.
-        Return the response.
+        Send the given message which will become durable and await a reply.
+        
+        Parameters
+        ----------
+        message : Message
+            The message to send.
+        serialized : bytes
+            The serialized message.
+        """
+        self._register_message(message)
 
-        :param message_type: The message type to send.
-        :param payload: The payload to send.
+        self._log.debug(f"[{self.sent_count}]--> {message}")
+
+        self.send(message.message_type, serialized)
+
+    cpdef void send(self, MessageType message_type, bytes serialized) except *:
         """
-        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
-        Condition.not_empty(payload, 'payload')
+        Send the given message to the server. 
+
+        :param message_type: The message to send.
+        :param serialized: The serialized message.
+        """
+        Condition.not_empty(serialized, 'payload')
 
         cdef str send_type_str = message_type_to_string(message_type)
-        cdef int send_size = (len(payload))
+        cdef int send_size = (len(serialized))
 
         # Encode frames
         cdef bytes header_type = send_type_str.encode(_UTF8)
         cdef bytes header_size = str(send_size).encode(_UTF8)
-        cdef bytes compressed = self._compressor.compress(payload)
+        cdef bytes payload = self._compressor.compress(serialized)
 
-        self._send([header_type, header_size, compressed])
-        self._log.verbose(f"[{self.sent_count}]--> {send_type_str} of {send_size} bytes.")
+        self._log.verbose(f"[{self.sent_count}]--> "
+                          f"type={send_type_str}, "
+                          f"size={send_size} bytes,"
+                          f"payload={len(payload)} bytes")
+
+        self._send([header_type, header_size, payload])
 
     cpdef void _handle_frames(self, list frames) except *:
-        self.recv_count += 1
-
         cdef int frames_count = len(frames)
         if frames_count != self._expected_frames:
             self._log.error(f"Received unexpected frames count {frames_count}, expected {self._expected_frames}")
             return
 
-        cdef str recv_type = frames[0].decode(_UTF8)
-        cdef int recv_size = int(frames[1].decode(_UTF8))
+        cdef str header_type = frames[0].decode(_UTF8)
+        cdef int header_size = int(frames[1].decode(_UTF8))
         cdef bytes payload = self._compressor.decompress(frames[2])
 
-        self._log.verbose(f"[{self.recv_count}]<-- type={recv_type}, size={recv_size} bytes")
-
-        cdef MessageType message_type = message_type_from_string(recv_type)
+        cdef MessageType message_type = message_type_from_string(header_type)
         if message_type == MessageType.STRING:
-            self._response_handler(payload.decode(_UTF8))
+            message = payload.decode(_UTF8)
+            self._log.verbose(f"<--[{self.recv_count}] '{message}'")
+            self._response_handler(message)
             return
 
+        self._log.verbose(f"<--[{self.recv_count}] "
+                          f"type={header_type}, "
+                          f"size={header_size} bytes, "
+                          f"payload={len(payload)} bytes")
+
         if message_type != MessageType.RESPONSE:
-            self._log.error(f"Not a valid response, was {recv_type}")
+            self._log.error(f"Not a valid response, was {header_type}")
             return
 
         cdef Response response = self._response_serializer.deserialize(payload)
+        self._log.debug(f"<--[{self.sent_count}] {response}")
+        self._deregister_message(response.correlation_id)
 
         if isinstance(response, Connected):
             if self.session_id is not None:
@@ -301,6 +337,43 @@ cdef class MessageClient(ClientNode):
         else:
             self._response_handler(response)
 
+    cpdef void _check_connection(self, TimeEvent event):
+        if event.label == _IS_CONNECTED:
+            if not self.is_connected():
+                self._log.warning("Connection timed out...")
+        elif event.label == _IS_DISCONNECTED:
+            if self.is_connected():
+                self._log.warning("Still connected...")
+        else:
+            self._log.error(f"Check connection message '{event.label}' not recognized.")
+
+    cdef void _register_message(self, Message message, int retry=0):
+        try:
+            if retry < 3:
+                self._awaiting_reply[message.id] = message
+                self._log.verbose(f"Registered message with id {message.id.value} to await reply.")
+            else:
+                self._log.error(f"Could not register {message} to await reply, retries={retry}.")
+        except RuntimeError as ex:
+            retry += 1
+            self._register_message(message, retry)
+
+    cdef void _deregister_message(self, GUID correlation_id, int retry=0):
+        cdef Message message
+        try:
+            if retry < 3:
+                message = self._awaiting_reply.pop(correlation_id)
+                if message is None:
+                    self._log.error(f"No awaiting message for correlation id {correlation_id.value}.")
+                else:
+                    self._log.verbose(f"Received reply for message with id {message.id.value}.")
+                    pass
+            else:
+                self._log.error(f"Could not deregister with correlation id {correlation_id.value}, retries={retry}.")
+        except RuntimeError as ex:
+            retry += 1
+            self._deregister_message(message, retry)
+
 
 cdef class MessageSubscriber(ClientNode):
     """
@@ -314,7 +387,7 @@ cdef class MessageSubscriber(ClientNode):
             int port,
             int expected_frames,
             zmq_context not None: zmq.Context,
-            sub_handler not None: callable,
+            subscription_handler not None: callable,
             Compressor compressor not None,
             EncryptionConfig encryption not None,
             Clock clock not None,
@@ -328,7 +401,7 @@ cdef class MessageSubscriber(ClientNode):
         :param port: The service port.
         :param expected_frames: The expected message frame count.
         :param zmq_context: The ZeroMQ context.
-        :param sub_handler: The message handler.
+        :param subscription_handler: The message handler.
         :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
@@ -342,7 +415,7 @@ cdef class MessageSubscriber(ClientNode):
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
         Condition.type(zmq_context, zmq.Context, 'zmq_context')
-        Condition.callable(sub_handler, 'handler')
+        Condition.callable(subscription_handler, 'handler')
         super().__init__(
             client_id,
             host,
@@ -357,7 +430,7 @@ cdef class MessageSubscriber(ClientNode):
             guid_factory,
             logger)
 
-        self._sub_handler = sub_handler
+        self._subscription_handler = subscription_handler
 
     cpdef bint is_connected(self):
         return True # TODO: Keep alive heartbeat polling
@@ -408,4 +481,4 @@ cdef class MessageSubscriber(ClientNode):
         cdef int recv_size = int.from_bytes(frames[1], byteorder='big', signed=True)
         cdef bytes payload = self._compressor.decompress(frames[2])
 
-        self._sub_handler(recv_topic, payload)
+        self._subscription_handler(recv_topic, payload)

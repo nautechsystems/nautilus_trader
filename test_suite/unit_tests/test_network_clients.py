@@ -38,7 +38,7 @@ class NetworkIdentifiersTests(unittest.TestCase):
         session_id = SessionId.py_create(client_id, UNIX_EPOCH, 'None')
 
         # Assert
-        self.assertEqual('Trader-001-3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f', session_id.value)
+        self.assertEqual('3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f', session_id.value)
 
 
 class MessageClientTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class MessageClientTests(unittest.TestCase):
         # Fixture Setup
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
-        logger = LiveLogger(level_console=LogLevel.VERBOSE)
+        logger = LiveLogger(level_console=LogLevel.DEBUG)
         self.context = zmq.Context()
         self.client_sink = []
         self.server_sink = []
@@ -87,7 +87,12 @@ class MessageClientTests(unittest.TestCase):
         # Tear Down
         time.sleep(0.1)
         self.client.disconnect()
+        time.sleep(0.1)
         self.server.stop()
+        time.sleep(0.1)
+        self.client.dispose()
+        self.server.dispose()
+        time.sleep(0.1)
 
     # def test_connect_to_wrong_address_times_out(self):
     #     # Arrange
@@ -117,11 +122,11 @@ class MessageClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, self.client.sent_count)
-        self.assertEqual(5, self.client.recv_count)
-        # self.assertEqual(4, self.server.sent_count)
-        # self.assertEqual(4, self.server.recv_count)
-        # self.assertEqual(1, self.client_sink.count)
-        # self.assertEqual(1, self.server_sink.count)
+        self.assertEqual(2, self.client.recv_count)
+        self.assertEqual(2, self.server.sent_count)
+        self.assertEqual(2, self.server.recv_count)
+        self.assertEqual(1, len(self.client_sink))
+        self.assertEqual(1, len(self.server_sink))
         self.assertTrue('hello' in self.server_sink)
         self.assertTrue('OK' in self.client_sink)
 

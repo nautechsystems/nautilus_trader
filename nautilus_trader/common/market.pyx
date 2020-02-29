@@ -13,17 +13,11 @@ from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
+from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
-from nautilus_trader.model.objects cimport (  # noqa: E211
-    Price,
-    Volume,
-    Tick,
-    Bar,
-    BarType,
-    BarSpecification,
-    Instrument)
+from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument
+from nautilus_trader.model.objects cimport Bar, BarType, BarSpecification
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
-from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.common.clock cimport TimeEventHandler, Clock
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler

@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.message cimport MessageType
 
@@ -27,7 +28,10 @@ cdef class Message:
         :param message_type: The message type.
         :param identifier: The message identifier.
         :param timestamp: The message timestamp.
+        :raises ValueError: If the message_type is UNDEFINED.
         """
+        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
+
         self.message_type = message_type
         self.id = identifier
         self.timestamp = timestamp
@@ -178,4 +182,4 @@ cdef class Response(Message):
 
         :return str.
         """
-        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value})"
+        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.correlation_id.value})"
