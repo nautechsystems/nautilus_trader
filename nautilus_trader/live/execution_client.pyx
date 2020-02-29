@@ -20,9 +20,10 @@ from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionConfig
-from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
+from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, RequestSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.guid cimport LiveGuidFactory
 from nautilus_trader.live.logging cimport LiveLogger
@@ -39,13 +40,14 @@ cdef class LiveExecClient(ExecutionClient):
     def __init__(
             self,
             ExecutionEngine exec_engine not None,
-            zmq_context: zmq.Context,
-            str host='localhost',
-            int commands_port=55555,
-            int events_port=55556,
+            str host not None,
+            int commands_port,
+            int events_port,
+            zmq_context not None: zmq.Context,
             Compressor compressor not None=CompressorBypass(),
             EncryptionConfig encryption not None=EncryptionConfig(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
+            RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
             EventSerializer event_serializer not None=MsgPackEventSerializer(),
             Clock clock not None=LiveClock(),
@@ -55,10 +57,10 @@ cdef class LiveExecClient(ExecutionClient):
         Initializes a new instance of the LiveExecClient class.
 
         :param exec_engine: The execution engine for the component.
-        :param zmq_context: The ZMQ context.
         :param host: The execution service host IP address (default='localhost').
         :param commands_port: The execution service commands port (default=55555).
         :param events_port: The execution service events port (default=55556).
+        :param zmq_context: The ZMQ context.
         :param encryption: The encryption configuration.
         :param command_serializer: The command serializer for the client.
         :param response_serializer: The response serializer for the client.
@@ -75,28 +77,32 @@ cdef class LiveExecClient(ExecutionClient):
         Condition.valid_string(host, 'host')
         Condition.in_range_int(commands_port, 0, 65535, 'commands_port')
         Condition.in_range_int(events_port, 0, 65535, 'events_port')
-
         super().__init__(exec_engine, logger)
+
         self._zmq_context = zmq_context
+        self._command_serializer = command_serializer
+        self._event_serializer = event_serializer
 
         self.trader_id = exec_engine.trader_id
         self.client_id = ClientId(self.trader_id.value)
 
-        expected_frames = 4
+        expected_frames = 3
 
-        self._commands_client = MessageClient(
+        self._command_client = MessageClient(
             self.client_id,
             host,
             commands_port,
             expected_frames,
             self._zmq_context,
+            request_serializer,
+            response_serializer,
             compressor,
             encryption,
             clock,
             guid_factory,
             logger)
 
-        self._events_subscriber = MessageSubscriber(
+        self._event_subscriber = MessageSubscriber(
             self.client_id,
             host,
             events_port,
@@ -108,33 +114,30 @@ cdef class LiveExecClient(ExecutionClient):
             guid_factory,
             logger)
 
-        self._events_subscriber.register_handler(self._recv_event)
-
-        self._command_serializer = command_serializer
-        self._event_serializer = event_serializer
+        self._event_subscriber.register_handler(self._recv_event)
 
     cpdef void connect(self) except *:
         """
         Connect to the execution service.
         """
-        self._events_worker.connect()
-        self._commands_worker.connect()
-        self._events_worker.subscribe('Events')
+        self._event_subscriber.connect()
+        self._command_client.connect()
+        self._event_subscriber.subscribe('Events')
 
     cpdef void disconnect(self) except *:
         """
         Disconnect from the execution service.
         """
-        self._events_worker.unsubscribe('Events')
-        self._commands_worker.disconnect()
-        self._events_worker.disconnect()
+        self._event_subscriber.unsubscribe('Events')
+        self._command_client.disconnect()
+        self._event_subscriber.disconnect()
 
     cpdef void dispose(self) except *:
         """
         Disposes of the execution client.
         """
-        self._commands_worker.dispose()
-        self._events_worker.dispose()
+        self._command_client.dispose()
+        self._event_subscriber.dispose()
 
     cpdef void reset(self) except *:
         """
@@ -159,7 +162,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     cdef void _send_command(self, Command command) except *:
         cdef bytes payload = self._command_serializer.serialize(command)
-        self._commands_client.send(command.message_type, payload)
+        self._command_client.send(command.message_type, payload)
 
     cdef void _recv_event(self, str topic, bytes event_bytes) except *:
         cdef Event event = self._event_serializer.deserialize(event_bytes)

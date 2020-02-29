@@ -15,10 +15,9 @@ from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSeria
 cdef class LiveExecClient(ExecutionClient):
     cdef object _zmq_context
 
-    cdef object _commands_worker
-    cdef object _events_worker
+    cdef object _command_client
+    cdef object _event_subscriber
     cdef CommandSerializer _command_serializer
-    cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
 
     cdef readonly TraderId trader_id
