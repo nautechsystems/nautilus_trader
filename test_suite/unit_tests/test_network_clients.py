@@ -94,13 +94,6 @@ class MessageClientTests(unittest.TestCase):
         self.server.dispose()
         time.sleep(0.1)
 
-    # def test_connect_to_wrong_address_times_out(self):
-    #     # Arrange
-    #
-    #     # Act
-    #
-    #     # Assert
-
     def test_can_connect_to_server_and_receive_response(self):
         # Arrange
         # Act
@@ -116,9 +109,9 @@ class MessageClientTests(unittest.TestCase):
         self.client.connect()
 
         # Act
-        self.client.send(MessageType.STRING, b'hello')
+        self.client.send_string('hello')
 
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         # Assert
         self.assertEqual(2, self.client.sent_count)
@@ -127,22 +120,33 @@ class MessageClientTests(unittest.TestCase):
         self.assertEqual(2, self.server.recv_count)
         self.assertEqual(1, len(self.client_sink))
         self.assertEqual(1, len(self.server_sink))
-        self.assertTrue('hello' in self.server_sink)
-        self.assertTrue('OK' in self.client_sink)
+        self.assertEqual('hello', self.server_sink[0])
+        self.assertEqual('OK', self.client_sink[0])
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
         self.client.connect()
 
         # Act
-        response1 = self.client.send(MessageType.STRING, b'hello1')
-        response2 = self.client.send(MessageType.STRING, b'hello2')
-        response3 = self.client.send(MessageType.STRING, b'hello3')
+        self.client.send_string('hello1')
+        self.client.send_string('hello2')
+        self.client.send_string('hello3')
+
+        time.sleep(0.1)
 
         # Assert
-        self.assertEqual(b'OK', response1)
-        self.assertEqual(b'OK', response2)
-        self.assertEqual(b'OK', response3)
+        self.assertEqual(4, self.client.sent_count)
+        self.assertEqual(4, self.client.recv_count)
+        self.assertEqual(4, self.server.sent_count)
+        self.assertEqual(4, self.server.recv_count)
+        self.assertEqual(3, len(self.client_sink))
+        self.assertEqual(3, len(self.server_sink))
+        self.assertEqual('hello1', self.server_sink[0])
+        self.assertEqual('hello2', self.server_sink[1])
+        self.assertEqual('hello3', self.server_sink[2])
+        self.assertEqual('OK', self.client_sink[0])
+        self.assertEqual('OK', self.client_sink[1])
+        self.assertEqual('OK', self.client_sink[2])
 
 
 class SubscriberWorkerTests(unittest.TestCase):

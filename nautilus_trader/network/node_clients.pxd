@@ -38,6 +38,7 @@ cdef class MessageClient(ClientNode):
     cdef readonly SessionId session_id
 
     cpdef void send_request(self, Request request) except *
+    cpdef void send_string(self, str message) except *
     cpdef void send_message(self, Message message, bytes serialized) except *
     cpdef void send(self, MessageType message_type, bytes serialized) except *
     cpdef void _check_connection(self, TimeEvent event)
