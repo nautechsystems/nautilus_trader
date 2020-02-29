@@ -8,13 +8,14 @@
 
 from cpython.datetime cimport date, datetime
 
+from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId
-from nautilus_trader.model.identifiers cimport PositionId, Label
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder

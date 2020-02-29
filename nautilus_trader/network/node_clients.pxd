@@ -6,10 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport MessageType, Request
+from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.message cimport MessageType, Message, Request
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.network.identifiers cimport ClientId, SessionId
-from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer
 from nautilus_trader.network.node_base cimport NetworkNode
+from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer
 
 
 cdef class ClientNode(NetworkNode):
@@ -31,15 +33,20 @@ cdef class MessageClient(ClientNode):
     cdef RequestSerializer _request_serializer
     cdef ResponseSerializer _response_serializer
     cdef object _response_handler
+    cdef dict _awaiting_reply
 
     cdef readonly SessionId session_id
 
     cpdef void send_request(self, Request request) except *
-    cpdef void send(self, MessageType message_type, bytes message) except *
+    cpdef void send_message(self, Message message, bytes serialized) except *
+    cpdef void send(self, MessageType message_type, bytes serialized) except *
+    cpdef void _check_connection(self, TimeEvent event)
+    cdef void _register_message(self, Message message, int retry=*)
+    cdef void _deregister_message(self, GUID correlation_id, int retry=*)
 
 
 cdef class MessageSubscriber(ClientNode):
-    cdef object _sub_handler
+    cdef object _subscription_handler
 
     cpdef void subscribe(self, str topic) except *
     cpdef void unsubscribe(self, str topic) except *

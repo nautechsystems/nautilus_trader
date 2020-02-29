@@ -245,10 +245,19 @@ cdef class MessageServer(ServerNode):
         """
         cdef bytes serialized = self._response_serializer.serialize(response)
 
+        cdef str send_type_str = message_type_to_string(response.message_type)
+        cdef int send_size = (len(serialized))
+
+        # Encode frames
         cdef bytes send_address = receiver.value.encode(_UTF8)
-        cdef bytes header_type = message_type_to_string(response.message_type).encode(_UTF8)
-        cdef bytes header_size = str(len(serialized)).encode(_UTF8)
+        cdef bytes header_type = send_type_str.encode(_UTF8)
+        cdef bytes header_size = str(send_size).encode(_UTF8)
         cdef bytes payload = self._compressor.compress(serialized)
+
+        self._log.verbose(f"[{self.sent_count}]--> "
+                          f"type={send_type_str}, "
+                          f"size={send_size} bytes, "
+                          f"payload={len(payload)} bytes")
 
         self._send([send_address, header_type, header_size, payload])
 
@@ -258,14 +267,12 @@ cdef class MessageServer(ServerNode):
         while True:
             try:
                 self._handle_frames(self._socket.recv_multipart(flags=0))  # Blocking
+                self.recv_count += 1
             except zmq.ZMQError as ex:
                 self._log.error(str(ex))
                 continue
-            self.sent_count += 1
 
     cpdef void _handle_frames(self, list frames) except *:
-        self.recv_count += 1
-
         cdef int frames_count = len(frames)
         if frames_count <= 0:
             self._log.error(f'Received zero frames with no reply address.')
@@ -280,20 +287,24 @@ cdef class MessageServer(ServerNode):
             return
 
         cdef str header_type = frames[1].decode(_UTF8)
-        cdef int recv_size = int(frames[2].decode(_UTF8))
+        cdef int header_size = int(frames[2].decode(_UTF8))
         cdef bytes payload = self._compressor.decompress(frames[3])
 
-        self._log.verbose(f"[{self.recv_count}]<-- "
-                          f"header_type={header_type}, "
-                          f"header_size={recv_size} bytes, "
+        self._log.verbose(f"<--[{self.recv_count}] "
+                          f"type={header_type}, "
+                          f"size={header_size} bytes, "
                           f"payload={len(payload)} bytes")
 
         cdef MessageType message_type = message_type_from_string(header_type)
         if message_type == MessageType.STRING:
             handler = self._handlers.get(message_type)
+            message = payload.decode(_UTF8)
             if handler is not None:
                 handler(payload.decode(_UTF8))
+                self._log.verbose(f"<--[{self.recv_count}] '{message}'")
                 self._send_string(sender, 'OK')
+            else:
+                self._log.error(f"<--[{self.recv_count}] {message}, with no string handler.")
         elif message_type == MessageType.REQUEST:
             self._handle_request(payload, client_id)
         else:
@@ -303,6 +314,7 @@ cdef class MessageServer(ServerNode):
 
     cdef void _handle_request(self, bytes payload, ClientId sender) except *:
         cdef Request request = self._request_serializer.deserialize(payload)
+        self._log.debug(f"<--[{self.sent_count}] {request}")
 
         if isinstance(request, Connect):
             self._handle_connection(request)
@@ -321,11 +333,11 @@ cdef class MessageServer(ServerNode):
             # Peer not previously connected to a session
             session_id = SessionId(request.authentication)
             self._peers[client_id] = session_id
-            message = f"Connected to session {session_id.value} at {self._network_address}"
+            message = f"{request.client_id.value} connected to session {session_id.value} at {self._network_address}"
             self._log.info(message)
         else:
             # Peer already connected to a session
-            message = f"Already connected to session {session_id.value} at {self._network_address}"
+            message = f"{request.client_id.value} already connected to session {session_id.value} at {self._network_address}"
             self._log.warning(message)
 
         cdef Connected response = Connected(
@@ -345,12 +357,12 @@ cdef class MessageServer(ServerNode):
         if session_id is None:
             # Peer not previously connected to a session
             session_id = SessionId(str(None))
-            message = f"No session to disconnect at {self._network_address}"
+            message = f"{request.client_id.value} had no session to disconnect at {self._network_address}"
             self._log.warning(message)
         else:
             # Peer connected to session
             del self._peers[client_id]
-            message = f"Disconnected from {session_id} at {self._network_address}"
+            message = f"{request.client_id.value} disconnected from {session_id.value} at {self._network_address}"
             self._log.info(message)
 
         cdef Disconnected response = Disconnected(

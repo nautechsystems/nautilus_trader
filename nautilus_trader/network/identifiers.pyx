@@ -55,7 +55,7 @@ cdef class SessionId(Identifier):
     @staticmethod
     cdef SessionId create(ClientId client_id, datetime now, str secret):
         cdef bytes hashable = f'{client_id.value}-{datetime}-{secret}'.encode('utf-8')
-        return SessionId(f'{client_id.value}-{hashlib.sha256(hashable).hexdigest()}')
+        return SessionId(hashlib.sha256(hashable).hexdigest())
 
     @staticmethod
     def py_create(ClientId client_id, datetime now, str secret):

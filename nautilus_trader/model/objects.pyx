@@ -15,14 +15,10 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.functions cimport format_iso8601
-from nautilus_trader.model.c_enums.bar_structure cimport (  # noqa: E211
-    BarStructure,
-    bar_structure_to_string,
-    bar_structure_from_string)
-from nautilus_trader.model.c_enums.price_type cimport (  # noqa: E211
-    PriceType,
-    price_type_to_string,
-    price_type_from_string)
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_to_string, bar_structure_from_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport price_type_to_string, price_type_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string, currency_to_string
 from nautilus_trader.model.identifiers cimport Venue

@@ -11,8 +11,8 @@ from datetime import timezone
 from threading import Timer as TimerThread
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.identifiers cimport Label
-from nautilus_trader.model.events cimport TimeEvent
+from nautilus_trader.core.types cimport Label
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.live.guid cimport LiveGuidFactory
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970

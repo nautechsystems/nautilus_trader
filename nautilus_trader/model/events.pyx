@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport ValidString, GUID
+from nautilus_trader.core.types cimport ValidString, GUID, Label
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.functions cimport format_iso8601
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
@@ -17,14 +17,8 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_s
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    Symbol,
-    Label,
-    AccountId,
-    StrategyId,
-    OrderId,
-    ExecutionId,
-    PositionIdBroker)
+from nautilus_trader.model.identifiers cimport Symbol, AccountId, StrategyId
+from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.position cimport Position
 
@@ -972,103 +966,3 @@ cdef class PositionClosed(PositionEvent):
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_string(True)} {currency})")
-
-
-cdef class TimeEvent(Event):
-    """
-    Represents a time event occurring at the event timestamp.
-    """
-
-    def __init__(self,
-                 Label label not None,
-                 GUID event_id not None,
-                 datetime event_timestamp not None):
-        """
-        Initializes a new instance of the TimeEvent class.
-
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
-        """
-        super().__init__(event_id, event_timestamp)
-        self.label = label
-
-    def __eq__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp == other.timestamp
-
-    def __ne__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp != other.timestamp
-
-    def __lt__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp < other.timestamp
-
-    def __le__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp <= other.timestamp
-
-    def __gt__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp > other.timestamp
-
-    def __ge__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp >= other.timestamp
-
-    def __hash__(self) -> int:
-        """"
-        Return the hash code of this object.
-
-        :return int.
-        """
-        return hash(self.id)
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        :return str.
-        """
-        return (f"{self.__class__.__name__}("
-                f"label={self.label}, "
-                f"timestamp={format_iso8601(self.timestamp)})")
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{str(self)} object at {id(self)}>"

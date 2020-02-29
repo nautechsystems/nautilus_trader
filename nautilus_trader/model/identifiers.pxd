@@ -29,10 +29,6 @@ cdef class Brokerage(Identifier):
     pass
 
 
-cdef class Label(Identifier):
-    pass
-
-
 cdef class IdTag(Identifier):
     pass
 

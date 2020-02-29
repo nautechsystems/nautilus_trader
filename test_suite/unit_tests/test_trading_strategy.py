@@ -10,14 +10,14 @@ import unittest
 import time
 from datetime import datetime, timezone, timedelta
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.core.types import Label
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.enums import OrderState, Currency, MarketPosition
 from nautilus_trader.model.objects import Volume, Tick, Bar
-from nautilus_trader.model.identifiers import StrategyId, Label
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.guid import TestGuidFactory
@@ -27,8 +27,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
-
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+
 from test_kit.stubs import TestStubs, UNIX_EPOCH
 from test_kit.strategies import TestStrategy1
 

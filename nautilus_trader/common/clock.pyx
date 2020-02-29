@@ -12,14 +12,114 @@ from datetime import timezone
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
-from nautilus_trader.model.identifiers cimport Label
-from nautilus_trader.model.events cimport TimeEvent
+from nautilus_trader.core.functions cimport format_iso8601
 from nautilus_trader.common.clock cimport TestTimer
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 _UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+
+
+cdef class TimeEvent(Event):
+    """
+    Represents a time event occurring at the event timestamp.
+    """
+
+    def __init__(self,
+                 Label label not None,
+                 GUID event_id not None,
+                 datetime event_timestamp not None):
+        """
+        Initializes a new instance of the TimeEvent class.
+
+        :param event_id: The event label.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
+        """
+        super().__init__(event_id, event_timestamp)
+        self.label = label
+
+    def __eq__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp == other.timestamp
+
+    def __ne__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to (!=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp != other.timestamp
+
+    def __lt__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp < other.timestamp
+
+    def __le__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp <= other.timestamp
+
+    def __gt__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp > other.timestamp
+
+    def __ge__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp >= other.timestamp
+
+    def __hash__(self) -> int:
+        """"
+        Return the hash code of this object.
+
+        :return int.
+        """
+        return hash(self.id)
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"label={self.label}, "
+                f"timestamp={format_iso8601(self.timestamp)})")
+
+    def __repr__(self) -> str:
+        """
+        Return the string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 
 cdef class TimeEventHandler:

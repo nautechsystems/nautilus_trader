@@ -8,11 +8,14 @@
 
 from cpython.datetime cimport date, datetime, timedelta
 
-from nautilus_trader.core.types cimport GUID
-from nautilus_trader.model.identifiers cimport Label
-from nautilus_trader.model.events cimport TimeEvent
+from nautilus_trader.core.types cimport GUID, Label
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.common.guid cimport GuidFactory, TestGuidFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
+
+
+cdef class TimeEvent(Event):
+    cdef readonly Label label
 
 
 cdef class TimeEventHandler:

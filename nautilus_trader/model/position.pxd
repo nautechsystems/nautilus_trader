@@ -11,13 +11,8 @@ from cpython.datetime cimport datetime, timedelta
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Quantity, Tick, Money
 from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.identifiers cimport (  # noqa: E211
-    Symbol,
-    PositionId,
-    OrderId,
-    AccountId,
-    ExecutionId,
-    PositionIdBroker)
+from nautilus_trader.model.identifiers cimport Symbol, PositionId, OrderId
+from nautilus_trader.model.identifiers cimport AccountId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 
