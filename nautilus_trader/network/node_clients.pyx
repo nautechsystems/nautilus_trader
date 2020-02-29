@@ -249,6 +249,17 @@ cdef class MessageClient(ClientNode):
         """
         self.send_message(request, self._request_serializer.serialize(request))
 
+    cpdef void send_string(self, str message) except *:
+        """
+        Send the given string message. Note that a reply will not be awaited as
+        there is no correlation identifier.
+        
+        Parameters
+        ----------
+        message : str
+        """
+        self.send(MessageType.STRING, message.encode(_UTF8))
+
     cpdef void send_message(self, Message message, bytes serialized) except *:
         """
         Send the given message which will become durable and await a reply.
