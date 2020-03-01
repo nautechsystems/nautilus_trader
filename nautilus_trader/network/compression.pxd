@@ -13,12 +13,15 @@ cdef class Compressor:
 
 
 cdef class CompressorBypass(Compressor):
+    cpdef bytes compress(self, bytes data)
+    cpdef bytes decompress(self, bytes data)
 
+
+cdef class LZ4Compressor(Compressor):
     cpdef bytes compress(self, bytes data)
     cpdef bytes decompress(self, bytes data)
 
 
 cdef class SnappyCompressor(Compressor):
-
     cpdef bytes compress(self, bytes data)
     cpdef bytes decompress(self, bytes data)
