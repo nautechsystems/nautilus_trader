@@ -17,7 +17,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
-from nautilus_trader.network.encryption cimport EncryptionConfig
+from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
 from nautilus_trader.network.messages cimport Request, Response, MessageReceived, MessageRejected
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
@@ -38,7 +38,7 @@ cdef class ServerNode(NetworkNode):
             zmq_context not None: zmq.Context,
             int zmq_socket_type,
             Compressor compressor not None,
-            EncryptionConfig encryption not None,
+            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
@@ -110,17 +110,22 @@ cdef class MessageServer(ServerNode):
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
             Compressor compressor not None,
-            EncryptionConfig encryption not None,
+            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
         """
         Initializes a new instance of the MessageServer class.
 
+        :param server_id: The server identifier.
+        :param port: The server port.
         :param zmq_context: The ZeroMQ context.
-        :param port: The service port.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
+        :param compressor: The message compressor.
+        :param encryption: The encryption configuration.
+        :param clock: The clock for the component.
+        :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         """
         super().__init__(
@@ -381,15 +386,20 @@ cdef class MessagePublisher(ServerNode):
                  int port,
                  zmq_context: zmq.Context,
                  Compressor compressor not None,
-                 EncryptionConfig encryption not None,
+                 EncryptionSettings encryption not None,
                  Clock clock not None,
                  GuidFactory guid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the MockPublisher class.
+        Initializes a new instance of the MessagePublisher class.
 
+        :param server_id: The server identifier.
+        :param port: The server port.
         :param zmq_context: The ZeroMQ context.
-        :param port: The service port.
+        :param compressor: The message compressor.
+        :param encryption: The encryption configuration.
+        :param clock: The clock for the component.
+        :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         """
         super().__init__(
@@ -431,4 +441,4 @@ cdef class MessagePublisher(ServerNode):
                         f"size={header_size}, "
                         f"payload={(len(payload))} bytes.")
 
-        self._send([topic.encode('utf-8'), bytes([header_size]), payload])
+        self._send([topic.encode(_UTF8), str(header_size).encode(_UTF8), payload])

@@ -20,10 +20,11 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Venue, AccountId, TraderId
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, ExecutionDatabase
-from nautilus_trader.common.logging cimport LogLevel, LoggerAdapter, nautilus_header
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.network.compression cimport CompressorBypass, SnappyCompressor
-from nautilus_trader.network.encryption cimport EncryptionConfig
+from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trading.trader cimport Trader
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
@@ -135,21 +136,21 @@ cdef class TradingNode:
         # Setup encryption
         working_directory = os.getcwd()
         keys_dir = os.path.join(working_directory, config_messaging['keys_dir'])
-        encryption = EncryptionConfig(
+        encryption = EncryptionSettings(
             algorithm=config_messaging['encryption'],
             keys_dir=keys_dir)
 
         self._venue = Venue(config_data['venue'])
         self._data_client = LiveDataClient(
-            zmq_context=self._zmq_context,
-            service_name=config_data['service_name'],
+            trader_id=self.trader_id,
             host=config_data['host'],
-            tick_rep_port=config_data['tick_req_port'],
-            tick_pub_port=config_data['tick_sub_port'],
-            bar_rep_port=config_data['bar_req_port'],
-            bar_pub_port=config_data['bar_sub_port'],
-            inst_rep_port=config_data['inst_req_port'],
-            inst_pub_port=config_data['inst_sub_port'],
+            tick_server_port=config_data['tick_server_port'],
+            tick_pub_port=config_data['tick_pub_port'],
+            bar_server_port=config_data['bar_server_port'],
+            bar_pub_port=config_data['bar_pub_port'],
+            inst_server_port=config_data['inst_server_port'],
+            inst_pub_port=config_data['inst_pub_port'],
+            zmq_context=self._zmq_context,
             compressor=compressor,
             encryption=encryption,
             clock=self._clock,
@@ -189,11 +190,10 @@ cdef class TradingNode:
 
         self._exec_client = LiveExecClient(
             exec_engine=self._exec_engine,
-            zmq_context=self._zmq_context,
-            service_name=config_exec_client['service_name'],
             host=config_exec_client['host'],
             commands_port=config_exec_client['commands_port'],
             events_port=config_exec_client['events_port'],
+            zmq_context=self._zmq_context,
             compressor=compressor,
             encryption=encryption,
             logger=self._logger)

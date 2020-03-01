@@ -19,12 +19,12 @@ from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerial
 
 cdef class LiveDataClient(DataClient):
     cdef object _zmq_context
-    cdef object _tick_req_worker
-    cdef object _tick_sub_worker
-    cdef object _bar_req_worker
-    cdef object _bar_sub_worker
-    cdef object _inst_req_worker
-    cdef object _inst_sub_worker
+    cdef object _tick_client
+    cdef object _tick_subscriber
+    cdef object _bar_client
+    cdef object _bar_subscriber
+    cdef object _inst_client
+    cdef object _inst_subscriber
     cdef DataSerializer _data_serializer
     cdef InstrumentSerializer _instrument_serializer
     cdef ObjectCache _cached_symbols
@@ -43,6 +43,6 @@ cdef class LiveDataClient(DataClient):
     cpdef void _put_response(self, Response response) except *
     cpdef void _pop_response(self) except *
     cpdef void _handle_instruments_py(self, list instruments) except *
-    cpdef void _handle_tick_sub(self, str topic, bytes payload) except *
-    cpdef void _handle_bar_sub(self, str topic, bytes payload) except *
-    cpdef void _handle_inst_sub(self, str topic, bytes payload) except *
+    cpdef void _handle_tick_msg(self, str topic, bytes payload) except *
+    cpdef void _handle_bar_msg(self, str topic, bytes payload) except *
+    cpdef void _handle_inst_msg(self, str topic, bytes payload) except *

@@ -19,7 +19,7 @@ from nautilus_trader.common.clock cimport Clock, TimeEvent
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
-from nautilus_trader.network.encryption cimport EncryptionConfig
+from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.network.messages cimport Request, Response
 
@@ -43,7 +43,7 @@ cdef class ClientNode(NetworkNode):
             int zmq_socket_type,
             frames_handler not None: callable,
             Compressor compressor not None,
-            EncryptionConfig encryption not None,
+            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
@@ -165,7 +165,7 @@ cdef class MessageClient(ClientNode):
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
             Compressor compressor not None,
-            EncryptionConfig encryption not None,
+            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
@@ -229,7 +229,10 @@ cdef class MessageClient(ClientNode):
             timestamp)
 
         # Set check connected alert
-        self._clock.set_time_alert(Label(_IS_CONNECTED), timestamp + timedelta(seconds=2), self._check_connection)
+        self._clock.set_time_alert(
+            Label(connect.id.value + _IS_CONNECTED),
+            timestamp + timedelta(seconds=2),
+            self._check_connection)
 
         self.send_message(connect, self._request_serializer.serialize(connect))
 
@@ -250,7 +253,10 @@ cdef class MessageClient(ClientNode):
             timestamp)
 
         # Set check disconnected alert
-        self._clock.set_time_alert(Label(_IS_DISCONNECTED), timestamp + timedelta(seconds=2), self._check_connection)
+        self._clock.set_time_alert(
+            Label(disconnect.id.value + _IS_DISCONNECTED),
+            timestamp + timedelta(seconds=2),
+            self._check_connection)
 
         self.send_message(disconnect, self._request_serializer.serialize(disconnect))
 
@@ -312,7 +318,7 @@ cdef class MessageClient(ClientNode):
 
         self._log.verbose(f"[{self.sent_count}]--> "
                           f"type={send_type_str}, "
-                          f"size={send_size} bytes,"
+                          f"size={send_size} bytes, "
                           f"payload={len(payload)} bytes")
 
         self._send([header_type, header_size, payload])
@@ -367,10 +373,10 @@ cdef class MessageClient(ClientNode):
                 self._message_handler(response)
 
     cpdef void _check_connection(self, TimeEvent event):
-        if event.label == _IS_CONNECTED:
+        if event.label.value.endswith(_IS_CONNECTED):
             if not self.is_connected():
                 self._log.warning("Connection timed out...")
-        elif event.label == _IS_DISCONNECTED:
+        elif event.label.value.endswith(_IS_DISCONNECTED):
             if self.is_connected():
                 self._log.warning("Still connected...")
         else:
@@ -417,7 +423,7 @@ cdef class MessageSubscriber(ClientNode):
             int expected_frames,
             zmq_context not None: zmq.Context,
             Compressor compressor not None,
-            EncryptionConfig encryption not None,
+            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
@@ -502,7 +508,7 @@ cdef class MessageSubscriber(ClientNode):
             return
 
         cdef str recv_topic = frames[0].decode(_UTF8)
-        cdef int recv_size = int.from_bytes(frames[1], byteorder='big', signed=True)
+        cdef int recv_size = int(frames[1].decode(_UTF8))
         cdef bytes payload = self._compressor.decompress(frames[2])
 
         self._message_handler(recv_topic, payload)

@@ -16,7 +16,7 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import CompressorBypass
-from nautilus_trader.network.encryption import EncryptionConfig
+from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
@@ -62,7 +62,7 @@ class MessageClientTests(unittest.TestCase):
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
             CompressorBypass(),
-            EncryptionConfig(),
+            EncryptionSettings(),
             clock,
             guid_factory,
             logger)
@@ -83,7 +83,7 @@ class MessageClientTests(unittest.TestCase):
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
             CompressorBypass(),
-            EncryptionConfig(),
+            EncryptionSettings(),
             clock,
             guid_factory,
             logger)
@@ -177,7 +177,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             3,
             self.zmq_context,
             CompressorBypass(),
-            EncryptionConfig(),
+            EncryptionSettings(),
             clock,
             guid_factory,
             logger)
@@ -187,7 +187,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             TEST_PORT,
             self.zmq_context,
             CompressorBypass(),
-            EncryptionConfig(),
+            EncryptionSettings(),
             clock,
             guid_factory,
             logger)
