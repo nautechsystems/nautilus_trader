@@ -39,32 +39,32 @@ cdef class Serializer:
         return self.convert_snake_to_camel(value)
 
 
-cdef class QuerySerializer(Serializer):
+cdef class DictionarySerializer(Serializer):
     """
-    The base class for all query serializers.
+    The base class for all dictionary serializers.
     """
 
     def __init__(self):
         """
-        Initializes a new instance of the QuerySerializer class.
+        Initializes a new instance of the DictionarySerializer class.
         """
         super().__init__()
 
-    cpdef bytes serialize(self, dict query):
+    cpdef bytes serialize(self, dict dictionary):
         """
-        Serialize the given data query to bytes.
+        Serialize the given dictionary with string keys and values to bytes.
 
-        :param query: The data query to serialize.
+        :param dictionary: The dictionary to serialize.
         :return bytes.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef dict deserialize(self, bytes query_bytes):
+    cpdef dict deserialize(self, bytes dictionary_bytes):
         """
-        Deserialize the given bytes to a data query.
+        Deserialize the given bytes to a dictionary with string keys and values.
 
-        :param query_bytes: The data query bytes to deserialize.
+        :param dictionary_bytes: The dictionary bytes to deserialize.
         :return Dict.
         """
         # Raise exception if not overridden in implementation

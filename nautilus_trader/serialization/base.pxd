@@ -22,9 +22,9 @@ cdef class Serializer:
     cpdef str py_convert_snake_to_camel(self, str value)
 
 
-cdef class QuerySerializer(Serializer):
-    cpdef bytes serialize(self, dict data)
-    cpdef dict deserialize(self, bytes data_bytes)
+cdef class DictionarySerializer(Serializer):
+    cpdef bytes serialize(self, dict dictionary)
+    cpdef dict deserialize(self, bytes dictionary_bytes)
 
 
 cdef class DataSerializer(Serializer):

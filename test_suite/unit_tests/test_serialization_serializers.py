@@ -66,6 +66,21 @@ class SerializerBaseTests(unittest.TestCase):
         self.assertEqual('Snake', result2)
 
 
+class MsgPackDictionarySerializerTests(unittest.TestCase):
+
+    def test_can_serialize_and_deserialize_string_dictionaries(self):
+        # Arrange
+        data = {'A': '1', 'B': '2', 'C': '3'}
+        serializer = MsgPackDictionarySerializer()
+
+        # Act
+        serialized = serializer.serialize(data)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(data, deserialized)
+
+
 class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def setUp(self):
