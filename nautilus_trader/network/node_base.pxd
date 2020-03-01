@@ -17,9 +17,7 @@ cdef class NetworkNode:
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
     cdef str _network_address
-    cdef object _context
     cdef object _socket
-    cdef int _expected_frames
     cdef Compressor _compressor
 
     cdef readonly int sent_count
@@ -27,5 +25,5 @@ cdef class NetworkNode:
 
     cpdef void dispose(self) except *
     cpdef bint is_disposed(self)
-    cdef void _send_string(self, bytes receiver, str message)
-    cdef void _send(self, list frames) except *
+    # cdef void _send_string(self, bytes receiver, str message)
+    # cdef void _send(self, list frames) except *

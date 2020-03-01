@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import threading
 import zmq
 import zmq.auth
 from cpython.datetime cimport datetime, timedelta
@@ -20,6 +19,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
+from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueInbound
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.network.messages cimport Request, Response
 
@@ -38,43 +38,32 @@ cdef class ClientNode(NetworkNode):
             ClientId client_id not None,
             str host not None,
             int port,
-            int expected_frames,
-            zmq_context not None: zmq.Context,
             int zmq_socket_type,
-            frames_handler not None: callable,
             Compressor compressor not None,
             EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
         """
-        Initializes a new instance of the MQWorker class.
+        Initializes a new instance of the ClientNode class.
 
-        :param client_id: The client identifier for the worker.
-        :param host: The service host address.
-        :param port: The service port.
-        :param expected_frames: The expected message frame count.
-        :param zmq_context: The ZeroMQ context.
+        :param client_id: The client identifier for the node.
+        :param host: The server host address.
+        :param port: The server port.
         :param zmq_socket_type: The ZeroMQ socket type.
-        :param frames_handler: The frames handler.
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the expected frames is not positive (> 0).
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         """
-        Condition.positive(expected_frames, 'expected_frames')
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
-        Condition.type(zmq_context, zmq.Context, 'zmq_context')
         super().__init__(
             host,
             port,
-            expected_frames,
-            zmq_context,
             zmq_socket_type,
             compressor,
             encryption,
@@ -84,11 +73,19 @@ cdef class ClientNode(NetworkNode):
 
         self.client_id = client_id
         self._socket.setsockopt(zmq.IDENTITY, self.client_id.value.encode(_UTF8))  # noqa (zmq reference)
-
-        self._frames_handler = frames_handler
         self._message_handler = None
-        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
-        self._thread.start()
+
+    cpdef bint is_connected(self):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void connect(self) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void disconnect(self) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void register_handler(self, handler: callable) except *:
         """
@@ -108,22 +105,6 @@ cdef class ClientNode(NetworkNode):
 
         self._message_handler = handler
 
-    cpdef bint is_connected(self):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void connect(self) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void disconnect(self) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void _handle_frames(self, list frames) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
     cpdef void _connect_socket(self) except *:
         """
         Connect to the ZMQ socket.
@@ -138,17 +119,6 @@ cdef class ClientNode(NetworkNode):
         self._socket.disconnect(self._network_address)
         self._log.info(f"Disconnected from {self._network_address}")
 
-    cpdef void _consume_messages(self) except *:
-        self._log.debug("Message consumption loop starting...")
-
-        while True:
-            try:
-                self._frames_handler(self._socket.recv_multipart(flags=0)) # Blocking per message
-                self.recv_count += 1
-            except zmq.ZMQError as ex:
-                self._log.error(str(ex))
-                continue
-
 
 cdef class MessageClient(ClientNode):
     """
@@ -161,7 +131,6 @@ cdef class MessageClient(ClientNode):
             str host not None,
             int port,
             int expected_frames,
-            zmq_context not None: zmq.Context,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
             Compressor compressor not None,
@@ -170,13 +139,12 @@ cdef class MessageClient(ClientNode):
             GuidFactory guid_factory not None,
             Logger logger not None):
         """
-        Initializes a new instance of the DealerWorker class.
+        Initializes a new instance of the MessageClient class.
 
         :param client_id: The client identifier for the worker.
         :param host: The server host address.
         :param port: The server port.
         :param expected_frames: The expected message frame count.
-        :param zmq_context: The ZeroMQ context.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
         :param compressor: The message compressor.
@@ -189,20 +157,22 @@ cdef class MessageClient(ClientNode):
         """
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
-        Condition.type(zmq_context, zmq.Context, 'zmq_context')
         super().__init__(
             client_id,
             host,
             port,
-            expected_frames,
-            zmq_context,
             zmq.DEALER,  # noqa (zmq reference)
-            self._handle_frames,
             compressor,
             encryption,
             clock,
             guid_factory,
             logger)
+
+        self._queue = MessageQueueDuplex(
+            expected_frames,
+            self._socket,
+            self._handle_frames,
+            self._log)
 
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
@@ -321,13 +291,11 @@ cdef class MessageClient(ClientNode):
                           f"size={send_size} bytes, "
                           f"payload={len(payload)} bytes")
 
-        self._send([header_type, header_size, payload])
+        self._queue.send([header_type, header_size, payload])
+        self.sent_count += 1
 
     cpdef void _handle_frames(self, list frames) except *:
-        cdef int frames_count = len(frames)
-        if frames_count != self._expected_frames:
-            self._log.error(f"Received unexpected frames count {frames_count}, expected {self._expected_frames}")
-            return
+        self.recv_count += 1
 
         cdef str header_type = frames[0].decode(_UTF8)
         cdef int header_size = int(frames[1].decode(_UTF8))
@@ -421,20 +389,18 @@ cdef class MessageSubscriber(ClientNode):
             str host,
             int port,
             int expected_frames,
-            zmq_context not None: zmq.Context,
             Compressor compressor not None,
             EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
         """
-        Initializes a new instance of the SubscriberWorker class.
+        Initializes a new instance of the MessageSubscriber class.
 
         :param client_id: The client identifier for the worker.
         :param host: The service host address.
         :param port: The service port.
         :param expected_frames: The expected message frame count.
-        :param zmq_context: The ZeroMQ context.
         :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
@@ -447,15 +413,11 @@ cdef class MessageSubscriber(ClientNode):
         """
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
-        Condition.type(zmq_context, zmq.Context, 'zmq_context')
         super().__init__(
             client_id,
             host,
             port,
-            expected_frames,
-            zmq_context,
             zmq.SUB,
-            self._handle_frames,
             compressor,
             encryption,
             clock,
@@ -463,6 +425,11 @@ cdef class MessageSubscriber(ClientNode):
             logger)
 
         self.register_handler(self._no_subscriber_handler)
+        self._queue = MessageQueueInbound(
+            expected_frames,
+            self._socket,
+            self._handle_frames,
+            self._log)
 
     cpdef bint is_connected(self):
         return True # TODO: Keep alive heartbeat polling
@@ -502,10 +469,7 @@ cdef class MessageSubscriber(ClientNode):
         self._log.debug(f"Unsubscribed from topic {topic}")
 
     cpdef void _handle_frames(self, list frames) except *:
-        cdef int frames_count = len(frames)
-        if frames_count != self._expected_frames:
-            self._log.error(f"Message was malformed (expected {self._expected_frames} frames, received {frames_count}).")
-            return
+        self.recv_count += 1
 
         cdef str recv_topic = frames[0].decode(_UTF8)
         cdef int recv_size = int(frames[1].decode(_UTF8))

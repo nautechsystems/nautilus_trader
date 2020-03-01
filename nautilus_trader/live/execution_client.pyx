@@ -43,7 +43,6 @@ cdef class LiveExecClient(ExecutionClient):
             str host not None,
             int commands_port,
             int events_port,
-            zmq_context not None: zmq.Context,
             Compressor compressor not None=CompressorBypass(),
             EncryptionSettings encryption not None=EncryptionSettings(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
@@ -60,7 +59,6 @@ cdef class LiveExecClient(ExecutionClient):
         :param host: The execution service host IP address (default='localhost').
         :param commands_port: The execution service commands port (default=55555).
         :param events_port: The execution service events port (default=55556).
-        :param zmq_context: The ZMQ context.
         :param encryption: The encryption configuration.
         :param command_serializer: The command serializer for the client.
         :param response_serializer: The response serializer for the client.
@@ -79,7 +77,6 @@ cdef class LiveExecClient(ExecutionClient):
         Condition.in_range_int(events_port, 0, 65535, 'events_port')
         super().__init__(exec_engine, logger)
 
-        self._zmq_context = zmq_context
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
 
@@ -93,7 +90,6 @@ cdef class LiveExecClient(ExecutionClient):
             host,
             commands_port,
             expected_frames,
-            self._zmq_context,
             request_serializer,
             response_serializer,
             compressor,
@@ -107,7 +103,6 @@ cdef class LiveExecClient(ExecutionClient):
             host,
             events_port,
             expected_frames,
-            self._zmq_context,
             compressor,
             encryption,
             clock,

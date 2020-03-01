@@ -8,7 +8,6 @@
 
 import unittest
 import time
-import zmq
 
 from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.identifiers import TraderId
@@ -43,7 +42,6 @@ class LiveExecutionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        zmq_context = zmq.Context()
         commands_port = 56555
         events_port = 56556
 
@@ -82,7 +80,6 @@ class LiveExecutionTests(unittest.TestCase):
             host=LOCALHOST,
             commands_port=commands_port,
             events_port=events_port,
-            zmq_context=zmq_context,
             compressor=CompressorBypass(),
             encryption=EncryptionSettings(),
             command_serializer=MsgPackCommandSerializer(),
@@ -102,7 +99,6 @@ class LiveExecutionTests(unittest.TestCase):
             server_id=ServerId("CommandServer-001"),
             port=commands_port,
             expected_frames=expected_frames,
-            zmq_context=zmq_context,
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
             compressor=CompressorBypass(),

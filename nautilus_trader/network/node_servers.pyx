@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import threading
 import zmq
 import zmq.auth
 
@@ -19,10 +18,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
+from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueOutbound
 from nautilus_trader.network.messages cimport Request, Response, MessageReceived, MessageRejected
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 
 cdef str _UTF8 = 'utf-8'
+cdef bytes _STRING = message_type_to_string(MessageType.STRING).encode(_UTF8)
 
 
 cdef class ServerNode(NetworkNode):
@@ -34,8 +35,6 @@ cdef class ServerNode(NetworkNode):
             self,
             ServerId server_id not None,
             int port,
-            int expected_frames,
-            zmq_context not None: zmq.Context,
             int zmq_socket_type,
             Compressor compressor not None,
             EncryptionSettings encryption not None,
@@ -43,11 +42,10 @@ cdef class ServerNode(NetworkNode):
             GuidFactory guid_factory not None,
             Logger logger not None):
         """
-        Initializes a new instance of the MQWorker class.
+        Initializes a new instance of the ServerNode class.
 
         :param server_id: The server identifier.
         :param port: The server port.
-        :param zmq_context: The ZeroMQ context.
         :param zmq_socket_type: The ZeroMQ socket type.
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
@@ -61,8 +59,6 @@ cdef class ServerNode(NetworkNode):
         super().__init__(
             '127.0.0.1',
             port,
-            expected_frames,
-            zmq_context,
             zmq_socket_type,
             compressor,
             encryption,
@@ -106,7 +102,6 @@ cdef class MessageServer(ServerNode):
             ServerId server_id,
             int port,
             int expected_frames,
-            zmq_context: zmq.Context,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
             Compressor compressor not None,
@@ -119,7 +114,6 @@ cdef class MessageServer(ServerNode):
 
         :param server_id: The server identifier.
         :param port: The server port.
-        :param zmq_context: The ZeroMQ context.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
         :param compressor: The message compressor.
@@ -131,8 +125,6 @@ cdef class MessageServer(ServerNode):
         super().__init__(
             server_id,
             port,
-            expected_frames,
-            zmq_context,
             zmq.ROUTER,  # noqa (zmq reference)
             compressor,
             encryption,
@@ -140,13 +132,16 @@ cdef class MessageServer(ServerNode):
             guid_factory,
             logger)
 
+        self._queue = MessageQueueDuplex(
+            expected_frames,
+            self._socket,
+            self._handle_frames,
+            self._log)
+
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
         self._peers = {}    # type: {ClientId, SessionId}
         self._handlers = {} # type: {MessageType, callable}
-
-        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
-        self._thread.start()
 
     cpdef void start(self) except *:
         """
@@ -194,7 +189,7 @@ cdef class MessageServer(ServerNode):
 
     cpdef void send_rejected(self, str rejected_message, GUID correlation_id, ClientId receiver) except *:
         """
-        Send a MessageReceived response for the given original message.
+        Send a MessageRejected response.
         
         Parameters
         ----------
@@ -259,32 +254,23 @@ cdef class MessageServer(ServerNode):
                           f"size={send_size} bytes, "
                           f"payload={len(payload)} bytes")
 
-        self._send([send_address, header_type, header_size, payload])
+        self._queue.send([send_address, header_type, header_size, payload])
+        self.sent_count += 1
 
-    cpdef void _consume_messages(self) except *:
-        self._log.debug("Message consumption loop starting...")
-
-        while True:
-            try:
-                self._handle_frames(self._socket.recv_multipart(flags=0))  # Blocking
-                self.recv_count += 1
-            except zmq.ZMQError as ex:
-                self._log.error(str(ex))
-                continue
+    cdef void _send_string(self, bytes receiver, str message):
+        self._queue.send([receiver, _STRING, str(len(message)).encode(_UTF8), message.encode(_UTF8)])
+        self.sent_count += 1
 
     cpdef void _handle_frames(self, list frames) except *:
-        cdef int frames_count = len(frames)
-        if frames_count <= 0:
-            self._log.error(f'Received zero frames with no reply address.')
-            return
+        self.recv_count += 1
 
         cdef bytes sender = frames[0]
         cdef ClientId client_id = ClientId(sender.decode(_UTF8))
 
-        if frames_count != self._expected_frames:
-            message = f"Received unexpected frames count {frames_count}, expected {self._expected_frames}."
-            self.send_rejected(message, GUID.none(), client_id)
-            return
+        # if frames_count != self._expected_frames:
+        #     message = f"Received unexpected frames count {frames_count}, expected {self._expected_frames}."
+        #     self.send_rejected(message, GUID.none(), client_id)
+        #     return
 
         cdef str header_type = frames[1].decode(_UTF8)
         cdef int header_size = int(frames[2].decode(_UTF8))
@@ -384,7 +370,6 @@ cdef class MessagePublisher(ServerNode):
     def __init__(self,
                  ServerId server_id,
                  int port,
-                 zmq_context: zmq.Context,
                  Compressor compressor not None,
                  EncryptionSettings encryption not None,
                  Clock clock not None,
@@ -395,7 +380,6 @@ cdef class MessagePublisher(ServerNode):
 
         :param server_id: The server identifier.
         :param port: The server port.
-        :param zmq_context: The ZeroMQ context.
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
@@ -405,14 +389,14 @@ cdef class MessagePublisher(ServerNode):
         super().__init__(
             server_id,
             port,
-            0,
-            zmq_context,
             zmq.PUB,
             compressor,
             encryption,
             clock,
             guid_factory,
             logger)
+
+        self._queue = MessageQueueOutbound(self._socket, self._log)
 
     cpdef void start(self) except *:
         """
@@ -441,4 +425,5 @@ cdef class MessagePublisher(ServerNode):
                         f"size={header_size}, "
                         f"payload={(len(payload))} bytes.")
 
-        self._send([topic.encode(_UTF8), str(header_size).encode(_UTF8), payload])
+        self._queue.send([topic.encode(_UTF8), str(header_size).encode(_UTF8), payload])
+        self.sent_count += 1

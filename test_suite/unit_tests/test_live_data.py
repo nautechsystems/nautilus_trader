@@ -9,7 +9,6 @@
 import uuid
 import unittest
 import time
-import zmq
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar
@@ -42,7 +41,6 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_serializer = BsonDataSerializer()
 
         self.expected_frames = 4
-        self.zmq_context = zmq.Context()
         self.request_serializer = MsgPackRequestSerializer()
         self.response_serializer = MsgPackResponseSerializer()
         self.compressor = CompressorBypass()
@@ -55,7 +53,6 @@ class LiveDataClientTests(unittest.TestCase):
             server_id=ServerId('TickServer-001'),
             port=56501,
             expected_frames=self.expected_frames,
-            zmq_context=self.zmq_context,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             compressor=self.compressor,
@@ -70,7 +67,6 @@ class LiveDataClientTests(unittest.TestCase):
         self.tick_publisher = MessagePublisher(
             server_id=ServerId('TickPublisher-001'),
             port=56502,
-            zmq_context=self.zmq_context,
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
@@ -81,7 +77,6 @@ class LiveDataClientTests(unittest.TestCase):
             server_id=ServerId('BarServer-001'),
             port=56503,
             expected_frames=self.expected_frames,
-            zmq_context=self.zmq_context,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             compressor=self.compressor,
@@ -96,7 +91,6 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_publisher = MessagePublisher(
             server_id=ServerId('BarPublisher-001'),
             port=56504,
-            zmq_context=self.zmq_context,
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
@@ -107,7 +101,6 @@ class LiveDataClientTests(unittest.TestCase):
             server_id=ServerId('InstrumentServer-001'),
             port=56505,
             expected_frames=self.expected_frames,
-            zmq_context=self.zmq_context,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             compressor=self.compressor,
@@ -122,7 +115,6 @@ class LiveDataClientTests(unittest.TestCase):
         self.inst_publisher = MessagePublisher(
             server_id=ServerId('InstrumentPublisher-001'),
             port=56506,
-            zmq_context=self.zmq_context,
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
@@ -138,7 +130,6 @@ class LiveDataClientTests(unittest.TestCase):
             bar_pub_port=56504,
             inst_server_port=56505,
             inst_pub_port=56506,
-            zmq_context=self.zmq_context,
             compressor=self.compressor,
             encryption=self.encryption,
             request_serializer=self.request_serializer,

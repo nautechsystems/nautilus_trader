@@ -13,8 +13,6 @@ from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
 
 cdef class LiveExecClient(ExecutionClient):
-    cdef object _zmq_context
-
     cdef object _command_client
     cdef object _event_subscriber
     cdef CommandSerializer _command_serializer
