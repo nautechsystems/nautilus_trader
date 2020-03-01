@@ -22,6 +22,12 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker, ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
 from nautilus_trader.model.objects cimport Quantity, Decimal, Money
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
+from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, OrderInvalid
+from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
+from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
+from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.common.logging cimport LogMessage, log_level_from_string
@@ -31,12 +37,6 @@ from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSeria
 from nautilus_trader.serialization.common cimport convert_string_to_price, convert_price_to_string
 from nautilus_trader.serialization.common cimport convert_string_to_label, convert_label_to_string
 from nautilus_trader.serialization.common cimport convert_string_to_datetime, convert_datetime_to_string
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
-from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
-from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, OrderInvalid
-from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
-from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
-from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.network.messages cimport MessageReceived, MessageRejected, QueryFailure
@@ -79,38 +79,38 @@ cdef class MsgPackSerializer:
         return { k.decode(UTF8): v.decode(UTF8) for k, v in raw_unpacked.items()}
 
 
-cdef class MsgPackQuerySerializer(QuerySerializer):
+cdef class MsgPackDictionarySerializer(DictionarySerializer):
     """
-    Provides a serializer for data query objects for the MsgPack specification.
+    Provides a serializer for dictionaries for the MsgPack specification.
     """
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackQuerySerializer class.
+        Initializes a new instance of the MsgPackDictionarySerializer class.
         """
         super().__init__()
 
-    cpdef bytes serialize(self, dict query):
+    cpdef bytes serialize(self, dict dictionary):
         """
-        Serialize the given data query to bytes.
+        Serialize the given dictionary with string keys and values to bytes.
 
-        :param query: The data query to serialize.
+        :param dictionary: The dictionary to serialize.
         :return bytes.
         """
-        Condition.not_none(query, 'query')
+        Condition.not_none(dictionary, 'dictionary')
 
-        return MsgPackSerializer.serialize(query)
+        return MsgPackSerializer.serialize(dictionary)
 
-    cpdef dict deserialize(self, bytes query_bytes):
+    cpdef dict deserialize(self, bytes dictionary_bytes):
         """
-        Deserialize the given bytes to a data query.
+        Deserialize the given bytes to a dictionary with string keys and values.
 
-        :param query_bytes: The data query bytes to deserialize.
+        :param dictionary_bytes: The dictionary bytes to deserialize.
         :return Dict.
         """
-        Condition.not_none(query_bytes, 'query_bytes')
+        Condition.not_none(dictionary_bytes, 'dictionary_bytes')
 
-        return MsgPackSerializer.deserialize(query_bytes, raw_values=False)
+        return MsgPackSerializer.deserialize(dictionary_bytes, raw_values=False)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -615,7 +615,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         """
         super().__init__()
 
-        self.query_serializer = MsgPackQuerySerializer()
+        self.dict_serializer = MsgPackDictionarySerializer()
 
     cpdef bytes serialize(self, Request request):
         """
@@ -640,7 +640,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
             package[CLIENT_ID] = request.client_id.value
             package[SESSION_ID] = request.session_id.value
         elif isinstance(request, DataRequest):
-            package[QUERY] = self.query_serializer.serialize(request.query)
+            package[QUERY] = self.dict_serializer.serialize(request.query)
         else:
             raise RuntimeError("Cannot serialize request (unrecognized request.")
 
@@ -676,7 +676,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
                 request_timestamp)
         elif request_type == DataRequest.__name__:
             return DataRequest(
-                self.query_serializer.deserialize(unpacked[QUERY]),
+                self.dict_serializer.deserialize(unpacked[QUERY]),
                 request_id,
                 request_timestamp)
         else:

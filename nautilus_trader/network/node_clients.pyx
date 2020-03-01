@@ -89,7 +89,7 @@ cdef class ClientNode(NetworkNode):
 
     cpdef void register_handler(self, handler: callable) except *:
         """
-        Register a received message handler.
+        Register a handler to receive messages.
 
         Parameters
         ----------
