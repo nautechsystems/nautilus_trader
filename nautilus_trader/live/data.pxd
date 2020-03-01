@@ -18,7 +18,6 @@ from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerial
 
 
 cdef class LiveDataClient(DataClient):
-    cdef object _zmq_context
     cdef object _tick_client
     cdef object _tick_subscriber
     cdef object _bar_client

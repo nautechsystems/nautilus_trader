@@ -19,7 +19,6 @@ from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 
 cdef str _UTF8 = 'utf-8'
-cdef bytes _STRING = message_type_to_string(MessageType.STRING).encode(_UTF8)
 
 
 cdef class NetworkNode:
@@ -31,8 +30,6 @@ cdef class NetworkNode:
             self,
             str host,
             int port,
-            int expected_frames,
-            context not None: zmq.Context,
             int socket_type,
             Compressor compressor not None,
             EncryptionSettings encryption not None,
@@ -40,35 +37,28 @@ cdef class NetworkNode:
             GuidFactory guid_factory not None,
             Logger logger not None):
         """
-        Initializes a new instance of the MQWorker class.
+        Initializes a new instance of the NetworkNode class.
 
         :param host: The socket host address.
         :param port: The socket port.
-        :param context: The ZeroMQ context.
         :param socket_type: The ZeroMQ socket type.
-        :param expected_frames: The expected message frame count.
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the expected frames is negative (<>> 0).
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.not_negative_int(expected_frames, 'expected_frames')
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
-        Condition.type(context, zmq.Context, 'zmq_context')
 
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._network_address = f'tcp://{host}:{port}'
-        self._context = context
-        self._socket = self._context.socket(socket_type)
+        self._socket = zmq.Context.instance().socket(socket_type)
         self._socket.setsockopt(zmq.LINGER, 1)
-        self._expected_frames = expected_frames
         self._compressor = compressor
 
         self.sent_count = 0
@@ -103,9 +93,9 @@ cdef class NetworkNode:
         """
         return self._socket.closed
 
-    cdef void _send_string(self, bytes receiver, str message):
-        self._send([receiver, _STRING, str(len(message)).encode(_UTF8), message.encode(_UTF8)])
-
-    cdef void _send(self, list frames) except *:
-        self._socket.send_multipart(frames)
-        self.sent_count += 1
+    # cdef void _send_string(self, bytes receiver, str message):
+    #     self._send([receiver, _STRING, str(len(message)).encode(_UTF8), message.encode(_UTF8)])
+    #
+    # cdef void _send(self, list frames) except *:
+    #     self._socket.send_multipart(frames)
+    #     self.sent_count += 1

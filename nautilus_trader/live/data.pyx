@@ -49,7 +49,6 @@ cdef class LiveDataClient(DataClient):
                  int bar_pub_port,
                  int inst_server_port,
                  int inst_pub_port,
-                 zmq_context not None: zmq.Context,
                  Compressor compressor not None=CompressorBypass(),
                  EncryptionSettings encryption not None=EncryptionSettings(),
                  RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
@@ -71,7 +70,6 @@ cdef class LiveDataClient(DataClient):
         :param bar_pub_port: The port for bar subscriptions (default=55504).
         :param inst_server_port: The port for instrument requests (default=55505).
         :param inst_pub_port: The port for instrument subscriptions (default=55506).
-        :param zmq_context: The ZMQ context.
         :param compressor: The messaging compressor.
         :param encryption: The messaging encryption configuration.
         :param request_serializer: The request serializer.
@@ -100,7 +98,6 @@ cdef class LiveDataClient(DataClient):
         Condition.positive_int(tick_capacity, 'tick_capacity')
         super().__init__(tick_capacity, clock, guid_factory, logger)
 
-        self._zmq_context = zmq_context
         self._response_queue = queue.Queue()
         self._response_thread = threading.Thread(target=self._pop_response, daemon=True)
         self._correlation_index = {}  # type: {GUID, callable}
@@ -115,7 +112,6 @@ cdef class LiveDataClient(DataClient):
             host,
             tick_server_port,
             expected_frames,
-            self._zmq_context,
             request_serializer,
             response_serializer,
             compressor,
@@ -131,7 +127,6 @@ cdef class LiveDataClient(DataClient):
             host,
             bar_server_port,
             expected_frames,
-            self._zmq_context,
             request_serializer,
             response_serializer,
             compressor,
@@ -147,7 +142,6 @@ cdef class LiveDataClient(DataClient):
             host,
             inst_server_port,
             expected_frames,
-            self._zmq_context,
             request_serializer,
             response_serializer,
             compressor,
@@ -163,7 +157,6 @@ cdef class LiveDataClient(DataClient):
             host,
             tick_pub_port,
             expected_frames,
-            self._zmq_context,
             compressor,
             encryption,
             clock,
@@ -177,7 +170,6 @@ cdef class LiveDataClient(DataClient):
             host,
             bar_pub_port,
             expected_frames,
-            self._zmq_context,
             compressor,
             encryption,
             clock,
@@ -191,7 +183,6 @@ cdef class LiveDataClient(DataClient):
             host,
             inst_pub_port,
             expected_frames,
-            self._zmq_context,
             compressor,
             encryption,
             clock,
