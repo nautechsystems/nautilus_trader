@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class EncryptionConfig:
+cdef class EncryptionSettings:
     cdef readonly bint use_encryption
     cdef readonly str algorithm
     cdef readonly str keys_dir

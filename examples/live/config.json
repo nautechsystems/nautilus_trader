@@ -34,14 +34,13 @@
   },
 
   "data_client": {
-    "service_name": "NautilusData",
     "host": "localhost",
-    "tick_req_port": 55501,
-    "tick_sub_port": 55502,
-    "bar_req_port": 55503,
-    "bar_sub_port": 55504,
-    "inst_req_port": 55505,
-    "inst_sub_port": 55506,
+    "tick_server_port": 55501,
+    "tick_pub_port": 55502,
+    "bar_server_port": 55503,
+    "bar_pub_port": 55504,
+    "inst_server_port": 55505,
+    "inst_pub_port": 55506,
     "venue": "FXCM"
   },
 

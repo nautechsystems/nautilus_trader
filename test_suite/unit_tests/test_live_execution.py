@@ -20,7 +20,7 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.network.messages import MessageReceived
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.compression import CompressorBypass
-from nautilus_trader.network.encryption import EncryptionConfig
+from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
@@ -65,6 +65,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(
             trader_id=trader_id,
             logger=logger)
+
         self.exec_engine = LiveExecutionEngine(
             trader_id=trader_id,
             account_id=account_id,
@@ -73,6 +74,7 @@ class LiveExecutionTests(unittest.TestCase):
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)
+
         self.exec_engine.handle_event(TestStubs.account_event())
 
         self.exec_client = LiveExecClient(
@@ -82,7 +84,7 @@ class LiveExecutionTests(unittest.TestCase):
             events_port=events_port,
             zmq_context=zmq_context,
             compressor=CompressorBypass(),
-            encryption=EncryptionConfig(),
+            encryption=EncryptionSettings(),
             command_serializer=MsgPackCommandSerializer(),
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
@@ -104,10 +106,11 @@ class LiveExecutionTests(unittest.TestCase):
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
             compressor=CompressorBypass(),
-            encryption=EncryptionConfig(),
+            encryption=EncryptionSettings(),
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)
+
         self.command_server.start()
 
         # self.event_publisher = MessagePublisher(zmq_context, events_port, logger)

@@ -16,7 +16,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.network.compression cimport Compressor
-from nautilus_trader.network.encryption cimport EncryptionConfig
+from nautilus_trader.network.encryption cimport EncryptionSettings
 
 cdef str _UTF8 = 'utf-8'
 cdef bytes _STRING = message_type_to_string(MessageType.STRING).encode(_UTF8)
@@ -35,7 +35,7 @@ cdef class NetworkNode:
             context not None: zmq.Context,
             int socket_type,
             Compressor compressor not None,
-            EncryptionConfig encryption not None,
+            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):

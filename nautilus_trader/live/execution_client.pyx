@@ -19,7 +19,7 @@ from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.network.compression cimport Compressor, CompressorBypass
-from nautilus_trader.network.encryption cimport EncryptionConfig
+from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, RequestSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
@@ -45,7 +45,7 @@ cdef class LiveExecClient(ExecutionClient):
             int events_port,
             zmq_context not None: zmq.Context,
             Compressor compressor not None=CompressorBypass(),
-            EncryptionConfig encryption not None=EncryptionConfig(),
+            EncryptionSettings encryption not None=EncryptionSettings(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
             RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),

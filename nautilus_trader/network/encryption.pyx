@@ -9,9 +9,9 @@
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef class EncryptionConfig:
+cdef class EncryptionSettings:
     """
-    Provides an encryption configuration.
+    Provides an encryption settings.
     """
 
     def __init__(self, str algorithm not None='none', str keys_dir not None=''):
