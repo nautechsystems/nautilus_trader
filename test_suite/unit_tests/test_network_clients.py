@@ -40,7 +40,7 @@ class NetworkIdentifiersTests(unittest.TestCase):
         session_id = SessionId.py_create(client_id, UNIX_EPOCH, 'None')
 
         # Assert
-        self.assertEqual('3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f', session_id.value)
+        self.assertEqual('3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea', session_id.value)
 
 
 class MessageClientTests(unittest.TestCase):
