@@ -136,7 +136,7 @@ cdef class MessageServer(ServerNode):
         self._queue = MessageQueueDuplex(
             expected_frames,
             self._socket,
-            self._handle_frames,
+            self._recv_frames,
             self._log)
 
         self._header_serializer = header_serializer
@@ -275,15 +275,15 @@ cdef class MessageServer(ServerNode):
         self._log.verbose(f"[{self.sent_count}]--> header={header}, body={len(frame_body)} bytes")
         self.sent_count += 1
 
-    cpdef void _handle_frames(self, list frames) except *:
+    cpdef void _recv_frames(self, list frames) except *:
         self.recv_count += 1
 
         # Decompress and decode frames
-        cdef bytes sender = frames[0]
+        cdef bytes frame_sender = frames[0]
         cdef bytes frame_header = self._compressor.decompress(frames[1])
         cdef bytes frame_body = self._compressor.decompress(frames[2])
 
-        cdef ClientId client_id = ClientId(sender.decode(UTF8))
+        cdef ClientId client_id = ClientId(frame_sender.decode(UTF8))
         cdef dict header = self._header_serializer.deserialize(frame_header)
 
         self._log.verbose(f"<--[{self.recv_count}] header={header}, body={len(frame_body)} bytes")
@@ -305,8 +305,8 @@ cdef class MessageServer(ServerNode):
             if handler is not None:
                 handler(frame_body)
 
-    cdef void _handle_request(self, bytes payload, ClientId sender) except *:
-        cdef Request request = self._request_serializer.deserialize(payload)
+    cdef void _handle_request(self, bytes body, ClientId sender) except *:
+        cdef Request request = self._request_serializer.deserialize(body)
         self._log.debug(f"<--[{self.sent_count}] {request}")
 
         if isinstance(request, Connect):
