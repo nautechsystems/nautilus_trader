@@ -48,7 +48,7 @@ cdef class MessageQueueInbound:
     def __init__(self,
                  int expected_frames,
                  socket: zmq.Socket,
-                 handler: callable,
+                 frames_handler: callable,
                  LoggerAdapter logger not None):
         """
         Initializes a new instance of the DuplexMessageQueue class.
@@ -61,7 +61,7 @@ cdef class MessageQueueInbound:
         self._queue = queue.Queue()
         self._thread_put = threading.Thread(target=self._put_loop, daemon=True)
         self._thread_get = threading.Thread(target=self._get_loop, daemon=True)
-        self._handler = handler
+        self._frames_handler = frames_handler
 
         self._thread_put.start()
         self._thread_get.start()
@@ -84,13 +84,10 @@ cdef class MessageQueueInbound:
         while True:
             frames = self._queue.get()
             frames_length = len(frames)
-            if frames_length <= 0:
-                self._log.error(f'Received zero frames with no reply address.')
-                return
             if frames_length != self._expected_frames:
                 self._log.error(f"Received unexpected frames count {frames_length}, expected {self._expected_frames}")
                 return
-            self._handler(frames)
+            self._frames_handler(frames)
 
 
 cdef class MessageQueueOutbound:

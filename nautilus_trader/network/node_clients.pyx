@@ -173,7 +173,7 @@ cdef class MessageClient(ClientNode):
         self._queue = MessageQueueDuplex(
             expected_frames,
             self._socket,
-            self._handle_frames,
+            self._recv_frames,
             self._log)
 
         self._header_serializer = header_serializer
@@ -253,11 +253,11 @@ cdef class MessageClient(ClientNode):
         ----------
         message : str
         """
-        self.send(MessageType.STRING, UTF8, message.encode(UTF8))
+        self._send(MessageType.STRING, UTF8, message.encode(UTF8))
 
     cpdef void send_message(self, Message message, bytes body) except *:
         """
-        Send the given message which will become durable and await a reply.
+        Send the given message to the server.
 
         Parameters
         ----------
@@ -270,9 +270,9 @@ cdef class MessageClient(ClientNode):
 
         self._log.debug(f"[{self.sent_count}]--> {message}")
 
-        self.send(message.message_type, message.__class__.__name__, body)
+        self._send(message.message_type, message.__class__.__name__, body)
 
-    cpdef void send(self, MessageType message_type, str type_name, bytes body) except *:
+    cdef void _send(self, MessageType message_type, str type_name, bytes body) except *:
         """
         Send the given message to the server. 
 
@@ -298,12 +298,11 @@ cdef class MessageClient(ClientNode):
         cdef bytes frame_header = self._compressor.compress(self._header_serializer.serialize(header))
         cdef bytes frame_body = self._compressor.compress(body)
 
-        self._log.verbose(f"[{self.sent_count}]--> header={header}, body={len(frame_body)} bytes")
-
         self._queue.send([frame_header, frame_body])
+        self._log.verbose(f"[{self.sent_count}]--> header={header}, body={len(frame_body)} bytes")
         self.sent_count += 1
 
-    cpdef void _handle_frames(self, list frames) except *:
+    cpdef void _recv_frames(self, list frames) except *:
         self.recv_count += 1
 
         # Decompress frames
@@ -436,7 +435,7 @@ cdef class MessageSubscriber(ClientNode):
         self._queue = MessageQueueInbound(
             expected_frames,
             self._socket,
-            self._handle_frames,
+            self._recv_frames,
             self._log)
 
     cpdef bint is_connected(self):
@@ -476,13 +475,12 @@ cdef class MessageSubscriber(ClientNode):
         self._socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
         self._log.debug(f"Unsubscribed from topic {topic}")
 
-    cpdef void _handle_frames(self, list frames) except *:
-        self.recv_count += 1
-
+    cpdef void _recv_frames(self, list frames) except *:
         cdef str topic = frames[0].decode(UTF8)
         cdef bytes body = self._compressor.decompress(frames[1])
 
         self._message_handler(topic, body)
+        self.recv_count += 1
 
     cpdef void _no_subscriber_handler(self, str topic, bytes body) except *:
         self._log.warning(f"Received message from topic {topic} with no handler registered.")

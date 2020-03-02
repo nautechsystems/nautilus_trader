@@ -40,9 +40,9 @@ cdef class MessageClient(ClientNode):
     cpdef void send_request(self, Request request) except *
     cpdef void send_string(self, str message) except *
     cpdef void send_message(self, Message message, bytes body) except *
-    cpdef void send(self, MessageType message_type, str type_name, bytes body) except *
+    cdef void _send(self, MessageType message_type, str type_name, bytes body) except *
     cpdef void _check_connection(self, TimeEvent event) except *
-    cpdef void _handle_frames(self, list frames) except *
+    cpdef void _recv_frames(self, list frames) except *
     cdef void _register_message(self, Message message, int retry=*) except *
     cdef void _deregister_message(self, GUID correlation_id, int retry=*) except *
 
@@ -52,5 +52,5 @@ cdef class MessageSubscriber(ClientNode):
 
     cpdef void subscribe(self, str topic) except *
     cpdef void unsubscribe(self, str topic) except *
-    cpdef void _handle_frames(self, list frames) except *
+    cpdef void _recv_frames(self, list frames) except *
     cpdef void _no_subscriber_handler(self, str topic, bytes body) except *
