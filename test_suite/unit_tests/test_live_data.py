@@ -9,6 +9,7 @@
 import uuid
 import unittest
 import time
+import zmq
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar
@@ -20,6 +21,7 @@ from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper, BsonDataSerializer, BsonInstrumentSerializer
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.live.guid import LiveGuidFactory
@@ -40,7 +42,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_mapper = DataMapper()
         self.data_serializer = BsonDataSerializer()
 
-        self.expected_frames = 4
+        self.header_serializer = MsgPackDictionarySerializer()
         self.request_serializer = MsgPackRequestSerializer()
         self.response_serializer = MsgPackResponseSerializer()
         self.compressor = CompressorBypass()
@@ -52,7 +54,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.tick_server = MessageServer(
             server_id=ServerId('TickServer-001'),
             port=56501,
-            expected_frames=self.expected_frames,
+            header_serializer=self.header_serializer,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             compressor=self.compressor,
@@ -76,7 +78,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_server = MessageServer(
             server_id=ServerId('BarServer-001'),
             port=56503,
-            expected_frames=self.expected_frames,
+            header_serializer=self.header_serializer,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             compressor=self.compressor,
@@ -100,7 +102,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.inst_server = MessageServer(
             server_id=ServerId('InstrumentServer-001'),
             port=56505,
-            expected_frames=self.expected_frames,
+            header_serializer=self.header_serializer,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             compressor=self.compressor,
@@ -132,6 +134,7 @@ class LiveDataClientTests(unittest.TestCase):
             inst_pub_port=56506,
             compressor=self.compressor,
             encryption=self.encryption,
+            header_serializer=self.header_serializer,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             data_serializer=self.data_serializer,
@@ -145,7 +148,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_publisher.start()
         self.inst_server.start()
         self.inst_publisher.start()
-        time.sleep(0.3)
+        time.sleep(0.1)
 
     # Fixture Tear Down
     def tearDown(self):
@@ -328,6 +331,8 @@ class LiveDataClientTests(unittest.TestCase):
             limit=0,
             callback=data_receiver.store)
 
+        time.sleep(0.1)
+
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
                     Price(1.00001, 5),
@@ -342,14 +347,14 @@ class LiveDataClientTests(unittest.TestCase):
             data,
             'Tick[]',
             'BSON',
-            GUID(uuid.uuid4()),
+            self.data_client.last_request_id,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
         self.tick_server.send_response(data_response, self.data_client.client_id)
 
-        time.sleep(0.2)
+        time.sleep(0.1)
         response = data_receiver.get_store()[0]
 
         # Assert
@@ -357,7 +362,19 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_request_bar_data(self):
         # Arrange
+        data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
+
+        self.data_client.connect()
+        self.data_client.request_bars(
+            bar_type,
+            UNIX_EPOCH.date(),
+            UNIX_EPOCH.date(),
+            limit=0,
+            callback=data_receiver.store)
+
+        time.sleep(0.1)
+
         bar = Bar(Price(1.00001, 5),
                   Price(1.00004, 5),
                   Price(1.00002, 5),
@@ -368,87 +385,76 @@ class LiveDataClientTests(unittest.TestCase):
         bar_data = self.data_mapper.map_bars(bars, bar_type)
 
         data = self.data_serializer.serialize(bar_data)
-
         data_response = DataResponse(
             data,
             'Bar[]',
             'BSON',
-            GUID(uuid.uuid4()),
+            self.data_client.last_request_id,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        self.data_client.connect()
-
-        data_receiver = ObjectStorer()
-
         # Act
-        self.data_client.request_bars(
-            bar_type,
-            UNIX_EPOCH.date(),
-            UNIX_EPOCH.date(),
-            limit=0,
-            callback=data_receiver.store_2)
+        self.bar_server.send_response(data_response, self.data_client.client_id)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
 
         # Assert
-        self.assertEqual(bar_type, response[0])
-        self.assertEqual(bar, response[1][0])
+        self.assertEqual(bars, response)
 
     def test_can_request_instrument_data(self):
         # Arrange
+        data_receiver = ObjectStorer()
+
+        self.data_client.connect()
+        self.data_client.request_instrument(GBPUSD_FXCM, data_receiver.store)
+
+        time.sleep(0.1)
+
         instruments = [TestStubs.instrument_gbpusd()]
         instrument_data = self.data_mapper.map_instruments(instruments)
 
         data = self.data_serializer.serialize(instrument_data)
-
         data_response = DataResponse(
             data,
             'Instrument[]',
             'BSON',
-            GUID(uuid.uuid4()),
+            self.data_client.last_request_id,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        response_bytes = self.response_serializer.serialize(data_response)
-
-        self.data_client.connect()
-
-        data_receiver = ObjectStorer()
-
         # Act
-        self.data_client.request_instrument(GBPUSD_FXCM, data_receiver.store)
+        self.inst_server.send_response(data_response, self.data_client.client_id)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
 
         # Assert
-        self.assertEqual(instruments[0], response)
+        self.assertEqual(instruments, response)
 
     def test_can_request_instruments_data(self):
         # Arrange
+        data_receiver = ObjectStorer()
+
+        self.data_client.connect()
+        self.data_client.request_instruments(Venue('FXCM'), data_receiver.store)
+
+        time.sleep(0.1)
+
         instruments = [TestStubs.instrument_gbpusd(), TestStubs.instrument_usdjpy()]
         instrument_data = self.data_mapper.map_instruments(instruments)
 
         data = self.data_serializer.serialize(instrument_data)
-
         data_response = DataResponse(
             data,
             'Instrument[]',
             'BSON',
-            GUID(uuid.uuid4()),
+            self.data_client.last_request_id,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        response_bytes = self.response_serializer.serialize(data_response)
-
-        self.data_client.connect()
-
-        data_receiver = ObjectStorer()
-
         # Act
-        self.data_client.request_instruments(Venue('FXCM'), data_receiver.store)
+        self.inst_server.send_response(data_response, self.data_client.client_id)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]

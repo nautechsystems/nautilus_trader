@@ -10,7 +10,6 @@ import os
 import zmq
 import zmq.auth
 
-from nautilus_trader.core.message cimport MessageType, message_type_to_string
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -92,10 +91,3 @@ cdef class NetworkNode:
         :return bool.
         """
         return self._socket.closed
-
-    # cdef void _send_string(self, bytes receiver, str message):
-    #     self._send([receiver, _STRING, str(len(message)).encode(_UTF8), message.encode(_UTF8)])
-    #
-    # cdef void _send(self, list frames) except *:
-    #     self._socket.send_multipart(frames)
-    #     self.sent_count += 1
