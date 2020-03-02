@@ -158,7 +158,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     cdef void _send_command(self, Command command) except *:
         cdef bytes payload = self._command_serializer.serialize(command)
-        self._command_client.send(command.message_type, payload)
+        self._command_client.send_message(command, payload)
 
     cdef void _recv_event(self, str topic, bytes event_bytes) except *:
         cdef Event event = self._event_serializer.deserialize(event_bytes)

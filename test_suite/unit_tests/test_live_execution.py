@@ -9,9 +9,12 @@
 import unittest
 import time
 
+from nautilus_trader.core.message import MessageType
 from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity, Price
+from nautilus_trader.model.commands import SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
+from nautilus_trader.model.commands import AccountInquiry
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
@@ -52,6 +55,26 @@ class LiveExecutionTests(unittest.TestCase):
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
         logger = LiveLogger(level_console=LogLevel.VERBOSE)
+
+        self.command_server = MessageServer(
+            server_id=ServerId("CommandServer-001"),
+            port=commands_port,
+            header_serializer=MsgPackDictionarySerializer(),
+            request_serializer=MsgPackRequestSerializer(),
+            response_serializer=MsgPackResponseSerializer(),
+            compressor=CompressorBypass(),
+            encryption=EncryptionSettings(),
+            clock=clock,
+            guid_factory=guid_factory,
+            logger=logger)
+
+        self.command_serializer = MsgPackCommandSerializer()
+
+        self.command_server_sink = []
+        self.command_server.register_handler(MessageType.COMMAND, self.command_handler)
+        self.command_server.start()
+
+        time.sleep(0.1)
 
         self.portfolio = Portfolio(
             currency=Currency.USD,
@@ -95,37 +118,24 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_client.connect()
 
-        expected_frames = 4
-
-        self.command_server = MessageServer(
-            server_id=ServerId("CommandServer-001"),
-            port=commands_port,
-            header_serializer=MsgPackDictionarySerializer(),
-            request_serializer=MsgPackRequestSerializer(),
-            response_serializer=MsgPackResponseSerializer(),
-            compressor=CompressorBypass(),
-            encryption=EncryptionSettings(),
-            clock=clock,
-            guid_factory=guid_factory,
-            logger=logger)
-
-        self.command_server.start()
-
-        # self.event_publisher = MessagePublisher(zmq_context, events_port, logger)
+        time.sleep(0.1)
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
         self.strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
         self.strategy.change_logger(logger)
         self.exec_engine.register_strategy(self.strategy)
 
-        time.sleep(0.2)
-
     def tearDown(self):
         # Tear Down
         time.sleep(0.1)
         self.exec_client.disconnect()
+        time.sleep(0.1)
         self.command_server.stop()
-        # self.event_publisher.stop()
+        time.sleep(0.1)
+
+    def command_handler(self, message):
+        command = self.command_serializer.deserialize(message)
+        self.command_server_sink.append(command)
 
     def test_can_send_submit_order_command(self):
         # Arrange
@@ -140,10 +150,11 @@ class LiveExecutionTests(unittest.TestCase):
         time.sleep(0.1)
         # # Assert
         self.assertEqual(order, self.strategy.order(order.id))
-        #self.assertEqual(1, len(self.command_server.responses_sent))
-        #self.assertEqual(MessageReceived, type(self.command_server.responses_sent[0]))
+        self.assertEqual(2, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
 
-    def test_can_send_submit_atomic_order_no_take_profit_command(self):
+    def test_can_send_submit_atomic_order(self):
         # Arrange
         atomic_order = self.strategy.order_factory.atomic_market(
             AUDUSD_FXCM,
@@ -154,33 +165,13 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.3)
+        time.sleep(0.1)
         # Assert
         self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
         self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
-        # self.assertEqual(1, len(self.command_server.responses_sent))
-        # self.assertEqual(MessageReceived, type(self.command_server.responses_sent[0]))
-
-    def test_can_send_submit_atomic_order_with_take_profit_command(self):
-        # Arrange
-        atomic_order = self.strategy.order_factory.atomic_limit(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(1.00010, 5),
-            Price(1.00000, 5),
-            Price(0.99900, 5))
-
-        # Act
-        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
-
-        time.sleep(0.3)
-        # Assert
-        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
-        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
-        self.assertEqual(atomic_order.take_profit, self.strategy.order(atomic_order.take_profit.id))
-        # self.assertEqual(1, len(self.command_server.responses_sent))
-        # self.assertEqual(MessageReceived, type(self.command_server.responses_sent[0]))
+        self.assertEqual(2, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitAtomicOrder, type(self.command_server_sink[0]))
 
     def test_can_send_cancel_order_command(self):
         # Arrange
@@ -193,12 +184,13 @@ class LiveExecutionTests(unittest.TestCase):
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
         self.strategy.cancel_order(order, 'SIGNAL_GONE')
 
+        time.sleep(0.1)
         # Assert
-        time.sleep(0.3)
         self.assertEqual(order, self.strategy.order(order.id))
-        # self.assertEqual(2, len(self.command_server.responses_sent))
-        # self.assertEqual(MessageReceived, type(self.command_server.responses_sent[0]))
-        # self.assertEqual(MessageReceived, type(self.command_server.responses_sent[1]))
+        self.assertEqual(3, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(CancelOrder, type(self.command_server_sink[1]))
 
     def test_can_send_modify_order_command(self):
         # Arrange
@@ -212,19 +204,21 @@ class LiveExecutionTests(unittest.TestCase):
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
         self.strategy.modify_order(order, Quantity(110000), Price(1.00001, 5))
 
+        time.sleep(0.1)
         # Assert
-        time.sleep(0.3)
         self.assertEqual(order, self.strategy.order(order.id))
-        # self.assertEqual(2, len(self.command_server.responses_sent))
-        # self.assertEqual(MessageReceived, type(self.command_server.responses_sent[0]))
-        # self.assertEqual(MessageReceived, type(self.command_server.responses_sent[1]))
+        self.assertEqual(3, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(ModifyOrder, type(self.command_server_sink[1]))
 
     def test_can_send_account_inquiry_command(self):
         # Arrange
         # Act
         self.strategy.account_inquiry()
 
+        time.sleep(0.1)
         # Assert
-        time.sleep(0.3)
-        # self.assertEqual(1, len(self.command_server.responses_sent))
-        # self.assertEqual(MessageReceived, type(self.command_server.responses_sent[0]))
+        self.assertEqual(2, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(AccountInquiry, type(self.command_server_sink[0]))
