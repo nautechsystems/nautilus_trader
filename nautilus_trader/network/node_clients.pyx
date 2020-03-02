@@ -271,7 +271,7 @@ cdef class MessageClient(ClientNode):
 
         self._send(message.message_type, message.__class__.__name__, body)
 
-    cdef void _send(self, MessageType message_type, str type_name, bytes body) except *:
+    cdef void _send(self, MessageType message_type, str class_name, bytes body) except *:
         """
         Send the given message to the server. 
 
@@ -279,18 +279,18 @@ cdef class MessageClient(ClientNode):
         ----------
         message_type : MessageType
             The message type group.
-        type_name : str
-            The message class type name.
+        class_name : str
+            The message class name.
         body : bytes
             The serialized
         """
         Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
-        Condition.valid_string(type_name, 'type_name')
+        Condition.valid_string(class_name, 'class_name')
         Condition.not_empty(body, 'body')
 
         cdef dict header = {
             MESSAGE_TYPE: message_type_to_string(message_type).title(),
-            TYPE_NAME: type_name
+            TYPE: class_name
         }
 
         # Compress frames

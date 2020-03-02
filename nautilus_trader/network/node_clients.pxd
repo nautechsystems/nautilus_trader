@@ -40,7 +40,7 @@ cdef class MessageClient(ClientNode):
     cpdef void send_request(self, Request request) except *
     cpdef void send_string(self, str message) except *
     cpdef void send_message(self, Message message, bytes body) except *
-    cdef void _send(self, MessageType message_type, str type_name, bytes body) except *
+    cdef void _send(self, MessageType message_type, str class_name, bytes body) except *
     cpdef void _check_connection(self, TimeEvent event) except *
     cpdef void _recv_frames(self, list frames) except *
     cdef void _register_message(self, Message message, int retry=*) except *

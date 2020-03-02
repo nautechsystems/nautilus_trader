@@ -91,7 +91,6 @@ cdef str RECEIVED_TYPE
 cdef str CORRELATION_ID
 cdef str MESSAGE
 cdef str MESSAGE_TYPE
-cdef str TYPE_NAME
 
 cdef str DATA
 cdef str DATA_TYPE

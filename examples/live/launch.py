@@ -23,7 +23,7 @@ from examples.strategies.ema_cross import EMACrossPy
 # BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
 # BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
-BAR_SPEC_FX = BarSpecification(100, BarStructure.TICK, PriceType.BID)
+BAR_SPEC_FX = BarSpecification(10, BarStructure.TICK, PriceType.BID)
 # BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
 
 symbols_fx = [
@@ -71,6 +71,8 @@ if __name__ == "__main__":
     )
 
     node.connect()
+
+    input()
     node.start()
 
     input()
@@ -78,4 +80,6 @@ if __name__ == "__main__":
 
     input()
     node.disconnect()
+
+    input()
     node.dispose()
