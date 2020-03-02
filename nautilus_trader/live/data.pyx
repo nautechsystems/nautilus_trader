@@ -538,7 +538,7 @@ cdef class LiveDataClient(DataClient):
         self._response_queue.put(response)
 
     cpdef void _pop_response(self) except *:
-        self._log.debug("Started message consumption loop...")
+        self._log.debug("Starting message consumption loop...")
 
         while True:
             self._handle_response(self._response_queue.get())
