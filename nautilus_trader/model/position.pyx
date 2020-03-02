@@ -82,6 +82,14 @@ cdef class Position:
         """
         return f"Position(id={self.id.value}) {self.status_string()}"
 
+    cpdef str market_position_as_string(self):
+        """
+        Return the market position as a string.
+        
+        :return str.
+        """
+        return market_position_to_string(self.market_position)
+
     def __eq__(self, Position other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.

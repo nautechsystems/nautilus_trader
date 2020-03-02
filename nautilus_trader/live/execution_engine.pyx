@@ -655,12 +655,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_working_ids(strategy_id)
-        cdef dict orders = {}
+        cdef dict cached_orders = {}
 
         try:
-            orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+            cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
             self._log.error("Cannot find Order object in the cache " + str(ex))
+
+        cdef dict orders = {}
+        cdef Order order
+        for order in cached_orders.values():
+            if order.is_working:
+                orders[order.id] = order
+            else:
+                self._log.error(f"Order indexed as working found not working, state={order.state_as_string()}.")
 
         return orders
 
@@ -672,12 +680,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_completed_ids(strategy_id)
-        cdef dict orders = {}
+        cdef dict cached_orders = {}
 
         try:
-            orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+            cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
+
+        cdef dict orders = {}
+        cdef Order order
+        for order in cached_orders.values():
+            if order.is_completed:
+                orders[order.id] = order
+            else:
+                self._log.error(f"Order indexed as completed found not completed, state={order.state_as_string()}.")
 
         return orders
 
@@ -767,31 +783,47 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_open_ids(strategy_id)
-        cdef dict positions = {}
+        cdef dict cached_positions = {}
 
         try:
-            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+            cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
+
+        cdef dict positions = {}
+        cdef Position position
+        for position in cached_positions.values():
+            if position.is_open:
+                positions[position.id] = position
+            else:
+                self._log.error(f"Position indexed as open found not open, state={position.market_position_as_string()}.")
 
         return positions
 
     cpdef dict get_positions_closed(self, StrategyId strategy_id=None):
         """
-        Return a dictionary of all closed positions.
+        Return a dictionary of all closed cached_positions.
         
         :param strategy_id: The optional strategy_id query filter.
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_closed_ids(strategy_id)
-        cdef dict positions = {}
+        cdef dict cached_positions = {}
 
         try:
-            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+            cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
             # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
+
+        cdef dict positions = {}
+        cdef Position position
+        for position in cached_positions.values():
+            if position.is_closed:
+                positions[position.id] = position
+            else:
+                self._log.error(f"Position indexed as closed found not closed, state={position.market_position_as_string()}.")
 
         return positions
 
@@ -1033,4 +1065,4 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             elif message.message_type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
-                raise TypeError(f"Invalid message type on queue ({repr(message)}).")
+                self._log.error(f"Invalid message type on queue ({repr(message)}).")

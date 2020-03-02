@@ -61,6 +61,7 @@ cdef class Position:
 
     cpdef bint equals(self, Position other)
     cpdef str to_string(self)
+    cpdef str market_position_as_string(self)
     cpdef str status_string(self)
     cpdef list get_order_ids(self)
     cpdef list get_execution_ids(self)
