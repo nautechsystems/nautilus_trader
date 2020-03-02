@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import uuid
 import unittest
 import time
 import zmq
@@ -18,6 +17,7 @@ from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.live.clock import LiveClock
@@ -57,7 +57,7 @@ class MessageClientTests(unittest.TestCase):
         self.server = MessageServer(
             ServerId("Server-001"),
             TEST_PORT,
-            4,
+            MsgPackDictionarySerializer(),
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
             CompressorBypass(),
@@ -77,7 +77,7 @@ class MessageClientTests(unittest.TestCase):
             ClientId("Trader-001"),
             LOCALHOST,
             TEST_PORT,
-            3,
+            MsgPackDictionarySerializer(),
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
             CompressorBypass(),
@@ -172,7 +172,6 @@ class SubscriberWorkerTests(unittest.TestCase):
             ClientId("Subscriber-001"),
             LOCALHOST,
             TEST_PORT,
-            3,
             CompressorBypass(),
             EncryptionSettings(),
             clock,

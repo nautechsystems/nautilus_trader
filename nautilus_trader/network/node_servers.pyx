@@ -21,9 +21,10 @@ from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
 from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueOutbound
 from nautilus_trader.network.messages cimport Request, Response, MessageReceived, MessageRejected
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
+from nautilus_trader.serialization.constants cimport *
+from nautilus_trader.serialization.constants cimport UTF8
 
-cdef str _UTF8 = 'utf-8'
-cdef bytes _STRING = message_type_to_string(MessageType.STRING).encode(_UTF8)
+cdef bytes _STRING = message_type_to_string(MessageType.STRING).encode(UTF8)
 
 
 cdef class ServerNode(NetworkNode):
@@ -67,7 +68,7 @@ cdef class ServerNode(NetworkNode):
             logger)
 
         self.server_id = server_id
-        self._socket.setsockopt(zmq.IDENTITY, self.server_id.value.encode(_UTF8))  # noqa (zmq reference)
+        self._socket.setsockopt(zmq.IDENTITY, self.server_id.value.encode(UTF8))  # noqa (zmq reference)
 
     cpdef void start(self) except *:
         # Raise exception if not overridden in implementation
@@ -101,7 +102,7 @@ cdef class MessageServer(ServerNode):
             self,
             ServerId server_id,
             int port,
-            int expected_frames,
+            DictionarySerializer header_serializer not None,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
             Compressor compressor not None,
@@ -132,12 +133,14 @@ cdef class MessageServer(ServerNode):
             guid_factory,
             logger)
 
+        expected_frames = 3 # [sender, header, body]
         self._queue = MessageQueueDuplex(
             expected_frames,
             self._socket,
             self._handle_frames,
             self._log)
 
+        self._header_serializer = header_serializer
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
         self._peers = {}    # type: {ClientId, SessionId}
@@ -229,7 +232,7 @@ cdef class MessageServer(ServerNode):
 
     cpdef void send_response(self, Response response, ClientId receiver) except *:
         """
-        Send the given response to the given client.
+        Send the given response to the given receiver.
         
         Parameters
         ----------
@@ -238,65 +241,70 @@ cdef class MessageServer(ServerNode):
         receiver : ClientId
             The response receiver.
         """
-        cdef bytes serialized = self._response_serializer.serialize(response)
+        cdef dict header = {
+            MESSAGE_TYPE: message_type_to_string(response.message_type),
+            TYPE_NAME: response.__class__.__name__
+        }
 
-        cdef str send_type_str = message_type_to_string(response.message_type)
-        cdef int send_size = (len(serialized))
+        self._send(receiver, header, self._response_serializer.serialize(response))
 
-        # Encode frames
-        cdef bytes send_address = receiver.value.encode(_UTF8)
-        cdef bytes header_type = send_type_str.encode(_UTF8)
-        cdef bytes header_size = str(send_size).encode(_UTF8)
-        cdef bytes payload = self._compressor.compress(serialized)
+    cpdef void send_string(self, str message, ClientId receiver) except *:
+        """
+        Send the given string message to the given receiver.
+        
+        Parameters
+        ----------
+        message : str
+            The string message to send. 
+        receiver : ClientId
+            The message receiver.
+        """
+        cdef dict header = {
+            MESSAGE_TYPE: _STRING,
+            TYPE_NAME: UTF8
+        }
 
-        self._log.verbose(f"[{self.sent_count}]--> "
-                          f"type={send_type_str}, "
-                          f"size={send_size} bytes, "
-                          f"payload={len(payload)} bytes")
+        self._send(receiver, header, message.encode(UTF8))
 
-        self._queue.send([send_address, header_type, header_size, payload])
-        self.sent_count += 1
+    cdef void _send(self, ClientId receiver, dict header, bytes body) except *:
+        # Encode and compress frames
+        cdef bytes frame_receiver = receiver.value.encode(UTF8)
+        cdef bytes frame_header = self._compressor.compress(self._header_serializer.serialize(header))
+        cdef bytes frame_body = self._compressor.compress(body)
 
-    cdef void _send_string(self, bytes receiver, str message):
-        self._queue.send([receiver, _STRING, str(len(message)).encode(_UTF8), message.encode(_UTF8)])
+        self._queue.send([frame_receiver, frame_header, frame_body])
+        self._log.verbose(f"[{self.sent_count}]--> header={header}, body={len(frame_body)} bytes")
         self.sent_count += 1
 
     cpdef void _handle_frames(self, list frames) except *:
         self.recv_count += 1
 
+        # Decompress and decode frames
         cdef bytes sender = frames[0]
-        cdef ClientId client_id = ClientId(sender.decode(_UTF8))
+        cdef bytes frame_header = self._compressor.decompress(frames[1])
+        cdef bytes frame_body = self._compressor.decompress(frames[2])
 
-        # if frames_count != self._expected_frames:
-        #     message = f"Received unexpected frames count {frames_count}, expected {self._expected_frames}."
-        #     self.send_rejected(message, GUID.none(), client_id)
-        #     return
+        cdef ClientId client_id = ClientId(sender.decode(UTF8))
+        cdef dict header = self._header_serializer.deserialize(frame_header)
 
-        cdef str header_type = frames[1].decode(_UTF8)
-        cdef int header_size = int(frames[2].decode(_UTF8))
-        cdef bytes payload = self._compressor.decompress(frames[3])
+        self._log.verbose(f"<--[{self.recv_count}] header={header}, body={len(frame_body)} bytes")
 
-        self._log.verbose(f"<--[{self.recv_count}] "
-                          f"type={header_type}, "
-                          f"size={header_size} bytes, "
-                          f"payload={len(payload)} bytes")
-
-        cdef MessageType message_type = message_type_from_string(header_type)
+        cdef MessageType message_type = message_type_from_string(header[MESSAGE_TYPE])
         if message_type == MessageType.STRING:
             handler = self._handlers.get(message_type)
-            message = payload.decode(_UTF8)
+            message = frame_body.decode(UTF8)
             if handler is not None:
-                handler(payload.decode(_UTF8))
+                handler(message)
                 self._log.verbose(f"<--[{self.recv_count}] '{message}'")
-                self._send_string(sender, 'OK')
+                self.send_string('OK', client_id)
             else:
                 self._log.error(f"<--[{self.recv_count}] {message}, with no string handler.")
         elif message_type == MessageType.REQUEST:
-            self._handle_request(payload, client_id)
+            self._handle_request(frame_body, client_id)
         else:
             handler = self._handlers.get(message_type)
             if handler is not None:
-                handler(payload)
+                handler(frame_body)
 
     cdef void _handle_request(self, bytes payload, ClientId sender) except *:
         cdef Request request = self._request_serializer.deserialize(payload)
@@ -417,13 +425,9 @@ cdef class MessagePublisher(ServerNode):
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
-        cdef bytes payload = self._compressor.compress(message)
-        cdef int header_size = len(message)
+        cdef bytes body = self._compressor.compress(message)
 
-        self._log.verbose(f"[{self.sent_count}]--> "
-                        f"topic={topic}, "
-                        f"size={header_size}, "
-                        f"payload={(len(payload))} bytes.")
+        self._log.verbose(f"[{self.sent_count}]--> topic={topic}, body={len(body)} bytes")
 
-        self._queue.send([topic.encode(_UTF8), str(header_size).encode(_UTF8), payload])
+        self._queue.send([topic.encode(UTF8), body])
         self.sent_count += 1

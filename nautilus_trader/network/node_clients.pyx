@@ -22,8 +22,9 @@ from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueInbound
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.network.messages cimport Request, Response
+from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
+from nautilus_trader.serialization.constants cimport *
 
-cdef str _UTF8 = 'utf-8'
 cdef str _IS_CONNECTED = 'is_connected?'
 cdef str _IS_DISCONNECTED = 'is_disconnected?'
 
@@ -72,7 +73,7 @@ cdef class ClientNode(NetworkNode):
             logger)
 
         self.client_id = client_id
-        self._socket.setsockopt(zmq.IDENTITY, self.client_id.value.encode(_UTF8))  # noqa (zmq reference)
+        self._socket.setsockopt(zmq.IDENTITY, self.client_id.value.encode(UTF8))  # noqa (zmq reference)
         self._message_handler = None
 
     cpdef bint is_connected(self):
@@ -130,7 +131,7 @@ cdef class MessageClient(ClientNode):
             ClientId client_id not None,
             str host not None,
             int port,
-            int expected_frames,
+            DictionarySerializer header_serializer not None,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
             Compressor compressor not None,
@@ -144,7 +145,7 @@ cdef class MessageClient(ClientNode):
         :param client_id: The client identifier for the worker.
         :param host: The server host address.
         :param port: The server port.
-        :param expected_frames: The expected message frame count.
+        :param header_serializer: The header serializer.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
         :param compressor: The message compressor.
@@ -168,12 +169,14 @@ cdef class MessageClient(ClientNode):
             guid_factory,
             logger)
 
+        expected_frames = 2 # [header, body]
         self._queue = MessageQueueDuplex(
             expected_frames,
             self._socket,
             self._handle_frames,
             self._log)
 
+        self._header_serializer = header_serializer
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
         self._awaiting_reply = {}  # type: {GUID, Message}
@@ -250,75 +253,80 @@ cdef class MessageClient(ClientNode):
         ----------
         message : str
         """
-        self.send(MessageType.STRING, message.encode(_UTF8))
+        self.send(MessageType.STRING, UTF8, message.encode(UTF8))
 
-    cpdef void send_message(self, Message message, bytes serialized) except *:
+    cpdef void send_message(self, Message message, bytes body) except *:
         """
         Send the given message which will become durable and await a reply.
-        
+
         Parameters
         ----------
         message : Message
             The message to send.
-        serialized : bytes
-            The serialized message.
+        body : bytes
+            The serialized message body.
         """
         self._register_message(message)
 
         self._log.debug(f"[{self.sent_count}]--> {message}")
 
-        self.send(message.message_type, serialized)
+        self.send(message.message_type, message.__class__.__name__, body)
 
-    cpdef void send(self, MessageType message_type, bytes serialized) except *:
+    cpdef void send(self, MessageType message_type, str type_name, bytes body) except *:
         """
         Send the given message to the server. 
 
-        :param message_type: The message to send.
-        :param serialized: The serialized message.
+        Parameters
+        ----------
+        message_type : MessageType
+            The message type group.
+        type_name : str
+            The message class type name.
+        body : bytes
+            The serialized
         """
-        Condition.not_empty(serialized, 'payload')
+        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
+        Condition.valid_string(type_name, 'type_name')
+        Condition.not_empty(body, 'body')
 
-        cdef str send_type_str = message_type_to_string(message_type)
-        cdef int send_size = (len(serialized))
+        cdef dict header = {
+            MESSAGE_TYPE: message_type_to_string(message_type),
+            TYPE_NAME: type_name
+        }
 
-        # Encode frames
-        cdef bytes header_type = send_type_str.encode(_UTF8)
-        cdef bytes header_size = str(send_size).encode(_UTF8)
-        cdef bytes payload = self._compressor.compress(serialized)
+        # Compress frames
+        cdef bytes frame_header = self._compressor.compress(self._header_serializer.serialize(header))
+        cdef bytes frame_body = self._compressor.compress(body)
 
-        self._log.verbose(f"[{self.sent_count}]--> "
-                          f"type={send_type_str}, "
-                          f"size={send_size} bytes, "
-                          f"payload={len(payload)} bytes")
+        self._log.verbose(f"[{self.sent_count}]--> header={header}, body={len(frame_body)} bytes")
 
-        self._queue.send([header_type, header_size, payload])
+        self._queue.send([frame_header, frame_body])
         self.sent_count += 1
 
     cpdef void _handle_frames(self, list frames) except *:
         self.recv_count += 1
 
-        cdef str header_type = frames[0].decode(_UTF8)
-        cdef int header_size = int(frames[1].decode(_UTF8))
-        cdef bytes payload = self._compressor.decompress(frames[2])
+        # Decompress frames
+        cdef bytes frame_header = self._compressor.decompress(frames[0])
+        cdef bytes frame_body = self._compressor.decompress(frames[1])
 
-        cdef MessageType message_type = message_type_from_string(header_type)
+        cdef dict header = self._header_serializer.deserialize(frame_header)
+
+        cdef MessageType message_type = message_type_from_string(header[MESSAGE_TYPE])
         if message_type == MessageType.STRING:
-            message = payload.decode(_UTF8)
+            message = frame_body.decode(UTF8)
             self._log.verbose(f"<--[{self.recv_count}] '{message}'")
             if self._message_handler is not None:
                 self._message_handler(message)
             return
 
-        self._log.verbose(f"<--[{self.recv_count}] "
-                          f"type={header_type}, "
-                          f"size={header_size} bytes, "
-                          f"payload={len(payload)} bytes")
+        self._log.verbose(f"<--[{self.recv_count}] header={header}, body={len(frame_body)} bytes")
 
         if message_type != MessageType.RESPONSE:
-            self._log.error(f"Not a valid response, was {header_type}")
+            self._log.error(f"Not a valid response, was {header[MESSAGE_TYPE]}")
             return
 
-        cdef Response response = self._response_serializer.deserialize(payload)
+        cdef Response response = self._response_serializer.deserialize(frame_body)
         self._log.debug(f"<--[{self.sent_count}] {response}")
         self._deregister_message(response.correlation_id)
 
@@ -340,7 +348,7 @@ cdef class MessageClient(ClientNode):
             if self._message_handler is not None:
                 self._message_handler(response)
 
-    cpdef void _check_connection(self, TimeEvent event):
+    cpdef void _check_connection(self, TimeEvent event) except *:
         if event.label.value.endswith(_IS_CONNECTED):
             if not self.is_connected():
                 self._log.warning("Connection timed out...")
@@ -350,7 +358,7 @@ cdef class MessageClient(ClientNode):
         else:
             self._log.error(f"Check connection message '{event.label}' not recognized.")
 
-    cdef void _register_message(self, Message message, int retry=0):
+    cdef void _register_message(self, Message message, int retry=0) except *:
         try:
             if retry < 3:
                 self._awaiting_reply[message.id] = message
@@ -361,7 +369,7 @@ cdef class MessageClient(ClientNode):
             retry += 1
             self._register_message(message, retry)
 
-    cdef void _deregister_message(self, GUID correlation_id, int retry=0):
+    cdef void _deregister_message(self, GUID correlation_id, int retry=0) except *:
         cdef Message message
         try:
             if retry < 3:
@@ -388,7 +396,6 @@ cdef class MessageSubscriber(ClientNode):
             ClientId client_id,
             str host,
             int port,
-            int expected_frames,
             Compressor compressor not None,
             EncryptionSettings encryption not None,
             Clock clock not None,
@@ -400,7 +407,6 @@ cdef class MessageSubscriber(ClientNode):
         :param client_id: The client identifier for the worker.
         :param host: The service host address.
         :param port: The service port.
-        :param expected_frames: The expected message frame count.
         :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
@@ -425,6 +431,8 @@ cdef class MessageSubscriber(ClientNode):
             logger)
 
         self.register_handler(self._no_subscriber_handler)
+
+        expected_frames = 2 # [topic, body]
         self._queue = MessageQueueInbound(
             expected_frames,
             self._socket,
@@ -454,7 +462,7 @@ cdef class MessageSubscriber(ClientNode):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._socket.setsockopt(zmq.SUBSCRIBE, topic.encode(_UTF8))
+        self._socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
         self._log.debug(f"Subscribed to topic {topic}")
 
     cpdef void unsubscribe(self, str topic) except *:
@@ -465,17 +473,16 @@ cdef class MessageSubscriber(ClientNode):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(_UTF8))
+        self._socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
         self._log.debug(f"Unsubscribed from topic {topic}")
 
     cpdef void _handle_frames(self, list frames) except *:
         self.recv_count += 1
 
-        cdef str recv_topic = frames[0].decode(_UTF8)
-        cdef int recv_size = int(frames[1].decode(_UTF8))
-        cdef bytes payload = self._compressor.decompress(frames[2])
+        cdef str topic = frames[0].decode(UTF8)
+        cdef bytes body = self._compressor.decompress(frames[1])
 
-        self._message_handler(recv_topic, payload)
+        self._message_handler(topic, body)
 
-    cpdef void _no_subscriber_handler(self, str topic, bytes payload) except *:
+    cpdef void _no_subscriber_handler(self, str topic, bytes body) except *:
         self._log.warning(f"Received message from topic {topic} with no handler registered.")
