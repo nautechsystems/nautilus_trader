@@ -19,11 +19,10 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.network.messages import MessageReceived
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionSettings
-from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
+from nautilus_trader.network.node_servers import MessageServer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
