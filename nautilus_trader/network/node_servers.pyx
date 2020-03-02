@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-import zmq.auth
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message, MessageType, message_type_to_string, message_type_from_string
