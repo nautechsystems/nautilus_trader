@@ -23,8 +23,8 @@ from examples.strategies.ema_cross import EMACrossPy
 # BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
 # BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
-BAR_SPEC_FX = BarSpecification(10, BarStructure.TICK, PriceType.BID)
-# BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
+BAR_SPEC_FX = BarSpecification(100, BarStructure.TICK, PriceType.BID)
+BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
 
 symbols_fx = [
     Symbol('AUDUSD', Venue('FXCM')),
@@ -50,7 +50,7 @@ for symbol in symbols_fx:
 #     Symbol('WTIUSD', Venue('FXCM')),
 #     Symbol('DE30EUR', Venue('FXCM')),
 # ]
-#
+
 # strategies_cfd = []
 # for symbol in symbols_cfd:
 #     strategies_fx.append(EMACrossPy(

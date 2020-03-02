@@ -79,7 +79,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._guid_factory = LiveGuidFactory()
-        self._zmq_context = zmq.Context()
+        self._zmq_context = zmq.Context(4)
 
         # Load the configuration from the file specified in config_path
         with open(config_path, 'r') as config_file:
