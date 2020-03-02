@@ -12,7 +12,7 @@ from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.network.identifiers cimport ClientId, SessionId
 from nautilus_trader.network.node_base cimport NetworkNode
 from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueInbound
-from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer
+from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
 
 
 cdef class ClientNode(NetworkNode):
@@ -30,6 +30,7 @@ cdef class ClientNode(NetworkNode):
 
 cdef class MessageClient(ClientNode):
     cdef MessageQueueDuplex _queue
+    cdef DictionarySerializer _header_serializer
     cdef RequestSerializer _request_serializer
     cdef ResponseSerializer _response_serializer
     cdef dict _awaiting_reply
@@ -38,12 +39,12 @@ cdef class MessageClient(ClientNode):
 
     cpdef void send_request(self, Request request) except *
     cpdef void send_string(self, str message) except *
-    cpdef void send_message(self, Message message, bytes serialized) except *
-    cpdef void send(self, MessageType message_type, bytes serialized) except *
-    cpdef void _check_connection(self, TimeEvent event)
+    cpdef void send_message(self, Message message, bytes body) except *
+    cpdef void send(self, MessageType message_type, str type_name, bytes body) except *
+    cpdef void _check_connection(self, TimeEvent event) except *
     cpdef void _handle_frames(self, list frames) except *
-    cdef void _register_message(self, Message message, int retry=*)
-    cdef void _deregister_message(self, GUID correlation_id, int retry=*)
+    cdef void _register_message(self, Message message, int retry=*) except *
+    cdef void _deregister_message(self, GUID correlation_id, int retry=*) except *
 
 
 cdef class MessageSubscriber(ClientNode):
@@ -52,4 +53,4 @@ cdef class MessageSubscriber(ClientNode):
     cpdef void subscribe(self, str topic) except *
     cpdef void unsubscribe(self, str topic) except *
     cpdef void _handle_frames(self, list frames) except *
-    cpdef void _no_subscriber_handler(self, str topic, bytes payload) except *
+    cpdef void _no_subscriber_handler(self, str topic, bytes body) except *

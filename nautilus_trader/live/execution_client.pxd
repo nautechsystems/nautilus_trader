@@ -6,15 +6,16 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Command, Response
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
+from nautilus_trader.serialization.base cimport CommandSerializer, EventSerializer
 
 cdef class LiveExecClient(ExecutionClient):
     cdef object _command_client
     cdef object _event_subscriber
+
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
 

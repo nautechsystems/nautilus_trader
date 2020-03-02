@@ -21,6 +21,7 @@ from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.compression import CompressorBypass
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.clock import LiveClock
@@ -83,6 +84,7 @@ class LiveExecutionTests(unittest.TestCase):
             compressor=CompressorBypass(),
             encryption=EncryptionSettings(),
             command_serializer=MsgPackCommandSerializer(),
+            header_serializer=MsgPackDictionarySerializer(),
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
             event_serializer=MsgPackEventSerializer(),
@@ -98,7 +100,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.command_server = MessageServer(
             server_id=ServerId("CommandServer-001"),
             port=commands_port,
-            expected_frames=expected_frames,
+            header_serializer=MsgPackDictionarySerializer(),
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
             compressor=CompressorBypass(),

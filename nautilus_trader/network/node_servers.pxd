@@ -8,12 +8,12 @@
 
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.message cimport Message, MessageType
-from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer
 from nautilus_trader.network.identifiers cimport ClientId, ServerId
 from nautilus_trader.network.node_base cimport NetworkNode
 from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueOutbound
 from nautilus_trader.network.messages cimport Response
 from nautilus_trader.network.messages cimport Connect, Disconnect
+from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
 
 
 cdef class ServerNode(NetworkNode):
@@ -27,6 +27,7 @@ cdef class ServerNode(NetworkNode):
 
 cdef class MessageServer(ServerNode):
     cdef MessageQueueDuplex _queue
+    cdef DictionarySerializer _header_serializer
     cdef RequestSerializer _request_serializer
     cdef ResponseSerializer _response_serializer
     cdef object _thread
@@ -38,8 +39,9 @@ cdef class MessageServer(ServerNode):
     cpdef void send_rejected(self, str rejected_message, GUID correlation_id, ClientId receiver) except *
     cpdef void send_received(self, Message original, ClientId receiver) except *
     cpdef void send_response(self, Response response, ClientId receiver) except *
+    cpdef void send_string(self, str message, ClientId receiver) except *
+    cdef void _send(self, ClientId receiver, dict header, bytes body) except *
     cpdef void _handle_frames(self, list frames) except *
-    cdef void _send_string(self, bytes receiver, str message)
     cdef void _handle_request(self, bytes payload, ClientId sender) except *
     cdef void _handle_connection(self, Connect request) except *
     cdef void _handle_disconnection(self, Disconnect request) except *

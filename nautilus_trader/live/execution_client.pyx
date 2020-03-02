@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import zmq
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport Command, AccountInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
@@ -20,8 +18,10 @@ from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.network.compression cimport Compressor, CompressorBypass
 from nautilus_trader.network.encryption cimport EncryptionSettings
+from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, RequestSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.live.clock cimport LiveClock
@@ -46,6 +46,7 @@ cdef class LiveExecClient(ExecutionClient):
             Compressor compressor not None=CompressorBypass(),
             EncryptionSettings encryption not None=EncryptionSettings(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
+            DictionarySerializer header_serializer not None=MsgPackDictionarySerializer(),
             RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
             EventSerializer event_serializer not None=MsgPackEventSerializer(),
@@ -61,6 +62,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param events_port: The execution service events port (default=55556).
         :param encryption: The encryption configuration.
         :param command_serializer: The command serializer for the client.
+        :param header_serializer: The header serializer for the client.
         :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
         :param clock: The clock for the component.
@@ -89,7 +91,7 @@ cdef class LiveExecClient(ExecutionClient):
             self.client_id,
             host,
             commands_port,
-            expected_frames,
+            header_serializer,
             request_serializer,
             response_serializer,
             compressor,
@@ -102,7 +104,6 @@ cdef class LiveExecClient(ExecutionClient):
             self.client_id,
             host,
             events_port,
-            expected_frames,
             compressor,
             encryption,
             clock,
