@@ -7,8 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import hashlib
-
 from cpython.datetime cimport datetime
+
+from nautilus_trader.core.functions cimport format_iso8601
 
 
 cdef class ClientId(Identifier):
@@ -54,8 +55,8 @@ cdef class SessionId(Identifier):
 
     @staticmethod
     cdef SessionId create(ClientId client_id, datetime now, str secret):
-        cdef bytes hashable = f'{client_id.value}-{datetime}-{secret}'.encode('utf-8')
-        return SessionId(hashlib.sha256(hashable).hexdigest())
+        cdef bytes hashable = f'{client_id.value}-{format_iso8601(now)}-{secret}'.encode('utf-8')
+        return SessionId(hashlib.sha3_256(hashable).hexdigest())
 
     @staticmethod
     def py_create(ClientId client_id, datetime now, str secret):

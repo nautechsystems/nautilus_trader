@@ -1025,7 +1025,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(deserialized, Connect))
         self.assertEqual("Trader-001", deserialized.client_id.value)
-        self.assertEqual("3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f", deserialized.authentication)
+        self.assertEqual("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea", deserialized.authentication)
 
     def test_can_serialize_and_deserialize_disconnect_requests(self):
         # Arrange
@@ -1143,7 +1143,7 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         request = Connected(
             "Trader-001 connected to session",
             ServerId("NautilusData.CommandServer"),
-            SessionId("3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f"),
+            SessionId("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea"),
             GUID(uuid.uuid4()),
             GUID(uuid.uuid4()),
             TestStubs.unix_epoch())
@@ -1156,14 +1156,14 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(deserialized, Connected))
         self.assertEqual("Trader-001 connected to session", deserialized.message)
         self.assertEqual("NautilusData.CommandServer", deserialized.server_id.value)
-        self.assertEqual("3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f", deserialized.session_id.value)
+        self.assertEqual("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea", deserialized.session_id.value)
 
     def test_can_serialize_and_deserialize_disconnected_responses(self):
         # Arrange
         request = Disconnected(
             "Trader-001 disconnected from session",
             ServerId("NautilusData.CommandServer"),
-            SessionId("3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f"),
+            SessionId("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea"),
             GUID(uuid.uuid4()),
             GUID(uuid.uuid4()),
             TestStubs.unix_epoch())
@@ -1176,7 +1176,7 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(deserialized, Disconnected))
         self.assertEqual("Trader-001 disconnected from session", deserialized.message)
         self.assertEqual("NautilusData.CommandServer", deserialized.server_id.value)
-        self.assertEqual("3b1e1b0a1cb40ae6b2e1e02f51f0e7e0c121c92859550f37a72d7fc74cbd002f", deserialized.session_id.value)
+        self.assertEqual("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea", deserialized.session_id.value)
 
     def test_can_serialize_and_deserialize_data_responses(self):
         # Arrange
