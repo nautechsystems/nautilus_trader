@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-import zmq.auth
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
