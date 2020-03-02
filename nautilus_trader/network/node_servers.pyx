@@ -23,7 +23,7 @@ from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Di
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.constants cimport UTF8
 
-cdef bytes _STRING = message_type_to_string(MessageType.STRING).encode(UTF8)
+cdef bytes _STRING = message_type_to_string(MessageType.STRING).title().encode(UTF8)
 
 
 cdef class ServerNode(NetworkNode):
@@ -241,7 +241,7 @@ cdef class MessageServer(ServerNode):
             The response receiver.
         """
         cdef dict header = {
-            MESSAGE_TYPE: message_type_to_string(response.message_type),
+            MESSAGE_TYPE: message_type_to_string(response.message_type).title(),
             TYPE_NAME: response.__class__.__name__
         }
 
@@ -288,7 +288,7 @@ cdef class MessageServer(ServerNode):
 
         self._log.verbose(f"<--[{self.recv_count}] header={header}, body={len(frame_body)} bytes")
 
-        cdef MessageType message_type = message_type_from_string(header[MESSAGE_TYPE])
+        cdef MessageType message_type = message_type_from_string(header[MESSAGE_TYPE].upper())
         if message_type == MessageType.STRING:
             handler = self._handlers.get(message_type)
             message = frame_body.decode(UTF8)

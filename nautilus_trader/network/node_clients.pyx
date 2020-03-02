@@ -289,7 +289,7 @@ cdef class MessageClient(ClientNode):
         Condition.not_empty(body, 'body')
 
         cdef dict header = {
-            MESSAGE_TYPE: message_type_to_string(message_type),
+            MESSAGE_TYPE: message_type_to_string(message_type).title(),
             TYPE_NAME: type_name
         }
 
@@ -310,7 +310,7 @@ cdef class MessageClient(ClientNode):
 
         cdef dict header = self._header_serializer.deserialize(frame_header)
 
-        cdef MessageType message_type = message_type_from_string(header[MESSAGE_TYPE])
+        cdef MessageType message_type = message_type_from_string(header[MESSAGE_TYPE].upper())
         if message_type == MessageType.STRING:
             message = frame_body.decode(UTF8)
             self._log.verbose(f"<--[{self.recv_count}] '{message}'")
