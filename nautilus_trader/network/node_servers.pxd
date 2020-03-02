@@ -41,8 +41,8 @@ cdef class MessageServer(ServerNode):
     cpdef void send_response(self, Response response, ClientId receiver) except *
     cpdef void send_string(self, str message, ClientId receiver) except *
     cdef void _send(self, ClientId receiver, dict header, bytes body) except *
-    cpdef void _handle_frames(self, list frames) except *
-    cdef void _handle_request(self, bytes payload, ClientId sender) except *
+    cpdef void _recv_frames(self, list frames) except *
+    cdef void _handle_request(self, bytes body, ClientId sender) except *
     cdef void _handle_connection(self, Connect request) except *
     cdef void _handle_disconnection(self, Disconnect request) except *
 
