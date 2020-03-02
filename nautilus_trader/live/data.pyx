@@ -19,10 +19,13 @@ from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
 from nautilus_trader.model.objects cimport BarType
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
-from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
+from nautilus_trader.serialization.base cimport DictionarySerializer
+from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer
+from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 from nautilus_trader.serialization.data cimport Utf8TickSerializer, Utf8BarSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
+from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.guid cimport LiveGuidFactory
@@ -51,6 +54,7 @@ cdef class LiveDataClient(DataClient):
                  int inst_pub_port,
                  Compressor compressor not None=CompressorBypass(),
                  EncryptionSettings encryption not None=EncryptionSettings(),
+                 DictionarySerializer header_serializer not None=MsgPackDictionarySerializer(),
                  RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
                  ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
                  DataSerializer data_serializer not None=BsonDataSerializer(),
@@ -72,6 +76,7 @@ cdef class LiveDataClient(DataClient):
         :param inst_pub_port: The port for instrument subscriptions (default=55506).
         :param compressor: The messaging compressor.
         :param encryption: The messaging encryption configuration.
+        :param header_serializer: The header serializer.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
         :param data_serializer: The data serializer.
@@ -104,14 +109,13 @@ cdef class LiveDataClient(DataClient):
 
         self.trader_id = trader_id
         self.client_id = ClientId(trader_id.value)
-
-        expected_frames = 3
+        self.last_request_id = None
 
         self._tick_client = MessageClient(
             self.client_id,
             host,
             tick_server_port,
-            expected_frames,
+            header_serializer,
             request_serializer,
             response_serializer,
             compressor,
@@ -126,7 +130,7 @@ cdef class LiveDataClient(DataClient):
             self.client_id,
             host,
             bar_server_port,
-            expected_frames,
+            header_serializer,
             request_serializer,
             response_serializer,
             compressor,
@@ -141,7 +145,7 @@ cdef class LiveDataClient(DataClient):
             self.client_id,
             host,
             inst_server_port,
-            expected_frames,
+            header_serializer,
             request_serializer,
             response_serializer,
             compressor,
@@ -156,7 +160,6 @@ cdef class LiveDataClient(DataClient):
             self.client_id,
             host,
             tick_pub_port,
-            expected_frames,
             compressor,
             encryption,
             clock,
@@ -169,7 +172,6 @@ cdef class LiveDataClient(DataClient):
             self.client_id,
             host,
             bar_pub_port,
-            expected_frames,
             compressor,
             encryption,
             clock,
@@ -182,7 +184,6 @@ cdef class LiveDataClient(DataClient):
             self.client_id,
             host,
             inst_pub_port,
-            expected_frames,
             compressor,
             encryption,
             clock,
@@ -293,6 +294,7 @@ cdef class LiveDataClient(DataClient):
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
         self._tick_client.send_request(request)
+        self.last_request_id = request_id
 
     cpdef void request_bars(
             self,
@@ -339,6 +341,7 @@ cdef class LiveDataClient(DataClient):
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
         self._bar_client.send_request(request)
+        self.last_request_id = request_id
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
@@ -363,6 +366,7 @@ cdef class LiveDataClient(DataClient):
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
         self._inst_client.send_request(request)
+        self.last_request_id = request_id
 
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
@@ -386,6 +390,7 @@ cdef class LiveDataClient(DataClient):
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
         self._inst_client.send_request(request)
+        self.last_request_id = request_id
 
     cpdef void update_instruments(self, Venue venue) except *:
         """
@@ -490,11 +495,11 @@ cdef class LiveDataClient(DataClient):
         self._correlation_index[request_id] = handler
 
     cpdef void _pop_callback(self, GUID correlation_id, list data) except *:
-        handler = self._correlation_index.pop(correlation_id)
+        handler = self._correlation_index.pop(correlation_id, None)
         if handler is not None:
             handler(data)
         else:
-            self._log.error(f"No callback found for correlation identifier {correlation_id.value}")
+            self._log.error(f"No callback found for correlation id {correlation_id.value}")
 
     cpdef void _handle_response(self, Response response) except *:
         if isinstance(response, MessageRejected):
@@ -510,18 +515,19 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void _handle_data_response(self, DataResponse response) except *:
         cdef dict data_package = self._data_serializer.deserialize(response.data)
-        cdef dict metadata = data_package[METADATA]
-
         cdef str data_type = data_package[DATA_TYPE]
+        cdef dict metadata
         cdef list data
         if data_type == TICK_ARRAY:
+            metadata = data_package[METADATA]
             symbol = self._cached_symbols.get(metadata[SYMBOL])
             data = Utf8TickSerializer.deserialize_bytes_list(symbol, data_package[DATA])
         elif data_type == BAR_ARRAY:
+            metadata = data_package[METADATA]
             received_bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
             data = Utf8BarSerializer.deserialize_bytes_list(data_package[DATA])
         elif data_type == INSTRUMENT_ARRAY:
-            data = self._instrument_serializer.deserialize(data_package[DATA])
+            data = [self._instrument_serializer.deserialize(inst) for inst in data_package[DATA]]
         else:
             self._log.error(f"The received data type {data_type} is not recognized.")
             return

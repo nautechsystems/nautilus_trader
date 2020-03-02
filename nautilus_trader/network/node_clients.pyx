@@ -373,7 +373,7 @@ cdef class MessageClient(ClientNode):
         cdef Message message
         try:
             if retry < 3:
-                message = self._awaiting_reply.pop(correlation_id)
+                message = self._awaiting_reply.pop(correlation_id, None)
                 if message is None:
                     self._log.error(f"No awaiting message for correlation id {correlation_id.value}.")
                 else:

@@ -34,6 +34,7 @@ cdef class LiveDataClient(DataClient):
 
     cdef readonly TraderId trader_id
     cdef readonly ClientId client_id
+    cdef readonly GUID last_request_id
 
     cpdef void _set_callback(self, GUID request_id, handler: callable) except *
     cpdef void _pop_callback(self, GUID correlation_id, list data) except *
