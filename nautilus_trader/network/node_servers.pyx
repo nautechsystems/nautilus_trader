@@ -24,6 +24,7 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.constants cimport UTF8
 
 cdef bytes _STRING = message_type_to_string(MessageType.STRING).title().encode(UTF8)
+cdef str _TYPE_UTF8 = 'UTF8'
 
 
 cdef class ServerNode(NetworkNode):
@@ -242,7 +243,7 @@ cdef class MessageServer(ServerNode):
         """
         cdef dict header = {
             MESSAGE_TYPE: message_type_to_string(response.message_type).title(),
-            TYPE_NAME: response.__class__.__name__
+            TYPE: response.__class__.__name__
         }
 
         self._send(receiver, header, self._response_serializer.serialize(response))
@@ -260,7 +261,7 @@ cdef class MessageServer(ServerNode):
         """
         cdef dict header = {
             MESSAGE_TYPE: _STRING,
-            TYPE_NAME: UTF8
+            TYPE: _TYPE_UTF8
         }
 
         self._send(receiver, header, message.encode(UTF8))

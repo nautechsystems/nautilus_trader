@@ -22,5 +22,5 @@ cdef class LiveExecClient(ExecutionClient):
     cdef readonly TraderId trader_id
     cdef readonly ClientId client_id
 
-    cdef void _send_command(self, Command command) except *
-    cdef void _recv_event(self, str topic, bytes event_bytes) except *
+    cpdef void _send_command(self, Command command) except *
+    cpdef void _recv_event(self, str topic, bytes event_bytes) except *

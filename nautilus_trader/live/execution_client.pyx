@@ -156,10 +156,10 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void cancel_order(self, CancelOrder command) except *:
         self._send_command(command)
 
-    cdef void _send_command(self, Command command) except *:
+    cpdef void _send_command(self, Command command) except *:
         cdef bytes payload = self._command_serializer.serialize(command)
         self._command_client.send_message(command, payload)
 
-    cdef void _recv_event(self, str topic, bytes event_bytes) except *:
+    cpdef void _recv_event(self, str topic, bytes event_bytes) except *:
         cdef Event event = self._event_serializer.deserialize(event_bytes)
         self._exec_engine.handle_event(event)
