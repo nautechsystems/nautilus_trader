@@ -150,7 +150,6 @@ cdef class TradingNode:
             bar_pub_port=config_data['bar_pub_port'],
             inst_server_port=config_data['inst_server_port'],
             inst_pub_port=config_data['inst_pub_port'],
-            zmq_context=self._zmq_context,
             compressor=compressor,
             encryption=encryption,
             clock=self._clock,
@@ -193,7 +192,6 @@ cdef class TradingNode:
             host=config_exec_client['host'],
             commands_port=config_exec_client['commands_port'],
             events_port=config_exec_client['events_port'],
-            zmq_context=self._zmq_context,
             compressor=compressor,
             encryption=encryption,
             logger=self._logger)
