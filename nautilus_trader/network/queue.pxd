@@ -23,7 +23,7 @@ cdef class MessageQueueInbound:
     cdef object _queue
     cdef object _thread_put
     cdef object _thread_get
-    cdef object _handler
+    cdef object _frames_handler
 
     cpdef void _put_loop(self) except *
     cpdef void _get_loop(self) except *
