@@ -73,7 +73,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :raises ValueError: If the port is not in range [0, 65535].
         """
         Condition.valid_string(host, 'host')
-        Condition.valid_port(port, 'port')
+        Condition.in_range_int(port, 0, 65535, 'port')
         super().__init__(trader_id, logger)
 
         # Database keys
@@ -998,7 +998,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             logger=logger)
 
         self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
+        self._thread = threading.Thread(target=self._process, daemon=True)
         self._thread.start()
 
     cpdef void execute_command(self, Command command) except *:
@@ -1021,7 +1021,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._queue.put(event)
 
-    cpdef void _consume_messages(self) except *:
+    cpdef void _process(self) except *:
         self._log.info("Running...")
 
         cdef Message message

@@ -48,4 +48,4 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _queue
     cdef object _thread
 
-    cpdef void _consume_messages(self) except *
+    cpdef void _process(self) except *

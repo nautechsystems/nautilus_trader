@@ -9,7 +9,6 @@
 import uuid
 import unittest
 import time
-import zmq
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar
@@ -152,15 +151,22 @@ class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Tear Down
     def tearDown(self):
+        time.sleep(0.1)
         self.data_client.disconnect()
         time.sleep(0.1)
+        self.tick_server.stop()
         self.tick_publisher.stop()
+        self.bar_server.stop()
         self.bar_publisher.stop()
+        self.inst_server.stop()
         self.inst_publisher.stop()
         time.sleep(0.1)
         self.data_client.dispose()
+        self.tick_server.dispose()
         self.tick_publisher.dispose()
+        self.bar_server.dispose()
         self.bar_publisher.dispose()
+        self.inst_server.dispose()
         self.inst_publisher.dispose()
         time.sleep(0.1)
 
