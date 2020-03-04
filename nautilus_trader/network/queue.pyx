@@ -8,36 +8,44 @@
 
 import queue
 import threading
-import zmq
 
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.network.socket cimport Socket
 
 
-cdef class MessageQueueDuplex:
+cdef class MessageQueueOutbound:
     """
-    Provides a non-blocking duplex message queue.
+    Provides a non-blocking outbound message queue.
     """
 
     def __init__(self,
-                 int expected_frames,
-                 socket not None: zmq.Socket,
-                 handler: callable,
+                 Socket socket not None,
                  LoggerAdapter logger not None):
         """
-        Initializes a new instance of the MessageQueueDuplex class.
+        Initializes a new instance of the MessageQueueOutbound class.
 
-        TODO: Params
+        Parameters
+        ----------
+        socket: Socket
+            The socket for the queue.
+        logger : LoggerAdapter
+            The logger for the component.
         """
-        self._inbound = MessageQueueInbound(
-            expected_frames,
-            socket,
-            handler,
-            logger)
+        self._log = logger
+        self._socket = socket
+        self._queue = queue.Queue()
+        self._thread = threading.Thread(target=self._get_loop, daemon=True)
 
-        self._outbound = MessageQueueOutbound(socket, logger)
+        self._thread.start()
 
-    cdef void send(self, list frames) except *:
-        self._outbound.send(frames)
+    cpdef void send(self, list frames) except *:
+        self._queue.put_nowait(frames)
+
+    cpdef void _get_loop(self) except *:
+        self._log.debug("Outbound loop starting...")
+
+        while True:
+            self._socket.send(self._queue.get())
 
 
 cdef class MessageQueueInbound:
@@ -47,13 +55,22 @@ cdef class MessageQueueInbound:
 
     def __init__(self,
                  int expected_frames,
-                 socket: zmq.Socket,
-                 frames_handler: callable,
+                 Socket socket not None,
+                 frames_receiver: callable,
                  LoggerAdapter logger not None):
         """
-        Initializes a new instance of the DuplexMessageQueue class.
+        Initializes a new instance of the MessageQueueInbound class.
 
-        TODO: Params
+        Parameters
+        ----------
+        expected_frames : int
+            The expected frames received at this queues port.
+        socket: Socket
+            The socket for the queue.
+        frames_receiver : callable
+            The handler method for receiving frames.
+        logger : LoggerAdapter
+            The logger for the component.
         """
         self._log = logger
         self._expected_frames = expected_frames
@@ -61,7 +78,7 @@ cdef class MessageQueueInbound:
         self._queue = queue.Queue()
         self._thread_put = threading.Thread(target=self._put_loop, daemon=True)
         self._thread_get = threading.Thread(target=self._get_loop, daemon=True)
-        self._frames_handler = frames_handler
+        self._frames_receiver = frames_receiver
 
         self._thread_put.start()
         self._thread_get.start()
@@ -69,12 +86,11 @@ cdef class MessageQueueInbound:
     cpdef void _put_loop(self) except *:
         self._log.debug("Inbound receive loop starting...")
 
+        cdef list frames
         while True:
-            try:
-                self._queue.put_nowait(self._socket.recv_multipart())
-            except zmq.ZMQError as ex:
-                self._log.error(str(ex))
-                continue
+            frames = self._socket.recv()
+            if frames is not None:
+                self._queue.put_nowait(frames)
 
     cpdef void _get_loop(self) except *:
         self._log.debug("Inbound handling loop starting...")
@@ -85,36 +101,7 @@ cdef class MessageQueueInbound:
             frames = self._queue.get()
             frames_length = len(frames)
             if frames_length != self._expected_frames:
-                self._log.error(f"Received unexpected frames count {frames_length}, expected {self._expected_frames}")
+                self._log.error(f"Received unexpected frames count {frames_length}, "
+                                f"expected {self._expected_frames}")
                 return
-            self._frames_handler(frames)
-
-
-cdef class MessageQueueOutbound:
-    """
-    Provides a non-blocking inbound message queue.
-    """
-
-    def __init__(self,
-                 socket: zmq.Socket,
-                 LoggerAdapter logger not None):
-        """
-        Initializes a new instance of the DuplexMessageQueue class.
-
-        TODO: Params
-        """
-        self._log = logger
-        self._socket = socket
-        self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._get_loop, daemon=True)
-
-        self._thread.start()
-
-    cdef void send(self, list frames) except *:
-        self._queue.put_nowait(frames)
-
-    cpdef void _get_loop(self) except *:
-        self._log.debug("Outbound loop starting...")
-
-        while True:
-            self._socket.send_multipart(self._queue.get())
+            self._frames_receiver(frames)

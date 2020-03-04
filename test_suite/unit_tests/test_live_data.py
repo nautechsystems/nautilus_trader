@@ -33,6 +33,11 @@ UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
+TEST_DATA_REQ_PORT = 55601
+TEST_DATA_REP_PORT = 55602
+TEST_DATA_PUB_PORT = 55603
+TEST_TICK_PUB_PORT = 55604
+
 
 class LiveDataClientTests(unittest.TestCase):
     # Fixture Setup
@@ -50,9 +55,10 @@ class LiveDataClientTests(unittest.TestCase):
         self.guid_factory = LiveGuidFactory()
         self.logger = LiveLogger(level_console=LogLevel.VERBOSE)
 
-        self.tick_server = MessageServer(
-            server_id=ServerId('TickServer-001'),
-            port=56501,
+        self.data_server = MessageServer(
+            server_id=ServerId('DataServer-001'),
+            recv_port=TEST_DATA_REQ_PORT,
+            send_port=TEST_DATA_REP_PORT,
             header_serializer=self.header_serializer,
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
@@ -62,75 +68,39 @@ class LiveDataClientTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=self.logger)
 
-        self.tick_server_sink = []
-        self.tick_server.register_request_handler(self.tick_server_sink.append)
+        self.data_server_sink = []
+        self.data_server.register_request_handler(self.data_server_sink.append)
+
+        self.data_publisher = MessagePublisher(
+            server_id=ServerId('DataPublisher-001'),
+            port=TEST_DATA_PUB_PORT,
+            compressor=self.compressor,
+            encryption=self.encryption,
+            clock=self.clock,
+            guid_factory=self.guid_factory,
+            logger=self.logger)
 
         self.tick_publisher = MessagePublisher(
             server_id=ServerId('TickPublisher-001'),
-            port=56502,
+            port=TEST_TICK_PUB_PORT,
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)
 
-        self.bar_server = MessageServer(
-            server_id=ServerId('BarServer-001'),
-            port=56503,
-            header_serializer=self.header_serializer,
-            request_serializer=self.request_serializer,
-            response_serializer=self.response_serializer,
-            compressor=self.compressor,
-            encryption=self.encryption,
-            clock=self.clock,
-            guid_factory=self.guid_factory,
-            logger=self.logger)
-
-        self.bar_server_sink = []
-        self.bar_server.register_request_handler(self.bar_server_sink.append)
-
-        self.bar_publisher = MessagePublisher(
-            server_id=ServerId('BarPublisher-001'),
-            port=56504,
-            compressor=self.compressor,
-            encryption=self.encryption,
-            clock=self.clock,
-            guid_factory=self.guid_factory,
-            logger=self.logger)
-
-        self.inst_server = MessageServer(
-            server_id=ServerId('InstrumentServer-001'),
-            port=56505,
-            header_serializer=self.header_serializer,
-            request_serializer=self.request_serializer,
-            response_serializer=self.response_serializer,
-            compressor=self.compressor,
-            encryption=self.encryption,
-            clock=self.clock,
-            guid_factory=self.guid_factory,
-            logger=self.logger)
-
-        self.inst_server_sink = []
-        self.inst_server.register_request_handler(self.inst_server_sink.append)
-
-        self.inst_publisher = MessagePublisher(
-            server_id=ServerId('InstrumentPublisher-001'),
-            port=56506,
-            compressor=self.compressor,
-            encryption=self.encryption,
-            clock=self.clock,
-            guid_factory=self.guid_factory,
-            logger=self.logger)
+        self.data_server.start()
+        self.data_publisher.start()
+        self.tick_publisher.start()
+        time.sleep(0.1)
 
         self.data_client = LiveDataClient(
             trader_id=TraderId('Tester', '000'),
             host='127.0.0.1',
-            tick_server_port=56501,
-            tick_pub_port=56502,
-            bar_server_port=56503,
-            bar_pub_port=56504,
-            inst_server_port=56505,
-            inst_pub_port=56506,
+            data_req_port=TEST_DATA_REQ_PORT,
+            data_rep_port=TEST_DATA_REP_PORT,
+            data_pub_port=TEST_DATA_PUB_PORT,
+            tick_pub_port=TEST_TICK_PUB_PORT,
             compressor=self.compressor,
             encryption=self.encryption,
             header_serializer=self.header_serializer,
@@ -140,13 +110,7 @@ class LiveDataClientTests(unittest.TestCase):
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)
-
-        self.tick_server.start()
-        self.tick_publisher.start()
-        self.bar_server.start()
-        self.bar_publisher.start()
-        self.inst_server.start()
-        self.inst_publisher.start()
+        self.data_client.connect()
         time.sleep(0.1)
 
     # Fixture Tear Down
@@ -154,26 +118,19 @@ class LiveDataClientTests(unittest.TestCase):
         time.sleep(0.1)
         self.data_client.disconnect()
         time.sleep(0.1)
-        self.tick_server.stop()
+        self.data_server.stop()
+        self.data_publisher.stop()
         self.tick_publisher.stop()
-        self.bar_server.stop()
-        self.bar_publisher.stop()
-        self.inst_server.stop()
-        self.inst_publisher.stop()
+        time.sleep(0.1)
+        self.data_server.dispose()
+        self.data_publisher.dispose()
+        self.tick_publisher.dispose()
         time.sleep(0.1)
         self.data_client.dispose()
-        self.tick_server.dispose()
-        self.tick_publisher.dispose()
-        self.bar_server.dispose()
-        self.bar_publisher.dispose()
-        self.inst_server.dispose()
-        self.inst_publisher.dispose()
         time.sleep(0.1)
 
     def test_can_subscribe_to_tick_data(self):
         # Arrange
-        self.data_client.connect()
-
         time.sleep(0.1)
         data_receiver = ObjectStorer()
 
@@ -185,7 +142,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
-        self.data_client.connect()
         data_receiver = ObjectStorer()
 
         # Act
@@ -197,7 +153,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_receive_published_tick_data(self):
         # Arrange
-        self.data_client.connect()
         data_receiver = ObjectStorer()
 
         tick = Tick(AUDUSD_FXCM,
@@ -220,7 +175,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_subscribe_to_bar_data(self):
         # Arrange
-        self.data_client.connect()
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
@@ -232,7 +186,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
-        self.data_client.connect()
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
@@ -259,7 +212,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_bars(bar_type, handler=data_receiver.store_2)
 
         time.sleep(0.1)
-        self.bar_publisher.publish(str(bar_type), Utf8BarSerializer.py_serialize(bar))
+        self.data_publisher.publish('Bar:' + str(bar_type), Utf8BarSerializer.py_serialize(bar))
         time.sleep(0.1)
 
         # Assert
@@ -268,7 +221,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_subscribe_to_instrument_data(self):
         # Arrange
-        self.data_client.connect()
         data_receiver = ObjectStorer()
 
         # Act
@@ -279,7 +231,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_unsubscribe_from_instrument_data(self):
         # Arrange
-        self.data_client.connect()
         data_receiver = ObjectStorer()
 
         # Act
@@ -291,8 +242,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_receive_published_instrument_data(self):
         # Arrange
-        self.data_client.connect()
-
         instrument = TestStubs.instrument_gbpusd()
         data_receiver = ObjectStorer()
         serializer = BsonInstrumentSerializer()
@@ -301,7 +250,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_instrument(instrument.symbol, handler=data_receiver.store)
 
         time.sleep(0.1)
-        self.inst_publisher.publish(instrument.symbol.value, serializer.serialize(instrument))
+        self.data_publisher.publish('Instrument:' + instrument.symbol.value, serializer.serialize(instrument))
         time.sleep(0.1)
 
         # Assert
@@ -311,7 +260,6 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_request_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
-        self.data_client.connect()
 
         # Act
         self.data_client.request_ticks(
@@ -321,15 +269,14 @@ class LiveDataClientTests(unittest.TestCase):
             limit=0,
             callback=data_receiver.store)
 
-        time.sleep(0.1)
+        time.sleep(0.2)
         # Assert
-        self.assertEqual(1, len(self.tick_server_sink))
-        self.assertEqual(DataRequest, type(self.tick_server_sink[0]))
+        self.assertEqual(1, len(self.data_server_sink))
+        self.assertEqual(DataRequest, type(self.data_server_sink[0]))
 
     def test_can_receive_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
-        self.data_client.connect()
         self.data_client.request_ticks(
             AUDUSD_FXCM,
             UNIX_EPOCH.date(),
@@ -337,7 +284,7 @@ class LiveDataClientTests(unittest.TestCase):
             limit=0,
             callback=data_receiver.store)
 
-        time.sleep(0.1)
+        time.sleep(0.2)
 
         tick = Tick(AUDUSD_FXCM,
                     Price(1.00000, 5),
@@ -358,7 +305,7 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.tick_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_client.client_id)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
@@ -371,7 +318,6 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
-        self.data_client.connect()
         self.data_client.request_bars(
             bar_type,
             UNIX_EPOCH.date(),
@@ -400,9 +346,9 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.bar_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_client.client_id)
 
-        time.sleep(0.1)
+        time.sleep(0.2)
         response = data_receiver.get_store()[0]
 
         # Assert
@@ -412,7 +358,6 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         data_receiver = ObjectStorer()
 
-        self.data_client.connect()
         self.data_client.request_instrument(GBPUSD_FXCM, data_receiver.store)
 
         time.sleep(0.1)
@@ -430,9 +375,9 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.inst_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_client.client_id)
 
-        time.sleep(0.1)
+        time.sleep(0.2)
         response = data_receiver.get_store()[0]
 
         # Assert
@@ -460,9 +405,9 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.inst_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_client.client_id)
 
-        time.sleep(0.1)
+        time.sleep(0.2)
         response = data_receiver.get_store()[0]
 
         # Assert

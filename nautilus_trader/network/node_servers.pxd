@@ -8,25 +8,37 @@
 
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.message cimport Message, MessageType
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, ServerId
-from nautilus_trader.network.node_base cimport NetworkNode
-from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueOutbound
+from nautilus_trader.network.compression cimport Compressor
+from nautilus_trader.network.socket cimport ServerSocket
+from nautilus_trader.network.queue cimport MessageQueueInbound, MessageQueueOutbound
 from nautilus_trader.network.messages cimport Response
 from nautilus_trader.network.messages cimport Connect, Disconnect
 from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
 
 
-cdef class ServerNode(NetworkNode):
+cdef class ServerNode:
+    cdef Clock _clock
+    cdef GuidFactory _guid_factory
+    cdef LoggerAdapter _log
+    cdef Compressor _compressor
 
     cdef readonly ServerId server_id
+    cdef readonly int sent_count
+    cdef readonly int recv_count
 
     cpdef void start(self) except *
     cpdef void stop(self) except *
-    cpdef void _bind_socket(self) except *
-    cpdef void _unbind_socket(self) except *
+    cpdef void dispose(self) except *
 
 cdef class MessageServer(ServerNode):
-    cdef MessageQueueDuplex _queue
+    cdef ServerSocket _socket_outbound
+    cdef ServerSocket _socket_inbound
+    cdef MessageQueueOutbound _queue_outbound
+    cdef MessageQueueInbound _queue_inbound
     cdef DictionarySerializer _header_serializer
     cdef RequestSerializer _request_serializer
     cdef ResponseSerializer _response_serializer
@@ -48,6 +60,7 @@ cdef class MessageServer(ServerNode):
 
 
 cdef class MessagePublisher(ServerNode):
+    cdef ServerSocket _socket
     cdef MessageQueueOutbound _queue
 
     cpdef void publish(self, str topic, bytes message) except *

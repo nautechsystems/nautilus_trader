@@ -27,7 +27,8 @@ from test_kit.stubs import UNIX_EPOCH
 from test_kit.mocks import ObjectStorer
 
 LOCALHOST = "127.0.0.1"
-TEST_PORT = 55557
+TEST_RECV_PORT = 55557
+TEST_SEND_PORT = 55558
 
 
 class NetworkIdentifiersTests(unittest.TestCase):
@@ -56,7 +57,8 @@ class MessageClientTests(unittest.TestCase):
 
         self.server = MessageServer(
             ServerId("Server-001"),
-            TEST_PORT,
+            TEST_RECV_PORT,
+            TEST_SEND_PORT,
             MsgPackDictionarySerializer(),
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
@@ -76,7 +78,8 @@ class MessageClientTests(unittest.TestCase):
         self.client = MessageClient(
             ClientId("Trader-001"),
             LOCALHOST,
-            TEST_PORT,
+            TEST_RECV_PORT,
+            TEST_SEND_PORT,
             MsgPackDictionarySerializer(),
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
@@ -158,6 +161,9 @@ class MessageClientTests(unittest.TestCase):
         self.assertEqual('OK', self.client_sink[2])
 
 
+TEST_PUB_PORT = 55559
+
+
 class SubscriberWorkerTests(unittest.TestCase):
 
     def setUp(self):
@@ -171,7 +177,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.subscriber = MessageSubscriber(
             ClientId("Subscriber-001"),
             LOCALHOST,
-            TEST_PORT,
+            TEST_PUB_PORT,
             CompressorBypass(),
             EncryptionSettings(),
             clock,
@@ -180,7 +186,7 @@ class SubscriberWorkerTests(unittest.TestCase):
 
         self.publisher = MessagePublisher(
             ServerId("Publisher-001"),
-            TEST_PORT,
+            TEST_PUB_PORT,
             CompressorBypass(),
             EncryptionSettings(),
             clock,
