@@ -101,7 +101,7 @@ cdef class LiveExecClient(ExecutionClient):
             encryption,
             clock,
             guid_factory,
-            logger)
+            self._log)
 
         self._event_subscriber = MessageSubscriber(
             self.client_id,
@@ -111,7 +111,7 @@ cdef class LiveExecClient(ExecutionClient):
             encryption,
             clock,
             guid_factory,
-            logger)
+            self._log)
 
         self._event_subscriber.register_handler(self._recv_event)
 

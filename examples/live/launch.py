@@ -70,6 +70,7 @@ if __name__ == "__main__":
         strategies=strategies
     )
 
+    input()
     node.connect()
 
     input()

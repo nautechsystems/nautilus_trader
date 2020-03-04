@@ -15,7 +15,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.commands import SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
 from nautilus_trader.model.commands import AccountInquiry
-from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogLevel, LoggerAdapter
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
@@ -66,7 +66,7 @@ class LiveExecutionTests(unittest.TestCase):
             encryption=EncryptionSettings(),
             clock=clock,
             guid_factory=guid_factory,
-            logger=logger)
+            logger=LoggerAdapter('CommandServer', logger))
 
         self.command_serializer = MsgPackCommandSerializer()
 
