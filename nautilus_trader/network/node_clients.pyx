@@ -18,9 +18,10 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
-from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueInbound
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.network.messages cimport Request, Response
+from nautilus_trader.network.queue cimport MessageQueueInbound, MessageQueueOutbound
+from nautilus_trader.network.socket cimport ClientSocket
 from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.constants cimport *
 
@@ -28,7 +29,7 @@ cdef str _IS_CONNECTED = 'is_connected?'
 cdef str _IS_DISCONNECTED = 'is_disconnected?'
 
 
-cdef class ClientNode(NetworkNode):
+cdef class ClientNode:
     """
     The base class for all client nodes.
     """
@@ -36,56 +37,30 @@ cdef class ClientNode(NetworkNode):
     def __init__(
             self,
             ClientId client_id not None,
-            str host not None,
-            int port,
-            int zmq_socket_type,
             Compressor compressor not None,
-            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
         """
         Initializes a new instance of the ClientNode class.
 
-        :param client_id: The client identifier for the node.
-        :param host: The server host address.
-        :param port: The server port.
-        :param zmq_socket_type: The ZeroMQ socket type.
+        :param client_id: The client identifier.
         :param compressor: The message compressor.
-        :param encryption: The encryption configuration.
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
+        :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(port, 'port')
-        super().__init__(
-            host,
-            port,
-            zmq_socket_type,
-            compressor,
-            encryption,
-            clock,
-            guid_factory,
-            logger)
-
-        self.client_id = client_id
-        self._socket.setsockopt(zmq.IDENTITY, self.client_id.value.encode(UTF8))  # noqa (zmq reference)
+        self._compressor = compressor
+        self._clock = clock
+        self._guid_factory = guid_factory
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._message_handler = None
 
-    cpdef bint is_connected(self):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void connect(self) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void disconnect(self) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        self.client_id = client_id
+        self.sent_count = 0
+        self.recv_count = 0
 
     cpdef void register_handler(self, handler: callable) except *:
         """
@@ -105,19 +80,21 @@ cdef class ClientNode(NetworkNode):
 
         self._message_handler = handler
 
-    cpdef void _connect_socket(self) except *:
-        """
-        Connect to the ZMQ socket.
-        """
-        self._log.info(f"Connecting to {self._network_address}...")
-        self._socket.connect(self._network_address)
+    cpdef bint is_connected(self):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void _disconnect_socket(self) except *:
-        """
-        Disconnect from the ZMQ socket.
-        """
-        self._socket.disconnect(self._network_address)
-        self._log.info(f"Disconnected from {self._network_address}")
+    cpdef void connect(self) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void disconnect(self) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void dispose(self) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
 
 cdef class MessageClient(ClientNode):
@@ -128,8 +105,9 @@ cdef class MessageClient(ClientNode):
     def __init__(
             self,
             ClientId client_id not None,
-            str host not None,
-            int port,
+            str server_host not None,
+            int server_recv_port,
+            int server_send_port,
             DictionarySerializer header_serializer not None,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
@@ -142,8 +120,9 @@ cdef class MessageClient(ClientNode):
         Initializes a new instance of the MessageClient class.
 
         :param client_id: The client identifier for the worker.
-        :param host: The server host address.
-        :param port: The server port.
+        :param server_host: The server host address.
+        :param server_recv_port: The server receive port.
+        :param server_send_port: The server send port.
         :param header_serializer: The header serializer.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
@@ -153,32 +132,52 @@ cdef class MessageClient(ClientNode):
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
+         :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(port, 'port')
+        Condition.valid_string(server_host, 'host')
+        Condition.valid_port(server_recv_port, 'server_in_port')
+        Condition.valid_port(server_send_port, 'server_out_port')
         super().__init__(
             client_id,
-            host,
-            port,
-            zmq.DEALER,  # noqa (zmq reference)
             compressor,
-            encryption,
             clock,
             guid_factory,
             logger)
 
+        self._socket_outbound = ClientSocket(
+            client_id,
+            server_host,
+            server_recv_port,
+            zmq.DEALER,  # noqa (zmq reference)
+            encryption,
+            logger)
+
+        self._socket_inbound = ClientSocket(
+            client_id,
+            server_host,
+            server_send_port,
+            zmq.DEALER,  # noqa (zmq reference)
+            encryption,
+            logger)
+
+        self._queue_outbound = MessageQueueOutbound(
+            self._socket_outbound,
+            self._log)
+
         expected_frames = 2 # [header, body]
-        self._queue = MessageQueueDuplex(
+        self._queue_inbound = MessageQueueInbound(
             expected_frames,
-            self._socket,
+            self._socket_inbound,
             self._recv_frames,
             self._log)
 
         self._header_serializer = header_serializer
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
+        self._message_handler = None
         self._awaiting_reply = {}  # type: {GUID, Message}
+
+        self.session_id = None
 
     cpdef bint is_connected(self):
         """
@@ -190,7 +189,8 @@ cdef class MessageClient(ClientNode):
         """
         Connect to the server.
         """
-        self._connect_socket()
+        self._socket_outbound.connect()
+        self._socket_inbound.connect()
 
         cdef datetime timestamp = self._clock.time_now()
 
@@ -232,6 +232,14 @@ cdef class MessageClient(ClientNode):
 
         self.send_message(disconnect, self._request_serializer.serialize(disconnect))
 
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the MQWorker which close the socket (call disconnect first).
+        """
+        self._socket_outbound.dispose()
+        self._socket_inbound.dispose()
+        self._log.debug(f"Disposed.")
+
     cpdef void send_request(self, Request request) except *:
         """
         Send the given request.
@@ -268,7 +276,6 @@ cdef class MessageClient(ClientNode):
         self._register_message(message)
 
         self._log.debug(f"[{self.sent_count}]--> {message}")
-
         self._send(message.message_type, message.__class__.__name__, body)
 
     cdef void _send(self, MessageType message_type, str class_name, bytes body) except *:
@@ -297,7 +304,7 @@ cdef class MessageClient(ClientNode):
         cdef bytes frame_header = self._compressor.compress(self._header_serializer.serialize(header))
         cdef bytes frame_body = self._compressor.compress(body)
 
-        self._queue.send([frame_header, frame_body])
+        self._queue_outbound.send([frame_header, frame_body])
         self._log.verbose(f"[{self.sent_count}]--> header={header}, body={len(frame_body)} bytes")
         self.sent_count += 1
 
@@ -325,7 +332,7 @@ cdef class MessageClient(ClientNode):
             return
 
         cdef Response response = self._response_serializer.deserialize(frame_body)
-        self._log.debug(f"<--[{self.sent_count}] {response}")
+        self._log.debug(f"<--[{self.recv_count}] {response}")
         self._deregister_message(response.correlation_id)
 
         if isinstance(response, Connected):
@@ -341,7 +348,8 @@ cdef class MessageClient(ClientNode):
             else:
                 self._log.info(response.message)
             self.session_id = None
-            self._disconnect_socket()
+            self._socket_outbound.disconnect()
+            self._socket_inbound.disconnect()
         else:
             if self._message_handler is not None:
                 self._message_handler(response)
@@ -349,10 +357,10 @@ cdef class MessageClient(ClientNode):
     cpdef void _check_connection(self, TimeEvent event) except *:
         if event.label.value.endswith(_IS_CONNECTED):
             if not self.is_connected():
-                self._log.warning("Connection timed out...")
+                self._log.warning("Connection request timed out...")
         elif event.label.value.endswith(_IS_DISCONNECTED):
             if self.is_connected():
-                self._log.warning("Still connected...")
+                self._log.warning(f"Session {self.session_id} is still connected...")
         else:
             self._log.error(f"Check connection message '{event.label}' not recognized.")
 
@@ -419,16 +427,19 @@ cdef class MessageSubscriber(ClientNode):
         Condition.valid_port(port, 'port')
         super().__init__(
             client_id,
-            host,
-            port,
-            zmq.SUB,
             compressor,
-            encryption,
             clock,
             guid_factory,
             logger)
 
         self.register_handler(self._no_subscriber_handler)
+
+        self._socket = SubscriberSocket(
+            client_id,
+            host,
+            port,
+            encryption,
+            logger)
 
         expected_frames = 2 # [topic, body]
         self._queue = MessageQueueInbound(
@@ -444,13 +455,20 @@ cdef class MessageSubscriber(ClientNode):
         """
         Connect to the publisher.
         """
-        self._connect_socket()
+        self._socket.connect()
 
     cpdef void disconnect(self) except *:
         """
         Disconnect from the publisher.
         """
-        self._disconnect_socket()
+        self._socket.disconnect()
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the MQWorker which close the socket (call disconnect first).
+        """
+        self._socket.dispose()
+        self._log.debug(f"Disposed.")
 
     cpdef void subscribe(self, str topic) except *:
         """
@@ -460,8 +478,7 @@ cdef class MessageSubscriber(ClientNode):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
-        self._log.debug(f"Subscribed to topic {topic}")
+        self._socket.subscribe(topic)
 
     cpdef void unsubscribe(self, str topic) except *:
         """
@@ -471,8 +488,7 @@ cdef class MessageSubscriber(ClientNode):
         """
         Condition.valid_string(topic, 'topic')
 
-        self._socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
-        self._log.debug(f"Unsubscribed from topic {topic}")
+        self._socket.unsubscribe(topic)
 
     cpdef void _recv_frames(self, list frames) except *:
         cdef str topic = frames[0].decode(UTF8)

@@ -17,7 +17,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
-from nautilus_trader.network.queue cimport MessageQueueDuplex, MessageQueueOutbound
+from nautilus_trader.network.queue cimport MessageQueueInbound, MessageQueueOutbound
 from nautilus_trader.network.messages cimport Request, Response, MessageReceived, MessageRejected
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
 from nautilus_trader.serialization.constants cimport *
@@ -27,7 +27,7 @@ cdef bytes _STRING = message_type_to_string(MessageType.STRING).title().encode(U
 cdef str _TYPE_UTF8 = 'UTF8'
 
 
-cdef class ServerNode(NetworkNode):
+cdef class ServerNode:
     """
     The base class for all client nodes.
     """
@@ -35,10 +35,7 @@ cdef class ServerNode(NetworkNode):
     def __init__(
             self,
             ServerId server_id not None,
-            int port,
-            int zmq_socket_type,
             Compressor compressor not None,
-            EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
             Logger logger not None):
@@ -46,10 +43,7 @@ cdef class ServerNode(NetworkNode):
         Initializes a new instance of the ServerNode class.
 
         :param server_id: The server identifier.
-        :param port: The server port.
-        :param zmq_socket_type: The ZeroMQ socket type.
         :param compressor: The message compressor.
-        :param encryption: The encryption configuration.
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
@@ -57,18 +51,14 @@ cdef class ServerNode(NetworkNode):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         """
-        super().__init__(
-            '127.0.0.1',
-            port,
-            zmq_socket_type,
-            compressor,
-            encryption,
-            clock,
-            guid_factory,
-            logger)
+        self._compressor = compressor
+        self._clock = clock
+        self._guid_factory = guid_factory
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
 
         self.server_id = server_id
-        self._socket.setsockopt(zmq.IDENTITY, self.server_id.value.encode(UTF8))  # noqa (zmq reference)
+        self.sent_count = 0
+        self.recv_count = 0
 
     cpdef void start(self) except *:
         # Raise exception if not overridden in implementation
@@ -78,19 +68,9 @@ cdef class ServerNode(NetworkNode):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void _bind_socket(self) except *:
-        """
-        Connect to the ZMQ socket.
-        """
-        self._socket.bind(self._network_address)
-        self._log.info(f"Bound socket to {self._network_address}")
-
-    cpdef void _unbind_socket(self) except *:
-        """
-        Disconnect from the ZMQ socket.
-        """
-        self._socket.unbind(self._network_address)
-        self._log.info(f"Unbound socket at {self._network_address}")
+    cpdef void dispose(self) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
 
 cdef class MessageServer(ServerNode):
@@ -101,7 +81,8 @@ cdef class MessageServer(ServerNode):
     def __init__(
             self,
             ServerId server_id,
-            int port,
+            int recv_port,
+            int send_port,
             DictionarySerializer header_serializer not None,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
@@ -114,7 +95,9 @@ cdef class MessageServer(ServerNode):
         Initializes a new instance of the MessageServer class.
 
         :param server_id: The server identifier.
-        :param port: The server port.
+        :param recv_port: The server receive port.
+        :param send_port: The server send port.
+        :param header_serializer: The header serializer.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
         :param compressor: The message compressor.
@@ -123,20 +106,37 @@ cdef class MessageServer(ServerNode):
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         """
+        Condition.valid_port(send_port, 'send_port')
+        Condition.valid_port(recv_port, 'recv_port')
         super().__init__(
             server_id,
-            port,
-            zmq.ROUTER,  # noqa (zmq reference)
             compressor,
-            encryption,
             clock,
             guid_factory,
             logger)
 
-        expected_frames = 3 # [sender, header, body]
-        self._queue = MessageQueueDuplex(
+        self._socket_outbound = ServerSocket(
+            server_id,
+            send_port,
+            zmq.ROUTER,  # noqa (zmq reference)
+            encryption,
+            logger)
+
+        self._socket_inbound = ServerSocket(
+            server_id,
+            recv_port,
+            zmq.ROUTER,  # noqa (zmq reference)
+            encryption,
+            logger)
+
+        self._queue_outbound = MessageQueueOutbound(
+            self._socket_outbound,
+            self._log)
+
+        expected_frames = 3 # [header, body]
+        self._queue_inbound = MessageQueueInbound(
             expected_frames,
-            self._socket,
+            self._socket_inbound,
             self._recv_frames,
             self._log)
 
@@ -150,13 +150,23 @@ cdef class MessageServer(ServerNode):
         """
         Start the server.
         """
-        self._bind_socket()
+        self._socket_inbound.connect()
+        self._socket_outbound.connect()
 
     cpdef void stop(self) except *:
         """
         Stop the server.
         """
-        self._unbind_socket()
+        self._socket_inbound.disconnect()
+        self._socket_outbound.disconnect()
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the MQWorker which close the socket (call disconnect first).
+        """
+        self._socket_inbound.dispose()
+        self._socket_outbound.dispose()
+        self._log.debug(f"Disposed.")
 
     cpdef void register_request_handler(self, handler) except *:
         """
@@ -167,6 +177,7 @@ cdef class MessageServer(ServerNode):
         ----------
         handler : callable
             The handler to register.
+            
         """
         self._handlers[MessageType.REQUEST] = handler
 
@@ -181,6 +192,7 @@ cdef class MessageServer(ServerNode):
             The message type to register.
         handler : callable
             The handler to register.
+            
         """
         Condition.callable(handler, 'handler')
 
@@ -202,6 +214,7 @@ cdef class MessageServer(ServerNode):
             The identifier of the rejected message.
         receiver : ClientId
             The client to send the response to.
+            
         """
         cdef MessageRejected response = MessageRejected(
             rejected_message,
@@ -221,6 +234,7 @@ cdef class MessageServer(ServerNode):
             The original message received.
         receiver : ClientId
             The client to send the response to.
+            
         """
         cdef MessageReceived response = MessageReceived(
             original.__class__.__name__,
@@ -272,7 +286,7 @@ cdef class MessageServer(ServerNode):
         cdef bytes frame_header = self._compressor.compress(self._header_serializer.serialize(header))
         cdef bytes frame_body = self._compressor.compress(body)
 
-        self._queue.send([frame_receiver, frame_header, frame_body])
+        self._queue_outbound.send([frame_receiver, frame_header, frame_body])
         self._log.verbose(f"[{self.sent_count}]--> header={header}, body={len(frame_body)} bytes")
         self.sent_count += 1
 
@@ -327,11 +341,11 @@ cdef class MessageServer(ServerNode):
             # Peer not previously connected to a session
             session_id = SessionId(request.authentication)
             self._peers[client_id] = session_id
-            message = f"{request.client_id.value} connected to session {session_id.value} at {self._network_address}"
+            message = f"{request.client_id.value} connected to session {session_id.value} with {self.server_id.value}"
             self._log.info(message)
         else:
             # Peer already connected to a session
-            message = f"{request.client_id.value} already connected to session {session_id.value} at {self._network_address}"
+            message = f"{request.client_id.value} already connected to session {session_id.value} with {self.server_id.value}"
             self._log.warning(message)
 
         cdef Connected response = Connected(
@@ -351,12 +365,12 @@ cdef class MessageServer(ServerNode):
         if session_id is None:
             # Peer not previously connected to a session
             session_id = SessionId(str(None))
-            message = f"{request.client_id.value} had no session to disconnect at {self._network_address}"
+            message = f"{request.client_id.value} had no session to disconnect with {self.server_id.value}"
             self._log.warning(message)
         else:
             # Peer connected to session
             del self._peers[client_id]
-            message = f"{request.client_id.value} disconnected from {session_id.value} at {self._network_address}"
+            message = f"{request.client_id.value} disconnected from {session_id.value} with {self.server_id.value}"
             self._log.info(message)
 
         cdef Disconnected response = Disconnected(
@@ -396,12 +410,16 @@ cdef class MessagePublisher(ServerNode):
         """
         super().__init__(
             server_id,
-            port,
-            zmq.PUB,
             compressor,
-            encryption,
             clock,
             guid_factory,
+            logger)
+
+        self._socket = ServerSocket(
+            server_id,
+            port,
+            zmq.PUB,
+            encryption,
             logger)
 
         self._queue = MessageQueueOutbound(self._socket, self._log)
@@ -410,13 +428,20 @@ cdef class MessagePublisher(ServerNode):
         """
         Stop the server.
         """
-        self._bind_socket()
+        self._socket.connect()
 
     cpdef void stop(self) except *:
         """
         Stop the server.
         """
-        self._unbind_socket()
+        self._socket.disconnect()
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the MQWorker which close the socket (call disconnect first).
+        """
+        self._socket.dispose()
+        self._log.debug(f"Disposed.")
 
     cpdef void publish(self, str topic, bytes message) except *:
         """

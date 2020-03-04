@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import queue
-import threading
 import zmq
 from cpython.datetime cimport date
 
@@ -46,12 +44,10 @@ cdef class LiveDataClient(DataClient):
     def __init__(self,
                  TraderId trader_id,
                  str host not None,
-                 int tick_server_port,
+                 int data_req_port,
+                 int data_rep_port,
+                 int data_pub_port,
                  int tick_pub_port,
-                 int bar_server_port,
-                 int bar_pub_port,
-                 int inst_server_port,
-                 int inst_pub_port,
                  Compressor compressor not None=CompressorBypass(),
                  EncryptionSettings encryption not None=EncryptionSettings(),
                  DictionarySerializer header_serializer not None=MsgPackDictionarySerializer(),
@@ -68,12 +64,10 @@ cdef class LiveDataClient(DataClient):
 
         :param trader_id: The trader identifier for the client.
         :param host: The server host.
-        :param tick_server_port: The port for tick requests (default=55501).
-        :param tick_pub_port: The port for tick subscriptions (default=55502).
-        :param bar_server_port: The port for bar requests (default=55503).
-        :param bar_pub_port: The port for bar subscriptions (default=55504).
-        :param inst_server_port: The port for instrument requests (default=55505).
-        :param inst_pub_port: The port for instrument subscriptions (default=55506).
+        :param data_req_port: The port for data requests.
+        :param data_rep_port: The port for data replies.
+        :param data_pub_port: The port for data subscriptions.
+        :param tick_pub_port: The port for tick subscriptions.
         :param compressor: The messaging compressor.
         :param encryption: The messaging encryption configuration.
         :param header_serializer: The header serializer.
@@ -86,35 +80,30 @@ cdef class LiveDataClient(DataClient):
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the tick_req_port is not in range [0, 65535].
-        :raises ValueError: If the tick_sub_port is not in range [0, 65535].
-        :raises ValueError: If the bar_req_port is not in range [0, 65535].
-        :raises ValueError: If the bar_sub_port is not in range [0, 65535].
-        :raises ValueError: If the inst_req_port is not in range [0, 65535].
-        :raises ValueError: If the inst_sub_port is not in range [0, 65535].
+        :raises ValueError: If the data_server_req_port is not in range [0, 65535].
+        :raises ValueError: If the data_server_rep_port is not in range [0, 65535].
+        :raises ValueError: If the data_server_pub_port is not in range [0, 65535].
+        :raises ValueError: If the tick_server_pub_port is not in range [0, 65535].
         """
         Condition.valid_string(host, 'host')
-        Condition.valid_port(tick_server_port, 'tick_server_port')
+        Condition.valid_port(data_req_port, 'data_req_port')
+        Condition.valid_port(data_rep_port, 'data_rep_port')
+        Condition.valid_port(data_pub_port, 'data_pub_port')
         Condition.valid_port(tick_pub_port, 'tick_pub_port')
-        Condition.valid_port(bar_server_port, 'bar_server_port')
-        Condition.valid_port(bar_pub_port, 'bar_pub_port')
-        Condition.valid_port(inst_server_port, 'inst_server_port')
-        Condition.valid_port(inst_pub_port, 'inst_pub_port')
         Condition.positive_int(tick_capacity, 'tick_capacity')
         super().__init__(tick_capacity, clock, guid_factory, logger)
 
-        self._response_queue = queue.Queue()
-        self._response_thread = threading.Thread(target=self._pop_response, daemon=True)
         self._correlation_index = {}  # type: {GUID, callable}
 
         self.trader_id = trader_id
         self.client_id = ClientId(trader_id.value)
         self.last_request_id = None
 
-        self._tick_client = MessageClient(
+        self._data_client = MessageClient(
             self.client_id,
             host,
-            tick_server_port,
+            data_req_port,
+            data_rep_port,
             header_serializer,
             request_serializer,
             response_serializer,
@@ -123,38 +112,19 @@ cdef class LiveDataClient(DataClient):
             clock,
             guid_factory,
             logger)
+        self._data_client.register_handler(self._handle_response)
 
-        self._tick_client.register_handler(self._handle_response)
-
-        self._bar_client = MessageClient(
+        self._data_subscriber = MessageSubscriber(
             self.client_id,
             host,
-            bar_server_port,
-            header_serializer,
-            request_serializer,
-            response_serializer,
+            data_pub_port,
             compressor,
             encryption,
             clock,
             guid_factory,
             logger)
+        self._data_subscriber.register_handler(self._handle_sub_msg)
 
-        self._bar_client.register_handler(self._handle_response)
-
-        self._inst_client = MessageClient(
-            self.client_id,
-            host,
-            inst_server_port,
-            header_serializer,
-            request_serializer,
-            response_serializer,
-            compressor,
-            encryption,
-            clock,
-            guid_factory,
-            logger)
-
-        self._inst_client.register_handler(self._handle_response)
 
         self._tick_subscriber = MessageSubscriber(
             self.client_id,
@@ -165,32 +135,7 @@ cdef class LiveDataClient(DataClient):
             clock,
             guid_factory,
             logger)
-
         self._tick_subscriber.register_handler(self._handle_tick_msg)
-
-        self._bar_subscriber = MessageSubscriber(
-            self.client_id,
-            host,
-            bar_pub_port,
-            compressor,
-            encryption,
-            clock,
-            guid_factory,
-            logger)
-
-        self._bar_subscriber.register_handler(self._handle_bar_msg)
-
-        self._inst_subscriber = MessageSubscriber(
-            self.client_id,
-            host,
-            inst_pub_port,
-            compressor,
-            encryption,
-            clock,
-            guid_factory,
-            logger)
-
-        self._inst_subscriber.register_handler(self._handle_inst_msg)
 
         self._data_serializer = data_serializer
         self._instrument_serializer = instrument_serializer
@@ -202,24 +147,18 @@ cdef class LiveDataClient(DataClient):
         """
         Connect to the data service.
         """
-        self._tick_client.connect()
+        self._data_client.connect()
+        self._data_subscriber.connect()
         self._tick_subscriber.connect()
-        self._bar_client.connect()
-        self._bar_subscriber.connect()
-        self._inst_client.connect()
-        self._inst_subscriber.connect()
 
     cpdef void disconnect(self) except *:
         """
         Disconnect from the data service.
         """
         try:
-            self._tick_client.disconnect()
+            self._data_client.disconnect()
+            self._data_subscriber.disconnect()
             self._tick_subscriber.disconnect()
-            self._bar_client.disconnect()
-            self._bar_subscriber.disconnect()
-            self._inst_client.disconnect()
-            self._inst_subscriber.disconnect()
         except zmq.ZMQError as ex:
             self._log.exception(ex)
 
@@ -235,12 +174,9 @@ cdef class LiveDataClient(DataClient):
         """
         Disposes of the data client.
         """
-        self._tick_client.dispose()
+        self._data_client.dispose()
+        self._data_subscriber.dispose()
         self._tick_subscriber.dispose()
-        self._bar_client.dispose()
-        self._bar_subscriber.dispose()
-        self._inst_client.dispose()
-        self._inst_subscriber.dispose()
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
@@ -293,8 +229,8 @@ cdef class LiveDataClient(DataClient):
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
-        self._tick_client.send_request(request)
-        self.last_request_id = request_id
+        self._data_client.send_request(request)
+        self.last_request_id = request_id  # For testing only
 
     cpdef void request_bars(
             self,
@@ -340,8 +276,8 @@ cdef class LiveDataClient(DataClient):
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
-        self._bar_client.send_request(request)
-        self.last_request_id = request_id
+        self._data_client.send_request(request)
+        self.last_request_id = request_id  # For testing only
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
@@ -365,8 +301,8 @@ cdef class LiveDataClient(DataClient):
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
-        self._inst_client.send_request(request)
-        self.last_request_id = request_id
+        self._data_client.send_request(request)
+        self.last_request_id = request_id  # For testing only
 
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
@@ -389,8 +325,8 @@ cdef class LiveDataClient(DataClient):
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
-        self._inst_client.send_request(request)
-        self.last_request_id = request_id
+        self._data_client.send_request(request)
+        self.last_request_id = request_id  # For testing only
 
     cpdef void update_instruments(self, Venue venue) except *:
         """
@@ -433,7 +369,7 @@ cdef class LiveDataClient(DataClient):
             self._self_generate_bars(bar_type, handler)
         else:
             self._add_bar_handler(bar_type, handler)
-            self._bar_subscriber.subscribe(bar_type.to_string())
+            self._data_subscriber.subscribe(f'Bar:{bar_type.to_string()}')
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
@@ -447,7 +383,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         self._add_instrument_handler(symbol, handler)
-        self._inst_subscriber.subscribe(symbol.value)
+        self._data_subscriber.subscribe(f'Instrument:{symbol.value}')
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: callable) except *:
         """
@@ -474,7 +410,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
 
-        self._bar_subscriber.unsubscribe(bar_type.to_string())
+        self._data_subscriber.unsubscribe(f'Bar:{bar_type.to_string()}')
         self._remove_bar_handler(bar_type, handler)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
@@ -488,7 +424,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
-        self._inst_subscriber.unsubscribe(symbol.value)
+        self._data_subscriber.unsubscribe(f'Instrument:{symbol.value}')
         self._remove_instrument_handler(symbol, handler)
 
     cpdef void _set_callback(self, GUID request_id, handler: callable) except *:
@@ -534,23 +470,20 @@ cdef class LiveDataClient(DataClient):
 
         self._pop_callback(response.correlation_id, data)
 
-    cpdef void _put_response(self, Response response) except *:
-        self._response_queue.put(response)
-
-    cpdef void _pop_response(self) except *:
-        self._log.debug("Starting message consumption loop...")
-
-        while True:
-            self._handle_response(self._response_queue.get())
-
-    cpdef void _handle_tick_msg(self, str topic, bytes payload) except *:
+    cpdef void _handle_tick_msg(self, str topic, bytes body) except *:
         # Handle the given tick message published for the given topic
-        self._handle_tick(Utf8TickSerializer.deserialize(self._cached_symbols.get(topic), payload))
+        self._handle_tick(Utf8TickSerializer.deserialize(self._cached_symbols.get(topic), body))
 
-    cpdef void _handle_bar_msg(self, str topic, bytes payload) except *:
-        # Handle the given bar message published for the given topic
-        self._handle_bar(self._cached_bar_types.get(topic), Utf8BarSerializer.deserialize(payload))
+    cpdef void _handle_sub_msg(self, str topic, bytes body) except *:
+        # Handle the given subscription message published for the given topic
 
-    cpdef void _handle_inst_msg(self, str topic, bytes payload) except *:
-        # Handle the given instrument message published for the given topic
-        self._handle_instrument(self._instrument_serializer.deserialize(payload))
+        cdef tuple topic_parts = topic.partition(':')
+        cdef str data_type = topic_parts[0]
+        cdef str data_meta = topic_parts[2]
+        if data_type == 'Bar':
+            self._handle_bar(self._cached_bar_types.get(data_meta), Utf8BarSerializer.deserialize(body))
+        elif data_type == 'Instrument':
+            self._handle_instrument(self._instrument_serializer.deserialize(body))
+        else:
+            self._log.error(f'Cannot handle published messaged, '
+                            f'data type \'{data_type}\' not recognized.')

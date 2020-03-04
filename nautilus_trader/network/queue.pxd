@@ -7,33 +7,29 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.network.socket cimport Socket
 
 
-cdef class MessageQueueDuplex:
-    cdef MessageQueueInbound _inbound
-    cdef MessageQueueOutbound _outbound
+cdef class MessageQueueOutbound:
+    cdef LoggerAdapter _log
+    cdef Socket _socket
+    cdef object _queue
+    cdef object _thread
 
-    cdef void send(self, list frames) except *
+    cpdef void send(self, list frames) except *
+    cpdef void _get_loop(self) except *
 
 
 cdef class MessageQueueInbound:
     cdef LoggerAdapter _log
     cdef int _expected_frames
-    cdef object _socket
+    cdef Socket _socket
     cdef object _queue
     cdef object _thread_put
     cdef object _thread_get
-    cdef object _frames_handler
+    cdef object _frames_receiver
+
+    cdef readonly str network_address
 
     cpdef void _put_loop(self) except *
-    cpdef void _get_loop(self) except *
-
-
-cdef class MessageQueueOutbound:
-    cdef LoggerAdapter _log
-    cdef object _socket
-    cdef object _queue
-    cdef object _thread
-
-    cdef void send(self, list frames) except *
     cpdef void _get_loop(self) except *

@@ -39,15 +39,15 @@ GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 UTF8 = 'utf8'
 LOCALHOST = "127.0.0.1"
+TEST_COMMANDS_REQ_PORT = 56555
+TEST_COMMANDS_REP_PORT = 56556
+TEST_EVENTS_PUB_PORT = 56557
 
 
 class LiveExecutionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        commands_port = 56555
-        events_port = 56556
-
         trader_id = TraderId('TESTER', '000')
         account_id = TestStubs.account_id()
 
@@ -57,7 +57,8 @@ class LiveExecutionTests(unittest.TestCase):
 
         self.command_server = MessageServer(
             server_id=ServerId("CommandServer-001"),
-            port=commands_port,
+            recv_port=TEST_COMMANDS_REQ_PORT,
+            send_port=TEST_COMMANDS_REP_PORT,
             header_serializer=MsgPackDictionarySerializer(),
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
@@ -101,8 +102,9 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_client = LiveExecClient(
             exec_engine=self.exec_engine,
             host=LOCALHOST,
-            commands_port=commands_port,
-            events_port=events_port,
+            command_req_port=TEST_COMMANDS_REQ_PORT,
+            command_rep_port=TEST_COMMANDS_REP_PORT,
+            event_pub_port=TEST_EVENTS_PUB_PORT,
             compressor=CompressorBypass(),
             encryption=EncryptionSettings(),
             command_serializer=MsgPackCommandSerializer(),
@@ -130,6 +132,9 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_client.disconnect()
         time.sleep(0.1)
         self.command_server.stop()
+        time.sleep(0.1)
+        self.exec_client.dispose()
+        self.command_server.dispose()
         time.sleep(0.1)
 
     def command_handler(self, message):

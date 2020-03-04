@@ -41,8 +41,9 @@ cdef class LiveExecClient(ExecutionClient):
             self,
             ExecutionEngine exec_engine not None,
             str host not None,
-            int commands_port,
-            int events_port,
+            int command_req_port,
+            int command_rep_port,
+            int event_pub_port,
             Compressor compressor not None=CompressorBypass(),
             EncryptionSettings encryption not None=EncryptionSettings(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
@@ -57,9 +58,10 @@ cdef class LiveExecClient(ExecutionClient):
         Initializes a new instance of the LiveExecClient class.
 
         :param exec_engine: The execution engine for the component.
-        :param host: The execution service host IP address (default='localhost').
-        :param commands_port: The execution service commands port (default=55555).
-        :param events_port: The execution service events port (default=55556).
+        :param host: The execution service host IP address.
+        :param command_req_port: The execution service command request port.
+        :param command_rep_port: The execution service command reply port.
+        :param event_pub_port: The execution service event publisher port.
         :param encryption: The encryption configuration.
         :param command_serializer: The command serializer for the client.
         :param header_serializer: The header serializer for the client.
@@ -71,12 +73,14 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the events_topic is not a valid string.
-        :raises ValueError: If the commands_port is not in range [49152, 65535].
+        :raises ValueError: If the commands_req_port is not in range [49152, 65535].
+        :raises ValueError: If the commands_rep_port is not in range [49152, 65535].
         :raises ValueError: If the events_port is not in range [49152, 65535].
         """
         Condition.valid_string(host, 'host')
-        Condition.in_range_int(commands_port, 0, 65535, 'commands_port')
-        Condition.in_range_int(events_port, 0, 65535, 'events_port')
+        Condition.in_range_int(command_req_port, 0, 65535, 'commands_req_port')
+        Condition.in_range_int(command_rep_port, 0, 65535, 'commands_rep_port')
+        Condition.in_range_int(event_pub_port, 0, 65535, 'events_port')
         super().__init__(exec_engine, logger)
 
         self._command_serializer = command_serializer
@@ -85,12 +89,11 @@ cdef class LiveExecClient(ExecutionClient):
         self.trader_id = exec_engine.trader_id
         self.client_id = ClientId(self.trader_id.value)
 
-        expected_frames = 3
-
         self._command_client = MessageClient(
             self.client_id,
             host,
-            commands_port,
+            command_req_port,
+            command_rep_port,
             header_serializer,
             request_serializer,
             response_serializer,
@@ -103,7 +106,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._event_subscriber = MessageSubscriber(
             self.client_id,
             host,
-            events_port,
+            event_pub_port,
             compressor,
             encryption,
             clock,
