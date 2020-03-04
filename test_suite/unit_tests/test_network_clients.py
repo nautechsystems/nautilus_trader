@@ -11,7 +11,7 @@ import time
 import zmq
 
 from nautilus_trader.core.message import MessageType
-from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogLevel, LoggerAdapter
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import CompressorBypass
@@ -66,7 +66,7 @@ class MessageClientTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             guid_factory,
-            logger)
+            LoggerAdapter('MessageServer', logger))
 
         # Register test handlers
         self.server.register_handler(MessageType.STRING, self.server_sink.append)
@@ -87,7 +87,7 @@ class MessageClientTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             guid_factory,
-            logger)
+            LoggerAdapter('MessageClient', logger))
 
         self.client.register_handler(self.client_sink.append)
 
@@ -182,7 +182,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             guid_factory,
-            logger)
+            LoggerAdapter('MessageSubscriber', logger))
 
         self.publisher = MessagePublisher(
             ServerId("Publisher-001"),
@@ -191,7 +191,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             guid_factory,
-            logger)
+            LoggerAdapter('MessagePublisher', logger))
 
         self.publisher.start()
 

@@ -111,7 +111,7 @@ cdef class LiveDataClient(DataClient):
             encryption,
             clock,
             guid_factory,
-            logger)
+            self._log)
         self._data_client.register_handler(self._handle_response)
 
         self._data_subscriber = MessageSubscriber(
@@ -122,9 +122,8 @@ cdef class LiveDataClient(DataClient):
             encryption,
             clock,
             guid_factory,
-            logger)
+            self._log)
         self._data_subscriber.register_handler(self._handle_sub_msg)
-
 
         self._tick_subscriber = MessageSubscriber(
             self.client_id,
@@ -134,7 +133,7 @@ cdef class LiveDataClient(DataClient):
             encryption,
             clock,
             guid_factory,
-            logger)
+            self._log)
         self._tick_subscriber.register_handler(self._handle_tick_msg)
 
         self._data_serializer = data_serializer

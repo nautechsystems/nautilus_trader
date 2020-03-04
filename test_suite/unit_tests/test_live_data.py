@@ -13,7 +13,7 @@ import time
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar
 from nautilus_trader.model.identifiers import Venue, TraderId
-from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogLevel, LoggerAdapter
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.messages import DataResponse, DataRequest
 from nautilus_trader.network.encryption import EncryptionSettings
@@ -66,7 +66,7 @@ class LiveDataClientTests(unittest.TestCase):
             encryption=self.encryption,
             clock=self.clock,
             guid_factory=self.guid_factory,
-            logger=self.logger)
+            logger=LoggerAdapter('DataServer', self.logger))
 
         self.data_server_sink = []
         self.data_server.register_request_handler(self.data_server_sink.append)
@@ -78,7 +78,7 @@ class LiveDataClientTests(unittest.TestCase):
             encryption=self.encryption,
             clock=self.clock,
             guid_factory=self.guid_factory,
-            logger=self.logger)
+            logger=LoggerAdapter('DataPublisher', self.logger))
 
         self.tick_publisher = MessagePublisher(
             server_id=ServerId('TickPublisher-001'),
@@ -87,7 +87,7 @@ class LiveDataClientTests(unittest.TestCase):
             encryption=self.encryption,
             clock=self.clock,
             guid_factory=self.guid_factory,
-            logger=self.logger)
+            logger=LoggerAdapter('TickPublisher', self.logger))
 
         self.data_server.start()
         self.data_publisher.start()

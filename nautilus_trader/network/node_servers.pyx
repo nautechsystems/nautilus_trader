@@ -38,7 +38,7 @@ cdef class ServerNode:
             Compressor compressor not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the ServerNode class.
 
@@ -54,7 +54,7 @@ cdef class ServerNode:
         self._compressor = compressor
         self._clock = clock
         self._guid_factory = guid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = logger
 
         self.server_id = server_id
         self.sent_count = 0
@@ -90,7 +90,7 @@ cdef class MessageServer(ServerNode):
             EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the MessageServer class.
 
@@ -120,14 +120,14 @@ cdef class MessageServer(ServerNode):
             send_port,
             zmq.ROUTER,  # noqa (zmq reference)
             encryption,
-            logger)
+            self._log)
 
         self._socket_inbound = ServerSocket(
             server_id,
             recv_port,
             zmq.ROUTER,  # noqa (zmq reference)
             encryption,
-            logger)
+            self._log)
 
         self._queue_outbound = MessageQueueOutbound(
             self._socket_outbound,
@@ -396,7 +396,7 @@ cdef class MessagePublisher(ServerNode):
                  EncryptionSettings encryption not None,
                  Clock clock not None,
                  GuidFactory guid_factory not None,
-                 Logger logger not None):
+                 LoggerAdapter logger not None):
         """
         Initializes a new instance of the MessagePublisher class.
 
@@ -420,7 +420,7 @@ cdef class MessagePublisher(ServerNode):
             port,
             zmq.PUB,
             encryption,
-            logger)
+            self._log)
 
         self._queue = MessageQueueOutbound(self._socket, self._log)
 

@@ -31,7 +31,7 @@ cdef class Socket:
             int port,
             int socket_type,
             EncryptionSettings encryption not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the Socket class.
 
@@ -47,7 +47,7 @@ cdef class Socket:
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
 
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = logger
         self._socket = zmq.Context.instance().socket(socket_type)
         self._socket.setsockopt(zmq.IDENTITY, socket_id.value.encode(_UTF8))  # noqa (zmq reference)
         self._socket.setsockopt(zmq.LINGER, 1)
@@ -128,7 +128,7 @@ cdef class ClientSocket(Socket):
             int port,
             int socket_type,
             EncryptionSettings encryption not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the ClientSocket class.
 
@@ -177,7 +177,7 @@ cdef class SubscriberSocket(ClientSocket):
             str host not None,
             int port,
             EncryptionSettings encryption not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the SubscriberSocket class.
 
@@ -247,7 +247,7 @@ cdef class ServerSocket(Socket):
             int port,
             int socket_type,
             EncryptionSettings encryption not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the ServerSocket class.
 

@@ -40,7 +40,7 @@ cdef class ClientNode:
             Compressor compressor not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the ClientNode class.
 
@@ -55,7 +55,7 @@ cdef class ClientNode:
         self._compressor = compressor
         self._clock = clock
         self._guid_factory = guid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = logger
         self._message_handler = None
 
         self.client_id = client_id
@@ -115,7 +115,7 @@ cdef class MessageClient(ClientNode):
             EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
-            Logger logger not None):
+            LoggerAdapter logger not None):
         """
         Initializes a new instance of the MessageClient class.
 
@@ -150,7 +150,7 @@ cdef class MessageClient(ClientNode):
             server_recv_port,
             zmq.DEALER,  # noqa (zmq reference)
             encryption,
-            logger)
+            self._log)
 
         self._socket_inbound = ClientSocket(
             client_id,
@@ -158,7 +158,7 @@ cdef class MessageClient(ClientNode):
             server_send_port,
             zmq.DEALER,  # noqa (zmq reference)
             encryption,
-            logger)
+            self._log)
 
         self._queue_outbound = MessageQueueOutbound(
             self._socket_outbound,
@@ -406,7 +406,7 @@ cdef class MessageSubscriber(ClientNode):
             EncryptionSettings encryption not None,
             Clock clock not None,
             GuidFactory guid_factory not None,
-            Logger logger not None):
+            LoggerAdapter logger):
         """
         Initializes a new instance of the MessageSubscriber class.
 
@@ -439,7 +439,7 @@ cdef class MessageSubscriber(ClientNode):
             host,
             port,
             encryption,
-            logger)
+            self._log)
 
         expected_frames = 2 # [topic, body]
         self._queue = MessageQueueInbound(
