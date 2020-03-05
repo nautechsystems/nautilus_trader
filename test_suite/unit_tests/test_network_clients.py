@@ -27,8 +27,8 @@ from test_kit.stubs import UNIX_EPOCH
 from test_kit.mocks import ObjectStorer
 
 LOCALHOST = "127.0.0.1"
-TEST_RECV_PORT = 55557
-TEST_SEND_PORT = 55558
+TEST_RECV_PORT = 55657
+TEST_SEND_PORT = 55658
 
 
 class NetworkIdentifiersTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class NetworkIdentifiersTests(unittest.TestCase):
         session_id = SessionId.py_create(client_id, UNIX_EPOCH, 'None')
 
         # Assert
-        self.assertEqual('3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea', session_id.value)
+        self.assertEqual('e5db3dad8222a27e5d2991d11ad65f0f74668a4cfb629e97aa6920a73a012f87', session_id.value)
 
 
 class MessageClientTests(unittest.TestCase):
