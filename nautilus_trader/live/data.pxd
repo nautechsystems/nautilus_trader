@@ -33,7 +33,7 @@ cdef class LiveDataClient(DataClient):
     cdef readonly GUID last_request_id
 
     cpdef void _set_callback(self, GUID request_id, handler: callable) except *
-    cpdef void _pop_callback(self, GUID correlation_id, list data) except *
+    cpdef object _pop_callback(self, GUID correlation_id)
     cpdef void _handle_response(self, Response response) except *
     cpdef void _handle_data_response(self, DataResponse response) except *
     cpdef void _handle_instruments_py(self, list instruments) except *

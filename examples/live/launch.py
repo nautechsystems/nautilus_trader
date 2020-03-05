@@ -20,11 +20,11 @@ from examples.strategies.ema_cross import EMACrossPy
 #   - A NautilusData instance listening on the default ports
 #   - A NautilusExecutor instance listening on the default ports
 
-# BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-# BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
+BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
-BAR_SPEC_FX = BarSpecification(100, BarStructure.TICK, PriceType.BID)
-BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
+# BAR_SPEC_FX = BarSpecification(100, BarStructure.TICK, PriceType.BID)
+# BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
 
 symbols_fx = [
     Symbol('AUDUSD', Venue('FXCM')),
