@@ -13,7 +13,6 @@ from nautilus_trader.core.message cimport Message, MessageType, message_type_to_
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId

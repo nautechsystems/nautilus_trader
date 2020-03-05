@@ -45,7 +45,7 @@ cdef class LiveDataClient(DataClient):
                  TraderId trader_id,
                  str host not None,
                  int data_req_port,
-                 int data_rep_port,
+                 int data_res_port,
                  int data_pub_port,
                  int tick_pub_port,
                  Compressor compressor not None=CompressorBypass(),
@@ -65,7 +65,7 @@ cdef class LiveDataClient(DataClient):
         :param trader_id: The trader identifier for the client.
         :param host: The server host.
         :param data_req_port: The port for data requests.
-        :param data_rep_port: The port for data replies.
+        :param data_res_port: The port for data responses.
         :param data_pub_port: The port for data subscriptions.
         :param tick_pub_port: The port for tick subscriptions.
         :param compressor: The messaging compressor.
@@ -87,7 +87,7 @@ cdef class LiveDataClient(DataClient):
         """
         Condition.valid_string(host, 'host')
         Condition.valid_port(data_req_port, 'data_req_port')
-        Condition.valid_port(data_rep_port, 'data_rep_port')
+        Condition.valid_port(data_res_port, 'data_rep_port')
         Condition.valid_port(data_pub_port, 'data_pub_port')
         Condition.valid_port(tick_pub_port, 'tick_pub_port')
         Condition.positive_int(tick_capacity, 'tick_capacity')
@@ -103,7 +103,7 @@ cdef class LiveDataClient(DataClient):
             self.client_id,
             host,
             data_req_port,
-            data_rep_port,
+            data_res_port,
             header_serializer,
             request_serializer,
             response_serializer,

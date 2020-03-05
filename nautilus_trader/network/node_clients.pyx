@@ -15,7 +15,6 @@ from nautilus_trader.core.message cimport Message, MessageType
 from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
 from nautilus_trader.common.clock cimport Clock, TimeEvent
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
@@ -106,8 +105,8 @@ cdef class MessageClient(ClientNode):
             self,
             ClientId client_id not None,
             str server_host not None,
-            int server_recv_port,
-            int server_send_port,
+            int server_req_port,
+            int server_res_port,
             DictionarySerializer header_serializer not None,
             RequestSerializer request_serializer not None,
             ResponseSerializer response_serializer not None,
@@ -121,8 +120,8 @@ cdef class MessageClient(ClientNode):
 
         :param client_id: The client identifier for the worker.
         :param server_host: The server host address.
-        :param server_recv_port: The server receive port.
-        :param server_send_port: The server send port.
+        :param server_req_port: The server request port.
+        :param server_res_port: The server response port.
         :param header_serializer: The header serializer.
         :param request_serializer: The request serializer.
         :param response_serializer: The response serializer.
@@ -135,8 +134,8 @@ cdef class MessageClient(ClientNode):
          :raises ValueError: If the port is not in range [49152, 65535].
         """
         Condition.valid_string(server_host, 'host')
-        Condition.valid_port(server_recv_port, 'server_in_port')
-        Condition.valid_port(server_send_port, 'server_out_port')
+        Condition.valid_port(server_req_port, 'server_in_port')
+        Condition.valid_port(server_res_port, 'server_out_port')
         super().__init__(
             client_id,
             compressor,
@@ -147,7 +146,7 @@ cdef class MessageClient(ClientNode):
         self._socket_outbound = ClientSocket(
             client_id,
             server_host,
-            server_recv_port,
+            server_req_port,
             zmq.DEALER,  # noqa (zmq reference)
             encryption,
             self._log)
@@ -155,7 +154,7 @@ cdef class MessageClient(ClientNode):
         self._socket_inbound = ClientSocket(
             client_id,
             server_host,
-            server_send_port,
+            server_res_port,
             zmq.DEALER,  # noqa (zmq reference)
             encryption,
             self._log)
