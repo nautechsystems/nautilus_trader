@@ -162,7 +162,11 @@ cdef class ClientSocket(Socket):
         """
         Disconnect the socket.
         """
-        self._socket.disconnect(self.network_address)
+        try:
+            self._socket.disconnect(self.network_address)
+        except zmq.ZMQError as ex:
+            self._log.warning(f"Socket was not already connected to {self.network_address}")
+
         self._log.info(f"Disconnected from {self.network_address}")
 
 
@@ -279,5 +283,9 @@ cdef class ServerSocket(Socket):
         """
         Disconnect the socket.
         """
-        self._socket.unbind(self.network_address)
+        try:
+            self._socket.unbind(self.network_address)
+        except zmq.ZMQError as ex:
+            self._log.warning(f"Socket was not already bound to {self.network_address}")
+
         self._log.info(f"Unbound socket at {self.network_address}")
