@@ -98,7 +98,7 @@ class LiveDataClientTests(unittest.TestCase):
             trader_id=TraderId('Tester', '000'),
             host='127.0.0.1',
             data_req_port=TEST_DATA_REQ_PORT,
-            data_rep_port=TEST_DATA_REP_PORT,
+            data_res_port=TEST_DATA_REP_PORT,
             data_pub_port=TEST_DATA_PUB_PORT,
             tick_pub_port=TEST_TICK_PUB_PORT,
             compressor=self.compressor,

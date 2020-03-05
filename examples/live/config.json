@@ -36,7 +36,7 @@
   "data_client": {
     "host": "localhost",
     "data_req_port": 55501,
-    "data_rep_port": 55502,
+    "data_res_port": 55502,
     "data_pub_port": 55503,
     "tick_pub_port": 55504,
     "venue": "FXCM"
@@ -52,7 +52,7 @@
     "service_name": "NautilusExecutor",
     "host": "localhost",
     "command_req_port": 55555,
-    "command_rep_port": 55556,
+    "command_res_port": 55556,
     "event_pub_port": 55557
   }
 }

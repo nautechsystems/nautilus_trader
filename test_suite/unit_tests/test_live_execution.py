@@ -103,7 +103,7 @@ class LiveExecutionTests(unittest.TestCase):
             exec_engine=self.exec_engine,
             host=LOCALHOST,
             command_req_port=TEST_COMMANDS_REQ_PORT,
-            command_rep_port=TEST_COMMANDS_REP_PORT,
+            command_res_port=TEST_COMMANDS_REP_PORT,
             event_pub_port=TEST_EVENTS_PUB_PORT,
             compressor=CompressorBypass(),
             encryption=EncryptionSettings(),

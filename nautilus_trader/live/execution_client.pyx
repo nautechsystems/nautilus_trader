@@ -30,6 +30,7 @@ from nautilus_trader.live.logging cimport LiveLogger
 
 
 cdef str _UTF8 = 'utf-8'
+cdef str _EVENT = 'Event'
 
 cdef class LiveExecClient(ExecutionClient):
     """
@@ -42,7 +43,7 @@ cdef class LiveExecClient(ExecutionClient):
             ExecutionEngine exec_engine not None,
             str host not None,
             int command_req_port,
-            int command_rep_port,
+            int command_res_port,
             int event_pub_port,
             Compressor compressor not None=CompressorBypass(),
             EncryptionSettings encryption not None=EncryptionSettings(),
@@ -60,7 +61,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param exec_engine: The execution engine for the component.
         :param host: The execution service host IP address.
         :param command_req_port: The execution service command request port.
-        :param command_rep_port: The execution service command reply port.
+        :param command_res_port: The execution service command response port.
         :param event_pub_port: The execution service event publisher port.
         :param encryption: The encryption configuration.
         :param command_serializer: The command serializer for the client.
@@ -78,9 +79,9 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the events_port is not in range [49152, 65535].
         """
         Condition.valid_string(host, 'host')
-        Condition.in_range_int(command_req_port, 0, 65535, 'commands_req_port')
-        Condition.in_range_int(command_rep_port, 0, 65535, 'commands_rep_port')
-        Condition.in_range_int(event_pub_port, 0, 65535, 'events_port')
+        Condition.in_range_int(command_req_port, 0, 65535, 'command_req_port')
+        Condition.in_range_int(command_res_port, 0, 65535, 'command_res_port')
+        Condition.in_range_int(event_pub_port, 0, 65535, 'event_pub_port')
         super().__init__(exec_engine, logger)
 
         self._command_serializer = command_serializer
@@ -93,7 +94,7 @@ cdef class LiveExecClient(ExecutionClient):
             self.client_id,
             host,
             command_req_port,
-            command_rep_port,
+            command_res_port,
             header_serializer,
             request_serializer,
             response_serializer,
@@ -121,13 +122,13 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._event_subscriber.connect()
         self._command_client.connect()
-        self._event_subscriber.subscribe('Events')
+        self._event_subscriber.subscribe(_EVENT)
 
     cpdef void disconnect(self) except *:
         """
         Disconnect from the execution service.
         """
-        self._event_subscriber.unsubscribe('Events')
+        self._event_subscriber.unsubscribe(_EVENT)
         self._command_client.disconnect()
         self._event_subscriber.disconnect()
 
