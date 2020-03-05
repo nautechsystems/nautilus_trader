@@ -429,12 +429,8 @@ cdef class LiveDataClient(DataClient):
     cpdef void _set_callback(self, GUID request_id, handler: callable) except *:
         self._correlation_index[request_id] = handler
 
-    cpdef void _pop_callback(self, GUID correlation_id, list data) except *:
-        handler = self._correlation_index.pop(correlation_id, None)
-        if handler is not None:
-            handler(data)
-        else:
-            self._log.error(f"No callback found for correlation id {correlation_id.value}")
+    cpdef object _pop_callback(self, GUID correlation_id):
+        return self._correlation_index.pop(correlation_id, None)
 
     cpdef void _handle_response(self, Response response) except *:
         if isinstance(response, MessageRejected):
@@ -453,21 +449,29 @@ cdef class LiveDataClient(DataClient):
         cdef str data_type = data_package[DATA_TYPE]
         cdef dict metadata
         cdef list data
+
+        # Get callback handler
+        handler = self._pop_callback(response.correlation_id)
+        if handler is None:
+            self._log.error(f"No callback found for correlation id {response.correlation_id.value}")
+            return
+
+        # Deserialize and handle data
         if data_type == TICK_ARRAY:
             metadata = data_package[METADATA]
             symbol = self._cached_symbols.get(metadata[SYMBOL])
             data = Utf8TickSerializer.deserialize_bytes_list(symbol, data_package[DATA])
+            handler(data)
         elif data_type == BAR_ARRAY:
             metadata = data_package[METADATA]
-            received_bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
+            bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
             data = Utf8BarSerializer.deserialize_bytes_list(data_package[DATA])
+            handler(bar_type, data)
         elif data_type == INSTRUMENT_ARRAY:
             data = [self._instrument_serializer.deserialize(inst) for inst in data_package[DATA]]
+            handler(data)
         else:
             self._log.error(f"The received data type {data_type} is not recognized.")
-            return
-
-        self._pop_callback(response.correlation_id, data)
 
     cpdef void _handle_tick_msg(self, str topic, bytes body) except *:
         # Handle the given tick message published for the given topic
