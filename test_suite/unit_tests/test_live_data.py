@@ -323,7 +323,7 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH.date(),
             UNIX_EPOCH.date(),
             limit=0,
-            callback=data_receiver.store)
+            callback=data_receiver.store_2)
 
         time.sleep(0.1)
 
@@ -352,7 +352,8 @@ class LiveDataClientTests(unittest.TestCase):
         response = data_receiver.get_store()[0]
 
         # Assert
-        self.assertEqual(bars, response)
+        self.assertEqual(bar_type, response[0])
+        self.assertEqual(bars, response[1])
 
     def test_can_request_instrument_data(self):
         # Arrange

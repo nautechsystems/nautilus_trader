@@ -1025,7 +1025,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(deserialized, Connect))
         self.assertEqual("Trader-001", deserialized.client_id.value)
-        self.assertEqual("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea", deserialized.authentication)
+        self.assertEqual("e5db3dad8222a27e5d2991d11ad65f0f74668a4cfb629e97aa6920a73a012f87", deserialized.authentication)
 
     def test_can_serialize_and_deserialize_disconnect_requests(self):
         # Arrange
