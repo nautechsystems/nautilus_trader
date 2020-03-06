@@ -100,7 +100,10 @@ cdef class Socket:
         """
         Condition.not_none(frames, 'frames')
 
-        self._socket.send_multipart(frames)
+        try:
+            self._socket.send_multipart(frames)
+        except zmq.ZMQError as ex:
+            self._log.exception(ex)
 
     cpdef list recv(self):
         """
