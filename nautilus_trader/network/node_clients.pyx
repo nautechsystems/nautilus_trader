@@ -273,24 +273,14 @@ cdef class MessageClient(ClientNode):
         body : bytes
             The serialized message body.
         """
+        Condition.not_none(message, 'message')
+
         self._register_message(message)
 
         self._log.debug(f"[{self.sent_count}]--> {message}")
         self._send(message.message_type, message.__class__.__name__, body)
 
     cdef void _send(self, MessageType message_type, str class_name, bytes body) except *:
-        """
-        Send the given message to the server. 
-
-        Parameters
-        ----------
-        message_type : MessageType
-            The message type group.
-        class_name : str
-            The message class name.
-        body : bytes
-            The serialized
-        """
         Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
         Condition.valid_string(class_name, 'class_name')
         Condition.not_empty(body, 'body')
@@ -421,7 +411,6 @@ cdef class MessageSubscriber(ClientNode):
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         :raises ValueError: If the topic is not a valid string.
-        :raises TypeError: If the handler is not of type callable.
         """
         Condition.valid_string(host, 'host')
         Condition.valid_port(port, 'port')
@@ -465,14 +454,14 @@ cdef class MessageSubscriber(ClientNode):
 
     cpdef void dispose(self) except *:
         """
-        Dispose of the MQWorker which close the socket (call disconnect first).
+        Dispose of the client (call disconnect first).
         """
         self._socket.dispose()
         self._log.debug(f"Disposed.")
 
     cpdef void subscribe(self, str topic) except *:
         """
-        Subscribe the worker to the given topic.
+        Subscribe the client to the given topic.
         
         :param topic: The topic to subscribe to.
         """
@@ -482,7 +471,7 @@ cdef class MessageSubscriber(ClientNode):
 
     cpdef void unsubscribe(self, str topic) except *:
         """
-        Unsubscribe the worker from the given topic.
+        Unsubscribe the client from the given topic.
         
         :param topic: The topic to unsubscribe from.
         """
