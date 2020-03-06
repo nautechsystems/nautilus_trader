@@ -24,8 +24,8 @@ from nautilus_trader.network.socket cimport ClientSocket
 from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.constants cimport *
 
-cdef str _IS_CONNECTED = 'is_connected?'
-cdef str _IS_DISCONNECTED = 'is_disconnected?'
+cdef str _IS_CONNECTED = '_is_connected?'
+cdef str _IS_DISCONNECTED = '_is_disconnected?'
 
 
 cdef class ClientNode:
@@ -131,9 +131,10 @@ cdef class MessageClient(ClientNode):
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
-         :raises ValueError: If the port is not in range [49152, 65535].
+        :raises ValueError: If the server_req_port is not in range [49152, 65535].
+        :raises ValueError: If the server_res_port is not in range [49152, 65535].
         """
-        Condition.valid_string(server_host, 'host')
+        Condition.valid_string(server_host, 'server_host')
         Condition.valid_port(server_req_port, 'server_in_port')
         Condition.valid_port(server_res_port, 'server_out_port')
         super().__init__(

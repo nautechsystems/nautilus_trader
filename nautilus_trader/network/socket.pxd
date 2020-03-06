@@ -24,6 +24,7 @@ cdef class Socket:
     cpdef void send(self, list frames) except *
     cpdef list recv(self)
 
+
 cdef class ClientSocket(Socket):
     pass
 

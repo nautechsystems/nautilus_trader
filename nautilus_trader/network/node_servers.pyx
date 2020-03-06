@@ -28,7 +28,7 @@ cdef str _TYPE_UTF8 = 'UTF8'
 
 cdef class ServerNode:
     """
-    The base class for all client nodes.
+    The base class for all server nodes.
     """
 
     def __init__(
@@ -46,9 +46,6 @@ cdef class ServerNode:
         :param clock: The clock for the component.
         :param guid_factory: The guid factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the expected frames is negative (< 0).
-        :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
         """
         self._compressor = compressor
         self._clock = clock
@@ -114,13 +111,6 @@ cdef class MessageServer(ServerNode):
             guid_factory,
             logger)
 
-        self._socket_outbound = ServerSocket(
-            server_id,
-            send_port,
-            zmq.ROUTER,  # noqa (zmq reference)
-            encryption,
-            self._log)
-
         self._socket_inbound = ServerSocket(
             server_id,
             recv_port,
@@ -128,15 +118,22 @@ cdef class MessageServer(ServerNode):
             encryption,
             self._log)
 
-        self._queue_outbound = MessageQueueOutbound(
-            self._socket_outbound,
+        self._socket_outbound = ServerSocket(
+            server_id,
+            send_port,
+            zmq.ROUTER,  # noqa (zmq reference)
+            encryption,
             self._log)
 
-        expected_frames = 3 # [header, body]
+        expected_frames = 3 # [sender, header, body]
         self._queue_inbound = MessageQueueInbound(
             expected_frames,
             self._socket_inbound,
             self._recv_frames,
+            self._log)
+
+        self._queue_outbound = MessageQueueOutbound(
+            self._socket_outbound,
             self._log)
 
         self._header_serializer = header_serializer
@@ -161,13 +158,13 @@ cdef class MessageServer(ServerNode):
 
     cpdef void dispose(self) except *:
         """
-        Dispose of the MQWorker which close the socket (call disconnect first).
+        Dispose of the servers sockets (call disconnect first).
         """
         self._socket_inbound.dispose()
         self._socket_outbound.dispose()
         self._log.debug(f"Disposed.")
 
-    cpdef void register_request_handler(self, handler) except *:
+    cpdef void register_request_handler(self, handler: callable) except *:
         """
         Register a request handler which will receive Request messages other 
         than Connect and Disconnect.
@@ -178,12 +175,13 @@ cdef class MessageServer(ServerNode):
             The handler to register.
             
         """
+        Condition.callable(handler, 'handler')
+
         self._handlers[MessageType.REQUEST] = handler
 
     cpdef void register_handler(self, MessageType message_type, handler: callable) except *:
         """
-        Register a message handler which will receive a list of bytes frames for
-        the given message type.
+        Register a message handler which will to receive payloads of the given message type.
 
         Parameters
         ----------
@@ -437,7 +435,7 @@ cdef class MessagePublisher(ServerNode):
 
     cpdef void dispose(self) except *:
         """
-        Dispose of the MQWorker which close the socket (call disconnect first).
+        Dispose of the servers socket (call disconnect first).
         """
         self._socket.dispose()
         self._log.debug(f"Disposed.")
