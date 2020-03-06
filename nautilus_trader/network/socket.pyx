@@ -12,7 +12,7 @@ import zmq.auth
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, ServerId
 from nautilus_trader.network.encryption cimport EncryptionSettings
 
@@ -79,7 +79,7 @@ cdef class Socket:
 
     cpdef void dispose(self) except *:
         """
-        Dispose of the MQWorker which close the socket (call disconnect first).
+        Dispose of the socket (call disconnect first).
         """
         self._socket.close()
 
@@ -96,13 +96,13 @@ cdef class Socket:
 
     cpdef void send(self, list frames) except *:
         """
-        Send the given byte frames on the socket.
+        Send the given payload on the socket.
         """
         self._socket.send_multipart(frames)
 
     cpdef list recv(self):
         """
-        Receive the next list of byte frames from the socket.
+        Receive the next payload of frames from the socket.
         
         Returns
         -------
@@ -219,7 +219,7 @@ cdef class SubscriberSocket(ClientSocket):
 
     cpdef void subscribe(self, str topic) except *:
         """
-        Subscribe the worker to the given topic.
+        Subscribe the socket to the given topic.
         
         :param topic: The topic to subscribe to.
         """
@@ -230,7 +230,7 @@ cdef class SubscriberSocket(ClientSocket):
 
     cpdef void unsubscribe(self, str topic) except *:
         """
-        Unsubscribe the worker from the given topic.
+        Unsubscribe the socket from the given topic.
         
         :param topic: The topic to unsubscribe from.
         """
