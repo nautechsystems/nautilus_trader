@@ -434,11 +434,11 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void _handle_response(self, Response response) except *:
         if isinstance(response, MessageRejected):
-            self._log.error(response.message)
+            self._log.error(str(response))
         elif isinstance(response, MessageReceived):
-            self._log.info(response)
+            self._log.info(str(response))
         elif isinstance(response, QueryFailure):
-            self._log.warning(response)
+            self._log.warning(str(response))
         elif isinstance(response, DataResponse):
             self._handle_data_response(response)
         else:

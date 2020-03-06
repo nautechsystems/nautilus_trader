@@ -99,9 +99,14 @@ cdef class MessageQueueInbound:
         cdef int frames_length
         while True:
             frames = self._queue.get()
+            if frames is None:
+                self._log.error("Received None from message queue.")
+                return
+
             frames_length = len(frames)
             if frames_length != self._expected_frames:
                 self._log.error(f"Received unexpected frames count {frames_length}, "
                                 f"expected {self._expected_frames}")
                 return
+
             self._frames_receiver(frames)

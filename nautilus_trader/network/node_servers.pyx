@@ -191,6 +191,7 @@ cdef class MessageServer(ServerNode):
             The handler to register.
             
         """
+        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
         Condition.callable(handler, 'handler')
 
         if message_type in self._handlers:
@@ -213,6 +214,8 @@ cdef class MessageServer(ServerNode):
             The client to send the response to.
             
         """
+        Condition.not_none(correlation_id, 'correlation_id')
+
         cdef MessageRejected response = MessageRejected(
             rejected_message,
             correlation_id,
@@ -252,6 +255,8 @@ cdef class MessageServer(ServerNode):
         receiver : ClientId
             The response receiver.
         """
+        Condition.not_none(response, 'response')
+
         cdef dict header = {
             MESSAGE_TYPE: message_type_to_string(response.message_type).title(),
             TYPE: response.__class__.__name__
@@ -278,6 +283,9 @@ cdef class MessageServer(ServerNode):
         self._send(receiver, header, message.encode(UTF8))
 
     cdef void _send(self, ClientId receiver, dict header, bytes body) except *:
+        Condition.not_none(receiver, 'receiver')
+        Condition.not_none(header, 'header')
+
         # Encode and compress frames
         cdef bytes frame_receiver = receiver.value.encode(UTF8)
         cdef bytes frame_header = self._compressor.compress(self._header_serializer.serialize(header))
@@ -447,6 +455,8 @@ cdef class MessagePublisher(ServerNode):
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
+        Condition.valid_string(topic, 'topic')
+
         cdef bytes body = self._compressor.compress(message)
 
         self._log.verbose(f"[{self.sent_count}]--> topic={topic}, body={len(body)} bytes")

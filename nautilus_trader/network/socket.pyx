@@ -98,6 +98,8 @@ cdef class Socket:
         """
         Send the given payload on the socket.
         """
+        Condition.not_none(frames, 'frames')
+
         self._socket.send_multipart(frames)
 
     cpdef list recv(self):
