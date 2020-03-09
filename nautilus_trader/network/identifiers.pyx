@@ -9,7 +9,7 @@
 import hashlib
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.functions cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_iso8601
 
 
 cdef class ClientId(Identifier):

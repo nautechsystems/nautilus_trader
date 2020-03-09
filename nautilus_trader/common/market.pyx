@@ -12,7 +12,7 @@ from cpython.object cimport PyObject_GetAttr
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport with_utc_index
+from nautilus_trader.core.datetime cimport with_utc_index
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument

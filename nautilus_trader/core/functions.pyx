@@ -12,10 +12,7 @@
 import gc
 import sys
 import pandas as pd
-import pytz
 from libc.math cimport round
-from cpython.datetime cimport datetime
-from cpython.unicode cimport PyUnicode_Contains
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -158,64 +155,6 @@ cpdef str pad_string(str string, int length, str pad=' '):
     Condition.not_none(pad, 'pad')
 
     return ((length - len(string)) * pad) + string
-
-
-cpdef str format_iso8601(datetime dt):
-    """
-    Return the ISO 8601 formatted string for the given datetime. Unit accuracy
-    is millisecond.
-    
-    :param dt: The input datetime to format.
-    :return str.
-    """
-    Condition.not_none(dt, 'dt')
-
-    cdef str tz_stripped = str(dt).replace(' ', 'T').rpartition('+')[0]
-
-    if not PyUnicode_Contains(tz_stripped, '.'):
-        return tz_stripped + '.000Z'
-
-    cdef tuple dt_partitioned = tz_stripped.rpartition('.')
-    return f'{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z'
-
-
-cpdef object with_utc_index(dataframe: pd.DataFrame):
-    """
-    Return the given pandas DataFrame with the index timestamps localized
-    or converted to UTC. If the DataFrame is None then returns None.
-        
-    :param dataframe: The pd.DataFrame to localize.
-    :return pd.DataFrame or None.
-    """
-    if dataframe is None:
-        return dataframe
-
-    if not hasattr(dataframe.index, 'tz') or dataframe.index.tz is None:  # tz-naive
-        return dataframe.tz_localize('UTC')
-    elif dataframe.index.tz != pytz.UTC:
-        return dataframe.tz_convert('UTC')
-    else:
-        return dataframe  # Already UTC
-
-
-cpdef datetime as_timestamp_utc(datetime timestamp):
-    """
-    Return the given timestamp converted to a pandas timestamp and UTC as required.
-    
-    :param timestamp: The timestamp to convert.
-    :return pd.Timestamp.
-    """
-    Condition.not_none(timestamp, 'timestamp')
-
-    if not isinstance(timestamp, pd.Timestamp):
-        timestamp = pd.Timestamp(timestamp)
-
-    if timestamp.tz is None:  # tz-naive
-        return timestamp.tz_localize('UTC')
-    elif timestamp.tz != pytz.UTC:
-        return timestamp.tz_convert('UTC')
-    else:
-        return timestamp  # Already UTC
 
 
 # Closures in cpdef functions not yet supported (21/6/19)

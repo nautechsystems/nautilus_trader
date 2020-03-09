@@ -6,9 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
-
 cpdef double fast_round(double value, int precision)
 cpdef double fast_mean(list values)
 cpdef double fast_mean_iterated(
@@ -21,6 +18,3 @@ cpdef double basis_points_as_percentage(double basis_points)
 cdef long get_size_of(obj)
 cpdef str format_bytes(double size)
 cpdef str pad_string(str string, int length, str pad=*)
-cpdef str format_iso8601(datetime dt)
-cpdef object with_utc_index(dataframe)
-cpdef datetime as_timestamp_utc(datetime timestamp)

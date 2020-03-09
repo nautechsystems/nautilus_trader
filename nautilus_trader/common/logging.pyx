@@ -22,7 +22,7 @@ from nautilus_trader import __version__
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.common.clock cimport Clock, TestClock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.live.clock cimport LiveClock

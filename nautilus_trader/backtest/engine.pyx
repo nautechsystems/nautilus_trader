@@ -14,8 +14,8 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport as_timestamp_utc, format_iso8601, format_bytes
-from nautilus_trader.core.functions cimport pad_string, get_size_of
+from nautilus_trader.core.datetime cimport as_timestamp_utc, format_iso8601
+from nautilus_trader.core.functions cimport format_bytes, pad_string, get_size_of
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
 from nautilus_trader.model.identifiers cimport TraderId, AccountId

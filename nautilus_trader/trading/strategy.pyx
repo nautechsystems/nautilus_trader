@@ -14,7 +14,7 @@ from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, Label
-from nautilus_trader.core.functions cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
