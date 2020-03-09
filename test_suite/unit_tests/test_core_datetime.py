@@ -14,13 +14,43 @@ from datetime import datetime, timezone, timedelta
 from nautilus_trader.core.datetime import is_tz_aware, is_tz_naive, format_iso8601
 from nautilus_trader.core.datetime import as_timestamp_utc, with_utc_index
 
-from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 class TestFunctionsTests(unittest.TestCase):
+
+    def test_is_tz_awareness_with_various_aware_objects_returns_true(self):
+        # Arrange
+        time_object1 = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
+        time_object2 = pd.Timestamp(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
+
+        time_object3 = pd.DataFrame({'timestamp': ['2019-05-21T12:00:00+00:00',
+                                                   '2019-05-21T12:15:00+00:00']})
+        time_object3.set_index('timestamp')
+        time_object3.index = pd.to_datetime(time_object3.index)
+
+        # Act
+        # Assert
+        self.assertTrue(is_tz_aware(time_object1))
+        self.assertTrue(is_tz_aware(time_object2))
+        self.assertTrue(is_tz_aware(time_object3))
+        self.assertFalse(is_tz_naive(time_object1))
+        self.assertFalse(is_tz_naive(time_object2))
+        self.assertFalse(is_tz_naive(time_object3))
+
+    def test_is_tz_awareness_with_various_objects_returns_false(self):
+        # Arrange
+        time_object1 = datetime(1970, 1, 1, 0, 0, 0, 0)
+        time_object2 = pd.Timestamp(datetime(1970, 1, 1, 0, 0, 0, 0))
+
+        # Act
+        # Assert
+        self.assertFalse(is_tz_aware(time_object1))
+        self.assertFalse(is_tz_aware(time_object2))
+        self.assertTrue(is_tz_naive(time_object1))
+        self.assertTrue(is_tz_naive(time_object2))
 
     def test_format_iso8601(self):
         # Arrange
@@ -128,7 +158,10 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_with_utc_index_given_tz_unaware_dataframe(self):
         # Arrange
-        data = TestDataProvider.usdjpy_test_ticks()
+        data = pd.DataFrame({'timestamp': ['2019-05-21T12:00:00+00:00',
+                                           '2019-05-21T12:15:00+00:00']})
+        data.set_index('timestamp')
+        data.index = pd.to_datetime(data.index)
 
         # Act
         result = with_utc_index(data)
@@ -138,7 +171,10 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_with_utc_index_given_tz_aware_dataframe(self):
         # Arrange
-        data = TestDataProvider.usdjpy_test_ticks().tz_localize('UTC')
+        data = pd.DataFrame({'timestamp': ['2019-05-21T12:00:00+00:00',
+                                           '2019-05-21T12:15:00+00:00']})
+        data.set_index('timestamp')
+        data.index = pd.to_datetime(data.index, utc=True)
 
         # Act
         result = with_utc_index(data)
@@ -148,8 +184,15 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
         # Arrange
-        data1 = TestDataProvider.usdjpy_test_ticks()
-        data2 = TestDataProvider.usdjpy_test_ticks().tz_localize('UTC')
+        data1 = pd.DataFrame({'timestamp': ['2019-05-21 12:00:00',
+                                            '2019-05-21 12:15:00']})
+        data1.set_index('timestamp')
+        data1.index = pd.to_datetime(data1.index)
+
+        data2 = pd.DataFrame({'timestamp': [datetime(1970, 1, 1, 0, 0, 0, 0),
+                                            datetime(1970, 1, 1, 0, 0, 0, 0)]})
+        data2.set_index('timestamp')
+        data2.index = pd.to_datetime(data2.index, utc=True)
 
         # Act
         result1 = with_utc_index(data1)
@@ -158,3 +201,4 @@ class TestFunctionsTests(unittest.TestCase):
         # Assert
         self.assertEqual(result1.index[0], result2.index[0])
         self.assertEqual(result1.index.tz, result2.index.tz)
+

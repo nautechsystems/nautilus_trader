@@ -59,7 +59,7 @@ cpdef bint is_tz_naive(time_object):
         True if object timezone naive, else False.
 
     """
-    return not is_tz_naive(time_object)
+    return not is_tz_aware(time_object)
 
 
 cpdef datetime as_timestamp_utc(datetime timestamp):
