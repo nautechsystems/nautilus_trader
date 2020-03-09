@@ -16,7 +16,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.types cimport GUID, Label
-from nautilus_trader.core.functions cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
