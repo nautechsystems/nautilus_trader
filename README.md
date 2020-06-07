@@ -1,6 +1,6 @@
-# Nautilus Trader
+# NautilusTrader
 
-Nautilus Trader is a framework allowing quantitative traders to backtest portfolios of automated
+NautilusTrader is a framework allowing quantitative traders to backtest portfolios of automated
 algorithmic trading strategies on historical data, and then trade them live hosted on a
 ```TradingNode``` with no changes to the ```TradingStrategy``` scripts.
 
