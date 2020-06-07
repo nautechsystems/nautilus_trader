@@ -9,7 +9,7 @@ import unittest
 
 loader = unittest.TestLoader()
 suite = unittest.TestSuite()
-suite.addTests(loader.discover('test_suite/'))
+suite.addTests(loader.discover('tests/'))
 
 
 if __name__ == "__main__":
