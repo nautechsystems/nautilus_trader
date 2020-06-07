@@ -7,8 +7,8 @@
 import unittest
 
 from nautilus_trader.model.objects import Price, Volume, Bar
-from test_kit.performance import PerformanceHarness
-from test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()

@@ -16,9 +16,9 @@ from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, Ind
 from nautilus_trader.common.market import BarBuilder, TickBarAggregator, TimeBarAggregator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
-from test_kit.data import TestDataProvider
-from test_kit.stubs import TestStubs, UNIX_EPOCH
-from test_kit.mocks import ObjectStorer
+from tests.test_kit.data import TestDataProvider
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.mocks import ObjectStorer
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from nautilus_trader.core.datetime import is_tz_aware, is_tz_naive, format_iso8601
 from nautilus_trader.core.datetime import as_timestamp_utc, with_utc_index
 
-from test_kit.stubs import TestStubs
+from tests.test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 

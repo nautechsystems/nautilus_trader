@@ -11,8 +11,8 @@ from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
-from test_kit.data import TestDataProvider
-from test_kit.stubs import TestStubs
+from tests.test_kit.data import TestDataProvider
+from tests.test_kit.stubs import TestStubs
 
 USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 

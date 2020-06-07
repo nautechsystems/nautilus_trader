@@ -33,8 +33,8 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trading.strategy import TradingStrategy
-from test_kit.stubs import TestStubs, UNIX_EPOCH
-from test_kit.mocks import MockExecutionClient
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.mocks import MockExecutionClient
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

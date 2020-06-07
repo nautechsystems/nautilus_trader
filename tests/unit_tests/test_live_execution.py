@@ -29,8 +29,8 @@ from nautilus_trader.live.guid import LiveGuidFactory
 from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.execution_client import LiveExecClient
-from test_kit.stubs import TestStubs
-from test_kit.strategies import TestStrategy1
+from tests.test_kit.stubs import TestStubs
+from tests.test_kit.strategies import TestStrategy1
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

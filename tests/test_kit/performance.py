@@ -8,17 +8,15 @@ import math
 import timeit
 import inspect
 
-from nautilus_trader.core.functions cimport get_size_of
+
+_MILLISECONDS_IN_SECOND = 1000
+_MICROSECONDS_IN_SECOND = 1000000
 
 
-cdef int _MILLISECONDS_IN_SECOND = 1000
-cdef int _MICROSECONDS_IN_SECOND = 1000000
-
-
-cdef class PerformanceHarness:
+class PerformanceHarness:
 
     @staticmethod
-    def profile_function(function, int runs, int iterations, bint print_output=True) -> float:
+    def profile_function(function, runs, iterations, print_output=True) -> float:
         """
         Return the minimum time in seconds taken to call the given function iteration times.
 
@@ -28,8 +26,8 @@ cdef class PerformanceHarness:
         :param print_output: If the output should be printed to the console.
         :return float.
         """
-        cdef list results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
-        cdef double minimum = min(results)
+        results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
+        minimum = min(results)
 
         if print_output:
             result_milliseconds = math.floor(minimum * _MILLISECONDS_IN_SECOND)
@@ -40,18 +38,18 @@ cdef class PerformanceHarness:
 
         return minimum
 
-    @staticmethod
-    def object_size(object x, bint print_output=True) -> int:
-        """
-        Return the object size in bytes and optionally print the message.
-
-        :param x: The object to check.
-        :param print_output: If the output should be printed to the console.
-        :return: int.
-        """
-        cdef int size = get_size_of(x)
-
-        if print_output:
-            print(f'\n# Object size test: {type(x)} is {size} bytes.')
-
-        return size
+    # @staticmethod
+    # def object_size(x, print_output=True) -> int:
+    #     """
+    #     Return the object size in bytes and optionally print the message.
+    #
+    #     :param x: The object to check.
+    #     :param print_output: If the output should be printed to the console.
+    #     :return: int.
+    #     """
+    #     size = get_size_of(x)
+    #
+    #     if print_output:
+    #         print(f'\n# Object size test: {type(x)} is {size} bytes.')
+    #
+    #     return size

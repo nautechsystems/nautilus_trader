@@ -6,18 +6,253 @@
 
 from datetime import timedelta
 
-from nautilus_trader.core.message import Event
-from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce, PriceType
-from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_indicators.atr import AverageTrueRange
+from nautilus_indicators.average.ema import ExponentialMovingAverage
+
+from nautilus_trader.core.types import Label
+from nautilus_trader.model.identifiers import Symbol,PositionId
+from nautilus_trader.model.objects import Price, Tick, Instrument
+from nautilus_trader.model.objects import BarSpecification, BarType, Bar
+from nautilus_trader.model.c_enums.price_type import PriceType
+from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
+from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.sizing import FixedRiskSizer
-
-from nautilus_indicators.average.ema import ExponentialMovingAverage
-from nautilus_indicators.atr import AverageTrueRange
+from tests.test_kit.mocks import ObjectStorer
 
 
-class EMACrossPy(TradingStrategy):
+class PyStrategy(TradingStrategy):
+    """
+    A strategy which is empty and does nothing.
+    """
+
+    def __init__(self, bar_type: BarType):
+        """
+        Initializes a new instance of the PyStrategy class.
+        """
+        super().__init__(order_id_tag='001')
+
+        self.bar_type = bar_type
+        self.object_storer = ObjectStorer()
+
+    def on_start(self):
+        self.subscribe_bars(self.bar_type)
+
+    def on_tick(self, tick):
+        pass
+
+    def on_bar(self, bar_type, bar):
+        print(bar)
+        self.object_storer.store_2(bar_type, bar)
+
+    def on_instrument(self, instrument):
+        pass
+
+    def on_event(self, event):
+        self.object_storer.store(event)
+
+    def on_stop(self):
+        pass
+
+    def on_reset(self):
+        pass
+
+    def on_save(self):
+        return {}
+
+    def on_load(self, state):
+        pass
+
+    def on_dispose(self):
+        pass
+
+
+class EmptyStrategy(TradingStrategy):
+    """
+    A strategy which is empty and does nothing.
+    """
+
+    def __init__(self, order_id_tag):
+        """
+        Initializes a new instance of the EmptyStrategy class.
+
+        :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
+        """
+        super().__init__(order_id_tag=order_id_tag)
+
+    def on_start(self):
+        pass
+
+    def on_tick(self, tick):
+        pass
+
+    def on_bar(self, bar_type, bar):
+        pass
+
+    def on_instrument(self, instrument):
+        pass
+
+    def on_event(self, event):
+        pass
+
+    def on_stop(self):
+        pass
+
+    def on_reset(self):
+        pass
+
+    def on_save(self):
+        return {}
+
+    def on_load(self, state):
+        pass
+
+    def on_dispose(self):
+        pass
+
+
+class TickTock(TradingStrategy):
+    """
+    A strategy to test correct sequencing of tick data and timers.
+    """
+
+    def __init__(self, instrument, bar_type):
+        """
+        Initializes a new instance of the TickTock class.
+        """
+        super().__init__(order_id_tag='000')
+
+        self.instrument = instrument
+        self.bar_type = bar_type
+        self.store = []
+        self.timer_running = False
+        self.time_alert_counter = 0
+
+    def on_start(self):
+        self.subscribe_bars(self.bar_type)
+        self.subscribe_ticks(self.instrument.symbol)
+
+    def on_tick(self, tick):
+        self.log.info(f'Received Tick({tick})')
+        self.store.append(tick)
+
+    def on_bar(self, bar_type, bar):
+        self.log.info(f'Received {bar_type} Bar({bar})')
+        self.store.append(bar)
+        if not self.timer_running:
+            self.clock.set_timer(label=Label(f'Test-Timer'), interval=timedelta(seconds=10))
+            self.timer_running = True
+
+        self.time_alert_counter += 1
+        self.clock.set_time_alert(
+            label=Label(f'Test-Alert-{self.time_alert_counter}'),
+            alert_time=bar.timestamp + timedelta(seconds=30))
+
+    def on_instrument(self, instrument):
+        pass
+
+    def on_event(self, event):
+        self.store.append(event)
+
+    def on_stop(self):
+        pass
+
+    def on_reset(self):
+        pass
+
+    def on_save(self):
+        return {}
+
+    def on_load(self, state):
+        pass
+
+    def on_dispose(self):
+        pass
+
+
+class TestStrategy1(TradingStrategy):
+    """"
+    A simple strategy for unit testing.
+    """
+
+    def __init__(self,
+                 bar_type,
+                 id_tag_strategy='001',
+                 clock=TestClock()):
+        """
+        Initializes a new instance of the TestStrategy1 class.
+        """
+        super().__init__(order_id_tag=id_tag_strategy, clock=clock)
+
+        self.object_storer = ObjectStorer()
+        self.bar_type = bar_type
+
+        self.ema1 = ExponentialMovingAverage(10)
+        self.ema2 = ExponentialMovingAverage(20)
+
+        self.register_indicator(self.bar_type, self.ema1, self.ema1.update)
+        self.register_indicator(self.bar_type, self.ema2, self.ema2.update)
+
+        self.position_id = None
+
+    def on_start(self):
+        self.object_storer.store('custom start logic')
+        self.account_inquiry()
+
+    def on_tick(self, tick):
+        self.object_storer.store(tick)
+
+    def on_bar(self, bar_type, bar):
+
+        self.object_storer.store((bar_type, Bar))
+
+        if bar_type.equals(self.bar_type):
+            if self.ema1.value > self.ema2.value:
+                buy_order = self.order_factory.market(
+                    self.bar_type.symbol,
+                    Label('TestStrategy1_E'),
+                    OrderSide.BUY,
+                    100000)
+
+                self.submit_order(buy_order, PositionId(str(buy_order.id)))
+                self.position_id = buy_order.id
+
+            elif self.ema1.value < self.ema2.value:
+                sell_order = self.order_factory.market(
+                    self.bar_type.symbol,
+                    Label('TestStrategy1_E'),
+                    OrderSide.SELL,
+                    100000)
+
+                self.submit_order(sell_order, PositionId(str(sell_order.id)))
+                self.position_id = sell_order.id
+
+    def on_instrument(self, instrument):
+        self.object_storer.store(instrument)
+
+    def on_event(self, event):
+        self.object_storer.store(event)
+
+    def on_stop(self):
+        self.object_storer.store('custom stop logic')
+
+    def on_reset(self):
+        self.object_storer.store('custom reset logic')
+
+    def on_save(self):
+        self.object_storer.store('custom save logic')
+        return {}
+
+    def on_load(self, state):
+        self.object_storer.store('custom load logic')
+
+    def on_dispose(self):
+        self.object_storer.store('custom dispose logic')
+
+
+class EMACross(TradingStrategy):
     """"
     A simple moving average cross example strategy. When the fast EMA crosses
     the slow EMA then a STOP entry atomic order is placed for that direction
@@ -31,7 +266,8 @@ class EMACrossPy(TradingStrategy):
                  fast_ema: int=10,
                  slow_ema: int=20,
                  atr_period: int=20,
-                 sl_atr_multiple: float=2.0):
+                 sl_atr_multiple: float=2.0,
+                 extra_id_tag: str=''):
         """
         Initializes a new instance of the EMACrossPy class.
 
@@ -43,7 +279,7 @@ class EMACrossPy(TradingStrategy):
         :param atr_period: The ATR period.
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
-        super().__init__(order_id_tag=symbol.code, bar_capacity=40)
+        super().__init__(order_id_tag=symbol.code + extra_id_tag, bar_capacity=40)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -267,7 +503,7 @@ class EMACrossPy(TradingStrategy):
 
         self.log.info(f"Updated instrument {instrument}.")
 
-    def on_event(self, event: Event):
+    def on_event(self, event):
         """
         This method is called whenever the strategy receives an Event object,
         and after the event has been processed by the TradingStrategy base class.

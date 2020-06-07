@@ -15,9 +15,9 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
-from test_kit.strategies import EmptyStrategy, EMACross
-from test_kit.data import TestDataProvider
-from test_kit.stubs import TestStubs
+from tests.test_kit.strategies import EmptyStrategy, EMACross
+from tests.test_kit.data import TestDataProvider
+from tests.test_kit.stubs import TestStubs
 
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
@@ -77,7 +77,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EMACross(
-            instrument=usdjpy,
+            symbol=usdjpy.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             risk_bp=10,
             fast_ema=10,
@@ -116,7 +116,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EMACross(
-            instrument=usdjpy,
+            symbol=usdjpy.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             risk_bp=10,
             fast_ema=10,

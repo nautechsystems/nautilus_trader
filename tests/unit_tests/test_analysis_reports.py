@@ -16,7 +16,7 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.analysis.reports import ReportProvider
-from test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))

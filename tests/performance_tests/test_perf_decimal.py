@@ -9,7 +9,7 @@ import unittest
 
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.objects import Price
-from test_kit.performance import PerformanceHarness
+from tests.test_kit.performance import PerformanceHarness
 
 
 _PRECISION_5_CONTEXT = decimal.Context(prec=5)
@@ -75,15 +75,15 @@ class DecimalTesting:
 
 class DecimalPerformanceTests(unittest.TestCase):
 
-    def test_builtin_decimal_size(self):
-        result = PerformanceHarness.object_size(_BUILTIN_DECIMAL1)
-        # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
-        self.assertTrue(result == 104)
-
-    def test_decimal_size(self):
-        result = PerformanceHarness.object_size(_DECIMAL1)
-        # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
-        self.assertTrue(result <= 104)
+    # def test_builtin_decimal_size(self):
+    #     result = PerformanceHarness.object_size(_BUILTIN_DECIMAL1)
+    #     # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
+    #     self.assertTrue(result == 104)
+    #
+    # def test_decimal_size(self):
+    #     result = PerformanceHarness.object_size(_DECIMAL1)
+    #     # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
+    #     self.assertTrue(result <= 104)
 
     def test_decimal_to_string(self):
         result = PerformanceHarness.profile_function(_DECIMAL1.to_string, 3, 1000000)

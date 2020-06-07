@@ -13,7 +13,7 @@ from nautilus_trader.core.types import GUID, Label
 from nautilus_trader.common.logging import LoggerAdapter, TestLogger
 from nautilus_trader.common.clock import TimeEventHandler, TestClock, TimeEvent
 from nautilus_trader.live.clock import LiveClock
-from test_kit.stubs import TestStubs
+from tests.test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 
