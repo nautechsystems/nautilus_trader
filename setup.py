@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="setup.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
-#  The use of this source code is governed by the license as found in the LICENSE.md file.
+#  The use of this source code is governed by the license as found in the LICENSE file.
 #  https://nautechsystems.io
-# </copyright>
 # -------------------------------------------------------------------------------------------------
 
 import setuptools
@@ -15,7 +13,6 @@ from Cython.Compiler import Options
 
 from nautilus_trader import __author__, __version__
 from tools.packaging import parse_requirements, make_extensions
-from tools.linter import check_file_headers
 
 
 PACKAGE_NAME = 'nautilus_trader'
@@ -58,13 +55,6 @@ compiler_directives = {
 }
 # -------------------------------------
 
-
-# Linting source code (throws exceptions on failures)
-check_file_headers(
-    directories=DIRECTORIES_ALL,
-    to_lint=['.py', '.pyx', '.pxd'],
-    company_name=__author__)
-
 packages = [module for module in setuptools.find_packages(exclude=PACKAGE_EXCLUSIONS)]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
 
@@ -78,9 +68,9 @@ setup(
     license=LICENSE,
     url=URL,
     python_requires=PYTHON_REQUIRES,
-    requires=parse_requirements('requirements-install.txt', strip=True),
-    install_requires=parse_requirements('requirements-install.txt'),
-    tests_require=parse_requirements('requirements-test.txt'),
+    requires=parse_requirements('requirements.txt', strip=True),
+    install_requires=parse_requirements('requirements.txt'),
+    tests_require=parse_requirements('requirements.txt'),
     packages=packages,
     package_data=package_data,
     include_package_data=True,
