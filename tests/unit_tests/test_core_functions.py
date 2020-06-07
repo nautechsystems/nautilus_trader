@@ -11,7 +11,7 @@ from nautilus_trader.core.functions import fast_round, fast_mean, fast_mean_iter
 from nautilus_trader.core.functions import basis_points_as_percentage, format_bytes, pad_string
 from nautilus_trader.core.functions import max_in_dict
 
-from test_kit.stubs import TestStubs
+from tests.test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 

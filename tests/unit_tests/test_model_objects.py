@@ -9,7 +9,7 @@ import unittest
 from nautilus_trader.model.enums import BarStructure, PriceType, Currency
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Quantity, Money, Price, Volume, Tick, BarSpecification, BarType, Bar
-from test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

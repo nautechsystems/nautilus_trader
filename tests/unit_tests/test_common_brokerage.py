@@ -10,7 +10,7 @@ import datetime
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Quantity, Money, Price
 from nautilus_trader.common.brokerage import CommissionCalculator, RolloverInterestCalculator
-from test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

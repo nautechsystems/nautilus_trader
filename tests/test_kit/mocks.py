@@ -4,13 +4,10 @@
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
-from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
+from nautilus_trader.common.execution import ExecutionClient
 
 
-cdef class ObjectStorer:
+class ObjectStorer:
     """"
     A test class which stores the given objects.
     """
@@ -19,9 +16,10 @@ cdef class ObjectStorer:
         """
         Initializes a new instance of the ObjectStorer class.
         """
+        self.count = 0
         self._store = []
 
-    cpdef list get_store(self):
+    def get_store(self) -> list:
         """"
         Return the list or stored objects.
         
@@ -29,28 +27,27 @@ cdef class ObjectStorer:
         """
         return self._store
 
-    cpdef void store(self, object obj):
+    def store(self, obj):
         """"
         Store the given object.
         """
         self.count += 1
         self._store.append(obj)
 
-    cpdef void store_2(self, object obj1, object obj2):
+    def store_2(self, obj1, obj2):
         """"
         Store the given objects as a tuple.
         """
         self.store((obj1, obj2))
 
 
-cdef class MockExecutionClient(ExecutionClient):
+class MockExecutionClient(ExecutionClient):
     """
     Provides an execution client for testing. The client will store all
     received commands in a list.
     """
-    cdef readonly list received_commands
 
-    def __init__(self, ExecutionEngine exec_engine, Logger logger):
+    def __init__(self, exec_engine, logger):
         """
         Initializes a new instance of the MockExecutionClient class.
 
@@ -61,29 +58,29 @@ cdef class MockExecutionClient(ExecutionClient):
 
         self.received_commands = []
 
-    cpdef void connect(self):
+    def connect(self):
         pass
 
-    cpdef void disconnect(self):
+    def disconnect(self):
         pass
 
-    cpdef void dispose(self):
+    def dispose(self):
         pass
 
-    cpdef void account_inquiry(self, AccountInquiry command):
+    def account_inquiry(self, command):
         self.received_commands.append(command)
 
-    cpdef void submit_order(self, SubmitOrder command):
+    def submit_order(self, command):
         self.received_commands.append(command)
 
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command):
+    def submit_atomic_order(self, command):
         self.received_commands.append(command)
 
-    cpdef void modify_order(self, ModifyOrder command):
+    def modify_order(self, command):
         self.received_commands.append(command)
 
-    cpdef void cancel_order(self, CancelOrder command):
+    def cancel_order(self, command):
         self.received_commands.append(command)
 
-    cpdef void reset(self):
+    def reset(self):
         self.received_commands = []

@@ -13,8 +13,8 @@ from nautilus_trader.core.message import Message, MessageType
 from nautilus_trader.core.functions import fast_mean
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.commands import SubmitOrder
-from test_kit.performance import PerformanceHarness
-from test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 _AUDUSD = Symbol('AUDUSD', Venue('IDEALPRO'))

@@ -22,9 +22,8 @@ DESCRIPTION = 'An algorithmic trading framework utilizing Cython.'
 LICENSE = 'Nautech Systems Software License, April 2018'
 URL = 'https://nautechsystems.io/nautilus'
 PYTHON_REQUIRES = '>=3.7.3'
-DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
-DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'tests']
-PACKAGE_EXCLUSIONS = ['test_kit']
+DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
+DIRECTORIES_ALL = [PACKAGE_NAME, 'tests']
 PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 
 
@@ -55,7 +54,7 @@ compiler_directives = {
 }
 # -------------------------------------
 
-packages = [module for module in setuptools.find_packages(exclude=PACKAGE_EXCLUSIONS)]
+packages = [module for module in setuptools.find_packages()]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
 
 setup(

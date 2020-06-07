@@ -22,7 +22,7 @@ from nautilus_trader.model.order import Order
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock
-from test_kit.stubs import TestStubs
+from tests.test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()

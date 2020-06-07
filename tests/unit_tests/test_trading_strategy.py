@@ -28,8 +28,8 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 
-from test_kit.stubs import TestStubs, UNIX_EPOCH
-from test_kit.strategies import TestStrategy1
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.strategies import TestStrategy1
 
 USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))

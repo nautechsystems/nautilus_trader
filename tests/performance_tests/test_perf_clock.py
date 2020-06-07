@@ -9,10 +9,10 @@ import unittest
 from datetime import timedelta
 
 from nautilus_trader.core.types import Label
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LogLevel, LoggerAdapter, TestLogger
-from test_kit.performance import PerformanceHarness
-from test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.common.clock import TestClock
+from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.stubs import UNIX_EPOCH
 
 clock = TestClock()
 

@@ -12,9 +12,9 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from test_kit.strategies import EmptyStrategy, EMACross
-from test_kit.data import TestDataProvider
-from test_kit.stubs import TestStubs
+from tests.test_kit.strategies import EmptyStrategy, EMACross
+from tests.test_kit.data import TestDataProvider
+from tests.test_kit.stubs import TestStubs
 
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
@@ -77,7 +77,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange
-        strategies = [EMACross(instrument=self.usdjpy,
+        strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
@@ -97,7 +97,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
     def test_can_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
-        strategies = [EMACross(instrument=self.usdjpy,
+        strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
@@ -120,7 +120,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
     def test_can_run_multiple_strategies(self):
         # Arrange
-        strategies = [EMACross(instrument=self.usdjpy,
+        strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
@@ -128,7 +128,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0,
                                extra_id_tag='001'),
-                      EMACross(instrument=self.usdjpy,
+                      EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
