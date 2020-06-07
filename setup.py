@@ -23,7 +23,7 @@ LICENSE = 'Nautech Systems Software License, April 2018'
 URL = 'https://nautechsystems.io/nautilus'
 PYTHON_REQUIRES = '>=3.7.3'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
-DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'test_suite']
+DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'tests']
 PACKAGE_EXCLUSIONS = ['test_kit']
 PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 
