@@ -126,4 +126,6 @@ def make_extensions(directories: list) -> list:
             name=file.replace(os.path.sep, ".")[:-4],
             sources=[file],
             include_dirs=['.']))
+        print(f"Compiled extension for {file}.pyx")
+
     return extensions

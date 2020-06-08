@@ -6,9 +6,6 @@
 
 from datetime import timedelta
 
-from nautilus_indicators.atr import AverageTrueRange
-from nautilus_indicators.average.ema import ExponentialMovingAverage
-
 from nautilus_trader.core.types import Label
 from nautilus_trader.model.identifiers import Symbol,PositionId
 from nautilus_trader.model.objects import Price, Tick, Instrument
@@ -18,6 +15,8 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from tests.test_kit.mocks import ObjectStorer

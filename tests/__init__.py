@@ -3,3 +3,7 @@
 #  The use of this source code is governed by the license as found in the LICENSE file.
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
+
+import os
+
+PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))

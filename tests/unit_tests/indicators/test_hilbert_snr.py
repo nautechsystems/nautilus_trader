@@ -1,0 +1,149 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  The use of this source code is governed by the license as found in the LICENSE file.
+#  https://nautechsystems.io
+# -------------------------------------------------------------------------------------------------
+
+import sys
+import unittest
+
+from nautilus_trader.indicators.hilbert_snr import HilbertSignalNoiseRatio
+from tests.test_kit.series import BatterySeries
+
+
+class HilbertSignalNoiseRatioTests(unittest.TestCase):
+
+    # Fixture Setup
+    def setUp(self):
+        # Arrange
+        self.snr = HilbertSignalNoiseRatio()
+
+    def test_name_returns_expected_name(self):
+        # Act
+        # Assert
+        self.assertEqual('HilbertSignalNoiseRatio', self.snr.name)
+
+    def test_str_returns_expected_string(self):
+        # Act
+        # Assert
+        self.assertEqual('HilbertSignalNoiseRatio(7)', str(self.snr))
+
+    def test_repr_returns_expected_string(self):
+        # Act
+        # Assert
+        self.assertTrue(repr(self.snr).startswith('<HilbertSignalNoiseRatio(7) object at'))
+        self.assertTrue(repr(self.snr).endswith('>'))
+
+    def test_period_returns_expected_value(self):
+        # Act
+        # Assert
+        self.assertEqual(7, self.snr.period)
+
+    def test_initialized_without_inputs_returns_false(self):
+        # Act
+        # Assert
+        self.assertEqual(False, self.snr.initialized)
+
+    def test_initialized_with_required_inputs_returns_true(self):
+        # Act
+        for i in range(10):
+            self.snr.update(1.00010, 1.00000)
+
+        # Assert
+        self.assertEqual(True, self.snr.initialized)
+
+    def test_value_with_no_inputs_returns_none(self):
+        # Act
+        # Assert
+        self.assertEqual(0.0, self.snr.value)
+
+    def test_value_with_epsilon_inputs_returns_expected_value(self):
+        # Arrange
+        for i in range(100):
+            self.snr.update(sys.float_info.epsilon, sys.float_info.epsilon)
+
+        # Act
+        # Assert
+        self.assertEqual(0, self.snr.value)
+
+    def test_value_with_ones_inputs_returns_expected_value(self):
+        # Arrange
+        for i in range(100):
+            self.snr.update(1.00000, 1.00000)
+
+        # Act
+        # Assert
+        self.assertEqual(0, self.snr.value)
+
+    def test_value_with_seven_inputs_returns_expected_value(self):
+        # Arrange
+        high = 1.00010
+        low = 1.00000
+
+        # Act
+        for i in range(9):
+            high += 0.00010
+            low += 0.00010
+            self.snr.update(high, low)
+
+        # Assert
+        self.assertEqual(0, self.snr.value)
+
+    def test_value_with_close_on_high_returns_expected_value(self):
+        # Arrange
+        high = 1.00010
+        low = 1.00000
+
+        # Act
+        for i in range(1000):
+            high += 0.00010
+            low += 0.00010
+            self.snr.update(high, low)
+
+        # Assert
+        self.assertEqual(51.90000000000095, self.snr.value)
+
+    def test_value_with_close_on_low_returns_expected_value(self):
+        # Arrange
+        high = 1.00010
+        low = 1.00000
+
+        # Act
+        for i in range(1000):
+            high -= 0.00010
+            low -= 0.00010
+            self.snr.update(high, low)
+
+        # Assert
+        self.assertEqual(51.90000000000095, self.snr.value)
+
+    def test_reset_successfully_returns_indicator_to_fresh_state(self):
+        # Arrange
+        for i in range(1000):
+            self.snr.update(1.00000, 1.00000)
+
+        # Act
+        self.snr.reset()
+
+        # Assert
+        self.assertEqual(0.0, self.snr.value)  # No assertion errors.
+
+    def test_with_battery_signal(self):
+        # Arrange
+        battery_signal = BatterySeries.create()
+        output = []
+
+        # Act
+        for point in BatterySeries.create():
+            self.snr.update(point + 0.00010, point)
+            output.append(self.snr.value)
+
+        # Assert
+        self.assertEqual(len(battery_signal), len(output))
+
+        # plt.plot(battery_signal)
+        # plt.plot(output)
+        # plt.title(f'Battery Signal -> {self.snr.name} output')
+        # plt.xlabel('X (period)')
+        # plt.ylabel('Y (value)')
+        # plt.show()
