@@ -24,6 +24,7 @@ from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.live.guid import LiveGuidFactory
 from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
+
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.mocks import ObjectStorer
 

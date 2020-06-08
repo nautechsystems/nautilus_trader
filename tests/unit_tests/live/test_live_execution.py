@@ -29,6 +29,7 @@ from nautilus_trader.live.guid import LiveGuidFactory
 from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.execution_client import LiveExecClient
+
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.strategies import TestStrategy1
 

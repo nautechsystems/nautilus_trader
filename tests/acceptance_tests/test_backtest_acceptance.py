@@ -12,6 +12,7 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+
 from tests.test_kit.strategies import EmptyStrategy, EMACross
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs

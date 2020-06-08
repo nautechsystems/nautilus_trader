@@ -14,6 +14,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.identifiers import Brokerage, AccountNumber, AccountId
 from nautilus_trader.common.account import Account
+
 from tests.test_kit.stubs import UNIX_EPOCH
 
 

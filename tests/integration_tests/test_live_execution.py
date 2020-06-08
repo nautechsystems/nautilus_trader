@@ -16,6 +16,7 @@ from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.execution_engine import RedisExecutionDatabase
+
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.strategies import EmptyStrategy
 

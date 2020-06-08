@@ -13,6 +13,7 @@ from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
+
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()

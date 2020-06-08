@@ -7,9 +7,9 @@
 import sys
 import unittest
 
-from tests.test_kit.series import BatterySeries
-
 from nautilus_trader.indicators.vcr import VolatilityCompressionRatio
+
+from tests.test_kit.series import BatterySeries
 
 
 class VolatilityCompressionRatioTests(unittest.TestCase):

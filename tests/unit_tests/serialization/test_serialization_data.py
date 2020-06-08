@@ -6,10 +6,11 @@
 
 import unittest
 
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
-from tests.test_kit.data import TestDataProvider
 from nautilus_trader.model.objects import *
 from nautilus_trader.serialization.data import BsonDataSerializer, DataMapper
+
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.data import TestDataProvider
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

@@ -25,6 +25,7 @@ from nautilus_trader.serialization.common import *
 from nautilus_trader.network.identifiers import *
 from nautilus_trader.network.messages import *
 from nautilus_trader.common.clock import *
+
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()

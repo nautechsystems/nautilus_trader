@@ -21,6 +21,7 @@ from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.live.guid import LiveGuidFactory
 from nautilus_trader.live.logging import LiveLogger
+
 from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.mocks import ObjectStorer
 

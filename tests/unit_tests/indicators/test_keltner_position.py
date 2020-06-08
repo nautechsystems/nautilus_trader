@@ -8,6 +8,7 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.keltner_position import KeltnerPosition
+
 from tests.test_kit.series import BatterySeries
 
 

@@ -9,6 +9,7 @@ import unittest
 from nautilus_trader.model.objects import Price
 from nautilus_trader.serialization.common import *
 from nautilus_trader.serialization.serializers import *
+
 from tests.test_kit.stubs import UNIX_EPOCH
 
 

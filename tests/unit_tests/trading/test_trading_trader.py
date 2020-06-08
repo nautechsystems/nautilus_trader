@@ -19,6 +19,7 @@ from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
 from nautilus_trader.trading.trader import Trader
+
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.data import TestDataProvider

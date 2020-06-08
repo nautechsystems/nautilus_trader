@@ -8,6 +8,7 @@ import time
 import unittest
 
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
+
 from tests.test_kit.series import BatterySeries
 
 

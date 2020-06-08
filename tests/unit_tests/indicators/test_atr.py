@@ -7,9 +7,9 @@
 import sys
 import unittest
 
-from tests.test_kit.series import BatterySeries
-
 from nautilus_trader.indicators.atr import AverageTrueRange
+
+from tests.test_kit.series import BatterySeries
 
 
 class AverageTrueRangeTests(unittest.TestCase):
