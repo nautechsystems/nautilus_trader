@@ -33,6 +33,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trading.strategy import TradingStrategy
+
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.mocks import MockExecutionClient
 

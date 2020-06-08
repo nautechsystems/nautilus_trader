@@ -22,6 +22,7 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+
 from tests.test_kit.strategies import TestStrategy1
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs

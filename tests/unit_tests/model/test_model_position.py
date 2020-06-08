@@ -23,6 +23,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock
+
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()

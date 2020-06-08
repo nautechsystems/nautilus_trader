@@ -8,6 +8,7 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.obv import OnBalanceVolume
+
 from tests.test_kit.series import BatterySeries
 
 

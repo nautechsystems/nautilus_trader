@@ -8,6 +8,7 @@ import unittest
 
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.generators import OrderIdGenerator
+
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 

@@ -7,6 +7,7 @@
 import unittest
 
 from nautilus_trader.indicators.efficiency_ratio import EfficiencyRatio
+
 from tests.test_kit.series import BatterySeries
 
 

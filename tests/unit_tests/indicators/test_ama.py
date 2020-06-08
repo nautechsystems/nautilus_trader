@@ -6,8 +6,9 @@
 
 import unittest
 
-from tests.test_kit.series import BatterySeries
 from nautilus_trader.indicators.average.ama import AdaptiveMovingAverage
+
+from tests.test_kit.series import BatterySeries
 
 
 class AdaptiveMovingAverageTests(unittest.TestCase):

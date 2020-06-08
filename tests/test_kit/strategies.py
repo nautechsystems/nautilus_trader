@@ -19,6 +19,7 @@ from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.sizing import FixedRiskSizer
+
 from tests.test_kit.mocks import ObjectStorer
 
 

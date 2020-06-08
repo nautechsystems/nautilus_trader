@@ -7,6 +7,7 @@
 import unittest
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+
 from tests.test_kit.series import BatterySeries
 
 
