@@ -1,12 +1,16 @@
+![Alt text](docs/artwork/nautechsystems_logo_small.png?raw=true "logo")
+
 # NautilusTrader
 
-NautilusTrader is a framework allowing quantitative traders to backtest portfolios of automated
-algorithmic trading strategies on historical data, and then trade them live hosted on a
-```TradingNode``` with no changes to the ```TradingStrategy``` scripts.
+NautilusTrader is an algorithmic trading framework allowing quantitative traders
+the ability to backtest portfolios of automated trading strategies on historical
+data, and then trade them live hosted on a ```TradingNode``` with no changes to
+the ```TradingStrategy``` scripts.
 
 ## Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
 * **Flexible:** Any FIX or REST broker API can be integrated into the platform, with no changes to your strategy scripts.
+* **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
 * **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
 * **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 * **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
@@ -68,8 +72,6 @@ All tests can be run via the `run_tests.py` script, or through pytest.
 Please direct all questions, comments or bug reports to info@nautechsystems.io
 
 ![Alt text](docs/artwork/cython-logo-small.png "cython")
-
-![Alt text](docs/artwork/nautechsystems_logo_small.png?raw=true "logo")
 
 Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 
