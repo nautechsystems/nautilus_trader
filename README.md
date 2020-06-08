@@ -4,8 +4,8 @@
 
 NautilusTrader is an algorithmic trading framework allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
-data, and then trade them live hosted on a ```TradingNode``` with no changes to
-the ```TradingStrategy``` scripts.
+data with an event-driven engine, and then trade them live hosted on a
+```TradingNode``` with no changes to the ```TradingStrategy``` scripts.
 
 ## Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
