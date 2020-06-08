@@ -10,7 +10,7 @@ from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import BarSpecification
 from nautilus_trader.live.node import TradingNode
 
-from tests.test_kit.stubs.strategies import EMACrossPy
+from tests.test_kit.strategies import EMACross
 # TODO: AtomicOrder with Market entry not working (needs peg)
 
 # Requirements to run;
@@ -33,7 +33,7 @@ symbols_fx = [
 
 strategies_fx = []
 for symbol in symbols_fx:
-    strategies_fx.append(EMACrossPy(
+    strategies_fx.append(EMACross(
         symbol,
         BAR_SPEC_FX,
         risk_bp=10.0,

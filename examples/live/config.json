@@ -1,8 +1,7 @@
 {
   "trader": {
     "name": "TESTER",
-    "order_id_tag": "000",
-    "check_residuals_delay": 1.0
+    "order_id_tag": "000"
   },
 
   "account": {

@@ -42,7 +42,7 @@ cpdef double fast_mean(list values):
     cdef double total = 0.0
     cdef int i
     for i in range(length):
-        total = total + values[i]
+        total += values[i]
     return total / length
 
 

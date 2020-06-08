@@ -29,10 +29,6 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 class TestStubs:
 
     @staticmethod
-    def unix_epoch() -> datetime:
-        return UNIX_EPOCH
-
-    @staticmethod
     def symbol_audusd_fxcm() -> Symbol:
         return Symbol('AUDUSD', Venue('FXCM'))
 
@@ -61,7 +57,7 @@ class TestStubs:
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal(0),
             rollover_interest_sell=Decimal(0),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
     @staticmethod
     def instrument_usdjpy() -> ForexInstrument:
@@ -80,7 +76,7 @@ class TestStubs:
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal(0),
             rollover_interest_sell=Decimal(0),
-            timestamp=TestStubs.unix_epoch())
+            timestamp=UNIX_EPOCH)
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
@@ -133,7 +129,7 @@ class TestStubs:
                    Price(1.00001, 5),
                    Price(1.00003, 5),
                    Volume(100000),
-                   TestStubs.unix_epoch())
+                   UNIX_EPOCH)
 
     @staticmethod
     def bar_3decimal() -> Bar:
@@ -142,7 +138,7 @@ class TestStubs:
                    Price(90.001, 3),
                    Price(90.003, 3),
                    Volume(100000),
-                   TestStubs.unix_epoch())
+                   UNIX_EPOCH)
 
     @staticmethod
     def tick_3decimal(symbol) -> Tick:
@@ -151,7 +147,7 @@ class TestStubs:
                     Price(90.003, 3),
                     Volume(1),
                     Volume(1),
-                    TestStubs.unix_epoch())
+                    UNIX_EPOCH)
 
     @staticmethod
     def trader_id() -> TraderId:
@@ -176,7 +172,7 @@ class TestStubs:
             Decimal(0),
             ValidString('N'),
             GUID(uuid.uuid4()),
-            TestStubs.unix_epoch())
+            UNIX_EPOCH)
 
     @staticmethod
     def event_order_filled(order, fill_price=Price(1.00000, 5)) -> OrderFilled:
@@ -190,9 +186,9 @@ class TestStubs:
             order.quantity,
             order.price if fill_price is None else fill_price,
             Currency.USD,
-            TestStubs.unix_epoch(),
+            UNIX_EPOCH,
             GUID(uuid.uuid4()),
-            TestStubs.unix_epoch())
+            UNIX_EPOCH)
 
     @staticmethod
     def event_order_working(order, working_price=Price(1.00000, 5)) -> OrderWorking:
@@ -207,9 +203,9 @@ class TestStubs:
             order.quantity,
             order.price if working_price is None else working_price,
             order.time_in_force,
-            TestStubs.unix_epoch(),
+            UNIX_EPOCH,
             GUID(uuid.uuid4()),
-            TestStubs.unix_epoch(),
+            UNIX_EPOCH,
             order.expire_time)
 
     @staticmethod
@@ -219,7 +215,7 @@ class TestStubs:
             StrategyId('SCALPER', '001'),
             position.last_event,
             GUID(uuid.uuid4()),
-            TestStubs.unix_epoch())
+            UNIX_EPOCH)
 
     @staticmethod
     def event_position_modified(position) -> PositionModified:
@@ -228,7 +224,7 @@ class TestStubs:
             StrategyId('SCALPER', '001'),
             position.last_event,
             GUID(uuid.uuid4()),
-            TestStubs.unix_epoch())
+            UNIX_EPOCH)
 
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
@@ -237,7 +233,7 @@ class TestStubs:
             StrategyId('SCALPER', '001'),
             position.last_event,
             GUID(uuid.uuid4()),
-            TestStubs.unix_epoch())
+            UNIX_EPOCH)
 
     @staticmethod
     def position(number=1, entry_price=Price(1.00000, 5)) -> Position:
@@ -294,9 +290,9 @@ class TestStubs:
             order.quantity,
             close_price,
             Currency.USD,
-            TestStubs.unix_epoch() + timedelta(minutes=5),
+            UNIX_EPOCH + timedelta(minutes=5),
             GUID(uuid.uuid4()),
-            TestStubs.unix_epoch() + timedelta(minutes=5))
+            UNIX_EPOCH + timedelta(minutes=5))
 
         position.apply(order_filled)
 

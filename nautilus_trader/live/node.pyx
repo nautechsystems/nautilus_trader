@@ -207,7 +207,7 @@ cdef class TradingNode:
 
         Condition.equal(self.trader_id, self.trader.id, 'trader_id', 'trader.id')
 
-        self._check_residuals_delay = config_trader['check_residuals_delay']
+        self._check_residuals_delay = 1.0  # Hard coded 1 second
         self._load_strategy_state = config_strategy['load_state']
         self._save_strategy_state = config_strategy['save_state']
 

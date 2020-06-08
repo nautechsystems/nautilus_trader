@@ -77,18 +77,18 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     # def test_builtin_decimal_size(self):
     #     result = PerformanceHarness.object_size(_BUILTIN_DECIMAL1)
-    #     # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
+    #     # Object size test: <class 'nautilus_trader.base.decimal.Decimal'> is 48 bytes
     #     self.assertTrue(result == 104)
     #
     # def test_decimal_size(self):
     #     result = PerformanceHarness.object_size(_DECIMAL1)
-    #     # Object size test: <class 'nautilus_trader.core.decimal.Decimal'> is 48 bytes
+    #     # Object size test: <class 'nautilus_trader.base.decimal.Decimal'> is 48 bytes
     #     self.assertTrue(result <= 104)
 
     def test_decimal_to_string(self):
         result = PerformanceHarness.profile_function(_DECIMAL1.to_string, 3, 1000000)
         # ~221ms (221710μs) minimum of 3 runs @ 1000000 iterations
-        self.assertTrue(result < 0.25)
+        self.assertTrue(result < 0.3)
 
     def test_make_builtin_decimal(self):
         result = PerformanceHarness.profile_function(DecimalTesting.make_builtin_decimal, 3, 1000000)

@@ -37,7 +37,7 @@ if __name__ == "__main__":
         TestDataProvider.usdjpy_1min_ask())
 
     strategies = [EMACross(
-        instrument=USDJPY,
+        symbol=USDJPY.symbol,
         bar_spec=BarSpecification(1, BarStructure.MINUTE, PriceType.BID),
         risk_bp=10,
         fast_ema=10,
