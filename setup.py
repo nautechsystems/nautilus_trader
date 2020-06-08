@@ -6,7 +6,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import setuptools
-
 from setuptools import setup
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
@@ -23,7 +22,6 @@ LICENSE = 'Nautech Systems Software License, April 2018'
 URL = 'https://nautechsystems.io/nautilus'
 PYTHON_REQUIRES = '>=3.7.3'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
-DIRECTORIES_ALL = [PACKAGE_NAME, 'tests']
 PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 
 
