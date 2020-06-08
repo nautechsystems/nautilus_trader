@@ -9,7 +9,7 @@ from nautilus_trader.core.correctness cimport Condition
 
 cdef class EncryptionSettings:
     """
-    Provides an encryption settings.
+    Provides encryption settings.
     """
 
     def __init__(self, str algorithm not None='none', str keys_dir not None=''):
