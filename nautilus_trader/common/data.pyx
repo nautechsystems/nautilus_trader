@@ -188,6 +188,8 @@ cdef class DataClient:
 
         :param strategy: The strategy to register.
         """
+        Condition.not_none(strategy, 'strategy')
+
         strategy.register_data_client(self)
 
         self._log.debug(f"Registered {strategy}.")

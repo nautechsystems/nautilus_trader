@@ -15,9 +15,11 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.strategies import EMACross
+
+from examples.strategies.ema_cross import EMACross
 
 
 if __name__ == "__main__":

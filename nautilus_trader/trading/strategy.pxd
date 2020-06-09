@@ -64,7 +64,7 @@ cdef class TradingStrategy:
     cpdef void on_start(self) except *
     cpdef void on_tick(self, Tick tick) except *
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *
-    cpdef void on_instrument(self, Instrument instrument) except *
+    cpdef void on_data(self, object data) except *
     cpdef void on_event(self, Event event) except *
     cpdef void on_stop(self) except *
     cpdef void on_reset(self) except *
@@ -83,7 +83,7 @@ cdef class TradingStrategy:
     cpdef void handle_ticks(self, list ticks) except *
     cpdef void handle_bar(self, BarType bar_type, Bar bar) except *
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
-    cpdef void handle_instrument(self, Instrument instrument) except *
+    cpdef void handle_data(self, object data) except *
     cpdef void handle_event(self, Event event) except *
 
 # -- DATA METHODS ---------------------------------------------------------------------------------#
