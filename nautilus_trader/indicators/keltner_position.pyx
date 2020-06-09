@@ -98,9 +98,9 @@ cdef class KeltnerPosition(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if self._kc.initialized:
-                self.initialized = True
+                self._set_initialized()
 
         cdef double k_width = (self._kc.value_upper_band - self._kc.value_lower_band) / 2
 

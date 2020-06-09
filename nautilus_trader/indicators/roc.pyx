@@ -50,9 +50,9 @@ cdef class RateOfChange(Indicator):
         self._prices.append(price)
 
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if len(self._prices) >= self.period:
-                self.initialized = True
+                self._set_initialized()
 
         if self._use_log:
             self.value = log(price / self._prices[0])

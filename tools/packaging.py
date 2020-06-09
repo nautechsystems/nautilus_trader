@@ -122,10 +122,10 @@ def make_extensions(directories: list) -> list:
     """
     extensions = []
     for file in find_files('.pyx', directories):
+        print(f"Generating C code for {file}.pyx")
         extensions.append(Extension(
             name=file.replace(os.path.sep, ".")[:-4],
             sources=[file],
             include_dirs=['.']))
-        print(f"Compiled extension for {file}.pyx")
 
     return extensions

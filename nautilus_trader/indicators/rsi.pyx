@@ -46,7 +46,7 @@ cdef class RelativeStrengthIndex(Indicator):
         # Check if first input
         if not self.has_inputs:
             self._last_point = point
-            self.has_inputs = True
+            self._set_has_inputs()
 
         cdef double gain = point - self._last_point
 
@@ -63,7 +63,7 @@ cdef class RelativeStrengthIndex(Indicator):
         # Initialization logic
         if not self.initialized:
             if self._average_gain.initialized and self._average_loss.initialized:
-                self.initialized = True
+                self._set_initialized()
 
         if self._average_loss.value == 0.0:
             self.value = self._rsi_max

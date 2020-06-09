@@ -120,9 +120,9 @@ cdef class Swings(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if self.high_price != 0. and self.low_price != 0.0:
-                self.initialized = True
+                self._set_initialized()
         # Calculate current values
         else:
             self.length_current = self.high_price - self.low_price

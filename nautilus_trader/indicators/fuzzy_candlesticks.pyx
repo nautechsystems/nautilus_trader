@@ -273,9 +273,9 @@ cdef class FuzzyCandlesticks(Indicator):
 
         # Initialization logic
         if self.initialized is False:
-            self.has_inputs = True
+            self._set_has_inputs()
             if len(self._lengths) >= self.period:
-                self.initialized = True
+                self._set_initialized()
 
     cpdef int price_comparison(self, double price1, double price2):
         """

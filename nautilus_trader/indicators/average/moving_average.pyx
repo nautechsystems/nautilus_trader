@@ -57,9 +57,9 @@ cdef class MovingAverage(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if self.count >= self.period:
-                self.initialized = True
+                self._set_initialized()
 
     cdef void _reset_ma(self):
         """

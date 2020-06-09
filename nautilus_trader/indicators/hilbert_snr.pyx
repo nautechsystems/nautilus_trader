@@ -70,7 +70,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         if not self.initialized:
             # Do not initialize __has_inputs here
             if len(self._inputs) >= self.period:
-                self.initialized = True
+                self._set_initialized()
             else:
                 return
 
@@ -112,7 +112,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         if not self.has_inputs:
             self.value = self._calc_signal_noise_ratio()
             self._previous_value = self.value
-            self.has_inputs = True
+            self._set_has_inputs()
 
         # Compute smoothed SNR in Decibels
         self.value = (0.25 * self._calc_signal_noise_ratio()) + (0.75 * self._previous_value)

@@ -10,14 +10,6 @@ from nautilus_trader.indicators.atr cimport AverageTrueRange
 
 
 cdef class KeltnerChannel(Indicator):
-    """
-    An indicator which provides a Keltner channel. The Keltner channel is a
-    volatility based envelope set above and below a central moving average.
-    Traditionally the middle band is an EMA based on the typical price
-    ((high + low + close) / 3), the upper band is the middle band plus the ATR.
-    The lower band is the middle band minus the ATR.
-    """
-
     cdef MovingAverage _moving_average
     cdef AverageTrueRange _atr
 

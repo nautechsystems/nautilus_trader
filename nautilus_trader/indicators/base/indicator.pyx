@@ -40,9 +40,12 @@ cdef class Indicator:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+    cdef void _set_has_inputs(self, bint setting=True):
+        self.has_inputs = setting
+
+    cdef void _set_initialized(self, bint setting=True):
+        self.initialized = setting
+
     cdef void _reset_base(self):
-        """
-        Reset the indicator by clearing all stateful values.
-        """
         self.has_inputs = False
         self.initialized = False

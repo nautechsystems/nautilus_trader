@@ -15,7 +15,7 @@ from nautilus_trader.core.correctness cimport Condition
 
 cdef class MovingAverageFactory:
     """
-    A static factory class which provides different moving averages.
+    Provides a factory to construct different moving average indicators.
     """
 
     @staticmethod
