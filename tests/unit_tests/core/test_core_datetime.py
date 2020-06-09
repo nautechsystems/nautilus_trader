@@ -197,4 +197,3 @@ class TestFunctionsTests(unittest.TestCase):
         # Assert
         self.assertEqual(result1.index[0], result2.index[0])
         self.assertEqual(result1.index.tz, result2.index.tz)
-

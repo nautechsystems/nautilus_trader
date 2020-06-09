@@ -201,11 +201,11 @@ cdef class TradingStrategy:
         raise NotImplementedError("Method on_bar() must be implemented in the strategy "
                                   "(or just add pass).")
 
-    cpdef void on_instrument(self, Instrument instrument) except *:
+    cpdef void on_data(self, object data) except *:
         """
         Called when an instrument update is received by the strategy.
 
-        :param instrument: The instrument received.
+        :param data: The data object received.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_instrument() must be implemented in the strategy "
@@ -440,15 +440,15 @@ cdef class TradingStrategy:
         for i in range(len(bars)):
             self.handle_bar(bar_type, bars[i])
 
-    cpdef void handle_instrument(self, Instrument instrument) except *:
+    cpdef void handle_data(self, object data) except *:
         """
-        System method. Handle the given instrument.
+        System method. Handle the data object.
         """
-        Condition.not_none(instrument, 'instrument')
+        Condition.not_none(data, 'data')
 
         if self.is_running:
             try:
-                self.on_instrument(instrument)
+                self.on_data(data)
             except Exception as ex:
                 self.log.exception(ex)
                 if self.reraise_exceptions:
@@ -670,7 +670,7 @@ cdef class TradingStrategy:
             self.log.error("Cannot subscribe to instrument (data client not registered).")
             return
 
-        self._data_client.subscribe_instrument(symbol, self.handle_instrument)
+        self._data_client.subscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Subscribed to {symbol} instrument data.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol) except *:
@@ -715,7 +715,7 @@ cdef class TradingStrategy:
             self.log.error("Cannot unsubscribe from instrument (data client not registered).")
             return
 
-        self._data_client.unsubscribe_instrument(symbol, self.handle_instrument)
+        self._data_client.unsubscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Unsubscribed from {symbol} instrument data.")
 
     cpdef bint has_ticks(self, Symbol symbol):
