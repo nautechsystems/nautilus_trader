@@ -8,7 +8,6 @@ import cython
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory, MovingAverageType
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 
@@ -39,7 +38,7 @@ cdef class KeltnerChannel(Indicator):
         :param ma_type_atr: The moving average type for the internal ATR (cannot be None).
         :param use_previous: The boolean flag indicating whether previous price values should be used.
         :param atr_floor: The ATR floor (minimum) output value for the indicator (>= 0).
-        :param check: The flag indicating whether the input values should be checked.
+        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, 'period')
         Condition.positive(k_multiplier, 'k_multiplier')
@@ -92,9 +91,9 @@ cdef class KeltnerChannel(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if self._moving_average.initialized:
-                self.initialized = True
+                self._set_initialized()
 
     cpdef void reset(self):
         """

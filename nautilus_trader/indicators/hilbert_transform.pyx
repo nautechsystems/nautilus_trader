@@ -54,9 +54,9 @@ cdef class HilbertTransform(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if len(self._inputs) >= self.period:
-                self.initialized = True
+                self._set_initialized()
             else:
                 return
 

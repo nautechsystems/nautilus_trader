@@ -74,9 +74,9 @@ cdef class Pressure(Indicator):
 
         # Initialization logic (do not move this to the bottom as guard against zero will return)
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if self._atr.initialized:
-                self.initialized = True
+                self._set_initialized()
 
         # Guard against zero values
         if self._average_volume.value == 0.0 or self._atr.value == 0.0:

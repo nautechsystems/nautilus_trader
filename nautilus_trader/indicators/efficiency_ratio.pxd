@@ -8,11 +8,6 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class EfficiencyRatio(Indicator):
-    """
-    An indicator which calculates the efficiency ratio across a rolling window.
-    The Kaufman Efficiency measures the ratio of the relative market speed in
-    relation to the volatility, this could be thought of as a proxy for noise.
-    """
     cdef object _inputs
     cdef object _deltas
 

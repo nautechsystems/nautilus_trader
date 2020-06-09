@@ -56,8 +56,8 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self.has_inputs = True
-            self.initialized = True
+            self._set_has_inputs()
+            self._set_initialized()
 
         # No weighting for this price (also avoiding divide by zero)
         if volume == 0.:

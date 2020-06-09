@@ -24,7 +24,7 @@ cdef class EfficiencyRatio(Indicator):
         Initializes a new instance of the EfficiencyRatio class.
 
         :param period: The rolling window period for the indicator (>= 2).
-        :param check: The flag indicating whether the input values should be checked.
+        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.true(period >= 2, 'period >= 2')
 
@@ -48,11 +48,11 @@ cdef class EfficiencyRatio(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if len(self._inputs) < 2:
                 return  # Not enough data
             elif len(self._inputs) >= self.period:
-                self.initialized = True
+                self._set_initialized()
 
         # Add data to queues
         self._deltas.append(abs(self._inputs[-1] - self._inputs[-2]))

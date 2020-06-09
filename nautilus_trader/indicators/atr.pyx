@@ -116,9 +116,9 @@ cdef class AverageTrueRange(Indicator):
         Initialization logic.
         """
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if self._moving_average.initialized:
-                self.initialized = True
+                self._set_initialized()
 
     cpdef void reset(self):
         """

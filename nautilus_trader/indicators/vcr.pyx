@@ -102,10 +102,10 @@ cdef class VolatilityCompressionRatio(Indicator):
 
     cdef void _check_initialized(self):
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
 
             if self._atr_fast.initialized and self._atr_slow.initialized:
-                self.initialized = True
+                self._set_initialized()
 
     cpdef void reset(self):
         """

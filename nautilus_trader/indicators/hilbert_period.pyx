@@ -26,7 +26,7 @@ cdef class HilbertPeriod(Indicator):
         Initializes a new instance of the HilbertPeriod class.
 
         :param period: The rolling window period for the indicator (> 0).
-        :param check: The flag indicating whether the input values should be checked.
+        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, 'period')
 
@@ -60,9 +60,9 @@ cdef class HilbertPeriod(Indicator):
 
         # Initialization logic (leave this here)
         if not self.initialized:
-            self.has_inputs = True
+            self._set_has_inputs()
             if len(self._inputs) >= self.period:
-                self.initialized = True
+                self._set_initialized()
             else:
                 return
 
