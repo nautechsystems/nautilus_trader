@@ -62,8 +62,8 @@ class EMACross(TradingStrategy):
         self.SL_buffer = 0.0        # instrument.tick_size * 10
         self.SL_atr_multiple = sl_atr_multiple
 
-        self.instrument = None      # initialized in on_start()
         self.position_sizer = None  # initialized in on_start()
+        self.quote_currency = None  # initialized in on_start()
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -75,11 +75,13 @@ class EMACross(TradingStrategy):
         This method is called when self.start() is called, and after internal start logic.
         """
         # Put custom code to be run on strategy start here (or pass)
-        self.instrument = self.get_instrument(self.symbol)
-        self.precision = self.instrument.price_precision
-        self.entry_buffer = self.instrument.tick_size.as_double() * 3.0
-        self.SL_buffer = self.instrument.tick_size * 10.0
-        self.position_sizer = FixedRiskSizer(self.instrument)
+        instrument = self.get_instrument(self.symbol)
+
+        self.precision = instrument.price_precision
+        self.entry_buffer = instrument.tick_size.as_double() * 3.0
+        self.SL_buffer = instrument.tick_size * 10.0
+        self.position_sizer = FixedRiskSizer(instrument)
+        self.quote_currency = instrument.quote_currency
 
         # Register the indicators for updating
         self.register_indicator(
@@ -172,7 +174,7 @@ class EMACross(TradingStrategy):
         exchange_rate = 0.0
         try:
             exchange_rate = self.get_exchange_rate_for_account(
-                quote_currency=self.instrument.quote_currency,
+                quote_currency=self.quote_currency,
                 price_type=PriceType.ASK)
         except ValueError as ex:
             self.log.error(ex)
@@ -216,7 +218,7 @@ class EMACross(TradingStrategy):
         exchange_rate = 0.0
         try:
             exchange_rate = self.get_exchange_rate_for_account(
-                quote_currency=self.instrument.quote_currency,
+                quote_currency=self.quote_currency,
                 price_type=PriceType.BID)
         except ValueError as ex:
             self.log.error(ex)
@@ -270,10 +272,8 @@ class EMACross(TradingStrategy):
 
         :param data: The received data.
         """
-        if isinstance(data, Instrument):
-            if self.instrument.symbol.equals(data.symbol):
-                self.instrument = data
-                self.log.info(f"Updated instrument {data}.")
+        # Put custom code for data handling here (or pass)
+        pass
 
     def on_event(self, event):
         """
@@ -314,7 +314,7 @@ class EMACross(TradingStrategy):
     def on_dispose(self):
         """
         This method is called when self.dispose() is called. Dispose of any
-        resources that has been used by the strategy here.
+        resources that have been used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)
