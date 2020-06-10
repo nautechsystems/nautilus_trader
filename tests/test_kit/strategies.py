@@ -16,8 +16,8 @@
 from datetime import timedelta
 
 from nautilus_trader.core.types import Label
-from nautilus_trader.model.identifiers import Symbol,PositionId
-from nautilus_trader.model.objects import Price, Tick, Instrument
+from nautilus_trader.model.identifiers import Symbol, PositionId
+from nautilus_trader.model.objects import Price, Tick
 from nautilus_trader.model.objects import BarSpecification, BarType, Bar
 from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.order_side import OrderSide
