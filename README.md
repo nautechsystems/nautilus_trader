@@ -1,12 +1,12 @@
 ![Alt text](docs/artwork/nautechsystems_logo_small.png?raw=true "logo")
-
+----------
 # NautilusTrader
 
 NautilusTrader is an algorithmic trading framework allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
 data with an event-driven engine, and then trade those same strategies live in a
-production grade environment. The project utilizes Cython heavily to provide C
-level speed and type safety.
+production grade environment. The project heavily utilizes Cython to provide
+type safety and performance through C extensions.
 
 ## Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
@@ -19,9 +19,9 @@ level speed and type safety.
 * **Encryption:** Built-in encryption support with ZeroMQ. Run trading boxes remote from co-located data and execution services.
 
 ## Values
-* Performance
 * Reliability
 * Testability
+* Performance
 * Modularity
 * Maintainability
 * Scalability
