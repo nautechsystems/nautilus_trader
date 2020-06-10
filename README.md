@@ -4,9 +4,9 @@
 
 NautilusTrader is an algorithmic trading framework allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
-data with an event-driven engine, and then trade them live in a production grade
- environment hosted on a ```TradingNode``` - with no changes to the
- ```TradingStrategy``` scripts.
+data with an event-driven engine, and then trade those same strategies live in a
+production grade environment. The project utilizes Cython heavily to provide C
+level speed and type safety.
 
 ## Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
@@ -17,6 +17,14 @@ data with an event-driven engine, and then trade them live in a production grade
 * **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
 * **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud environment.
 * **Encryption:** Built-in encryption support with ZeroMQ. Run trading boxes remote from co-located data and execution services.
+
+## Values
+* Performance
+* Reliability
+* Testability
+* Modularity
+* Maintainability
+* Scalability
 
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
@@ -62,7 +70,8 @@ To deploy a live ```TradingNode```, pull and run the latest docker image;
 ## Development
 [Development Documentation](docs/development)
 
-To run the tests, first compile the C extensions for the package;
+To run the tests, first compile the C extensions for the package. Note that
+initial compilation may take several minutes due to the quantity of extensions.
 
     $ python setup.py build_ext --inplace
 
