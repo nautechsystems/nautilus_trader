@@ -1,5 +1,7 @@
 ![Alt text](docs/artwork/nautechsystems_logo_small.png?raw=true "logo")
+
 ----------
+
 # NautilusTrader
 
 NautilusTrader is an algorithmic trading framework allowing quantitative traders
