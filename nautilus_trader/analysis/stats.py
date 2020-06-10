@@ -1,5 +1,3 @@
-# !linter_ignore
-
 # ********** TEMPORARY **********
 
 #

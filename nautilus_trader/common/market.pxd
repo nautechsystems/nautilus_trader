@@ -2,9 +2,9 @@
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
-#  Licensed under the GNU General Public License Version 3.0 (the "License");
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
 #  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/gpl-3.0.en.html
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,7 @@ from nautilus_trader.common.clock cimport Clock, TimeEvent
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.objects cimport Price, Volume, Tick, BarType, BarSpecification, Bar, Instrument
 
@@ -49,7 +50,7 @@ cdef class BarDataWrangler:
 
 
 cdef class IndicatorUpdater:
-    cdef object _indicator
+    cdef Indicator _indicator
     cdef object _input_method
     cdef list _input_params
     cdef list _outputs

@@ -2,9 +2,9 @@
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
-#  Licensed under the GNU General Public License Version 3.0 (the "License");
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
 #  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/gpl-3.0.en.html
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -41,6 +41,7 @@ from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.factories cimport OrderFactory
+from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.guid cimport LiveGuidFactory
 
@@ -116,8 +117,8 @@ cdef class TradingStrategy:
         self.bar_capacity = bar_capacity
         self._ticks = {}                        # type: {Symbol, [Tick]}
         self._bars = {}                         # type: {BarType, [Bar]}
-        self._indicators = []                   # type: [object]
-        self._indicator_updaters = {}           # type: {object, [IndicatorUpdater]}
+        self._indicators = []                   # type: [Indicator]
+        self._indicator_updaters = {}           # type: {Indicator, [IndicatorUpdater]}
         self._state_log = []                    # type: [(datetime, str)]
 
         # Registerable modules
@@ -311,7 +312,7 @@ cdef class TradingStrategy:
     cpdef void register_indicator(
             self,
             data_source,
-            indicator,
+            Indicator indicator,
             update_method: callable=None) except *:
         """
         Register the given indicator with the strategy to receive data of the
