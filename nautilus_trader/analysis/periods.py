@@ -1,5 +1,3 @@
-# !linter_ignore
-
 # ********** TEMPORARY **********
 
 APPROX_BDAYS_PER_MONTH = 21

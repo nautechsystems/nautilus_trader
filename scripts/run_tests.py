@@ -3,9 +3,9 @@
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
-#  Licensed under the GNU General Public License Version 3.0 (the "License");
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
 #  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/gpl-3.0.en.html
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,

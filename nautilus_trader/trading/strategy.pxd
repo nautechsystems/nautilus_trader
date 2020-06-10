@@ -2,9 +2,9 @@
 #  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
-#  Licensed under the GNU General Public License Version 3.0 (the "License");
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
 #  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/gpl-3.0.en.html
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 #
 #  Unless required by applicable law or agreed to in writing, software
 #  distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,6 +35,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class TradingStrategy:
@@ -85,7 +86,7 @@ cdef class TradingStrategy:
     cpdef void register_trader(self, TraderId trader_id) except *
     cpdef void register_data_client(self, DataClient client) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
-    cpdef void register_indicator(self, data_source, indicator, update_method=*) except *
+    cpdef void register_indicator(self, data_source, Indicator indicator, update_method=*) except *
 
 # -- HANDLER METHODS ------------------------------------------------------------------------------#
     cpdef void handle_tick(self, Tick tick) except *
