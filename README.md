@@ -4,9 +4,9 @@
 
 # NautilusTrader
 
-NautilusTrader is an algorithmic trading framework allowing quantitative traders
+NautilusTrader is an algorithmic trading platform allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
-data with an event-driven engine, and then trade those same strategies live in a
+data with an event-driven engine, and also trade those strategies live in a
 production grade environment. The project heavily utilizes Cython to provide
 type safety and performance through C extension modules.
 
