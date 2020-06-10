@@ -18,7 +18,7 @@ type safety and performance through C extensions.
 * **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 * **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
 * **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud environment.
-* **Encryption:** Built-in encryption support with ZeroMQ. Run trading boxes remote from co-located data and execution services.
+* **Encryption:** Built-in Curve encryption support with ZeroMQ. Run trading boxes remote from co-located data and execution services.
 
 ## Values
 * Reliability
