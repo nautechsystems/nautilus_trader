@@ -16,7 +16,7 @@
 from datetime import timedelta
 
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Price, Tick, BarType, Bar, BarSpecification, Instrument
+from nautilus_trader.model.objects import Price, Tick, Bar, BarType, BarSpecification
 from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -50,6 +50,7 @@ class EMACross(TradingStrategy):
         :param slow_ema: The slow EMA period.
         :param atr_period: The ATR period.
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
+        :param extra_id_tag: An optional extra tag to append to order ids.
         """
         super().__init__(order_id_tag=symbol.code + extra_id_tag, bar_capacity=40)
 
