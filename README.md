@@ -19,8 +19,8 @@ NautilusTrader has been open-sourced from working production code, and forms
 part of a larger distributed system. Data and Execution services implemented
 with C# .NET Core allow this trading framework to integrate with FIX4.4
 connections for data ingestion and trade management. There are potential future
-plans to open source the remainder of the code base. For now broker client
-adapters must be written to allow live trading via the API.
+plans to open source the remainder of the code base, however for now broker client
+adapters must be written to allow live trading via the messaging API.
 
 
 ## Features
