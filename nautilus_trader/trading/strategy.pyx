@@ -765,7 +765,7 @@ cdef class TradingStrategy:
 
     cpdef int bar_count(self, BarType bar_type):
         """
-        Return the count of ticks held by the strategy for the given symbol.
+        Return the count of bars held by the strategy for the given bar type.
         
         :param bar_type: The bar type to count.
         :return int.
