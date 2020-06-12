@@ -16,6 +16,8 @@
 .prof
 .pytest_cache
 __pycache__
-/build
+build/
 log/
 logs/
+_build/
+_static/

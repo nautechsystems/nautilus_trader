@@ -151,11 +151,13 @@ cpdef str format_bytes(double size):
 cpdef str pad_string(str string, int length, str pad=' '):
     """
     Return the given string front padded.
-
+    
     :param string: The string to pad.
     :param length: The length to pad to.
     :param pad: The padding character.
+    
     :return str.
+    
     """
     Condition.not_none(string, 'string')
     Condition.not_negative_int(length, 'length')
