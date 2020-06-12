@@ -55,6 +55,10 @@ cdef class Order:
         The unique user identifier for the order.
     id_broker : OrderIdBroker
         The unique broker identifier for the order.
+    account_id : AccountId
+        The account identifier associated with the order.
+    execution_id : ExecutionId
+        The last execution identifier for the order.
 
     """
 

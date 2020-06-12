@@ -135,6 +135,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
+        
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -146,6 +147,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
+        
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -157,6 +159,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
+        
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -169,6 +172,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
+        
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -180,6 +184,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
+        
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -192,6 +197,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
+        
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -204,6 +210,7 @@ cdef class Decimal:
         :param other: The other decimal to add.
         :param keep_precision: If the original precision should be maintained.
         :return Decimal.
+        
         """
         if keep_precision:
             # noinspection PyProtectedMember
@@ -221,6 +228,7 @@ cdef class Decimal:
         :param other: The other decimal to subtract.
         :param keep_precision: If the original precision should be maintained.
         :return Decimal.
+        
         """
         if keep_precision:
             # noinspection PyProtectedMember
@@ -237,6 +245,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return bool.
+
         """
         try:
             return self.as_double() == <double?>other
@@ -249,6 +258,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return bool.
+
         """
         try:
             return self.as_double() != <double?>other
@@ -261,6 +271,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return bool.
+
         """
         try:
             return self.as_double() < <double?>other
@@ -274,6 +285,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return bool.
+
         """
         try:
             return self.as_double() <= <double?>other
@@ -286,6 +298,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return bool.
+
         """
         try:
             return self.as_double() > <double?>other
@@ -299,6 +312,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return bool.
+
         """
         try:
             return self.as_double() >= <double?>other
@@ -311,6 +325,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return double.
+
         """
         try:
             return self.as_double() + <double?>other
@@ -323,6 +338,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return double.
+
         """
         try:
             return self.as_double() - <double?>other
@@ -335,6 +351,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return double.
+
         """
         try:
             return self.as_double() / <double?>other
@@ -347,6 +364,7 @@ cdef class Decimal:
 
         :param other: The other object.
         :return double.
+
         """
         try:
             return self.as_double() * <double?>other
@@ -358,6 +376,7 @@ cdef class Decimal:
          Return the hash code of this object.
 
         :return int.
+
         """
         return hash(self._value)
 
@@ -366,6 +385,7 @@ cdef class Decimal:
         Return the string representation of this object.
 
         :return str.
+
         """
         return self.to_string()
 
@@ -375,6 +395,7 @@ cdef class Decimal:
         location in memory.
 
         :return str.
+
         """
         return (f"<{self.__class__.__name__}({self.to_string()}, "
                 f"precision={self.precision}) object at {id(self)}>")
