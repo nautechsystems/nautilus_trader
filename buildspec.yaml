@@ -8,10 +8,13 @@ phases:
       - apt-get update -y
   pre_build:
     commands:
-      - python setup.py build_ext --inplace
+      - tar xvf Anaconda3-2020.02-Linux-x86_64.zip
+      - bash Anaconda3-2020.02-Linux-x86_64.sh
+      - pip install -r requirements.txt
   build:
     commands:
       - echo Build started on `date`
+      - python setup.py build_ext --inplace
       - cd scripts
       - python run_tests.py
   post_build:
