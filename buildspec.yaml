@@ -7,7 +7,9 @@ phases:
     commands:
       - apt-get update -y
       - apt-get upgrade -y
-      - apt install build-essential
+      - apt-get install build-essential
+      - apt-get install manpages-dev
+      - gcc --version
   pre_build:
     commands:
       - wget https://repo.anaconda.com/archive/Anaconda3-2020.02-Linux-x86_64.sh
