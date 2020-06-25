@@ -26,13 +26,6 @@ phases:
   post_build:
     commands:
       - echo Build completed on `date`
-  reports:
-    arn:aws:s3:::ns-dev-build
-      files:
-        - "**/*"
-      base-directory: 'nautilus-trader'
-      discard-paths: no
-      file-format: TestNGXml
   artifacts:
     files:
       - '**/*'
