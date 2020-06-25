@@ -7,7 +7,7 @@ phases:
     commands:
       - echo Setting up environment
       - apt-get update -y
-      - apt-get upgrade
+      - apt-get upgrade -y
   pre_build:
     commands:
       - echo Installing dependencies
