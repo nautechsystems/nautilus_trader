@@ -21,14 +21,14 @@ phases:
     commands:
       - echo Build started on `date`
       - python setup.py build_ext --inplace
-      - cd scripts
-      - python run_tests.py
+      - bash scripts/run_tests.sh
   post_build:
     commands:
       - echo Build completed on `date`
-  artifacts:
-    files:
-      - '**/*'
-    name: myname-$(date +%Y-%m-%d)
-    base-directory: 'nautilus-trader'
-    discard-paths: yes
+
+artifacts:
+  files:
+    - '**/*'
+  name: myname-$(date +%Y-%m-%d)
+  base-directory: 'nautilus-trader'
+  discard-paths: yes
