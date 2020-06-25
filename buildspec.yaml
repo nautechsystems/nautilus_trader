@@ -1,0 +1,19 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: latest
+    commands:
+      - apt-get update -y
+  pre_build:
+    commands:
+      - python setup.py build_ext --inplace
+  build:
+    commands:
+      - echo Build started on `date`
+      - cd scripts
+      - python run_tests.py
+  post_build:
+    commands:
+      - echo Build completed on `date`
