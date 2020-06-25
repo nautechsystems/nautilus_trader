@@ -3,7 +3,7 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      python: latest
+      python: 3.7.x
     commands:
       - apt-get update -y
   pre_build:
