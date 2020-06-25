@@ -90,7 +90,7 @@ initial compilation may take several minutes due to the quantity of extensions.
 
     $ python setup.py build_ext --inplace
 
-All tests can be run via the `run_tests.py` script, or through pytest.
+All tests can be run via the `run_tests.sh` script, or through pytest.
 
 ## Support
 Please direct all questions, comments or bug reports to info@nautechsystems.io
