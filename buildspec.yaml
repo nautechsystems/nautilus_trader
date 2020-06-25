@@ -16,6 +16,7 @@ phases:
       - wget https://repo.anaconda.com/archive/Anaconda3-2020.02-Linux-x86_64.sh
       - bash Anaconda3-2020.02-Linux-x86_64.sh -b -p $HOME/anaconda
       - pip install -r requirements.txt
+      - apt-get install redis-server
   build:
     commands:
       - echo Build started on `date`
