@@ -7,8 +7,8 @@ phases:
     commands:
       - apt-get update -y
       - apt-get upgrade -y
-      - apt-get install build-essential
-      - apt-get install manpages-dev
+      - apt-get install build-essential -y
+      - apt-get install manpages-dev -y
       - gcc --version
   pre_build:
     commands:
