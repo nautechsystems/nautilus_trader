@@ -8,6 +8,7 @@ phases:
       - apt-get update -y
   pre_build:
     commands:
+      - aws s3 cp https://ns-dev-build.s3-ap-southeast-2.amazonaws.com/Anaconda3-2020.02-Linux-x86_64.zip Anaconda3-2020.02-Linux-x86_64.zip
       - tar xvf Anaconda3-2020.02-Linux-x86_64.zip
       - bash Anaconda3-2020.02-Linux-x86_64.sh
       - pip install -r requirements.txt
