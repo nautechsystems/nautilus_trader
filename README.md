@@ -5,6 +5,8 @@
 # NautilusTrader
 
 ![Build Status](https://codebuild.ap-southeast-2.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiS0ZNT0pCWlFBNmRKZ0hzMlZVN2ZyQnY3OVRwUzBJRGlucWVxUUxGKzFjQUNOZ0M3d1BaUE9WeGllK0MzSHBpRGpQQkFEYlZud1BRbTdpcjRGZlVFbDBJPSIsIml2UGFyYW1ldGVyU3BlYyI6InRYZWUwRjc2b1A4UXova2oiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
+![PyPI Version](https://img.shields.io/pypi/v/nautilus_trader)
+![License](https://img.shields.io/github/license/nautechsystems/nautilus_trader)
 
 NautilusTrader is an algorithmic trading platform allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
