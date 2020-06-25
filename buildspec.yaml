@@ -12,10 +12,7 @@ phases:
     commands:
       - echo Installing dependencies
       - wget https://repo.anaconda.com/archive/Anaconda3-2020.02-Linux-x86_64.sh
-      - bash Anaconda3-2020.02-Linux-x86_64.sh
-      - yes
-      - yes
-      - yes
+      - bash Anaconda3-2020.02-Linux-x86_64.sh -y
       - conda init
       - pip install -r requirements.txt
   build:
