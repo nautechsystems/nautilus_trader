@@ -5,6 +5,7 @@ phases:
     runtime-versions:
       python: 3.7
     commands:
+      - lsb_release -a
       - apt-get update -y
       - apt-get upgrade -y
       - apt-get install build-essential -y
@@ -14,7 +15,7 @@ phases:
   pre_build:
     commands:
       - pip install -r requirements.txt
-      - apt-get install redis-server
+      - apt-get install redis-server -y
   build:
     commands:
       - echo Build started on `date`
