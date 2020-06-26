@@ -10,13 +10,13 @@ phases:
       - apt-get upgrade -y
       - apt-get install build-essential -y
       - apt-get install libsnappy-dev -y
+      - apt-get install systemd
       - gcc --version
   pre_build:
     commands:
       - pip install -r requirements.txt
       - apt-get install redis-server -y
       - systemctl start redis
-      - sudo systemctl status redis
   build:
     commands:
       - echo Build started on `date`
