@@ -10,7 +10,7 @@ phases:
       - apt-get upgrade -y
       - apt-get install build-essential -y
       - apt-get install libsnappy-dev -y
-      - apt-get install systemd
+      - apt-get install systemd -y
       - gcc --version
   pre_build:
     commands:
