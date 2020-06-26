@@ -20,10 +20,8 @@ phases:
     commands:
       - echo Build started on `date`
       - python setup.py build_ext --inplace
-      - python -m pytest tests/unit_tests/
-      - python -m pytest tests/integration_tests/
-      - python -m pytest tests/performance_tests/
-      - python -m pytest tests/acceptance_tests/
+      - cd scripts
+      - python run_tests.py
   post_build:
     commands:
       - echo Build completed on `date`

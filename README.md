@@ -5,12 +5,8 @@
 # NautilusTrader
 
 ![Build Status](https://codebuild.ap-southeast-2.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiS0ZNT0pCWlFBNmRKZ0hzMlZVN2ZyQnY3OVRwUzBJRGlucWVxUUxGKzFjQUNOZ0M3d1BaUE9WeGllK0MzSHBpRGpQQkFEYlZud1BRbTdpcjRGZlVFbDBJPSIsIml2UGFyYW1ldGVyU3BlYyI6InRYZWUwRjc2b1A4UXova2oiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
-
-| Versioning | Details       |
-| ---------- | ------------- |
-| Python     | ![Python Supported](https://img.shields.io/pypi/pyversions/nautilus_trader) |
-| Latest     | ![Latest Version](https://img.shields.io/github/v/release/nautechsystems/nautilus_trader?include_prereleases) |
-| Stable     | ![Stable Version](https://img.shields.io/pypi/v/nautilus_trader) |
+![Python Supported](https://img.shields.io/pypi/pyversions/nautilus_trader)
+![Stable Version](https://img.shields.io/github/v/release/nautechsystems/nautilus_trader?include_prereleases)
 
 NautilusTrader is an algorithmic trading platform allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
@@ -52,7 +48,11 @@ adapters must be written to allow live trading via the messaging API.
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
 ## Installation
-Install the package via pip;
+Stable version;
+
+    $ pip install nautilus_trader
+
+Latest version;
 
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
