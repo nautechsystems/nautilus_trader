@@ -9,13 +9,13 @@ phases:
       - apt-get update -y
       - apt-get upgrade -y
       - apt-get install build-essential -y
-      - apt-get install manpages-dev -y
       - apt-get install libsnappy-dev -y
       - gcc --version
   pre_build:
     commands:
       - pip install -r requirements.txt
       - apt-get install redis-server -y
+      - redis-server
   build:
     commands:
       - echo Build started on `date`
