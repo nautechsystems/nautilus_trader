@@ -1,4 +1,4 @@
-cython>=0.29.17
+cython>=0.29.20
 numpy>=1.18.1
 scipy>=1.4.1
 pandas>=0.25.3
@@ -6,6 +6,7 @@ psutil>=5.7.0
 pytz>=2020.1
 pyzmq>=18.1.1
 pymongo>=3.10.1
+pytest>=5.4.3
 msgpack>=0.6.1
 redis>=3.4.1
 python-snappy>=0.5.4
