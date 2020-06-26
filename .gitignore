@@ -17,8 +17,9 @@
 .pytest_cache
 __pycache__
 build/
+dist/
+nautilus_trader.egg-info/
 log/
 logs/
 _build/
 _static/
-/dist/

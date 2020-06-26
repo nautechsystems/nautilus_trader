@@ -11,3 +11,4 @@ msgpack>=0.6.1
 redis>=3.4.1
 python-snappy>=0.5.4
 matplotlib>=2.2.4
+lz4>=2.2.4
