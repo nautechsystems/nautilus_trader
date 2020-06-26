@@ -21,3 +21,4 @@ log/
 logs/
 _build/
 _static/
+/dist/
