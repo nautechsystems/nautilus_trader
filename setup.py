@@ -27,7 +27,6 @@ PACKAGE_NAME = 'nautilus_trader'
 MAINTAINER = __author__
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
 DESCRIPTION = 'An algorithmic trading platform and event-driven backtester'
-LICENSE = 'LGPL-3.0'
 URL = 'https://github.com/nautechsystems/nautilus_trader'
 PYTHON_REQUIRES = '>=3.6'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
@@ -67,12 +66,6 @@ package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
 with open('README.md', encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
 
-CLASSIFIERS = [
-                "Programming Language :: Python",
-                "Programming Language :: Python :: 3.6",
-                "Programming Language :: Python :: 3.7",
-                "Programming Language :: Python :: 3.8"
-            ],
 
 setup(
     name=PACKAGE_NAME,
@@ -82,8 +75,15 @@ setup(
     maintainer_email=MAINTAINER_EMAIL,
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
-    license=LICENSE,
-    classifiers=CLASSIFIERS,
+    long_description_content_type='text/markdown',
+    classifiers=[
+        'Development Status :: 5 - Production/Stable',
+        'License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+    ],
     url=URL,
     python_requires=PYTHON_REQUIRES,
     requires=parse_requirements('requirements.txt', strip=True),
