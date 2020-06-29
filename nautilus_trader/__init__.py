@@ -20,13 +20,13 @@ import os
 PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
-__author__ = 'Nautech Systems Pty Ltd'
+__author__ = 'Nautech Systems'
 
 # Semantic Versioning (https://semver.org/)
 _MAJOR_VERSION = 1
 _MINOR_VERSION = 29
 _PATCH_VERSION = 0
-_PRE_RELEASE = 'b0'
+_PRE_RELEASE = 'b1'
 
 __version__ = '.'.join([
     str(_MAJOR_VERSION),
