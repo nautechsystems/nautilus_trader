@@ -1,4 +1,4 @@
-![Alt text](docs/artwork/nautechsystems_logo_small.png?raw=true "logo")
+![Nautech Systems](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/nautechsystems_logo_small.png "logo")
 
 ----------
 
@@ -98,7 +98,7 @@ All tests can be run via the `run_tests.sh` script, or through pytest.
 ## Support
 Please direct all questions, comments or bug reports to info@nautechsystems.io
 
-![Alt text](docs/artwork/cython-logo-small.png "cython")
+![Cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo-small.png "cython")
 
 Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 
