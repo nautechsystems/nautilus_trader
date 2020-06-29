@@ -84,15 +84,12 @@ cdef class TradingNode:
             strategies = []
         Condition.valid_string(config_path, 'config_path')
 
-        self._clock = LiveClock()
-        self._guid_factory = LiveGuidFactory()
-        self._zmq_context = zmq.Context(4)
-
         # Load the configuration from the file specified in config_path
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
 
         config_trader = config['trader']
+        config_system = config['system']
         config_account = config['account']
         config_log = config['logging']
         config_strategy = config['strategy']
@@ -100,6 +97,10 @@ cdef class TradingNode:
         config_data = config['data_client']
         config_exec_db = config['exec_database']
         config_exec_client = config['exec_client']
+
+        self._clock = LiveClock()
+        self._guid_factory = LiveGuidFactory()
+        self._zmq_context = zmq.Context(int(config_system['threads']))
 
         # Setup identifiers
         self.trader_id = TraderId(

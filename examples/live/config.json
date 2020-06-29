@@ -4,6 +4,10 @@
     "order_id_tag": "000"
   },
 
+  "system": {
+    "threads": 4
+  },
+
   "account": {
     "broker": "FXCM",
     "account_number": "02402856",

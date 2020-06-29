@@ -64,6 +64,16 @@ compiler_directives = {
 packages = [module for module in setuptools.find_packages()]
 package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
 
+with open('README.md', encoding='utf-8') as f:
+    LONG_DESCRIPTION = f.read()
+
+CLASSIFIERS = [
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8"
+            ],
+
 setup(
     name=PACKAGE_NAME,
     version=__version__,
@@ -71,7 +81,9 @@ setup(
     maintainer=MAINTAINER,
     maintainer_email=MAINTAINER_EMAIL,
     description=DESCRIPTION,
+    long_description=LONG_DESCRIPTION,
     license=LICENSE,
+    classifiers=CLASSIFIERS,
     url=URL,
     python_requires=PYTHON_REQUIRES,
     requires=parse_requirements('requirements.txt', strip=True),
