@@ -4,9 +4,13 @@
 
 # NautilusTrader
 
+### Build Status
+
 ![Build Status](https://codebuild.ap-southeast-2.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiS0ZNT0pCWlFBNmRKZ0hzMlZVN2ZyQnY3OVRwUzBJRGlucWVxUUxGKzFjQUNOZ0M3d1BaUE9WeGllK0MzSHBpRGpQQkFEYlZud1BRbTdpcjRGZlVFbDBJPSIsIml2UGFyYW1ldGVyU3BlYyI6InRYZWUwRjc2b1A4UXova2oiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master)
 ![Python Supported](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![Stable Version](https://img.shields.io/pypi/v/nautilus_trader)
+
+## Introduction
 
 NautilusTrader is an algorithmic trading platform allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
@@ -26,6 +30,7 @@ connections for data ingestion and trade management. There are potential future
 plans to open source the remainder of the code base, however for now broker client
 adapters must be written to allow live trading via the messaging API.
 
+There is currently a large effort to provide improved documentation.
 
 ## Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
