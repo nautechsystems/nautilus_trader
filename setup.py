@@ -28,7 +28,7 @@ MAINTAINER = __author__
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
 DESCRIPTION = 'An algorithmic trading platform and event-driven backtester'
 LICENSE = 'LGPL-3.0'
-URL = 'https://nautechsystems.io/nautilus'
+URL = 'https://github.com/nautechsystems/nautilus_trader'
 PYTHON_REQUIRES = '>=3.6'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
 PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']

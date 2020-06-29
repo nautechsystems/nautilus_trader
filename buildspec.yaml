@@ -20,7 +20,7 @@ phases:
     commands:
       - echo Build started on `date`
       - pip install -e .
-      - pytest tests/unit_tests
+      - bash scripts/run_tests.sh
   post_build:
     commands:
       - echo Build completed on `date`
