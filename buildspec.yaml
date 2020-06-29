@@ -19,7 +19,7 @@ phases:
   build:
     commands:
       - echo Build started on `date`
-      - python setup.py build_ext --inplace
+      - pip install -e .
       - cd scripts
       - python run_tests.py
   post_build:
