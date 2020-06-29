@@ -26,10 +26,10 @@ from tools.packaging import parse_requirements, make_extensions
 PACKAGE_NAME = 'nautilus_trader'
 MAINTAINER = __author__
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
-DESCRIPTION = 'An algorithmic trading framework utilizing Cython.'
-LICENSE = 'Nautech Systems Software License, April 2018'
+DESCRIPTION = 'An algorithmic trading platform and event-driven backtester'
+LICENSE = 'LGPL-3.0'
 URL = 'https://nautechsystems.io/nautilus'
-PYTHON_REQUIRES = '>=3.7.3'
+PYTHON_REQUIRES = '>=3.6'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
 PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 

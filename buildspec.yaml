@@ -13,15 +13,13 @@ phases:
       - gcc --version
   pre_build:
     commands:
-      - pip install -r requirements.txt
       - apt-get install redis-server -y
       - redis-server --daemonize yes
   build:
     commands:
       - echo Build started on `date`
       - pip install -e .
-      - cd scripts
-      - python run_tests.py
+      - pytest tests/unit_tests
   post_build:
     commands:
       - echo Build completed on `date`
