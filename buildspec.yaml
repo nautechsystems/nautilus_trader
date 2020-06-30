@@ -5,7 +5,6 @@ phases:
     runtime-versions:
       python: 3.7
     commands:
-      - lsb_release -a
       - apt-get update -y
       - apt-get upgrade -y
       - apt-get install build-essential -y
