@@ -30,7 +30,7 @@ connections for data ingestion and trade management. There are potential future
 plans to open source the remainder of the code base, however for now broker client
 adapters must be written to allow live trading via the messaging API.
 
-There is currently a large effort to provide improved documentation.
+There is currently a large effort to develop improved documentation.
 
 ## Features
 * **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
