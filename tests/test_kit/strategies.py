@@ -185,6 +185,7 @@ class TestStrategy1(TradingStrategy):
     """"
     A simple strategy for unit testing.
     """
+    __test__ = False
 
     def __init__(self,
                  bar_type,
