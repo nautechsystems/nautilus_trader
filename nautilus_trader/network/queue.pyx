@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import queue
 import threading
 
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -40,19 +39,9 @@ cdef class MessageQueueOutbound:
         """
         self._log = logger
         self._socket = socket
-        self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._get_loop, daemon=True)
-
-        self._thread.start()
 
     cpdef void send(self, list frames) except *:
-        self._queue.put_nowait(frames)
-
-    cpdef void _get_loop(self) except *:
-        self._log.debug("Outbound loop starting...")
-
-        while True:
-            self._socket.send(self._queue.get())
+        self._socket.send(frames)
 
 
 cdef class MessageQueueInbound:
@@ -82,22 +71,10 @@ cdef class MessageQueueInbound:
         self._log = logger
         self._expected_frames = expected_frames
         self._socket = socket
-        self._queue = queue.Queue()
-        self._thread_put = threading.Thread(target=self._put_loop, daemon=True)
-        self._thread_get = threading.Thread(target=self._get_loop, daemon=True)
+        self._thread = threading.Thread(target=self._get_loop, daemon=True)
         self._frames_receiver = frames_receiver
 
-        self._thread_put.start()
-        self._thread_get.start()
-
-    cpdef void _put_loop(self) except *:
-        self._log.debug("Inbound receive loop starting...")
-
-        cdef list frames
-        while True:
-            frames = self._socket.recv()
-            if frames is not None:
-                self._queue.put_nowait(frames)
+        self._thread.start()
 
     cpdef void _get_loop(self) except *:
         self._log.debug("Inbound handling loop starting...")
@@ -105,7 +82,7 @@ cdef class MessageQueueInbound:
         cdef list frames
         cdef int frames_length
         while True:
-            frames = self._queue.get()
+            frames = self._socket.recv()
             if frames is None:
                 self._log.error("Received None from message queue.")
                 return

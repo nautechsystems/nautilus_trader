@@ -24,19 +24,15 @@ cdef class MessageQueueOutbound:
     cdef object _thread
 
     cpdef void send(self, list frames) except *
-    cpdef void _get_loop(self) except *
 
 
 cdef class MessageQueueInbound:
     cdef LoggerAdapter _log
     cdef int _expected_frames
     cdef Socket _socket
-    cdef object _queue
-    cdef object _thread_put
-    cdef object _thread_get
+    cdef object _thread
     cdef object _frames_receiver
 
     cdef readonly str network_address
 
-    cpdef void _put_loop(self) except *
     cpdef void _get_loop(self) except *
