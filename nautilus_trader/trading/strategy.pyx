@@ -186,9 +186,7 @@ cdef class TradingStrategy:
         """
         Called when the strategy is started.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_start() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef void on_tick(self, Tick tick) except *:
         """
@@ -196,9 +194,7 @@ cdef class TradingStrategy:
 
         :param tick: The tick received.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_tick() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -207,9 +203,7 @@ cdef class TradingStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_bar() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef void on_data(self, object data) except *:
         """
@@ -217,9 +211,7 @@ cdef class TradingStrategy:
 
         :param data: The data object received.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_instrument() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef void on_event(self, Event event) except *:
         """
@@ -227,50 +219,38 @@ cdef class TradingStrategy:
 
         :param event: The event received.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_event() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef void on_stop(self) except *:
         """
         Called when the strategy is stopped.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_stop() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef void on_reset(self) except *:
         """
         Called when the strategy is reset.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method reset() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef dict on_save(self):
         """
         Called when the strategy is saved.
         Note: 'StateLog', 'OrderIdCount' and 'PositionIdCount' are reserved keys.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_save() must be implemented in the strategy "
-                                  "(or just return empty dictionary).")
+        return {}  # Override in implementation
 
     cpdef void on_load(self, dict state) except *:
         """
         Called when the strategy is loaded.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_load() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
     cpdef void on_dispose(self) except *:
         """
         Called when the strategy is disposed.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_dispose() must be implemented in the strategy "
-                                  "(or just add pass).")
+        pass # Override in implementation
 
 
 # -- REGISTRATION METHODS --------------------------------------------------------------------------
