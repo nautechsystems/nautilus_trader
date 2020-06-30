@@ -8,10 +8,10 @@ phases:
       - cat /etc/os-release
       - yum update -y
       - yum group install -y "Development Tools"
-      - yum install -y cmake3
-      - git clone https://github.com/google/snappy
-      - mkdir snappy/build
-      - cd snappy/build && cmake3 ../ && make
+      - yum install -y python3-devel
+      - yum install snappy-devel
+      - python3 --version
+      - python3 get-pip.py --user
   pre_build:
     commands:
       - pip install -r requirements.txt
