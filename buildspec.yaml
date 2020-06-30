@@ -13,16 +13,16 @@ phases:
       - curl -O https://bootstrap.pypa.io/get-pip.py
       - python3 get-pip.py --user
       - python3 --version
-      - python -m pip --version
+      - python3 -m pip --version
   pre_build:
     commands:
-      - python -m pip install -r requirements.txt
+      - python3 -m pip install -r requirements.txt
       - yum install -y redis
       - redis-server --daemonize yes
   build:
     commands:
       - echo Build started on `date`
-      - python -m pip install -e .
+      - python3 -m pip install -e .
       - bash scripts/run_tests.sh
   post_build:
     commands:
