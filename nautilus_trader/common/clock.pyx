@@ -292,6 +292,7 @@ cdef class TestTimer(Timer):
     """
     Provides a fake timer for backtesting and unit testing.
     """
+    __test__ = False
 
     def __init__(self,
                  Label label not None,
@@ -590,6 +591,7 @@ cdef class TestClock(Clock):
     """
     Provides a clock for backtesting and unit testing.
     """
+    __test__ = False
 
     def __init__(self, datetime initial_time not None=_UNIX_EPOCH):
         """
