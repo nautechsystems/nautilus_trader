@@ -231,6 +231,7 @@ cdef class TestLogger(Logger):
     """
     Provides a single threaded logger for testing.
     """
+    __test__ = False
 
     def __init__(self,
                  str name=None,

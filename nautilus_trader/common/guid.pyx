@@ -37,6 +37,7 @@ cdef class TestGuidFactory(GuidFactory):
     """
     Provides a fake GUID factory for testing purposes.
     """
+    __test__ = False
 
     def __init__(self):
         """
