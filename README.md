@@ -63,9 +63,15 @@ Latest version;
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
 
-For development and live trading install the snappy c library dependency;
+For development and live trading install the snappy dependency for serialization;
+Centos/RHEL;
 
-    $ sudo apt-get install libsnappy-dev
+    $ yum install python3-devel
+    $ yum install snappy-devel
+
+Debian;
+
+    $ apt-get install libsnappy-dev
 
 
 ## Encryption
