@@ -7,8 +7,7 @@ phases:
     commands:
       - yum update -y
       - yum group install -y "Development Tools"
-      - yum install -y libsnappy-dev
-      - gcc --version
+      - yum install -y snappy
   pre_build:
     commands:
       - pip install -r requirements.txt
