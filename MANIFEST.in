@@ -2,6 +2,6 @@ include LICENSE
 include README.md
 include requirements.txt
 include nautilus_trader/_data/libor-1-month.csv
-include nautilus_trader/_data/short-term-interest.csv
+include nautilus_trader/_data/short_term_interest.csv
 recursive-include nautilus_trader *.pxd
 recursive-include nautilus_trader *.pyx
