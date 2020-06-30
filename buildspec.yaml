@@ -5,9 +5,13 @@ phases:
     runtime-versions:
       python: 3.7
     commands:
+      - cat /etc/os-release
       - yum update -y
       - yum group install -y "Development Tools"
-      - yum install -y snappy
+      - yum install -y cmake3
+      - git clone https://github.com/google/snappy
+      - mkdir snappy/build
+      - cd snappy/build && cmake3 ../ && make
   pre_build:
     commands:
       - pip install -r requirements.txt
