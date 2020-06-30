@@ -136,14 +136,14 @@ class LiveExecutionTests(unittest.TestCase):
 
     def tearDown(self):
         # Tear Down
-        time.sleep(0.1)
+        time.sleep(0.2)
         self.exec_client.disconnect()
-        time.sleep(0.1)
+        time.sleep(0.2)
         self.command_server.stop()
-        time.sleep(0.1)
+        time.sleep(0.2)
         self.exec_client.dispose()
         self.command_server.dispose()
-        time.sleep(0.1)
+        time.sleep(0.2)
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)
