@@ -64,13 +64,12 @@ Latest version;
 
 
 For development and live trading install the snappy dependency for serialization;
-Centos/RHEL;
 
+    # Centos/RHEL
     $ yum install python3-devel
     $ yum install snappy-devel
 
-Debian;
-
+    # Debian
     $ apt-get install libsnappy-dev
 
 
