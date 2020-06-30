@@ -10,8 +10,10 @@ phases:
       - yum group install -y "Development Tools"
       - yum install -y python3-devel
       - yum install -y snappy-devel
-      - python3 --version
+      - curl -O https://bootstrap.pypa.io/get-pip.py
       - python3 get-pip.py --user
+      - python3 --version
+      - pip --version
   pre_build:
     commands:
       - pip install -r requirements.txt
