@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from zmq.backend.cython.socket cimport Socket as ZMQSocket
+
 from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class Socket:
     cdef LoggerAdapter _log
-    cdef object _socket
+    cdef ZMQSocket _socket
 
     cdef readonly Identifier socket_id
     cdef readonly str network_address
