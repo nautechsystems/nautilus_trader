@@ -1077,7 +1077,6 @@ cdef class ForexInstrument(Instrument):
         :param rollover_interest_sell: The rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
-        Condition.equal(len(symbol.code), 6, 'len(symbol.code)', '6')
         super().__init__(
             symbol,
             broker_symbol,

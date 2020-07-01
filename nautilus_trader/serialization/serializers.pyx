@@ -65,7 +65,7 @@ cdef class MsgPackSerializer:
         """
         Condition.not_none(message, 'message')
 
-        return msgpack.packb(message)
+        return msgpack.packb(message, use_bin_type=False)
 
     @staticmethod
     cdef dict deserialize(bytes message_bytes, bint raw_values=True):
