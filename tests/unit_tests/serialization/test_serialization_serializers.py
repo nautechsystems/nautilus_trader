@@ -1084,7 +1084,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         query = {
             "DataType": "Bar[]",
             "Symbol": "AUDUSD.FXCM",
-            "Specification": "1-MIN[BID]",
+            "Specification": "1-MIN-BID",
             "FromDate": str(UNIX_EPOCH.date()),
             "ToDate": str(UNIX_EPOCH.date()),
             "Limit": "0",

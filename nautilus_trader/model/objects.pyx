@@ -15,7 +15,6 @@
 
 """Define common trading model value objects."""
 
-import re
 import pandas as pd
 from cpython.datetime cimport datetime
 
@@ -553,22 +552,19 @@ cdef class BarSpecification:
     cdef BarSpecification from_string(str value):
         """
         Return a bar specification parsed from the given string.
-        Note: String format example is '200-TICK-[MID]'.
+        Note: String format example is '200-TICK-MID'.
         
         :param value: The bar specification string to parse.
         :return BarSpecification.
         """
         Condition.valid_string(value, 'value')
 
-        cdef list split1 = value.split('-', maxsplit=2)
-        cdef list split2 = split1[1].split('[', maxsplit=1)
-        cdef str structure = split2[0]
-        cdef str price_type = split2[1].strip(']')
+        cdef list split = value.split('-', maxsplit=3)
 
         return BarSpecification(
-            int(split1[0]),
-            bar_structure_from_string(structure),
-            price_type_from_string(price_type))
+            int(split[0]),
+            bar_structure_from_string(split[1]),
+            price_type_from_string(split[2]))
 
     @staticmethod
     def py_from_string(str value) -> BarSpecification:
@@ -576,7 +572,7 @@ cdef class BarSpecification:
         Python wrapper for the from_string method.
 
         Return a bar specification parsed from the given string.
-        Note: String format example is '1-MINUTE-[BID]'.
+        Note: String format example is '1-MINUTE-BID'.
 
         :param value: The bar specification string to parse.
         :return BarSpecification.
@@ -616,7 +612,7 @@ cdef class BarSpecification:
 
         :return: str.
         """
-        return f"{self.step}-{bar_structure_to_string(self.structure)}[{price_type_to_string(self.price_type)}]"
+        return f"{self.step}-{bar_structure_to_string(self.structure)}-{price_type_to_string(self.price_type)}"
 
     def __eq__(self, BarSpecification other) -> bool:
         """
@@ -689,14 +685,14 @@ cdef class BarType:
         """
         Condition.valid_string(value, 'value')
 
-        cdef list split_string = re.split(r'[.-]+', value)
-        cdef str structure = split_string[3].split('[', maxsplit=1)[0]
-        cdef str price_type = split_string[3].split('[', maxsplit=1)[1].strip(']')
-        cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1]))
+        cdef list split = value.split('-', maxsplit=3)
+        cdef list symbol_split = split[0].split('.', maxsplit=1)
+
+        cdef Symbol symbol = Symbol(symbol_split[0], Venue(symbol_split[1]))
         cdef BarSpecification bar_spec = BarSpecification(
-            int(split_string[2]),
-            bar_structure_from_string(structure.upper()),
-            price_type_from_string(price_type.upper()))
+            int(split[1]),
+            bar_structure_from_string(split[2]),
+            price_type_from_string(split[3]))
 
         return BarType(symbol, bar_spec)
 
@@ -1085,7 +1081,7 @@ cdef class ForexInstrument(Instrument):
         super().__init__(
             symbol,
             broker_symbol,
-            currency_from_string(symbol.code[3:]),
+            currency_from_string(symbol.code[-3:]),
             SecurityType.FOREX,
             price_precision,
             size_precision,
