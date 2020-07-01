@@ -122,23 +122,13 @@ class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Tear Down
     def tearDown(self):
-        time.sleep(0.1)
         self.data_client.disconnect()
-        time.sleep(0.1)
         self.data_server.stop()
         self.data_publisher.stop()
         self.tick_publisher.stop()
-        time.sleep(0.1)
-        self.data_server.dispose()
-        self.data_publisher.dispose()
-        self.tick_publisher.dispose()
-        time.sleep(0.1)
-        self.data_client.dispose()
-        time.sleep(0.1)
 
     def test_can_subscribe_to_tick_data(self):
         # Arrange
-        time.sleep(0.1)
         data_receiver = ObjectStorer()
 
         # Act

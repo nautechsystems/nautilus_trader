@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
+import time
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
@@ -238,6 +239,9 @@ cdef class MessageClient(ClientNode):
             self._check_connection)
 
         self.send_message(disconnect, self._request_serializer.serialize(disconnect))
+
+        self._socket_inbound.disconnect()
+        self._socket_inbound.disconnect()
 
     cpdef void dispose(self) except *:
         """
