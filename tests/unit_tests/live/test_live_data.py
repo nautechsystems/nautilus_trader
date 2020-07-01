@@ -122,27 +122,19 @@ class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Tear Down
     def tearDown(self):
-        try:
-            time.sleep(0.1)
-            self.data_client.disconnect()
-            time.sleep(0.1)
-            self.data_server.stop()
-            self.data_publisher.stop()
-            self.tick_publisher.stop()
-            time.sleep(0.1)
-            self.data_server.dispose()
-            self.data_publisher.dispose()
-            self.tick_publisher.dispose()
-            time.sleep(0.1)
-            self.data_client.dispose()
-            time.sleep(0.1)
-        except Exception:
-            # TODO: Throwing on Amazon Linux 2
-            # File "/home/ec2-user/.local/lib/python3.7/site-packages/zmq/sugar/socket.py", line 475 in recv_multipart
-            # File "/usr/lib64/python3.7/threading.py", line 870 in run
-            # File "/usr/lib64/python3.7/threading.py", line 926 in _bootstrap_inner
-            # File "/usr/lib64/python3.7/threading.py", line 890 in _bootstrap
-            pass
+        time.sleep(0.1)
+        self.data_client.disconnect()
+        time.sleep(0.1)
+        self.data_server.stop()
+        self.data_publisher.stop()
+        self.tick_publisher.stop()
+        time.sleep(0.1)
+        self.data_server.dispose()
+        self.data_publisher.dispose()
+        self.tick_publisher.dispose()
+        time.sleep(0.1)
+        self.data_client.dispose()
+        time.sleep(0.1)
 
     def test_can_subscribe_to_tick_data(self):
         # Arrange
