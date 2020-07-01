@@ -60,7 +60,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.encryption = EncryptionSettings()
         self.clock = LiveClock()
         self.guid_factory = LiveGuidFactory()
-        self.logger = LiveLogger(level_console=LogLevel.VERBOSE)
+        self.logger = LiveLogger()
 
         self.data_server = MessageServer(
             server_id=ServerId('DataServer-001'),
