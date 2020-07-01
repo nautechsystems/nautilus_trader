@@ -16,13 +16,13 @@ phases:
       - python3 -m pip --version
   pre_build:
     commands:
-      - python3 -m pip install -r requirements.txt
       - yum install -y redis
       - redis-server --daemonize yes
   build:
     commands:
       - echo Build started on `date`
-      - python3 -m pip install -e .
+      - python3 -m pip install -r requirements.txt
+      - python3 setup.py build_ext --inplace
       - bash scripts/run_tests.sh
   post_build:
     commands:
