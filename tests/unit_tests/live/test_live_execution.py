@@ -139,8 +139,8 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_client.disconnect()
         self.command_server.stop()
         # Allowing the garbage collector to clean up resources avoids threading
-        # errors caused by the continuous disposal of sockets.
-        # Thus for testing we're avoiding calling .dispose() on the sockets.
+        # errors caused by the continuous disposal of sockets. Thus for testing
+        # we're avoiding calling .dispose() on the sockets.
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)
