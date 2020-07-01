@@ -103,6 +103,9 @@ class MessageClientTests(unittest.TestCase):
         # Tear Down
         self.client.disconnect()
         self.server.stop()
+        # Allowing the garbage collector to clean up resources avoids threading
+        # errors caused by the continuous disposal of sockets. Thus for testing
+        # we're avoiding calling .dispose() on the sockets.
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)
@@ -200,9 +203,10 @@ class SubscriberWorkerTests(unittest.TestCase):
     def tearDown(self):
         # Tear Down
         self.subscriber.disconnect()
-        self.subscriber.dispose()
         self.publisher.stop()
-        self.publisher.dispose()
+        # Allowing the garbage collector to clean up resources avoids threading
+        # errors caused by the continuous disposal of sockets. Thus for testing
+        # we're avoiding calling .dispose() on the sockets.
 
     def test_can_subscribe_to_topic_with_no_registered_handler(self):
         # Arrange
