@@ -58,7 +58,7 @@ class MessageClientTests(unittest.TestCase):
         # Fixture Setup
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
-        logger = LiveLogger(level_console=LogLevel.VERBOSE)
+        logger = LiveLogger()
         self.context = zmq.Context()
         self.client_sink = []
         self.server_sink = []
