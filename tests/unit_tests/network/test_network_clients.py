@@ -101,14 +101,8 @@ class MessageClientTests(unittest.TestCase):
 
     def tearDown(self):
         # Tear Down
-        time.sleep(0.1)
         self.client.disconnect()
-        time.sleep(0.1)
         self.server.stop()
-        time.sleep(0.1)
-        self.client.dispose()
-        self.server.dispose()
-        time.sleep(0.1)
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)
