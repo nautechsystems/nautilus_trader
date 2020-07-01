@@ -126,6 +126,9 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_server.stop()
         self.data_publisher.stop()
         self.tick_publisher.stop()
+        # Allowing the garbage collector to clean up resources avoids threading
+        # errors caused by the continuous disposal of sockets.
+        # Thus for testing we're avoiding calling .dispose() on the sockets.
 
     def test_can_subscribe_to_tick_data(self):
         # Arrange

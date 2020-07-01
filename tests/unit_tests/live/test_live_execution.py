@@ -137,8 +137,10 @@ class LiveExecutionTests(unittest.TestCase):
     def tearDown(self):
         # Tear Down
         self.exec_client.disconnect()
-        self.exec_client.dispose()
         self.command_server.stop()
+        # Allowing the garbage collector to clean up resources avoids threading
+        # errors caused by the continuous disposal of sockets.
+        # Thus for testing we're avoiding calling .dispose() on the sockets.
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)
@@ -154,7 +156,7 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # # Assert
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(2, self.command_server.recv_count)
@@ -172,7 +174,7 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # Assert
         self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
         self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
@@ -191,7 +193,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
         self.strategy.cancel_order(order, 'SIGNAL_GONE')
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # Assert
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(3, self.command_server.recv_count)
@@ -211,7 +213,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
         self.strategy.modify_order(order, Quantity(110000), Price(1.00001, 5))
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # Assert
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(3, self.command_server.recv_count)
@@ -224,7 +226,7 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.account_inquiry()
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # Assert
         self.assertEqual(2, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
