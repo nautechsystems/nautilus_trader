@@ -16,6 +16,7 @@
 import os
 import zmq
 import zmq.auth
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
@@ -89,6 +90,14 @@ cdef class Socket:
         Dispose of the socket (call disconnect first).
         """
         self._socket.close()
+
+        # Wait for resources to be released
+        timeout = datetime.now() + timedelta(seconds=2)
+        while not self._socket.closed and datetime.now() < timeout:
+            continue
+
+        if not self._socket.closed:
+            raise RuntimeError("The socket was not properly closed.")
 
     cpdef bint is_disposed(self):
         """
