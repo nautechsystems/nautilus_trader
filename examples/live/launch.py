@@ -34,10 +34,10 @@ BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 # BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
 
 symbols_fx = [
-    Symbol('AUDUSD', Venue('FXCM')),
-    Symbol('EURUSD', Venue('FXCM')),
-    Symbol('GBPUSD', Venue('FXCM')),
-    Symbol('USDJPY', Venue('FXCM')),
+    Symbol('AUD/USD', Venue('FXCM')),
+    Symbol('EUR/USD', Venue('FXCM')),
+    Symbol('GBP/USD', Venue('FXCM')),
+    Symbol('USD/JPY', Venue('FXCM')),
 ]
 
 strategies_fx = []
@@ -54,8 +54,8 @@ for symbol in symbols_fx:
 #     Symbol('XAUUSD', Venue('FXCM')),
 #     Symbol('SPX500', Venue('FXCM')),
 #     Symbol('AUS200', Venue('FXCM')),
-#     Symbol('WTIUSD', Venue('FXCM')),
-#     Symbol('DE30EUR', Venue('FXCM')),
+#     Symbol('USOil', Venue('FXCM')),
+#     Symbol('GER30', Venue('FXCM')),
 # ]
 
 # strategies_cfd = []
