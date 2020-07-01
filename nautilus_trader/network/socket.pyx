@@ -57,7 +57,7 @@ cdef class Socket:
         self._log = logger
         self._socket = zmq.Context.instance().socket(socket_type)
         self._socket.setsockopt(zmq.IDENTITY, socket_id.value.encode(_UTF8))  # noqa (zmq reference)
-        self._socket.setsockopt(zmq.LINGER, 1)
+        #self._socket.setsockopt(zmq.LINGER, 1)
 
         self.socket_id = socket_id
         self.network_address = f'tcp://{host}:{port}'

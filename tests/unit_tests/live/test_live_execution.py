@@ -135,22 +135,15 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_engine.register_strategy(self.strategy)
 
     def tearDown(self):
-        try:
-            time.sleep(0.1)
-            self.exec_client.disconnect()
-            time.sleep(0.1)
-            self.command_server.stop()
-            time.sleep(0.1)
-            self.exec_client.dispose()
-            self.command_server.dispose()
-            time.sleep(0.1)
-        except Exception:
-            # TODO: Throwing on Amazon Linux 2
-            # File "/home/ec2-user/.local/lib/python3.7/site-packages/zmq/sugar/socket.py", line 475 in recv_multipart
-            # File "/usr/lib64/python3.7/threading.py", line 870 in run
-            # File "/usr/lib64/python3.7/threading.py", line 926 in _bootstrap_inner
-            # File "/usr/lib64/python3.7/threading.py", line 890 in _bootstrap
-            pass
+        # Tear Down
+        time.sleep(0.1)
+        self.exec_client.disconnect()
+        time.sleep(0.1)
+        self.command_server.stop()
+        time.sleep(0.1)
+        self.exec_client.dispose()
+        self.command_server.dispose()
+        time.sleep(0.1)
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)
