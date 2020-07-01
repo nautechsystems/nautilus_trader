@@ -375,8 +375,8 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("1-MINUTE[BID]", str(bar_spec))
-        self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE[BID]) object at"))
+        self.assertEqual("1-MINUTE-BID", str(bar_spec))
+        self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE-BID) object at"))
 
     def test_can_parse_tick_from_string_with_symbol(self):
         # Arrange
@@ -459,8 +459,8 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("AUDUSD.FXCM-1-MINUTE[BID]", str(bar_type))
-        self.assertTrue(repr(bar_type).startswith("<BarType(AUDUSD.FXCM-1-MINUTE[BID]) object at"))
+        self.assertEqual("AUDUSD.FXCM-1-MINUTE-BID", str(bar_type))
+        self.assertTrue(repr(bar_type).startswith("<BarType(AUDUSD.FXCM-1-MINUTE-BID) object at"))
 
     def test_can_parse_bar_from_string(self):
         # Arrange
