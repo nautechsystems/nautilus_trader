@@ -201,6 +201,7 @@ cdef class BsonDataSerializer(DataSerializer):
     """
     Provides a serializer for data objects to BSON specification.
     """
+
     cpdef bytes serialize(self, dict data):
         """
         Serialize the given data mapping to bytes.
