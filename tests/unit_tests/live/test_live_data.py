@@ -40,10 +40,10 @@ from tests.test_kit.mocks import ObjectStorer
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
-TEST_DATA_REQ_PORT = 55601
-TEST_DATA_REP_PORT = 55602
-TEST_DATA_PUB_PORT = 55603
-TEST_TICK_PUB_PORT = 55604
+TEST_DATA_REQ_PORT = 57601
+TEST_DATA_REP_PORT = 57602
+TEST_DATA_PUB_PORT = 57603
+TEST_TICK_PUB_PORT = 57604
 
 
 class LiveDataClientTests(unittest.TestCase):
