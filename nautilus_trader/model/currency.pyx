@@ -73,7 +73,7 @@ cdef class ExchangeRateCalculator:
         for ccy_pair, rate in calculation_rates.items():
             # Get currency pair symbols
             symbol_lhs = ccy_pair[:3]
-            symbol_rhs = ccy_pair[3:]
+            symbol_rhs = ccy_pair[-3:]
             symbols.add(symbol_lhs)
             symbols.add(symbol_rhs)
             # Add currency dictionaries if they do not already exist
