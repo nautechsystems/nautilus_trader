@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-import time
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
