@@ -21,10 +21,15 @@ Python programming language, designed to give C-like performance with code that
 is written mostly in Python with optional additional C-inspired syntax.
 > https://cython.org
 
+To run code or tests from the cloned repo, first compile the C extensions for the package.
+Note that initial compilation may take several minutes due to the quantity of extensions.
+
+    $ python setup.py build_ext --inplace
+
 NautilusTrader has been open-sourced from working production code, and forms
-part of a larger distributed system. `Data` and `Execution` services implemented
-with C# .NET Core allow this trading framework to integrate with `FIX4.4`
-connections for data ingestion and trade management.
+part of a larger distributed system. The messaging API can interface with the Nautilus platform
+where `Data` and `Execution` services implemented with C# .NET Core allow this trading framework
+to integrate with `FIX4.4` connections for data ingestion and trade management.
 
 > https://github.com/nautechsystems/Nautilus
 
