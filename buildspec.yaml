@@ -30,6 +30,11 @@ phases:
 
 artifacts:
   files:
-    - '**/*'
-  name: nautilus-trader
+    - '../nautilus_trader/*'
+    - '../nautilus_trader/examples/*'
+    - '../nautilus_trader/nautilus_trader/*'
+    - '../nautilus_trader/scripts/*'
+    - '../nautilus_trader/tests/*'
+    - '../nautilus_trader/tools/*'
+  name: nautilus-trader-latest
   discard-paths: no
