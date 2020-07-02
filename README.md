@@ -1,4 +1,4 @@
-![Nautech Systems](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/nautechsystems-logo.png?raw=true "logo")
+![Nautech Systems](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/ns-logo.png?raw=true "logo")
 
 ----------
 
