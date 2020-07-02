@@ -27,3 +27,9 @@ phases:
   post_build:
     commands:
       - echo Build completed on `date`
+
+artifacts:
+  files:
+    - '**/*'
+  name: nautilus-trader
+  discard-paths: no
