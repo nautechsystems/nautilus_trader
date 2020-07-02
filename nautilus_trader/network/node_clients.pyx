@@ -222,7 +222,7 @@ cdef class MessageClient(ClientNode):
         """
         if not self.is_connected():
             self._log.warning("No session to disconnect from.")
-            return # TODO: Assess how this works
+            return
 
         cdef datetime timestamp = self._clock.time_now()
 
@@ -239,9 +239,6 @@ cdef class MessageClient(ClientNode):
             self._check_connection)
 
         self.send_message(disconnect, self._request_serializer.serialize(disconnect))
-
-        self._socket_inbound.disconnect()
-        self._socket_inbound.disconnect()
 
     cpdef void dispose(self) except *:
         """

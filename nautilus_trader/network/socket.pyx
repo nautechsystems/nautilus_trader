@@ -186,7 +186,7 @@ cdef class ClientSocket(Socket):
         try:
             self._socket.disconnect(self.network_address)
         except zmq.ZMQError as ex:
-            self._log.warning(f"Socket was not already connected to {self.network_address}")
+            self._log.warning(f"ZMQError on disconnect from {self.network_address} {ex} (already disconnected).")
 
         self._log.info(f"Disconnected from {self.network_address}")
 
@@ -223,20 +223,6 @@ cdef class SubscriberSocket(ClientSocket):
             zmq.SUB,
             encryption,
             logger)
-
-    cpdef void connect(self) except *:
-        """
-        Connect the socket.
-        """
-        self._log.info(f"Connecting to {self.network_address}...")
-        self._socket.connect(self.network_address)
-
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the socket.
-        """
-        self._socket.disconnect(self.network_address)
-        self._log.info(f"Disconnected from {self.network_address}")
 
     cpdef void subscribe(self, str topic) except *:
         """
