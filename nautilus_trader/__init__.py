@@ -26,7 +26,7 @@ __author__ = 'Nautech Systems'
 _MAJOR_VERSION = 1
 _MINOR_VERSION = 29
 _PATCH_VERSION = 11
-_PRE_RELEASE = 'b0'
+_PRE_RELEASE = 'b1'
 
 __version__ = '.'.join([
     str(_MAJOR_VERSION),
