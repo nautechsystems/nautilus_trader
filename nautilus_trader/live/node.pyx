@@ -217,7 +217,7 @@ cdef class TradingNode:
 
         Condition.equal(self.trader_id, self.trader.id, 'trader_id', 'trader.id')
 
-        self._check_residuals_delay = 2.0  # Hard coded 2 seconds
+        self._check_residuals_delay = 2.0  # Hard coded delay to await system spool up (refactor)
         self._load_strategy_state = config_strategy['load_state']
         self._save_strategy_state = config_strategy['save_state']
 
@@ -248,6 +248,7 @@ cdef class TradingNode:
             command_id=self._guid_factory.generate(),
             command_timestamp=self._clock.time_now())
         self._exec_client.account_inquiry(account_inquiry)
+        time.sleep(0.5)  # Hard coded delay to await instruments and account updates (refactor)
 
     cpdef void start(self) except *:
         """
@@ -280,6 +281,8 @@ cdef class TradingNode:
         """
         Dispose of the trading node.
         """
+        time.sleep(0.5)  # Hard coded delay to await graceful disconnection (refactor)
+
         self.trader.dispose()
         self._data_client.dispose()
         self._exec_client.dispose()

@@ -14,8 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
-
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import BarSpecification
@@ -80,14 +78,10 @@ if __name__ == "__main__":
     )
 
     node.connect()
-    time.sleep(1)
     node.start()
 
     input()
+
     node.stop()
-
-    input()
     node.disconnect()
-
-    input()
     node.dispose()
