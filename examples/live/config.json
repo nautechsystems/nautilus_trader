@@ -52,7 +52,6 @@
   },
 
   "exec_client": {
-    "service_name": "NautilusExecutor",
     "host": "localhost",
     "command_req_port": 55555,
     "command_res_port": 55556,
