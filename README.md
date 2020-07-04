@@ -63,6 +63,8 @@ Stable version;
 
 Latest version;
 
+    $ git clone https://github.com/nautechsystems/nautilus_trader
+    $ pip install -r nautilus_trader/requirements.txt
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
 
