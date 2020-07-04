@@ -33,7 +33,7 @@
     "version": "1.0",
     "compression": "snappy",
     "encryption": "curve",
-    "keys_dir": "/home/cjdsellers/Desktop/test_keys"
+    "keys_dir": "/home/etc2-user/keys/"
   },
 
   "data_client": {
