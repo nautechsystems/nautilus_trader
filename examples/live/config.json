@@ -5,7 +5,7 @@
   },
 
   "system": {
-    "threads": 4
+    "threads": 2
   },
 
   "account": {
@@ -30,7 +30,7 @@
   },
 
   "messaging": {
-    "version": "1.0",
+    "api_version": "1.0",
     "compression": "snappy",
     "encryption": "curve",
     "keys_dir": "/home/etc2-user/keys/"
