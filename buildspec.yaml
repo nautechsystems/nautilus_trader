@@ -27,3 +27,14 @@ phases:
   post_build:
     commands:
       - echo Build completed on `date`
+
+artifacts:
+  files:
+    - 'nautilus_trader/**/*'
+    - 'nautilus_trader/examples/*'
+    - 'nautilus_trader/nautilus_trader/*'
+    - 'nautilus_trader/scripts/*'
+    - 'nautilus_trader/tests/*'
+    - 'nautilus_trader/tools/*'
+  name: nautilus-trader-$CODEBUILD_BUILD_NUMBER
+  discard-paths: no
