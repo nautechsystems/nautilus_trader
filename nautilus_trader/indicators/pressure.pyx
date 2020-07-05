@@ -52,7 +52,7 @@ cdef class Pressure(Indicator):
         self._atr = AverageTrueRange(period, ma_type, atr_floor)
         self._average_volume = MovingAverageFactory.create(period, ma_type)
         self.value = 0.0
-        self.value_cumulative = 0.0 # The sum of the pressure across the period
+        self.value_cumulative = 0.0  # The sum of the pressure across the period
 
     @cython.binding(True)
     cpdef void update(

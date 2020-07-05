@@ -45,7 +45,7 @@ cdef class Symbol(Identifier):
     @staticmethod
     cdef Symbol from_string(str value):
         """
-        Return a symbol parsed from the given string value. Must be correctly 
+        Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period '.'.
         
         Example: 'AUDUSD.FXCM'.
@@ -163,7 +163,7 @@ cdef class TraderId(Identifier):
     @staticmethod
     cdef TraderId from_string(str value):
         """
-        Return a trader_id parsed from the given string value. Must be 
+        Return a trader_id parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
         
         Its is expected a trader_id is the abbreviated name of the trader with
@@ -226,7 +226,7 @@ cdef class StrategyId(Identifier):
     @staticmethod
     cdef StrategyId from_string(str value):
         """
-        Return a strategy_id parsed from the given string value. Must be 
+        Return a strategy_id parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
         
         Is is expected a strategy_id is the class name of the strategy with

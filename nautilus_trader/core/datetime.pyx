@@ -124,7 +124,7 @@ cpdef object with_utc_index(dataframe: pd.DataFrame):
 
 cpdef str format_iso8601(datetime dt):
     """
-    Format the given string to the ISO 8601 specification with 'Z' zulu. 
+    Format the given string to the ISO 8601 specification with 'Z' zulu.
     
     Parameters
     ----------

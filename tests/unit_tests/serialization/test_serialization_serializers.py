@@ -13,27 +13,41 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from base64 import b64encode, b64decode
 
-from nautilus_trader.core.types import *
-from nautilus_trader.core.decimal import *
-from nautilus_trader.model.enums import *
-from nautilus_trader.model.commands import *
-from nautilus_trader.model.events import *
-from nautilus_trader.model.identifiers import *
-from nautilus_trader.model.objects import *
-from nautilus_trader.model.order import *
-from nautilus_trader.common.logging import *
-from nautilus_trader.common.factories import *
+from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.core.types import ValidString, GUID, Label
+from nautilus_trader.model.identifiers import IdTag, OrderId, OrderIdBroker, ExecutionId
+from nautilus_trader.model.identifiers import PositionId, PositionIdBroker, StrategyId, AccountId
+from nautilus_trader.model.enums import OrderSide, OrderType, OrderPurpose, TimeInForce, Currency
+from nautilus_trader.model.enums import AccountType, SecurityType
+from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.model.objects import Price, Quantity, Instrument
+from nautilus_trader.model.commands import AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands import ModifyOrder, CancelOrder
+from nautilus_trader.model.events import AccountStateEvent, OrderInitialized, OrderInvalid
+from nautilus_trader.model.events import OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
+from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
+from nautilus_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
+from nautilus_trader.model.order import Order
+from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import LogMessage, LogLevel
 from nautilus_trader.serialization.base import Serializer
-from nautilus_trader.serialization.data import *
-from nautilus_trader.serialization.serializers import *
-from nautilus_trader.serialization.common import *
-from nautilus_trader.network.identifiers import *
-from nautilus_trader.network.messages import *
-from nautilus_trader.common.clock import *
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
+from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
+from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
+from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
+from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
+from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.serialization.serializers import MsgPackLogSerializer
+from nautilus_trader.serialization.data import BsonInstrumentSerializer
+from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
+from nautilus_trader.network.messages import Connect, Connected, Disconnect, Disconnected
+from nautilus_trader.network.messages import DataRequest, DataResponse
 
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 

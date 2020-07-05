@@ -85,7 +85,7 @@ cdef class Swings(Indicator):
         """
         Calculate the swing logic based on the given prices.
 
-        :param high: The high price of the last closed bar. 
+        :param high: The high price of the last closed bar.
         :param low: The low price of the last closed bar.
         :param timestamp: The timestamp of the last closed bar.
         """

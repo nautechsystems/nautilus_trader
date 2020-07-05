@@ -15,18 +15,19 @@
 
 [flake8]
 filename = *.py, *.pyx, *.pxd
-exclude = .eggs, *.egg, build, stats.py, utils.py, test_suite
-ignore = E225, E252, E999, W293
+exclude = .eggs, *.egg, build, stats.py, utils.py
+ignore = E225, E252, E999, W293, E501
 max-complexity = 10
 max-line-length = 120
 
-# Ignores
-# -------
+# Ignores justification
+# ---------------------
 # E225 missing whitespace around operator (pickups up cython casting)
-# E252 spaces around default argument assignment
+# E252 spaces around default argument assignment (incorrect syntax)
 # E999 SyntaxError: invalid syntax (cimport seen as invalid syntax)
 # W293 blank line contains whitespace (temporarily until pycharm strips from
 # docstring blank lines).
+# E501 line too long (problems mainly in test suite)
 
-# Chainer ignores
+# Chainer ignores (https://github.com/chainer/chainer/blob/master/setup.cfg)
 # E741, W503, W504, E241, E226

@@ -40,7 +40,7 @@ from nautilus_trader.model.events cimport OrderModified, OrderCancelled, OrderCa
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
-from nautilus_trader.model.commands cimport ModifyOrder,CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.clock cimport TestClock
@@ -105,7 +105,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
-        self.rollover_spread = 0.0 # Bank + Broker spread markup
+        self.rollover_spread = 0.0  # Bank + Broker spread markup
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
@@ -453,9 +453,9 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Apply any bank and broker spread markup (basis points)
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
 
-        if iso_week_day == 3: # Book triple for Wednesdays
+        if iso_week_day == 3:  # Book triple for Wednesdays
             rollover_cumulative = rollover_cumulative * 3.0
-        elif iso_week_day == 5: # Book triple for Fridays (holding over weekend)
+        elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
             rollover_cumulative = rollover_cumulative * 3.0
 
         cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
@@ -739,7 +739,7 @@ cdef class BacktestExecClient(ExecutionClient):
         if not self._check_valid_price(order, current_market, reject=True):
             return  # Cannot accept order
 
-         # Check if market order and accept and fill immediately
+        # Check if market order and accept and fill immediately
         if order.type == OrderType.MARKET:
             self._accept_order(order)
 

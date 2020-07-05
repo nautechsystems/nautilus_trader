@@ -61,7 +61,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         self.value = 0.0  # The last amplitude value (dB)
 
     @cython.binding(True)
-    cpdef void update(self,double high, double low):
+    cpdef void update(self, double high, double low):
         """
         Update the indicator with the given price values.
 

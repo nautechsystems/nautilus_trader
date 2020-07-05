@@ -333,7 +333,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         for key, value in state.items():
             if key == 'StateLog':
-                continue # Already persisted (cannot directly persist list)
+                continue  # Already persisted (cannot directly persist list)
             pipe.hset(name=self.key_strategies + strategy.id.value + ':State', key=key, value=value)
             self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
         cdef list reply = pipe.execute()
@@ -537,7 +537,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
          
         :return Set[StrategyId].
         """
-        return  self._decode_set_to_strategy_ids(self._redis.keys(pattern=f'{self.key_strategies}*'))
+        return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f'{self.key_strategies}*'))
 
     cpdef set get_order_ids(self, StrategyId strategy_id=None):
         """
@@ -610,7 +610,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Return the strategy_id associated with the given order_id (if found).
         
         :param order_id: The order_id associated with the strategy.
-        :return StrategyId or None: 
+        :return StrategyId or None.
         """
         Condition.not_none(order_id, 'order_id')
 
@@ -621,7 +621,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Return the strategy_id associated with the given position_id (if found).
         
         :param position_id: The position_id associated with the strategy.
-        :return StrategyId or None: 
+        :return StrategyId or None.
         """
         Condition.not_none(position_id, 'position_id')
 
@@ -896,7 +896,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef bint position_indexed_for_order(self, OrderId order_id):
         """
-        Return a value indicating whether there is a position_id indexed for the 
+        Return a value indicating whether there is a position_id indexed for the
         given order_id.
 
         :param order_id: The order_id to check.

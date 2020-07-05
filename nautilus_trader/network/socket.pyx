@@ -97,7 +97,7 @@ cdef class Socket:
             continue
 
         if not self._socket.closed:
-            raise RuntimeError("The socket was not properly closed.")
+            raise RuntimeError("The socket was not closed.")
 
     cpdef bint is_disposed(self):
         """

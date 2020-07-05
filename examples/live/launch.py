@@ -68,7 +68,7 @@ for symbol in symbols_fx:
 #         slow_ema=20,
 #         atr_period=20))
 
-strategies = strategies_fx # + strategies_cfd
+strategies = strategies_fx  # + strategies_cfd
 
 if __name__ == "__main__":
 

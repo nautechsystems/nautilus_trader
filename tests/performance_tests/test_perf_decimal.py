@@ -44,11 +44,11 @@ class DecimalTesting:
     def float_comparisons():
         # x1 = 1.0 > 2.0
         # x2 = 1.0 >= 2.0
-        x3 = 1.0 == 2.0
+        x3 = 1.0 == 2.0  # noqa
 
     @staticmethod
     def float_arithmetic():
-        x = 1.0 * 2.0
+        x = 1.0 * 2.0  # noqa
 
     @staticmethod
     def decimal_comparisons():
@@ -60,19 +60,19 @@ class DecimalTesting:
         # x2 = _DECIMAL1.ge(_DECIMAL2)
         # x3 = _DECIMAL1.eq(_DECIMAL1)
 
-        x3 = _DECIMAL1.as_double() == _DECIMAL1.as_double()
+        x3 = _DECIMAL1.as_double() == _DECIMAL1.as_double()  # noqa
         # x3 = _DECIMAL1.eq_float(1.0)
 
     @staticmethod
     def decimal_arithmetic():
         # x0 = _DECIMAL1 + 1.0
-        x1 = _DECIMAL1 * 1.0
+        x1 = _DECIMAL1 * 1.0  # noqa
 
     @staticmethod
     def builtin_decimal_comparisons():
-        x1 = _BUILTIN_DECIMAL1 > _BUILTIN_DECIMAL2
-        x2 = _BUILTIN_DECIMAL1 >= _BUILTIN_DECIMAL2
-        x3 = _BUILTIN_DECIMAL1 == _BUILTIN_DECIMAL2
+        x1 = _BUILTIN_DECIMAL1 > _BUILTIN_DECIMAL2  # noqa
+        x2 = _BUILTIN_DECIMAL1 >= _BUILTIN_DECIMAL2  # noqa
+        x3 = _BUILTIN_DECIMAL1 == _BUILTIN_DECIMAL2  # noqa
 
     @staticmethod
     def make_price():

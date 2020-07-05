@@ -20,13 +20,14 @@ import time
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar
 from nautilus_trader.model.identifiers import Venue, TraderId
-from nautilus_trader.common.logging import LogLevel, LoggerAdapter
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.messages import DataResponse, DataRequest
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.compression import BypassCompressor
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
-from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper, BsonDataSerializer, BsonInstrumentSerializer
+from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper
+from nautilus_trader.serialization.data import BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock import LiveClock

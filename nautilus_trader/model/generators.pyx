@@ -61,7 +61,7 @@ cdef class IdentifierGenerator:
 
     cpdef void reset(self) except *:
         """
-        Reset the identifier generator by setting all stateful values to their 
+        Reset the identifier generator by setting all stateful values to their
         default value.
         """
         self.count = 0
