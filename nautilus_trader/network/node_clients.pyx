@@ -171,7 +171,7 @@ cdef class MessageClient(ClientNode):
             self._socket_outbound,
             self._log)
 
-        expected_frames = 2 # [header, body]
+        expected_frames = 2  # [header, body]
         self._queue_inbound = MessageQueueInbound(
             expected_frames,
             self._socket_inbound,
@@ -437,7 +437,7 @@ cdef class MessageSubscriber(ClientNode):
             encryption,
             self._log)
 
-        expected_frames = 2 # [topic, body]
+        expected_frames = 2  # [topic, body]
         self._queue = MessageQueueInbound(
             expected_frames,
             self._socket,
@@ -445,7 +445,7 @@ cdef class MessageSubscriber(ClientNode):
             self._log)
 
     cpdef bint is_connected(self):
-        return True # TODO: Keep alive heartbeat polling
+        return True  # TODO: Keep alive heartbeat polling
 
     cpdef void connect(self) except *:
         """

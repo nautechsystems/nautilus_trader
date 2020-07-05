@@ -145,7 +145,7 @@ cdef class Position:
         """
         Return a list of all order_ids.
         
-        :return List[OrderId]. 
+        :return List[OrderId].
         """
         return sorted(self._order_ids)
 
@@ -153,7 +153,7 @@ cdef class Position:
         """
         Return a list of all execution identifiers.
         
-        :return List[ExecutionId]. 
+        :return List[ExecutionId].
         """
         return sorted(self._execution_ids)
 
@@ -280,7 +280,7 @@ cdef class Position:
 
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
-        else: # event.order_side == OrderSide.SELL:
+        else:  # event.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(event)
 
         # Set quantities

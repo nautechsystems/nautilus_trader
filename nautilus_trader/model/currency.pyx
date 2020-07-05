@@ -34,8 +34,8 @@ cdef class ExchangeRateCalculator:
             dict bid_rates,
             dict ask_rates) except *:
         """
-        Return the calculated exchange rate for the given quote currency to the 
-        given base currency for the given price type using the given dictionary of 
+        Return the calculated exchange rate for the given quote currency to the
+        given base currency for the given price type using the given dictionary of
         bid and ask rates.
 
         :param from_currency: The currency to convert from.

@@ -27,7 +27,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
     # Fixture Setup
     def setUp(self):
         # Arrange
-        self.w = [round(i*0.1, 2) for i in range(1, 11)]
+        self.w = [round(i * 0.1, 2) for i in range(1, 11)]
         self.wma = WeightedMovingAverage(10, self.w)
         self.wma_noweights = WeightedMovingAverage(10)
         self.wma_factory = MovingAverageFactory.create(10, MovingAverageType.WEIGHTED, weights=self.w)
@@ -80,7 +80,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual((10*1.0+1*0.9) / 1.9, self.wma.value)
+        self.assertEqual((10 * 1.0 + 1 * 0.9) / 1.9, self.wma.value)
 
     def test_value_with_no_weights(self):
         # Arrange

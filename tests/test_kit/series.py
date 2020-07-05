@@ -8,7 +8,6 @@
 
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
 
 from random import gauss
 from scipy import signal
@@ -73,7 +72,7 @@ class SeriesGenerator(object):
         """
         series = [initial]
         for i in range(length - 1):
-            series.append(max(series[-1]*decay, EPSILON))
+            series.append(max(series[-1] * decay, EPSILON))
         return series
 
     @staticmethod
@@ -123,8 +122,8 @@ class SeriesGenerator(object):
     @staticmethod
     def random_walk(
             volatility: float=0.1,
-            delta_t: float=1/(365*24*60),
-            length: int=60*24*15) -> np.array:
+            delta_t: float=1 / (365 * 24 * 60),
+            length: int=60 * 24 * 15) -> np.array:
         """
         Generate a random walk series.
 
@@ -159,11 +158,3 @@ class BatterySeries:
         battery_series = np.append(battery_series, random_walk)
 
         return battery_series
-
-        # This code for plotting of the battery signal
-        # plt.plot(battery_signal)
-        # plt.plot(output)
-        # plt.title(f'Battery Signal -> {self.volume_reducer.name} output')
-        # plt.xlabel('X (period)')
-        # plt.ylabel('Y (value)')
-        # plt.show()

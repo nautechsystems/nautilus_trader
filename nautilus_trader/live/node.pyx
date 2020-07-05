@@ -100,7 +100,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._guid_factory = LiveGuidFactory()
-        self._zmq_context = zmq.Context(int(config_system['threads']))
+        self._zmq_context = zmq.Context(io_threads=int(config_system['threads']))
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -281,11 +281,19 @@ cdef class TradingNode:
         """
         Dispose of the trading node.
         """
+        self._log.info("Disposing resources...")
+
         time.sleep(1.0)  # Hard coded delay to await graceful disconnection (refactor)
 
         self.trader.dispose()
         self._data_client.dispose()
         self._exec_client.dispose()
+
+        self._log.debug("ZMQ context terminating...")
+        time.sleep(0.5)  # Hard coded delay for graceful disposal (refactor)
+        # Assertion failed: pfd.revents & POLLIN (src/signaler.cpp:261)
+        self._zmq_context.destroy()
+        self._log.info("ZMQ context terminated.")
 
     cdef void _log_header(self) except *:
         nautilus_header(self._log)

@@ -674,5 +674,3 @@ cdef class TestClock(Clock):
             interval=interval,
             start_time=start_time,
             stop_time=stop_time)
-
-

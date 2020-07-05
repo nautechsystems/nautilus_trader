@@ -132,7 +132,7 @@ cdef class MessageServer(ServerNode):
             encryption,
             self._log)
 
-        expected_frames = 3 # [sender, header, body]
+        expected_frames = 3  # [sender, header, body]
         self._queue_inbound = MessageQueueInbound(
             expected_frames,
             self._socket_inbound,
@@ -146,8 +146,8 @@ cdef class MessageServer(ServerNode):
         self._header_serializer = header_serializer
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
-        self._peers = {}    # type: {ClientId, SessionId}
-        self._handlers = {} # type: {MessageType, callable}
+        self._peers = {}     # type: {ClientId, SessionId}
+        self._handlers = {}  # type: {MessageType, callable}
 
     cpdef void start(self) except *:
         """
@@ -173,7 +173,7 @@ cdef class MessageServer(ServerNode):
 
     cpdef void register_request_handler(self, handler: callable) except *:
         """
-        Register a request handler which will receive Request messages other 
+        Register a request handler which will receive Request messages other
         than Connect and Disconnect.
         
         Parameters
@@ -278,7 +278,7 @@ cdef class MessageServer(ServerNode):
         Parameters
         ----------
         message : str
-            The string message to send. 
+            The string message to send.
         receiver : ClientId
             The message receiver.
         """

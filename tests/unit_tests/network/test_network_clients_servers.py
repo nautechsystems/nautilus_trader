@@ -18,7 +18,7 @@ import time
 import zmq
 
 from nautilus_trader.core.message import MessageType
-from nautilus_trader.common.logging import LogLevel, LoggerAdapter
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.network.compression import BypassCompressor

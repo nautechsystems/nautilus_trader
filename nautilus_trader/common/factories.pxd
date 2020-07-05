@@ -37,105 +37,105 @@ cdef class OrderFactory:
     cpdef void reset(self) except *
 
     cpdef Order market(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Label label=*,
-            OrderPurpose order_purpose=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Label label=*,
+        OrderPurpose order_purpose=*)
 
     cpdef Order limit(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            Label label=*,
-            OrderPurpose order_purpose=*,
-            TimeInForce time_in_force=*,
-            datetime expire_time=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Label label=*,
+        OrderPurpose order_purpose=*,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*)
 
     cpdef Order stop(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            Label label=*,
-            OrderPurpose order_purpose=*,
-            TimeInForce time_in_force=*,
-            datetime expire_time=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Label label=*,
+        OrderPurpose order_purpose=*,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*)
 
     cpdef Order stop_limit(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            Label label=*,
-            OrderPurpose order_purpose=*,
-            TimeInForce time_in_force=*,
-            datetime expire_time=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Label label=*,
+        OrderPurpose order_purpose=*,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*)
 
     cpdef Order market_if_touched(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            Label label=*,
-            OrderPurpose order_purpose=*,
-            TimeInForce time_in_force=*,
-            datetime expire_time=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Label label=*,
+        OrderPurpose order_purpose=*,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*)
 
     cpdef Order fill_or_kill(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Label label=*,
-            OrderPurpose order_purpose=*,)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Label label=*,
+        OrderPurpose order_purpose=*,)
 
     cpdef Order immediate_or_cancel(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Label label=*,
-            OrderPurpose order_purpose=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Label label=*,
+        OrderPurpose order_purpose=*)
 
     cpdef AtomicOrder atomic_market(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price stop_loss,
-            Price take_profit=*,
-            Label label=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price stop_loss,
+        Price take_profit=*,
+        Label label=*)
 
     cpdef AtomicOrder atomic_limit(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price entry,
-            Price stop_loss,
-            Price take_profit=*,
-            Label label=*,
-            TimeInForce time_in_force=*,
-            datetime expire_time=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price entry,
+        Price stop_loss,
+        Price take_profit=*,
+        Label label=*,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*)
 
     cpdef AtomicOrder atomic_stop_market(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price entry,
-            Price stop_loss,
-            Price take_profit=*,
-            Label label=*,
-            TimeInForce time_in_force=*,
-            datetime expire_time=*)
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price entry,
+        Price stop_loss,
+        Price take_profit=*,
+        Label label=*,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*)
 
     cdef AtomicOrder _create_atomic_order(
         self,

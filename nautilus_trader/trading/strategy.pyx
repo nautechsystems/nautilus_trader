@@ -186,7 +186,7 @@ cdef class TradingStrategy:
         """
         Called when the strategy is started.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef void on_tick(self, Tick tick) except *:
         """
@@ -194,7 +194,7 @@ cdef class TradingStrategy:
 
         :param tick: The tick received.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -203,7 +203,7 @@ cdef class TradingStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef void on_data(self, object data) except *:
         """
@@ -211,7 +211,7 @@ cdef class TradingStrategy:
 
         :param data: The data object received.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef void on_event(self, Event event) except *:
         """
@@ -219,19 +219,19 @@ cdef class TradingStrategy:
 
         :param event: The event received.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef void on_stop(self) except *:
         """
         Called when the strategy is stopped.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef void on_reset(self) except *:
         """
         Called when the strategy is reset.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef dict on_save(self):
         """
@@ -244,13 +244,13 @@ cdef class TradingStrategy:
         """
         Called when the strategy is loaded.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
     cpdef void on_dispose(self) except *:
         """
         Called when the strategy is disposed.
         """
-        pass # Override in implementation
+        pass  # Override in implementation
 
 
 # -- REGISTRATION METHODS --------------------------------------------------------------------------
@@ -718,8 +718,8 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, 'symbol')
 
         return (self._data_client.has_ticks(symbol)
-                and symbol in self._ticks
-                and len(self._ticks[symbol]) > 0)
+                and symbol in self._ticks          # noqa (W503) - easier to read
+                and len(self._ticks[symbol]) > 0)  # noqa (W503) - easier to read
 
     cpdef bint has_bars(self, BarType bar_type):
         """

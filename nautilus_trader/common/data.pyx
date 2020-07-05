@@ -100,7 +100,7 @@ cdef class DataClient:
         date from_date,
         date to_date,
         int limit,
-        callback: callable) except *:
+        callback: callable) except *:  # noqa (E125)
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -110,7 +110,7 @@ cdef class DataClient:
         date from_date,
         date to_date,
         int limit,
-        callback: callable) except *:
+        callback: callable) except *:  # noqa (E125)
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 

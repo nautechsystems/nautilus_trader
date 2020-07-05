@@ -332,7 +332,7 @@ cdef class DataMapper:
         return {
             DATA: Utf8TickSerializer.serialize_ticks_list(ticks),
             DATA_TYPE: TICK_ARRAY,
-            METADATA: { SYMBOL: ticks[0].symbol.value },
+            METADATA: {SYMBOL: ticks[0].symbol.value},
         }
 
     cpdef dict map_bars(self, list bars, BarType bar_type):
@@ -343,8 +343,8 @@ cdef class DataMapper:
         return {
             DATA: Utf8BarSerializer.serialize_bars_list(bars),
             DATA_TYPE: BAR_ARRAY,
-            METADATA: { SYMBOL: bar_type.symbol.value,
-                        SPECIFICATION: bar_type.specification.to_string()},
+            METADATA: {SYMBOL: bar_type.symbol.value,
+                       SPECIFICATION: bar_type.specification.to_string()},
         }
 
     cpdef dict map_instruments(self, list instruments):

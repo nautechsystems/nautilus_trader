@@ -82,8 +82,8 @@ cdef class MsgPackSerializer:
 
         cdef bytes k, v
         if raw_values:
-            return { k.decode(UTF8): v for k, v in raw_unpacked.items()}
-        return { k.decode(UTF8): v.decode(UTF8) for k, v in raw_unpacked.items()}
+            return {k.decode(UTF8): v for k, v in raw_unpacked.items()}
+        return {k.decode(UTF8): v.decode(UTF8) for k, v in raw_unpacked.items()}
 
 
 cdef class MsgPackDictionarySerializer(DictionarySerializer):
@@ -384,7 +384,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
-            package[REJECTED_REASON] =  event.rejected_reason.value
+            package[REJECTED_REASON] = event.rejected_reason.value
         elif isinstance(event, OrderWorking):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value

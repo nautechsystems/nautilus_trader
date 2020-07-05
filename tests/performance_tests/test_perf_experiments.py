@@ -36,31 +36,31 @@ class Experiments:
 
     @staticmethod
     def built_in_arithmetic():
-        x = 1 + 1
+        x = 1 + 1  # noqa
 
     @staticmethod
     def class_name():
-        x = '123'.__class__.__name__
+        x = '123'.__class__.__name__  # noqa
 
     @staticmethod
     def str_assignment():
-        x = '123'
+        x = '123'  # noqa
 
     @staticmethod
     def np_mean():
-        x = np.mean(_TEST_LIST)
+        x = np.mean(_TEST_LIST)  # noqa
 
     @staticmethod
     def fast_mean():
-        x = fast_mean(_TEST_LIST)
+        x = fast_mean(_TEST_LIST)  # noqa
 
     @staticmethod
     def is_instance():
-        x = isinstance(_MESSAGE, SubmitOrder)
+        x = isinstance(_MESSAGE, SubmitOrder)  # noqa
 
     @staticmethod
     def is_message_type():
-        x = 0 == _MESSAGE.message_type
+        x = 0 == _MESSAGE.message_type  # noqa
 
 
 class ExperimentsPerformanceTests(unittest.TestCase):

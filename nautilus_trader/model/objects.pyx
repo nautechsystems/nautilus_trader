@@ -603,8 +603,8 @@ cdef class BarSpecification:
         :return bool.
         """
         return (self.step == other.step
-                and self.structure == other.structure
-                and self.price_type == other.price_type)
+                and self.structure == other.structure     # noqa (W503)
+                and self.price_type == other.price_type)  # noqa (W503)
 
     cpdef str to_string(self):
         """
