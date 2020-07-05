@@ -38,7 +38,7 @@ from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.messages cimport Response, MessageReceived, MessageRejected
 from nautilus_trader.network.messages cimport DataRequest, DataResponse, QueryFailure
-from nautilus_trader.network.compression cimport Compressor, CompressorBypass
+from nautilus_trader.network.compression cimport Compressor, BypassCompressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -55,7 +55,7 @@ cdef class LiveDataClient(DataClient):
                  int data_res_port,
                  int data_pub_port,
                  int tick_pub_port,
-                 Compressor compressor not None=CompressorBypass(),
+                 Compressor compressor not None=BypassCompressor(),
                  EncryptionSettings encryption not None=EncryptionSettings(),
                  DictionarySerializer header_serializer not None=MsgPackDictionarySerializer(),
                  RequestSerializer request_serializer not None=MsgPackRequestSerializer(),

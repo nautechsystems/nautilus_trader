@@ -16,7 +16,7 @@
 import unittest
 from base64 import b64encode
 
-from nautilus_trader.network.compression import CompressorBypass, SnappyCompressor, LZ4Compressor
+from nautilus_trader.network.compression import BypassCompressor, SnappyCompressor, LZ4Compressor
 
 
 class CompressorTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class CompressorTests(unittest.TestCase):
     def test_compressor_bypass_returns_given_bytes(self):
         # Arrange
         message = b'hello world!'
-        compressor = CompressorBypass()
+        compressor = BypassCompressor()
 
         # Act
         compressed = compressor.compress(message)

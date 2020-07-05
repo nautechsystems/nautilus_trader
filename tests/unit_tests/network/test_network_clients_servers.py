@@ -21,7 +21,7 @@ from nautilus_trader.core.message import MessageType
 from nautilus_trader.common.logging import LogLevel, LoggerAdapter
 from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
-from nautilus_trader.network.compression import CompressorBypass
+from nautilus_trader.network.compression import BypassCompressor
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
@@ -70,7 +70,7 @@ class MessageClientTests(unittest.TestCase):
             MsgPackDictionarySerializer(),
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
-            CompressorBypass(),
+            BypassCompressor(),
             EncryptionSettings(),
             clock,
             guid_factory,
@@ -91,7 +91,7 @@ class MessageClientTests(unittest.TestCase):
             MsgPackDictionarySerializer(),
             MsgPackRequestSerializer(),
             MsgPackResponseSerializer(),
-            CompressorBypass(),
+            BypassCompressor(),
             EncryptionSettings(),
             clock,
             guid_factory,
@@ -183,7 +183,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             ClientId("Subscriber-001"),
             LOCALHOST,
             TEST_PUB_PORT,
-            CompressorBypass(),
+            BypassCompressor(),
             EncryptionSettings(),
             clock,
             guid_factory,
@@ -192,7 +192,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.publisher = MessagePublisher(
             ServerId("Publisher-001"),
             TEST_PUB_PORT,
-            CompressorBypass(),
+            BypassCompressor(),
             EncryptionSettings(),
             clock,
             guid_factory,
