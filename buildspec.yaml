@@ -30,7 +30,7 @@ phases:
 
 artifacts:
   files:
-    - 'nautilus_trader/**/*'
+    - 'nautilus_trader/**'
     - 'nautilus_trader/examples/*'
     - 'nautilus_trader/nautilus_trader/*'
     - 'nautilus_trader/scripts/*'
