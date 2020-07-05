@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import cython
-
 from collections import deque
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
