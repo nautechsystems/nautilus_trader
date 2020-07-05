@@ -69,7 +69,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
             self._set_initialized()
 
         # No weighting for this price (also avoiding divide by zero)
-        if volume == 0.:
+        if volume == 0.0:
             return
 
         self._price_volume += price * volume
