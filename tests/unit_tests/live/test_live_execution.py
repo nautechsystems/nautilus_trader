@@ -27,7 +27,7 @@ from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.network.identifiers import ServerId
-from nautilus_trader.network.compression import CompressorBypass
+from nautilus_trader.network.compression import BypassCompressor
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.node_servers import MessageServer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
@@ -70,7 +70,7 @@ class LiveExecutionTests(unittest.TestCase):
             header_serializer=MsgPackDictionarySerializer(),
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
-            compressor=CompressorBypass(),
+            compressor=BypassCompressor(),
             encryption=EncryptionSettings(),
             clock=clock,
             guid_factory=guid_factory,
@@ -113,7 +113,7 @@ class LiveExecutionTests(unittest.TestCase):
             command_req_port=TEST_COMMANDS_REQ_PORT,
             command_res_port=TEST_COMMANDS_REP_PORT,
             event_pub_port=TEST_EVENTS_PUB_PORT,
-            compressor=CompressorBypass(),
+            compressor=BypassCompressor(),
             encryption=EncryptionSettings(),
             command_serializer=MsgPackCommandSerializer(),
             header_serializer=MsgPackDictionarySerializer(),

@@ -24,7 +24,7 @@ from nautilus_trader.common.logging import LogLevel, LoggerAdapter
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.messages import DataResponse, DataRequest
 from nautilus_trader.network.encryption import EncryptionSettings
-from nautilus_trader.network.compression import CompressorBypass
+from nautilus_trader.network.compression import BypassCompressor
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
 from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper, BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
@@ -56,7 +56,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.header_serializer = MsgPackDictionarySerializer()
         self.request_serializer = MsgPackRequestSerializer()
         self.response_serializer = MsgPackResponseSerializer()
-        self.compressor = CompressorBypass()
+        self.compressor = BypassCompressor()
         self.encryption = EncryptionSettings()
         self.clock = LiveClock()
         self.guid_factory = LiveGuidFactory()

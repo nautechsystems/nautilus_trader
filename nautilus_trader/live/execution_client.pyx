@@ -23,7 +23,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
-from nautilus_trader.network.compression cimport Compressor, CompressorBypass
+from nautilus_trader.network.compression cimport Compressor, BypassCompressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, RequestSerializer
@@ -52,7 +52,7 @@ cdef class LiveExecClient(ExecutionClient):
             int command_req_port,
             int command_res_port,
             int event_pub_port,
-            Compressor compressor not None=CompressorBypass(),
+            Compressor compressor not None=BypassCompressor(),
             EncryptionSettings encryption not None=EncryptionSettings(),
             CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
             DictionarySerializer header_serializer not None=MsgPackDictionarySerializer(),

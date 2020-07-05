@@ -20,8 +20,6 @@ from nautilus_trader.network.socket cimport Socket
 cdef class MessageQueueOutbound:
     cdef LoggerAdapter _log
     cdef Socket _socket
-    cdef object _queue
-    cdef object _thread
 
     cpdef void send(self, list frames) except *
 

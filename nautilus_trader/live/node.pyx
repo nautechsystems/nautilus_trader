@@ -30,7 +30,7 @@ from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, Executi
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.network.compression cimport CompressorBypass, SnappyCompressor
+from nautilus_trader.network.compression cimport BypassCompressor, SnappyCompressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trading.trader cimport Trader
@@ -134,7 +134,7 @@ cdef class TradingNode:
         # Setup compressor
         compressor_type = config_messaging['compression']
         if compressor_type in ('', 'none'):
-            compressor = CompressorBypass()
+            compressor = BypassCompressor()
         elif compressor_type == 'snappy':
             compressor = SnappyCompressor()
         else:
@@ -281,7 +281,7 @@ cdef class TradingNode:
         """
         Dispose of the trading node.
         """
-        time.sleep(0.5)  # Hard coded delay to await graceful disconnection (refactor)
+        time.sleep(1.0)  # Hard coded delay to await graceful disconnection (refactor)
 
         self.trader.dispose()
         self._data_client.dispose()

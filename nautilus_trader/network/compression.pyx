@@ -43,14 +43,14 @@ cdef class Compressor:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class CompressorBypass(Compressor):
+cdef class BypassCompressor(Compressor):
     """
     Provides a compressor bypass which just returns the give data source.
     """
 
     cpdef bytes compress(self, bytes data):
         """
-        Compress the given data.
+        Bypasses compression by simply returning the given data.
 
         :param data: The data source to compress.
         :return bytes.

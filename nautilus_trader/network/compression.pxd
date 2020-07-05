@@ -19,7 +19,7 @@ cdef class Compressor:
     cpdef bytes decompress(self, bytes data)
 
 
-cdef class CompressorBypass(Compressor):
+cdef class BypassCompressor(Compressor):
     cpdef bytes compress(self, bytes data)
     cpdef bytes decompress(self, bytes data)
 
