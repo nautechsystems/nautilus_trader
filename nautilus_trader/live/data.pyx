@@ -62,7 +62,7 @@ cdef class LiveDataClient(DataClient):
                  ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
                  DataSerializer data_serializer not None=BsonDataSerializer(),
                  InstrumentSerializer instrument_serializer not None=BsonInstrumentSerializer(),
-                 int tick_capacity=100,
+                 int tick_capacity=1000,
                  LiveClock clock not None=LiveClock(),
                  LiveGuidFactory guid_factory not None=LiveGuidFactory(),
                  LiveLogger logger not None=LiveLogger()):
