@@ -106,6 +106,11 @@ The trader must assemble a directory including the following;
 ## Development
 [Development Documentation](docs/development)
 
+We recommend the PyCharm Professional edition IDE as it interprets Cython syntax.
+Unfortunately the Community edition will not interpret Cython syntax.
+
+> https://www.jetbrains.com/pycharm/
+
 To run the tests, first compile the C extensions for the package. Note that
 initial compilation may take several minutes due to the quantity of extensions.
 
@@ -116,8 +121,8 @@ All tests can be run via the `run_tests.sh` script, or through pytest.
 ## Support
 Please direct all questions, comments or bug reports to info@nautechsystems.io
 
-![Cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
-
 Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 
 > https://nautechsystems.io
+
+![Cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
