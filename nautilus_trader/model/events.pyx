@@ -739,7 +739,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                 f"side={order_side_to_string(self.order_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
                 f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price} {currency_to_string(self.transaction_currency)})")
+                f"avg_price={self.average_price})")
 
 
 cdef class OrderFilled(OrderFillEvent):
@@ -803,7 +803,7 @@ cdef class OrderFilled(OrderFillEvent):
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price} {currency_to_string(self.transaction_currency)})")
+                f"avg_price={self.average_price})")
 
 
 cdef class PositionEvent(Event):
@@ -915,7 +915,7 @@ cdef class PositionModified(PositionEvent):
 
         :return str.
         """
-        cdef str currency = currency_to_string(self.order_fill.transaction_currency)
+        cdef str currency = currency_to_string(self.position.quote_currency)
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
@@ -961,7 +961,7 @@ cdef class PositionClosed(PositionEvent):
 
         :return str.
         """
-        cdef str currency = currency_to_string(self.order_fill.transaction_currency)
+        cdef str currency = currency_to_string(self.position.quote_currency)
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "

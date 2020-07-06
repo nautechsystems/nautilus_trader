@@ -17,6 +17,14 @@ data at https://data.oecd.org/interest/short-term-interest-rates.htm
 The economic events can be updated from downloading the CSV data from MyFXBook
 https://www.myfxbook.com/forex-economic-calendar
 
+Ensure timezone is set to GMT in account settings.
+
 Note that a maximum 3 month range can be filtered and so yearly quarters must be
-downloaded manually and stitched together into a single CSV. The script for
-this will be added to the repository soon.
+downloaded manually and stitched together into a single CSV.
+
+Filter CSVs in the following way;
+
+- 01/01/xx - 31/03/xx
+- 01/04/xx - 30/06/xx
+- 01/07/xx - 30/09/xx
+- 01/10/xx - 31/12/xx
