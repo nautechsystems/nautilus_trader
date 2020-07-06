@@ -390,7 +390,7 @@ cdef class Order:
             self.slippage = Decimal(self.price.as_double() - self.average_price.as_double(), self.average_price.precision)
 
 
-cdef class AtomicOrder:
+cdef class BracketOrder:
     """
     Represents an order for a financial market instrument consisting of a 'parent'
     entry order and 'child' OCO orders representing a stop-loss and optional
@@ -401,20 +401,20 @@ cdef class AtomicOrder:
                  Order stop_loss not None,
                  Order take_profit=None):
         """
-        Initializes a new instance of the AtomicOrder class.
+        Initializes a new instance of the BracketOrder class.
 
         :param entry: The entry 'parent' order.
         :param stop_loss: The stop-loss (SL) 'child' order.
         :param take_profit: The optional take-profit (TP) 'child' order.
         """
-        self.id = AtomicOrderId('A' + entry.id.value)
+        self.id = BracketOrderId('B' + entry.id.value)
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit
         self.has_take_profit = take_profit is not None
         self.timestamp = entry.timestamp
 
-    cpdef bint equals(self, AtomicOrder other):
+    cpdef bint equals(self, BracketOrder other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -423,7 +423,7 @@ cdef class AtomicOrder:
         """
         return self.id.equals(other.id)
 
-    def __eq__(self, AtomicOrder other) -> bool:
+    def __eq__(self, BracketOrder other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -432,7 +432,7 @@ cdef class AtomicOrder:
         """
         return self.equals(other)
 
-    def __ne__(self, AtomicOrder other) -> bool:
+    def __ne__(self, BracketOrder other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
@@ -456,7 +456,7 @@ cdef class AtomicOrder:
         :return str.
         """
         cdef str take_profit_price = 'NONE' if self.take_profit is None or self.take_profit.price is None else self.take_profit.price.to_string()
-        return f"AtomicOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
+        return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
 
     def __repr__(self) -> str:
         """

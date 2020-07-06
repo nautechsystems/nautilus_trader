@@ -150,7 +150,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
         self.assertEqual(Price(80.000, 3), order.price)
 
-    def test_can_submit_atomic_market_order(self):
+    def test_can_submit_bracket_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.data_client.register_strategy(strategy)
@@ -158,21 +158,21 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        atomic_order = strategy.order_factory.atomic_market(
+        bracket_order = strategy.order_factory.bracket_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(80.000, 3))
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
+        strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
 
         # Assert
         self.assertEqual(7, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price(80.000, 3), atomic_order.stop_loss.price)
+        self.assertEqual(Price(80.000, 3), bracket_order.stop_loss.price)
 
-    def test_can_submit_atomic_stop_order(self):
+    def test_can_submit_bracket_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.data_client.register_strategy(strategy)
@@ -180,7 +180,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        atomic_order = strategy.order_factory.atomic_stop_market(
+        bracket_order = strategy.order_factory.bracket_stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -189,7 +189,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price(86.000, 3))
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
+        strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
 
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
@@ -219,7 +219,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
-    def test_can_modify_atomic_order_working_stop_loss(self):
+    def test_can_modify_bracket_order_working_stop_loss(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.data_client.register_strategy(strategy)
@@ -227,19 +227,19 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        atomic_order = strategy.order_factory.atomic_market(
+        bracket_order = strategy.order_factory.bracket_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(85.000, 3))
 
-        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
+        strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
 
         # Act
-        strategy.modify_order(atomic_order.stop_loss, atomic_order.entry.quantity, Price(85.100, 3))
+        strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price(85.100, 3))
 
         # Assert
-        self.assertEqual(Price(85.100, 3), strategy.order(atomic_order.stop_loss.id).price)
+        self.assertEqual(Price(85.100, 3), strategy.order(bracket_order.stop_loss.id).price)
         self.assertEqual(8, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderModified))
 

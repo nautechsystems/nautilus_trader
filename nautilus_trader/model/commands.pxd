@@ -17,7 +17,7 @@ from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport OrderId, TraderId, StrategyId, PositionId, AccountId
 from nautilus_trader.model.objects cimport Price, Quantity
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.order cimport Order, BracketOrder
 
 
 cdef class AccountInquiry(Command):
@@ -33,12 +33,12 @@ cdef class SubmitOrder(Command):
     cdef readonly Order order
 
 
-cdef class SubmitAtomicOrder(Command):
+cdef class SubmitBracketOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
-    cdef readonly AtomicOrder atomic_order
+    cdef readonly BracketOrder bracket_order
 
 
 cdef class ModifyOrder(Command):

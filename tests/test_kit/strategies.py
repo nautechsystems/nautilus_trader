@@ -265,7 +265,7 @@ class TestStrategy1(TradingStrategy):
 class EMACross(TradingStrategy):
     """"
     A simple moving average cross example strategy. When the fast EMA crosses
-    the slow EMA then a STOP entry atomic order is placed for that direction
+    the slow EMA then a STOP entry bracket order is placed for that direction
     with a trailing stop and profit target at 1R risk.
     """
 
@@ -431,7 +431,7 @@ class EMACross(TradingStrategy):
             units=1,
             unit_batch_size=10000)
         if position_size > 0:
-            atomic_order = self.order_factory.atomic_stop_market(
+            bracket_order = self.order_factory.bracket_stop(
                 symbol=self.symbol,
                 order_side=OrderSide.BUY,
                 quantity=position_size,
@@ -441,7 +441,7 @@ class EMACross(TradingStrategy):
                 time_in_force=TimeInForce.GTD,
                 expire_time=bar.timestamp + timedelta(minutes=1))
 
-            self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
+            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
         else:
             self.log.info("Insufficient equity for BUY signal.")
 
@@ -476,7 +476,7 @@ class EMACross(TradingStrategy):
             unit_batch_size=10000)
 
         if position_size > 0:  # Sufficient equity for a position
-            atomic_order = self.order_factory.atomic_stop_market(
+            bracket_order = self.order_factory.bracket_stop(
                 symbol=self.symbol,
                 order_side=OrderSide.SELL,
                 quantity=position_size,
@@ -486,7 +486,7 @@ class EMACross(TradingStrategy):
                 time_in_force=TimeInForce.GTD,
                 expire_time=bar.timestamp + timedelta(minutes=1))
 
-            self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
+            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
         else:
             self.log.info("Insufficient equity for SELL signal.")
 

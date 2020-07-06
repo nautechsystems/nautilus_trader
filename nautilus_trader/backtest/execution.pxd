@@ -61,7 +61,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef dict _min_limits
 
     cdef dict _working_orders
-    cdef dict _atomic_child_orders
+    cdef dict _child_orders
     cdef dict _oco_orders
 
     cdef void _set_slippages(self) except *

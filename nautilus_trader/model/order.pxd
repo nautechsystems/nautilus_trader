@@ -25,7 +25,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized
 from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker
-from nautilus_trader.model.identifiers cimport AtomicOrderId, AccountId, ExecutionId
+from nautilus_trader.model.identifiers cimport BracketOrderId, AccountId, ExecutionId
 from nautilus_trader.model.identifiers cimport PositionIdBroker
 
 
@@ -75,12 +75,12 @@ cdef class Order:
     cdef void _set_slippage(self) except *
 
 
-cdef class AtomicOrder:
-    cdef readonly AtomicOrderId id
+cdef class BracketOrder:
+    cdef readonly BracketOrderId id
     cdef readonly Order entry
     cdef readonly Order stop_loss
     cdef readonly Order take_profit
     cdef readonly bint has_take_profit
     cdef readonly datetime timestamp
 
-    cpdef bint equals(self, AtomicOrder other)
+    cpdef bint equals(self, BracketOrder other)

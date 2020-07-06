@@ -82,7 +82,7 @@ class MockExecutionClient(ExecutionClient):
     def submit_order(self, command):
         self.received_commands.append(command)
 
-    def submit_atomic_order(self, command):
+    def submit_bracket_order(self, command):
         self.received_commands.append(command)
 
     def modify_order(self, command):

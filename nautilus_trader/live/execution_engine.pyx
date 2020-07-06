@@ -258,14 +258,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error(f"The {order.id} already existed in index_order_position and was overwritten.")
         if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
             self._log.error(f"The {order.id} already existed in index_order_strategy and was overwritten.")
-        # reply[3] index_position_strategy does not need to be checked as there will be multiple writes for atomic orders
+        # reply[3] index_position_strategy does not need to be checked as there will be multiple writes for bracket orders
         if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
             self._log.error(f"The {order.id} already existed in index_orders.")
         if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
             self._log.error(f"The {order.id} already existed in index_position_orders.")
         if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
             self._log.error(f"The {order.id} already existed in index_strategy_orders.")
-        # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for atomic orders
+        # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
 
         self._log.debug(f"Added Order(id={order.id.value}).")
 

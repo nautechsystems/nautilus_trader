@@ -29,11 +29,11 @@ from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
@@ -1346,27 +1346,27 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id) except *:
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order, PositionId position_id) except *:
         """
-        Send a submit atomic order command with the given order and position_id to the
+        Send a submit bracket order command with the given order and position_id to the
         execution service.
         
-        :param atomic_order: The atomic order to submit.
+        :param bracket_order: The bracket order to submit.
         :param position_id: The position_id to associate with this order.
         """
-        Condition.not_none(atomic_order, 'atomic_order')
+        Condition.not_none(bracket_order, 'bracket_order')
         Condition.not_none(position_id, 'position_id')
 
         if self._exec_engine is None:
             self.log.error("Cannot command SubmitAtomicOrder (execution engine not registered).")
             return
 
-        cdef SubmitAtomicOrder command = SubmitAtomicOrder(
+        cdef SubmitBracketOrder command = SubmitBracketOrder(
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
             position_id,
-            atomic_order,
+            bracket_order,
             self.guid_factory.generate(),
             self.clock.time_now())
 

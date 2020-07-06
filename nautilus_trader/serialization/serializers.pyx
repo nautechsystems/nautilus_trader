@@ -29,13 +29,13 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker, ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
 from nautilus_trader.model.objects cimport Quantity, Decimal, Money
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, OrderInvalid
 from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.common.logging cimport LogMessage, log_level_from_string
 from nautilus_trader.serialization.constants cimport *
@@ -226,14 +226,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
-        elif isinstance(command, SubmitAtomicOrder):
+        elif isinstance(command, SubmitBracketOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
-            package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry)
-            package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss)
-            package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit)
+            package[ENTRY] = self.order_serializer.serialize(command.bracket_order.entry)
+            package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
+            package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
         elif isinstance(command, ModifyOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
@@ -282,15 +282,15 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp)
-        elif command_type == SubmitAtomicOrder.__name__:
-            return SubmitAtomicOrder(
+        elif command_type == SubmitBracketOrder.__name__:
+            return SubmitBracketOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
                 PositionId(unpacked[POSITION_ID].decode(UTF8)),
-                AtomicOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
-                            self.order_serializer.deserialize(unpacked[STOP_LOSS]),
-                            self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
+                BracketOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
+                             self.order_serializer.deserialize(unpacked[STOP_LOSS]),
+                             self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
                 command_id,
                 command_timestamp)
         elif command_type == ModifyOrder.__name__:

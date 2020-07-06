@@ -20,7 +20,7 @@ from nautilus_trader.core.message import MessageType
 from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.commands import SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
+from nautilus_trader.model.commands import SubmitOrder, SubmitBracketOrder, CancelOrder, ModifyOrder
 from nautilus_trader.model.commands import AccountInquiry
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.portfolio import Portfolio
@@ -163,24 +163,24 @@ class LiveExecutionTests(unittest.TestCase):
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
 
-    def test_can_send_submit_atomic_order(self):
+    def test_can_send_submit_bracket_order(self):
         # Arrange
-        atomic_order = self.strategy.order_factory.atomic_market(
+        bracket_order = self.strategy.order_factory.bracket_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(0.99900, 5))
 
         # Act
-        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
+        self.strategy.submit_bracket_order(bracket_order, self.strategy.position_id_generator.generate())
 
         time.sleep(0.3)
         # Assert
-        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
-        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
+        self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.id))
+        self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.id))
         self.assertEqual(2, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
-        self.assertEqual(SubmitAtomicOrder, type(self.command_server_sink[0]))
+        self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
 
     def test_can_send_cancel_order_command(self):
         # Arrange
