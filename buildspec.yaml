@@ -27,9 +27,6 @@ phases:
   post_build:
     commands:
       - rm -r build
-      - rm -r docs
-      - rm -r tests
-      - find . -name __pycache__ -exec rm -rf {} \;
       - echo Build completed on `date`
 
 artifacts:
