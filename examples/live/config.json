@@ -45,16 +45,16 @@
     "venue": "FXCM"
   },
 
-  "exec_database": {
-    "type": "redis",
-    "host": "localhost",
-    "port": 6379
-  },
-
   "exec_client": {
     "host": "localhost",
     "command_req_port": 55555,
     "command_res_port": 55556,
     "event_pub_port": 55557
+  },
+
+  "exec_database": {
+    "type": "redis",
+    "host": "localhost",
+    "port": 6379
   }
 }
