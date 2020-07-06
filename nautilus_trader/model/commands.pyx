@@ -18,7 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, PositionId, AccountId
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.order cimport Order, BracketOrder
 
 
 cdef class AccountInquiry(Command):
@@ -101,9 +101,9 @@ cdef class SubmitOrder(Command):
                 f"order_id={self.order.id.value})")
 
 
-cdef class SubmitAtomicOrder(Command):
+cdef class SubmitBracketOrder(Command):
     """
-    Represents a command to submit an atomic order consisting of parent and child orders.
+    Represents a command to submit a bracket order consisting of parent and child orders.
     """
 
     def __init__(self,
@@ -111,17 +111,17 @@ cdef class SubmitAtomicOrder(Command):
                  AccountId account_id not None,
                  StrategyId strategy_id not None,
                  PositionId position_id not None,
-                 AtomicOrder atomic_order not None,
+                 BracketOrder bracket_order not None,
                  GUID command_id not None,
                  datetime command_timestamp not None):
         """
-        Initializes a new instance of the SubmitAtomicOrder class.
+        Initializes a new instance of the SubmitBracketOrder class.
 
         :param trader_id: The trader_id associated with the order.
         :param account_id: The account_id to submit the order to.
         :param strategy_id: The strategy_id to associate with the order.
         :param position_id: The position_id to associate with the order.
-        :param atomic_order: The atomic order to submit.
+        :param bracket_order: The bracket order to submit.
         :param command_id: The command identifier.
         :param command_timestamp: The command timestamp.
         """
@@ -131,7 +131,7 @@ cdef class SubmitAtomicOrder(Command):
         self.account_id = account_id
         self.strategy_id = strategy_id
         self.position_id = position_id
-        self.atomic_order = atomic_order
+        self.bracket_order = bracket_order
 
     def __str__(self) -> str:
         """
@@ -144,7 +144,7 @@ cdef class SubmitAtomicOrder(Command):
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
                 f"position_id={self.position_id.value}, "
-                f"order_id={self.atomic_order.id.value})")
+                f"order_id={self.bracket_order.id.value})")
 
 
 cdef class ModifyOrder(Command):

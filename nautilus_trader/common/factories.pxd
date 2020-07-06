@@ -22,7 +22,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.generators cimport OrderIdGenerator
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 
@@ -104,7 +104,7 @@ cdef class OrderFactory:
         Label label=*,
         OrderPurpose order_purpose=*)
 
-    cpdef AtomicOrder atomic_market(
+    cpdef BracketOrder bracket_market(
         self,
         Symbol symbol,
         OrderSide order_side,
@@ -113,7 +113,7 @@ cdef class OrderFactory:
         Price take_profit=*,
         Label label=*)
 
-    cpdef AtomicOrder atomic_limit(
+    cpdef BracketOrder bracket_limit(
         self,
         Symbol symbol,
         OrderSide order_side,
@@ -125,7 +125,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*)
 
-    cpdef AtomicOrder atomic_stop_market(
+    cpdef BracketOrder bracket_stop(
         self,
         Symbol symbol,
         OrderSide order_side,
@@ -137,7 +137,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*)
 
-    cdef AtomicOrder _create_atomic_order(
+    cdef BracketOrder _create_bracket_order(
         self,
         Order entry_order,
         Price stop_loss,

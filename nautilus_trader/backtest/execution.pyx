@@ -39,7 +39,7 @@ from nautilus_trader.model.events cimport OrderAccepted, OrderRejected, OrderWor
 from nautilus_trader.model.events cimport OrderModified, OrderCancelled, OrderCancelReject
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
@@ -112,7 +112,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._market = {}               # type: {Symbol, Tick}
         self._working_orders = {}       # type: {OrderId, Order}
-        self._atomic_child_orders = {}  # type: {OrderId, [Order]}
+        self._child_orders = {}         # type: {OrderId, [Order]}
         self._oco_orders = {}           # type: {OrderId, OrderId}
 
         self._set_slippages()
@@ -166,7 +166,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Check for any residual objects and log warnings if any are found.
         """
-        for order_list in self._atomic_child_orders.values():
+        for order_list in self._child_orders.values():
             for order in order_list:
                 self._log.warning(f"Residual child-order {order}")
 
@@ -189,7 +189,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._market = {}               # type: {Symbol, Tick}
         self._working_orders = {}       # type: {OrderId, Order}
-        self._atomic_child_orders = {}  # type: {OrderId, [Order]}
+        self._child_orders = {}  # type: {OrderId, [Order]}
         self._oco_orders = {}           # type: {OrderId, OrderId}
 
         self._log.info("Reset.")
@@ -517,16 +517,16 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exec_engine.handle_event(submitted)
         self._process_order(command.order)
 
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *:
+    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
         Condition.not_none(command, 'command')
 
-        cdef list atomic_orders = [command.atomic_order.stop_loss]
-        if command.atomic_order.has_take_profit:
-            atomic_orders.append(command.atomic_order.take_profit)
-            self._oco_orders[command.atomic_order.take_profit.id] = command.atomic_order.stop_loss.id
-            self._oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.take_profit.id
+        cdef list bracket_orders = [command.bracket_order.stop_loss]
+        if command.bracket_order.has_take_profit:
+            bracket_orders.append(command.bracket_order.take_profit)
+            self._oco_orders[command.bracket_order.take_profit.id] = command.bracket_order.stop_loss.id
+            self._oco_orders[command.bracket_order.stop_loss.id] = command.bracket_order.take_profit.id
 
-        self._atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
+        self._child_orders[command.bracket_order.entry.id] = bracket_orders
 
         # Generate command
         cdef SubmitOrder submit_order = SubmitOrder(
@@ -534,7 +534,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command.account_id,
             command.strategy_id,
             command.position_id,
-            command.atomic_order.entry,
+            command.bracket_order.entry,
             self._guid_factory.generate(),
             self._clock.time_now())
 
@@ -699,9 +699,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
         cdef OrderId first_child_order_id
         cdef OrderId other_oco_order_id
-        if order.id in self._atomic_child_orders:
-            # Remove any unprocessed atomic child order OCO identifiers
-            first_child_order_id = self._atomic_child_orders[order.id][0].id
+        if order.id in self._child_orders:
+            # Remove any unprocessed bracket child order OCO identifiers
+            first_child_order_id = self._child_orders[order.id][0].id
             if first_child_order_id in self._oco_orders:
                 other_oco_order_id = self._oco_orders[first_child_order_id]
                 del self._oco_orders[first_child_order_id]
@@ -811,18 +811,18 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exec_engine.handle_event(filled)
         self._check_oco_order(order.id)
 
-        # Work any atomic child orders
-        if order.id in self._atomic_child_orders:
-            for child_order in self._atomic_child_orders[order.id]:
+        # Work any bracket child orders
+        if order.id in self._child_orders:
+            for child_order in self._child_orders[order.id]:
                 if not child_order.is_completed:  # The order may already be cancelled or rejected
                     self._process_order(child_order)
-            del self._atomic_child_orders[order.id]
+            del self._child_orders[order.id]
 
     cdef void _clean_up_child_orders(self, OrderId order_id) except *:
         # Clean up any residual child orders from the completed order associated
         # with the given identifier.
-        if order_id in self._atomic_child_orders:
-            del self._atomic_child_orders[order_id]
+        if order_id in self._child_orders:
+            del self._child_orders[order_id]
 
     cdef void _check_oco_order(self, OrderId order_id) except *:
         # Check held OCO orders and remove any paired with the given order_id
@@ -835,8 +835,8 @@ cdef class BacktestExecClient(ExecutionClient):
             del self._oco_orders[order_id]
             del self._oco_orders[oco_order_id]
 
-            # Reject any latent atomic child orders
-            for atomic_order_id, child_orders in self._atomic_child_orders.items():
+            # Reject any latent bracket child orders
+            for bracket_order_id, child_orders in self._child_orders.items():
                 for order in child_orders:
                     if oco_order.equals(order):
                         self._reject_oco_order(order, order_id)

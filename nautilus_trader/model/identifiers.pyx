@@ -341,9 +341,9 @@ cdef class AccountNumber(Identifier):
         super().__init__(value)
 
 
-cdef class AtomicOrderId(Identifier):
+cdef class BracketOrderId(Identifier):
     """
-    Represents a valid atomic order identifier. The identifier value must be
+    Represents a valid bracket order identifier. The identifier value must be
     unique at the fund level.
     """
 
@@ -353,7 +353,7 @@ cdef class AtomicOrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
-        Condition.true(value.startswith('AO-'), f'value must begin with \'AO-\', was {value}.')
+        Condition.true(value.startswith('BO-'), f'value must begin with \'BO-\', was {value}.')
         super().__init__(value)
 
 

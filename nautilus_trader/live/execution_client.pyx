@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport Command, AccountInquiry
-from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+from nautilus_trader.model.commands cimport SubmitOrder, SubmitBracketOrder, ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -158,7 +158,7 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void submit_order(self, SubmitOrder command) except *:
         self._send_command(command)
 
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *:
+    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
         self._send_command(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:

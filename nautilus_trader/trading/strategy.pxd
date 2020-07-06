@@ -25,7 +25,7 @@ from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, Ord
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.guid cimport GuidFactory
@@ -182,7 +182,7 @@ cdef class TradingStrategy:
     cpdef void update_state_log(self, datetime timestamp, str action) except *
     cpdef void account_inquiry(self) except *
     cpdef void submit_order(self, Order order, PositionId position_id) except *
-    cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id) except *
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order, PositionId position_id) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order, str cancel_reason=*) except *
     cpdef void cancel_all_orders(self, str cancel_reason=*) except *

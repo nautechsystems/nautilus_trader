@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.commands cimport Command, AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport Command, AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport Event, OrderEvent, OrderFillEvent, PositionEvent
 from nautilus_trader.model.events cimport AccountStateEvent, OrderCancelReject, PositionOpened
@@ -1163,12 +1163,12 @@ cdef class ExecutionEngine:
         elif isinstance(command, SubmitOrder):
             self.database.add_order(command.order, command.strategy_id, command.position_id)
             self._exec_client.submit_order(command)
-        elif isinstance(command, SubmitAtomicOrder):
-            self.database.add_order(command.atomic_order.entry, command.strategy_id, command.position_id)
-            self.database.add_order(command.atomic_order.stop_loss, command.strategy_id, command.position_id)
-            if command.atomic_order.has_take_profit:
-                self.database.add_order(command.atomic_order.take_profit, command.strategy_id, command.position_id)
-            self._exec_client.submit_atomic_order(command)
+        elif isinstance(command, SubmitBracketOrder):
+            self.database.add_order(command.bracket_order.entry, command.strategy_id, command.position_id)
+            self.database.add_order(command.bracket_order.stop_loss, command.strategy_id, command.position_id)
+            if command.bracket_order.has_take_profit:
+                self.database.add_order(command.bracket_order.take_profit, command.strategy_id, command.position_id)
+            self._exec_client.submit_bracket_order(command)
         elif isinstance(command, ModifyOrder):
             self._exec_client.modify_order(command)
         elif isinstance(command, CancelOrder):
@@ -1371,7 +1371,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *:
+    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 

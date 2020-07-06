@@ -19,7 +19,7 @@ from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId
 from nautilus_trader.model.identifiers cimport OrderId, PositionId, PositionIdBroker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.commands cimport Command, AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands cimport Command, AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -168,7 +168,7 @@ cdef class ExecutionClient:
     cpdef void dispose(self) except *
     cpdef void account_inquiry(self, AccountInquiry command) except *
     cpdef void submit_order(self, SubmitOrder command) except *
-    cpdef void submit_atomic_order(self, SubmitAtomicOrder command) except *
+    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
     cpdef void reset(self) except *

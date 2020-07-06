@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol, IdTag
 from nautilus_trader.model.generators cimport OrderIdGenerator
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.live.clock cimport LiveClock
@@ -338,7 +338,7 @@ cdef class OrderFactory:
             init_id=self._guid_factory.generate(),
             timestamp=self._clock.time_now())
 
-    cpdef AtomicOrder atomic_market(
+    cpdef BracketOrder bracket_market(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -347,7 +347,7 @@ cdef class OrderFactory:
             Price take_profit=None,
             Label label=None):
         """
-        Return an atomic order with a market entry.
+        Return a bracket order with a market entry.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -356,7 +356,7 @@ cdef class OrderFactory:
         :param take_profit: The optional take-profit order price.
         :param label: The optional order label / secondary identifier.
         :raises ValueError: If the quantity is not positive (> 0).
-        :return AtomicOrder.
+        :return BracketOrder.
         """
         cdef Label entry_label = None
         if label is not None:
@@ -369,13 +369,13 @@ cdef class OrderFactory:
             entry_label,
             OrderPurpose.ENTRY)
 
-        return self._create_atomic_order(
+        return self._create_bracket_order(
             entry_order,
             stop_loss,
             take_profit,
             label)
 
-    cpdef AtomicOrder atomic_limit(
+    cpdef BracketOrder bracket_limit(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -387,7 +387,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Return an atomic order with a limit entry.
+        Return a bracket order with a limit entry.
 
 
         :param symbol: The orders symbol.
@@ -401,7 +401,7 @@ cdef class OrderFactory:
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
-        :return AtomicOrder.
+        :return BracketOrder.
         """
         cdef Label entry_label = None
         if label is not None:
@@ -417,13 +417,13 @@ cdef class OrderFactory:
             time_in_force,
             expire_time)
 
-        return self._create_atomic_order(
+        return self._create_bracket_order(
             entry_order,
             stop_loss,
             take_profit,
             label)
 
-    cpdef AtomicOrder atomic_stop_market(
+    cpdef BracketOrder bracket_stop(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -435,7 +435,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Return an atomic order with a stop-market entry.
+        Return a bracket order with a stop entry.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -448,7 +448,7 @@ cdef class OrderFactory:
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
-        :return AtomicOrder.
+        :return BracketOrder.
         """
         cdef Label entry_label = None
         if label is not None:
@@ -464,13 +464,13 @@ cdef class OrderFactory:
             time_in_force,
             expire_time)
 
-        return self._create_atomic_order(
+        return self._create_bracket_order(
             entry_order,
             stop_loss,
             take_profit,
             label)
 
-    cdef AtomicOrder _create_atomic_order(
+    cdef BracketOrder _create_bracket_order(
             self,
             Order entry_order,
             Price stop_loss,
@@ -506,4 +506,4 @@ cdef class OrderFactory:
                 TimeInForce.GTC,
                 expire_time=None)
 
-        return AtomicOrder(entry_order, stop_loss_order, take_profit_order)
+        return BracketOrder(entry_order, stop_loss_order, take_profit_order)

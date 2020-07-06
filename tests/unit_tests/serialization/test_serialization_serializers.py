@@ -26,7 +26,7 @@ from nautilus_trader.model.enums import OrderSide, OrderType, OrderPurpose, Time
 from nautilus_trader.model.enums import AccountType, SecurityType
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import Price, Quantity, Instrument
-from nautilus_trader.model.commands import AccountInquiry, SubmitOrder, SubmitAtomicOrder
+from nautilus_trader.model.commands import AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands import ModifyOrder, CancelOrder
 from nautilus_trader.model.events import AccountStateEvent, OrderInitialized, OrderInvalid
 from nautilus_trader.model.events import OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
@@ -306,20 +306,20 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, SubmitOrder))
 
-    def test_can_serialize_and_deserialize_submit_atomic_order_no_take_profit_commands(self):
+    def test_can_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(self):
         # Arrange
-        atomic_order = self.order_factory.atomic_market(
+        bracket_order = self.order_factory.bracket_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price(0.99900, 5))
 
-        command = SubmitAtomicOrder(
+        command = SubmitBracketOrder(
             self.trader_id,
             self.account_id,
             StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
-            atomic_order,
+            bracket_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -329,24 +329,24 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(command, deserialized)
-        self.assertEqual(atomic_order, deserialized.atomic_order)
+        self.assertEqual(bracket_order, deserialized.bracket_order)
         print(b64encode(serialized))
         print(command)
 
-    def test_can_deserialize_submit_atomic_order_no_take_profit_from_csharp(self):
+    def test_can_deserialize_submit_bracket_order_no_take_profit_from_csharp(self):
         # Arrange
-        base64 = 'iqRUeXBlxBFTdWJtaXRBdG9taWNPcmRlcqJJZMQkNGI4OGNlN2ItNjMxOC00ZGExLWFlZmQtYjk0NDA2YTJlYzYyqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqlN0cmF0ZWd5SWTEDEVNQUNyb3NzLTAwMalBY2NvdW50SWTEGEZYQ00tMDI4OTk5OTk5LVNJTVVMQVRFRKpQb3NpdGlvbklkxAhQLTEyMzQ1NqVFbnRyecT4jKJJZMQITy0xMjM0NTamU3ltYm9sxAtBVURVU0QuRlhDTaVMYWJlbMQKVEVTVF9PUkRFUqlPcmRlclNpZGXEA0J1ealPcmRlclR5cGXEBk1hcmtldKxPcmRlclB1cnBvc2XEBE5vbmWoUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQETm9uZatUaW1lSW5Gb3JjZcQDREFZqkV4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqmSW5pdElkxCQwYWM1NjkxMi1hNTk3LTRiNjQtYjJkYy0zYzVkZjY0MWM2MGKoU3RvcExvc3PE84yiSWTECE8tMTIzNDU2plN5bWJvbMQLQVVEVVNELkZYQ02lTGFiZWzEClRFU1RfT1JERVKpT3JkZXJTaWRlxANCdXmpT3JkZXJUeXBlxARTdG9wrE9yZGVyUHVycG9zZcQETm9uZahRdWFudGl0ecQGMTAwMDAwpVByaWNlxAExq1RpbWVJbkZvcmNlxANEQVmqRXhwaXJlVGltZcQETm9uZalUaW1lc3RhbXDEGDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqZJbml0SWTEJDlmOTA4YTZmLTI5MjUtNDBhYi1iMDY2LTVkZWY2N2EwZTdjNKpUYWtlUHJvZml0xAGA'
+        base64 = 'iqRUeXBlxBJTdWJtaXRCcmFja2V0T3JkZXKiSWTEJGJkOGM5YTZhLTNlNmItNGUzYS05OGYzLWEzMzRjZDM3NDkzNqlUaW1lc3RhbXDEGDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqhUcmFkZXJJZMQKVEVTVEVSLTAwMKpTdHJhdGVneUlkxAxFTUFDcm9zcy0wMDGpQWNjb3VudElkxBhGWENNLTAyODk5OTk5OS1TSU1VTEFURUSqUG9zaXRpb25JZMQIUC0xMjM0NTalRW50cnnE+IyiSWTECE8tMTIzNDU2plN5bWJvbMQLQVVEVVNELkZYQ02lTGFiZWzEClRFU1RfT1JERVKpT3JkZXJTaWRlxANCdXmpT3JkZXJUeXBlxAZNYXJrZXSsT3JkZXJQdXJwb3NlxAROb25lqFF1YW50aXR5xAYxMDAwMDClUHJpY2XEBE5vbmWrVGltZUluRm9yY2XEA0RBWapFeHBpcmVUaW1lxAROb25lqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMDowMDowMC4wMDBapkluaXRJZMQkMmI4M2Y0YzYtOWQ0ZC00ZTUxLTk3ODQtY2YwYjhjZjYwNDZlqFN0b3BMb3NzxPOMoklkxAhPLTEyMzQ1NqZTeW1ib2zEC0FVRFVTRC5GWENNpUxhYmVsxApURVNUX09SREVSqU9yZGVyU2lkZcQDQnV5qU9yZGVyVHlwZcQEU3RvcKxPcmRlclB1cnBvc2XEBE5vbmWoUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQBMatUaW1lSW5Gb3JjZcQDREFZqkV4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqmSW5pdElkxCQ1NTI3MGJhMC02Yjg2LTRlMTItYTc4ZS05YzY5ZDE3ZTEwZWKqVGFrZVByb2ZpdMQBgA=='
         body = b64decode(base64)
 
         # Act
         result = self.serializer.deserialize(body)
 
         # Assert
-        self.assertTrue(isinstance(result, SubmitAtomicOrder))
+        self.assertTrue(isinstance(result, SubmitBracketOrder))
 
-    def test_can_serialize_and_deserialize_submit_atomic_order_with_take_profit_commands(self):
+    def test_can_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(self):
         # Arrange
-        atomic_order = self.order_factory.atomic_limit(
+        bracket_order = self.order_factory.bracket_limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -354,12 +354,12 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Price(1.00000, 5),
             Price(1.00010, 5))
 
-        command = SubmitAtomicOrder(
+        command = SubmitBracketOrder(
             self.trader_id,
             self.account_id,
             StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
-            atomic_order,
+            bracket_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -369,7 +369,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(command, deserialized)
-        self.assertEqual(atomic_order, deserialized.atomic_order)
+        self.assertEqual(bracket_order, deserialized.bracket_order)
         print(b64encode(serialized))
         print(command)
 

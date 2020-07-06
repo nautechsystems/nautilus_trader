@@ -66,7 +66,7 @@ cdef class AccountNumber(Identifier):
     pass
 
 
-cdef class AtomicOrderId(Identifier):
+cdef class BracketOrderId(Identifier):
     pass
 
 
