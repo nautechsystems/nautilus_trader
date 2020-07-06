@@ -19,7 +19,7 @@ from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import BarSpecification
 from nautilus_trader.live.node import TradingNode
 
-from tests.test_kit.strategies import EMACross
+from examples.strategies.ema_cross import EMACross
 # TODO: AtomicOrder with Market entry not working (needs peg)
 
 # Requirements to run;
