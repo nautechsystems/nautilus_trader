@@ -19,8 +19,7 @@ import pytz
 from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.core.datetime import is_tz_aware, is_tz_naive, format_iso8601
-from nautilus_trader.core.datetime import as_timestamp_utc, with_utc_index
-
+from nautilus_trader.core.datetime import ensure_utc_timestamp, ensure_utc_index
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -104,7 +103,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = datetime(2013, 2, 1, 0, 0, 0, 0)
 
         # Act
-        result = as_timestamp_utc(timestamp)
+        result = ensure_utc_timestamp(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -115,7 +114,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = pd.Timestamp(2013, 2, 1, 0, 0, 0, 0)
 
         # Act
-        result = as_timestamp_utc(timestamp)
+        result = ensure_utc_timestamp(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -126,7 +125,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        result = as_timestamp_utc(timestamp)
+        result = ensure_utc_timestamp(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -137,7 +136,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp = pd.Timestamp(2013, 2, 1, 0, 0, 0, 0).tz_localize('UTC')
 
         # Act
-        result = as_timestamp_utc(timestamp)
+        result = ensure_utc_timestamp(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
@@ -151,10 +150,10 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp4 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0).tz_localize('UTC')
 
         # Act
-        timestamp1_converted = as_timestamp_utc(timestamp1)
-        timestamp2_converted = as_timestamp_utc(timestamp2)
-        timestamp3_converted = as_timestamp_utc(timestamp3)
-        timestamp4_converted = as_timestamp_utc(timestamp4)
+        timestamp1_converted = ensure_utc_timestamp(timestamp1)
+        timestamp2_converted = ensure_utc_timestamp(timestamp2)
+        timestamp3_converted = ensure_utc_timestamp(timestamp3)
+        timestamp4_converted = ensure_utc_timestamp(timestamp4)
 
         # Assert
         self.assertEqual(timestamp1_converted, timestamp2_converted)
@@ -169,7 +168,7 @@ class TestFunctionsTests(unittest.TestCase):
         data.index = pd.to_datetime(data.index)
 
         # Act
-        result = with_utc_index(data)
+        result = ensure_utc_index(data)
 
         # Assert
         self.assertEqual(pytz.UTC, result.index.tz)
@@ -182,7 +181,7 @@ class TestFunctionsTests(unittest.TestCase):
         data.index = pd.to_datetime(data.index, utc=True)
 
         # Act
-        result = with_utc_index(data)
+        result = ensure_utc_index(data)
 
         # Assert
         self.assertEqual(pytz.UTC, result.index.tz)
@@ -200,8 +199,8 @@ class TestFunctionsTests(unittest.TestCase):
         data2.index = pd.to_datetime(data2.index, utc=True)
 
         # Act
-        result1 = with_utc_index(data1)
-        result2 = with_utc_index(data2)
+        result1 = ensure_utc_index(data1)
+        result2 = ensure_utc_index(data2)
 
         # Assert
         self.assertEqual(result1.index[0], result2.index[0])

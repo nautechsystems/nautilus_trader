@@ -24,11 +24,10 @@ from cpython.unicode cimport PyUnicode_Contains
 from nautilus_trader.core.correctness cimport Condition
 
 
-cpdef bint is_tz_aware(time_object):
+cpdef bint is_tz_aware(time_object) except *:
     """
-    Checks if the given object is timezone aware. The object must be either
-    datetime, pd.Timestamp or pd.DataFrame
-    
+    Checks if the given object is timezone aware.
+
     Parameters
     ----------
     time_object : datetime, pd.Timestamp, pd.Series, pd.DataFrame
@@ -44,7 +43,7 @@ cpdef bint is_tz_aware(time_object):
         return time_object.tzinfo is not None
     elif isinstance(time_object, pd.Timestamp):
         return time_object.tz is not None
-    elif isinstance(time_object, (pd.Series, pd.DataFrame)):
+    elif isinstance(time_object, pd.DataFrame):
         return hasattr(time_object.index, 'tz') or time_object.index.tz is not None
     else:
         raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object.")
@@ -52,8 +51,7 @@ cpdef bint is_tz_aware(time_object):
 
 cpdef bint is_tz_naive(time_object):
     """
-    Checks if the given object is timezone naive. The object must be either
-    datetime, pd.Timestamp or pd.DataFrame
+    Checks if the given object is timezone naive.
     
     Parameters
     ----------
@@ -69,21 +67,21 @@ cpdef bint is_tz_naive(time_object):
     return not is_tz_aware(time_object)
 
 
-cpdef datetime as_timestamp_utc(datetime timestamp):
+cpdef datetime ensure_utc_timestamp(datetime timestamp):
     """
-    Return the given timestamp converted to a UTC timezone aware pd.Timestamp.
+    Ensure the given timestamp is a tz-aware UTC pd.Timestamp.
 
     Parameters
     ----------
     timestamp : datetime
-        The timestamp to convert.
-    
+        The timestamp to ensure is UTC.
+
     Returns
     -------
     pd.Timestamp
 
     """
-    Condition.not_none(timestamp, 'timestamp')
+    Condition.not_none(datetime, 'datetime')
 
     if not isinstance(timestamp, pd.Timestamp):
         timestamp = pd.Timestamp(timestamp)
@@ -96,35 +94,34 @@ cpdef datetime as_timestamp_utc(datetime timestamp):
         return timestamp  # Already UTC
 
 
-cpdef object with_utc_index(dataframe: pd.DataFrame):
+cpdef object ensure_utc_index(data: pd.DataFrame):
     """
-    Return the given pandas DataFrame with the index timestamps localized
-    or converted to UTC. If the DataFrame is None then returns None.
-    
+    Ensure the given data has a DateTimeIndex which is tz-aware UTC.
+
     Parameters
     ----------
-    dataframe : pd.DataFrame.
-        The object with DatetimeIndex to localize.
-        
+    data : pd.Series or pd.DataFrame.
+        The object to ensure is UTC.
+
     Returns
     -------
-    pd.DataFrame or None.
+    pd.Series or pd.DataFrame or None
 
     """
-    if dataframe is None:
-        return dataframe
+    if data is None:
+        return data
 
-    if not hasattr(dataframe.index, 'tz') or dataframe.index.tz is None:  # tz-naive
-        return dataframe.tz_localize('UTC')
-    elif dataframe.index.tz != pytz.UTC:
-        return dataframe.tz_convert('UTC')
+    if not hasattr(data.index, 'tz') or data.index.tz is None:  # tz-naive
+        return data.tz_localize('UTC')
+    elif data.index.tz != pytz.UTC:
+        return data.tz_convert('UTC')
     else:
-        return dataframe  # Already UTC
+        return data  # Already UTC
 
 
 cpdef str format_iso8601(datetime dt):
     """
-    Format the given string to the ISO 8601 specification with 'Z' zulu.
+    Format the given string to the ISO 8601 specification with 'Z' zulu. 
     
     Parameters
     ----------
@@ -141,7 +138,7 @@ cpdef str format_iso8601(datetime dt):
         The formatted string.
 
     """
-    Condition.not_none(dt, 'dt')
+    Condition.not_none(datetime, 'datetime')
 
     cdef str tz_stripped = str(dt).replace(' ', 'T').rpartition('+')[0]
 

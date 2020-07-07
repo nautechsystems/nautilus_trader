@@ -19,7 +19,7 @@ from cpython.object cimport PyObject_GetAttr
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport with_utc_index
+from nautilus_trader.core.datetime cimport ensure_utc_index
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument
@@ -59,7 +59,7 @@ cdef class TickDataWrangler:
         Condition.type_or_none(data_bars_ask, dict, 'ask_data')
 
         if data_ticks is not None and len(data_ticks) > 0:
-            self._data_ticks = with_utc_index(data_ticks)
+            self._data_ticks = ensure_utc_index(data_ticks)
         else:
             Condition.true(data_bars_bid is not None, 'data_bars_bid is not None')
             Condition.true(data_bars_ask is not None, 'data_bars_ask is not None')
@@ -116,8 +116,8 @@ cdef class TickDataWrangler:
         Condition.true(all(bars_bid.index) == all(bars_ask.index), 'bars_bid.index == bars_ask.index')
         Condition.true(bars_bid.shape == bars_ask.shape, 'bars_bid.shape == bars_ask.shape')
 
-        bars_bid = with_utc_index(bars_bid)
-        bars_ask = with_utc_index(bars_ask)
+        bars_bid = ensure_utc_index(bars_bid)
+        bars_ask = ensure_utc_index(bars_ask)
         shifted_index = bars_bid.index.shift(periods=-100, freq='ms')
 
         cdef dict data_high = {
@@ -215,7 +215,7 @@ cdef class BarDataWrangler:
 
         self._precision = precision
         self._volume_multiple = volume_multiple
-        self._data = with_utc_index(data)
+        self._data = ensure_utc_index(data)
 
     cpdef list build_bars_all(self):
         """

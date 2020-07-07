@@ -16,8 +16,8 @@
 from cpython.datetime cimport datetime
 
 
-cpdef bint is_tz_aware(dataframe)
+cpdef bint is_tz_aware(dataframe) except *
 cpdef bint is_tz_naive(dataframe)
+cpdef datetime ensure_utc_timestamp(datetime timestamp)
+cpdef object ensure_utc_index(dataframe)
 cpdef str format_iso8601(datetime dt)
-cpdef object with_utc_index(dataframe)
-cpdef datetime as_timestamp_utc(datetime timestamp)
