@@ -103,6 +103,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._account = Account(self.reset_account_event())
         self.exec_db = exec_engine.database
         self.exchange_calculator = ExchangeRateCalculator()
+        self.tz_us_est = pytz.timezone('US/Eastern')
         self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0  # Bank + Broker spread markup
@@ -269,16 +270,13 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money(0, self.account_currency)
             self.rollover_applied = False
-            self.rollover_time = dt.datetime(
-                time_now.year,
-                time_now.month,
-                time_now.day,
-                17,
-                0,
-                0,
-                0,
-                tzinfo=pytz.timezone('US/Eastern')).astimezone(tz=pytz.utc) - timedelta(minutes=56)
-            #  TODO: Why is this consistently 56 min out?
+
+            rollover_local = time_now.astimezone(self.tz_us_est)
+            self.rollover_time = self.tz_us_est.localize(datetime(
+                rollover_local.year,
+                rollover_local.month,
+                rollover_local.day,
+                17)).astimezone(pytz.utc)
 
         # Check for and apply any rollover interest
         if not self.rollover_applied and time_now >= self.rollover_time:

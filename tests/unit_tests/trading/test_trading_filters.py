@@ -14,11 +14,90 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pandas import Timestamp
 
-from nautilus_trader.trading.filters import EconomicNewsEventFilter
+from nautilus_trader.trading.filters import ForexSession, ForexSessionFilter, EconomicNewsEventFilter
 from tests.test_kit.stubs import UNIX_EPOCH
+
+
+class ForexSessionFilterTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.session_filter = ForexSessionFilter()
+
+    def test_local_from_utc_given_sydney_session_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.local_from_utc(ForexSession.SYDNEY, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual('1970-01-01 10:00:00+10:00', str(result))
+
+    def test_local_from_utc_given_tokyo_session_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.local_from_utc(ForexSession.TOKYO, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual('1970-01-01 09:00:00+09:00', str(result))
+
+    def test_local_from_utc_given_london_session_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.local_from_utc(ForexSession.LONDON, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual('1970-01-01 01:00:00+01:00', str(result))
+
+    def test_local_from_utc_given_new_york_session_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.local_from_utc(ForexSession.NEW_YORK, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual('1969-12-31 19:00:00-05:00', str(result))
+
+    def test_next_start_given_sydney_session_unix_epoch_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.next_start(ForexSession.SYDNEY, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(datetime(1970, 1, 1, 21, 0, tzinfo=timezone.utc), result)
+
+    def test_next_start_given_tokyo_session_unix_epoch_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.next_start(ForexSession.TOKYO, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, tzinfo=timezone.utc), result)
+
+    def test_prev_start_given_london_session_unix_epoch_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.prev_start(ForexSession.LONDON, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(datetime(1969, 12, 31, 7, 0, tzinfo=timezone.utc), result)
+
+    def test_prev_start_given_new_york_session_unix_epoch_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.prev_start(ForexSession.NEW_YORK, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(datetime(1969, 12, 31, 13, 0, tzinfo=timezone.utc), result)
+
+    def test_next_end_given_new_york_session_unix_epoch_returns_expected_datetime(self):
+        # Arrange
+        # Act
+        result = self.session_filter.next_end(ForexSession.NEW_YORK, UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(datetime(1970, 1, 1, 22, 0, tzinfo=timezone.utc), result)
 
 
 class EconomicNewsEventFilterTests(unittest.TestCase):
@@ -33,6 +112,20 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
         # Assert
         self.assertEqual(currencies, news_filter.currencies)
         self.assertEqual(impacts, news_filter.impacts)
+
+    def test_initialize_filter_with_no_currencies_or_impacts_returns_none(self):
+        # Arrange
+        currencies = []
+        impacts = []
+        news_filter = EconomicNewsEventFilter(currencies=currencies, impacts=impacts)
+
+        # Act
+        event = news_filter.next_event(UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(currencies, news_filter.currencies)
+        self.assertEqual(impacts, news_filter.impacts)
+        self.assertIsNone(event)
 
     def test_next_event_given_impossible_date_returns_none(self):
         # Arrange

@@ -257,6 +257,10 @@ cdef class BacktestEngine:
 
         # Run the backtest
         self.log.info(f"Running backtest...")
+
+        for i in range(len(self.trader.strategies)):
+            self.trader.strategies[i].clock.set_time(start)
+
         self.trader.start()
 
         cdef Tick tick

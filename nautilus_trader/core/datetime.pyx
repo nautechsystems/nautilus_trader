@@ -87,9 +87,9 @@ cpdef datetime ensure_utc_timestamp(datetime timestamp):
         timestamp = pd.Timestamp(timestamp)
 
     if timestamp.tz is None:  # tz-naive
-        return timestamp.tz_localize('UTC')
+        return timestamp.tz_localize(pytz.utc)
     elif timestamp.tz != pytz.UTC:
-        return timestamp.tz_convert('UTC')
+        return timestamp.tz_convert(pytz.utc)
     else:
         return timestamp  # Already UTC
 

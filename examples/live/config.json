@@ -33,7 +33,7 @@
     "api_version": "1.0",
     "compression": "snappy",
     "encryption": "curve",
-    "keys_dir": "/home/ec2-user/keys/"
+    "keys_dir": "/home/nautilus/keys/"
   },
 
   "data_client": {

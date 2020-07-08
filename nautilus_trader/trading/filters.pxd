@@ -22,12 +22,11 @@ cdef class ForexSessionFilter:
     cdef readonly object tz_london
     cdef readonly object tz_new_york
 
-    cpdef bint is_sydney_session(self, datetime time_now)
-    cpdef bint is_tokyo_session(self, datetime time_now)
-    cpdef bint is_london_session(self, datetime time_now)
-    cpdef bint is_new_york_session(self, datetime time_now)
-    cpdef datetime session_start(self, session, datetime datum)
-    cpdef datetime session_end(self, session, datetime datum)
+    cpdef datetime local_from_utc(self, session, datetime utc)
+    cpdef datetime next_start(self, session, datetime utc_now)
+    cpdef datetime prev_start(self, session, datetime utc_now)
+    cpdef datetime next_end(self, session, datetime utc_now)
+    cpdef datetime prev_end(self, session, datetime utc_now)
 
 
 cdef class NewsEvent:

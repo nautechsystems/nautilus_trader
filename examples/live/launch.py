@@ -19,7 +19,7 @@ from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.objects import BarSpecification
 from nautilus_trader.live.node import TradingNode
 
-from examples.strategies.ema_cross import EMACross
+from examples.strategies.ema_cross_filtered import EMACrossFiltered
 # TODO: AtomicOrder with Market entry not working (needs peg)
 
 # Requirements to run;
@@ -42,13 +42,17 @@ symbols_fx = [
 
 strategies_fx = []
 for symbol in symbols_fx:
-    strategies_fx.append(EMACross(
+    ccy1 = symbol.code[:3]
+    ccy2 = symbol.code[-3:]
+    strategies_fx.append(EMACrossFiltered(
         symbol,
         BAR_SPEC_FX,
         risk_bp=10.0,
         fast_ema=10,
         slow_ema=20,
-        atr_period=20))
+        atr_period=20,
+        news_currencies=[ccy1, ccy2],
+        news_impacts=['HIGH', 'MEDIUM']))
 
 # symbols_cfd = [
 #     Symbol('XAUUSD', Venue('FXCM')),
