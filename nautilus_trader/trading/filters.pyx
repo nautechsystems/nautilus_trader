@@ -16,7 +16,7 @@
 import os
 import pytz
 import pandas as pd
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 from enum import Enum
 
 from nautilus_trader.core.correctness cimport Condition
@@ -43,193 +43,202 @@ cdef class ForexSessionFilter:
         self.tz_london = pytz.timezone('Europe/London')
         self.tz_new_york = pytz.timezone('EST')
 
-    cpdef bint is_sydney_session(self, datetime time_now):
+    cpdef datetime local_from_utc(self, session: ForexSession, datetime utc):
         """
-        Return a value indicating whether the given time_now is within the FX session.
-        Sydney Session  0700-1600 'Australia/Sydney' Monday to Friday.
+        Return the local datetime from the given session and time_now (UTC).
         
         Parameters
         ----------
-        time_now : datetime
+        session : ForexSession
+        utc : datetime
 
         Returns
         -------
-        bool
-            True if time_now is in session, else False.
-            
+        datetime
+            The converted local datetime.
+        
         """
-        time_now = ensure_utc_timestamp(time_now)
+        Condition.type(session, ForexSession, 'session')
 
-        cdef datetime local = self.tz_sydney.fromutc(time_now)
-        return local.day <= 4 and 7 <= local.hour <= 16
+        if session == ForexSession.SYDNEY:
+            return utc.astimezone(self.tz_sydney)
 
-    cpdef bint is_tokyo_session(self, datetime time_now):
+        if session == ForexSession.TOKYO:
+            return utc.astimezone(self.tz_tokyo)
+
+        if session == ForexSession.LONDON:
+            return utc.astimezone(self.tz_london)
+
+        if session == ForexSession.NEW_YORK:
+            return utc.astimezone(self.tz_new_york)
+
+    cpdef datetime next_start(self, session: ForexSession, datetime utc_now):
         """
-        Return a value indicating whether the given time_now is within the FX session.
-        Tokyo Session 0900-1800 'Japan' Monday to Friday.
-
-        Parameters
-        ----------
-        time_now : datetime
-
-        Returns
-        -------
-        bool
-            True if time_now is in session, else False.
-            
-        """
-        time_now = ensure_utc_timestamp(time_now)
-
-        cdef datetime local = self.tz_tokyo.fromutc(time_now)
-        return local.day <= 4 and 9 <= local.hour <= 18
-
-    cpdef bint is_london_session(self, datetime time_now):
-        """
-        Return a value indicating whether the given time_now is within the FX session.
-        London Session 0800-1600 'Europe/London' Monday to Friday.
-
-        Parameters
-        ----------
-        time_now : datetime
-
-        Returns
-        -------
-        bool
-            True if time_now is in session, else False.
-            
-        """
-        time_now = ensure_utc_timestamp(time_now)
-
-        cdef datetime local = self.tz_london.fromutc(time_now)
-        return local.day <= 4 and 8 <= local.hour <= 16
-
-    cpdef bint is_new_york_session(self, datetime time_now):
-        """
-        Return a value indicating whether the given time_now is within the FX session.
-        New York Session 0800-1700 'EST' Monday to Friday.
-
-        Parameters
-        ----------
-        time_now : datetime
-
-        Returns
-        -------
-        bool
-            True if time_now is in session, else False.
-
-        """
-        time_now = ensure_utc_timestamp(time_now)
-
-        cdef datetime local = self.tz_new_york.fromutc(time_now)
-        return local.day <= 4 and 8 <= local.hour <= 17
-
-    cpdef datetime session_start(self, session: ForexSession, datetime datum):
-        """
-        Returns the local days session start. If datum is a local weekend then returns None.
+        Returns the next session start.
         
         Parameters
         ----------
         session : ForexSession
             The session for the calculation.
-        datum : datetime
-            The datum datetime.
+        utc_now : datetime
+            The datetime now.
 
         Returns
         -------
         datetime
-            The UTC time for the local days session start.
             
         """
         Condition.type(session, ForexSession, 'session')
 
-        datum = ensure_utc_timestamp(datum)
+        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime start
 
-        cdef datetime local
+        # Local days session start
         if session == ForexSession.SYDNEY:
-            local = self.tz_sydney.fromutc(datum)
+            start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+        elif session == ForexSession.TOKYO:
+            start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+        elif session == ForexSession.LONDON:
+            start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+        elif session == ForexSession.NEW_YORK:
+            start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
 
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 7).tz_convert('UTC')
-            else:
-                return None
+        # Already past this days session start
+        if local_now > start:
+            start += timedelta(days=1)
 
-        if session == ForexSession.TOKYO:
-            local = self.tz_tokyo.fromutc(datum)
+        # Weekend - next session start becomes next Mondays session start
+        if start.weekday() > 4:
+            diff = 7 - start.weekday()
+            start += timedelta(days=diff)
 
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 9).tz_convert('UTC')
-            else:
-                return None
+        return start.astimezone(pytz.utc)
 
-        if session == ForexSession.LONDON:
-            local = self.tz_london.fromutc(datum)
-
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 8).tz_convert('UTC')
-            else:
-                return None
-
-        if session == ForexSession.NEW_YORK:
-            local = self.tz_new_york.fromutc(datum)
-
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 8).tz_convert('UTC')
-            else:
-                return None
-
-    cpdef datetime session_end(self, session: ForexSession, datetime datum):
+    cpdef datetime prev_start(self, session: ForexSession, datetime utc_now):
         """
-        Returns the local days session end. If datum is a local weekend then returns None.
+        Returns the previous session start.
         
         Parameters
         ----------
         session : ForexSession
             The session for the calculation.
-        datum : datetime
-            The datum datetime.
+        utc_now : datetime
+            The datetime now.
 
         Returns
         -------
         datetime
-            The UTC time for the local days session end.
             
         """
         Condition.type(session, ForexSession, 'session')
 
-        datum = ensure_utc_timestamp(datum)
+        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime start
 
-        cdef datetime local
+        # Local days session start
         if session == ForexSession.SYDNEY:
-            local = self.tz_sydney.fromutc(datum)
+            start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+        elif session == ForexSession.TOKYO:
+            start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+        elif session == ForexSession.LONDON:
+            start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+        elif session == ForexSession.NEW_YORK:
+            start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
 
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 16).tz_convert('UTC')
-            else:
-                return None
+        # Prior to this days session start
+        if local_now < start:
+            start -= timedelta(days=1)
 
-        if session == ForexSession.TOKYO:
-            local = self.tz_tokyo.fromutc(datum)
+        # Weekend - previous session start becomes last Fridays session start
+        if start.weekday() > 4:
+            diff = start.weekday() - 4
+            start -= timedelta(days=diff)
 
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 18).tz_convert('UTC')
-            else:
-                return None
+        return start.astimezone(pytz.utc)
 
-        if session == ForexSession.LONDON:
-            local = self.tz_london.fromutc(datum)
+    cpdef datetime next_end(self, session: ForexSession, datetime utc_now):
+        """
+        Returns the next session end.
+        
+        Parameters
+        ----------
+        session : ForexSession
+            The session for the calculation.
+        utc_now : datetime
+            The datetime now.
 
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 16).tz_convert('UTC')
-            else:
-                return None
+        Returns
+        -------
+        datetime
+            
+        """
+        Condition.type(session, ForexSession, 'session')
 
-        if session == ForexSession.NEW_YORK:
-            local = self.tz_new_york.fromutc(datum)
+        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime end
 
-            if local.weekday() <= 4:
-                return datetime(local.year, local.month, local.day, 17).tz_convert('UTC')
-            else:
-                return None
+        # Local days session end
+        if session == ForexSession.SYDNEY:
+            end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+        elif session == ForexSession.TOKYO:
+            end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+        elif session == ForexSession.LONDON:
+            end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+        elif session == ForexSession.NEW_YORK:
+            end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+
+        # Already past this days session end
+        if local_now > end:
+            end += timedelta(days=1)
+
+        # Weekend - next session end becomes last Mondays session end
+        if end.weekday() > 4:
+            diff = 7 - end.weekday()
+            end += timedelta(days=diff)
+
+        return end.astimezone(pytz.utc)
+
+    cpdef datetime prev_end(self, session: ForexSession, datetime utc_now):
+        """
+        Returns the previous sessions end.
+        
+        Parameters
+        ----------
+        session : ForexSession
+            The session for the calculation.
+        utc_now : datetime
+            The datetime now.
+
+        Returns
+        -------
+        datetime
+            
+        """
+        Condition.type(session, ForexSession, 'session')
+
+        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime end
+
+        # Local days session end
+        if session == ForexSession.SYDNEY:
+            end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+        elif session == ForexSession.TOKYO:
+            end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+        elif session == ForexSession.LONDON:
+            end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+        elif session == ForexSession.NEW_YORK:
+            end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+
+        # Prior to this days session end
+        if local_now < end:
+            end -= timedelta(days=1)
+
+        # Weekend - previous session end becomes Fridays session end
+        if end.weekday() > 4:
+            diff = end.weekday() - 4
+            end -= timedelta(days=diff)
+
+        return end.astimezone(pytz.utc)
 
 
 class NewsImpact(Enum):

@@ -342,7 +342,7 @@ cdef class Clock:
     The base class for all clocks. All times are timezone aware UTC.
     """
 
-    def __init__(self, GuidFactory guid_factory):
+    def __init__(self, GuidFactory guid_factory not None):
         """
         Initializes a new instance of the Clock class.
 
