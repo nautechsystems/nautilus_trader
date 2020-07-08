@@ -78,7 +78,6 @@ class EMACrossFiltered(TradingStrategy):
         # Create the filters for the strategy
         self.session_filter = ForexSessionFilter()
         self.news_filter = EconomicNewsEventFilter(currencies=news_currencies, impacts=news_impacts)
-        self.news_event_prev = None
         self.news_event_next = None
         self.news_buffer_before = timedelta(minutes=10)
         self.news_buffer_after = timedelta(minutes=30)
