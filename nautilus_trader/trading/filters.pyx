@@ -76,10 +76,15 @@ cdef class ForexSessionFilter:
         """
         Returns the next session start.
         
+        Sydney Session    0700-1600 AEST   Monday to Friday
+        Tokyo Session     0900-1800 Japan  Monday to Friday
+        London Session    0800-1600 UTC    Monday to Friday
+        New York Session  0800-1700 EST    Monday to Friday
+
         Parameters
         ----------
         session : ForexSession
-            The session for the calculation.
+            The session for the start datetime.
         utc_now : datetime
             The datetime now.
 
@@ -118,10 +123,15 @@ cdef class ForexSessionFilter:
         """
         Returns the previous session start.
         
+        Sydney Session    0700-1600 AEST   Monday to Friday
+        Tokyo Session     0900-1800 Japan  Monday to Friday
+        London Session    0800-1600 UTC    Monday to Friday
+        New York Session  0800-1700 EST    Monday to Friday
+        
         Parameters
         ----------
         session : ForexSession
-            The session for the calculation.
+            The session for the start datetime.
         utc_now : datetime
             The datetime now.
 
@@ -160,10 +170,15 @@ cdef class ForexSessionFilter:
         """
         Returns the next session end.
         
+        Sydney Session    0700-1600 AEST   Monday to Friday
+        Tokyo Session     0900-1800 Japan  Monday to Friday
+        London Session    0800-1600 UTC    Monday to Friday
+        New York Session  0800-1700 EST    Monday to Friday
+        
         Parameters
         ----------
         session : ForexSession
-            The session for the calculation.
+            The session for the end datetime.
         utc_now : datetime
             The datetime now.
 
@@ -202,10 +217,15 @@ cdef class ForexSessionFilter:
         """
         Returns the previous sessions end.
         
+        Sydney Session    0700-1600 AEST   Monday to Friday
+        Tokyo Session     0900-1800 Japan  Monday to Friday
+        London Session    0800-1600 UTC    Monday to Friday
+        New York Session  0800-1700 EST    Monday to Friday
+        
         Parameters
         ----------
         session : ForexSession
-            The session for the calculation.
+            The session for end datetime.
         utc_now : datetime
             The datetime now.
 

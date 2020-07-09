@@ -147,7 +147,7 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         event = news_filter.next_event(UNIX_EPOCH)
-        self.assertEqual(Timestamp('2015-01-02 15:00:00+0000', tz='UTC'), event.timestamp)
+        self.assertEqual(Timestamp('2008-01-04 13:30:00+0000', tz='UTC'), event.timestamp)
 
     def test_prev_event_given_valid_date_returns_expected_news_event(self):
         # Arrange

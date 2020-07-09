@@ -134,9 +134,10 @@ class EMACrossFiltered(TradingStrategy):
         self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_after
         self.log.info(f"Set next news event {self.news_event_next.name} "
                       f"affecting {self.news_event_next.currency} "
-                      f"with expected {self.news_event_next.impact} "
+                      f"with expected {self.news_event_next.impact} impact "
                       f"at {self.news_event_next.timestamp}")
         self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
+        self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
 
         # Get historical data
         self.get_ticks(self.symbol)
@@ -169,7 +170,7 @@ class EMACrossFiltered(TradingStrategy):
         time_now = self.clock.time_now()
 
         if time_now >= self.trading_end:
-            self.log.debug("Past trading end...")
+            self.log.info(f"Past trading end at {self.trading_end}...")
             self.trading_start = self.session_filter.next_start(self.session_start_zone, time_now) + self.trading_start_buffer
             self.trading_end = self.session_filter.next_end(self.session_end_zone, time_now) - self.trading_end_buffer
             self.log.info(f"Set trading start to {self.trading_start}")
@@ -183,28 +184,32 @@ class EMACrossFiltered(TradingStrategy):
 
         if time_now < self.trading_start:
             self.done_for_day = False
-            self.log.debug("Prior to trading start...")
+            self.log.info(f"Prior to trading start at {self.trading_start}...")
             return
 
         # Check news events
         if time_now >= self.trading_pause_start:
-            self.log.info("Trading paused for news event...")
             if not self.news_flatten:
-                self.log.info("Commencing news flatten...")
+                self.log.info("Within trading pause window - commencing news flatten...")
                 self.flatten_all_positions()
                 self.cancel_all_orders()
                 self.news_flatten = True
             if time_now < self.trading_pause_end:
+                self.log.info(f"Trading paused for news event {self.news_event_next.name} "
+                              f"affecting {self.news_event_next.currency} "
+                              f"with expected {self.news_event_next.impact} impact "
+                              f"at {self.news_event_next.timestamp}")
                 return  # Waiting for end of pause period
             self.news_event_next = self.news_filter.next_event(time_now)
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_after
+            self.log.info("Trading paused ended.")
             self.log.info(f"Set next news event {self.news_event_next.name} "
                           f"affecting {self.news_event_next.currency} "
-                          f"with expected {self.news_event_next.impact} "
+                          f"with expected {self.news_event_next.impact} impact "
                           f"at {self.news_event_next.timestamp}")
             self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
-            self.log.debug("Prior to session start...")
+            self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
