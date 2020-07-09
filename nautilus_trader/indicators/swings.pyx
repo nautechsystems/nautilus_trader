@@ -57,12 +57,12 @@ cdef class Swings(Indicator):
         self.since_high = 0
         self.since_low = 0
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double high,
             double low,
-            datetime timestamp):
+            datetime timestamp) except *:
         """
         Update the indicator with the given values.
 
@@ -81,7 +81,7 @@ cdef class Swings(Indicator):
             self,
             double high,
             double low,
-            datetime timestamp):
+            datetime timestamp) except *:
         """
         Calculate the swing logic based on the given prices.
 
@@ -129,9 +129,9 @@ cdef class Swings(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if self.high_price != 0. and self.low_price != 0.0:
-                self._set_initialized()
+                self._set_initialized(True)
         # Calculate current values
         else:
             self.length_current = self.high_price - self.low_price
@@ -140,14 +140,14 @@ cdef class Swings(Indicator):
             else:
                 self.duration_current = self.since_high
 
-    cdef void _swing_changed(self):
+    cdef void _swing_changed(self) except *:
         self.length_last = self.length_current
         self.lengths.append(self.length_current)
         self.duration_last = self.duration_current
         self.durations.append(self.duration_current)
         self.changed = True
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

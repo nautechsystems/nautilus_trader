@@ -26,5 +26,5 @@ cdef class Pressure(Indicator):
     cdef readonly double value
     cdef readonly double value_cumulative
 
-    cpdef void update(self, double high, double low, double close, double volume)
-    cpdef void reset(self)
+    cpdef void update(self, double high, double low, double close, double volume) except *
+    cpdef void reset(self) except *

@@ -46,8 +46,8 @@ cdef class RateOfChange(Indicator):
         self._prices = deque(maxlen=self.period)
         self.value = 0.0
 
-    @cython.binding(True)
-    cpdef void update(self, double price):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double price) except *:
         """
         Update the indicator with the given price value.
 
@@ -59,16 +59,16 @@ cdef class RateOfChange(Indicator):
         self._prices.append(price)
 
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if len(self._prices) >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
 
         if self._use_log:
             self.value = log(price / self._prices[0])
         else:
             self.value = (price - self._prices[0]) / self._prices[0]
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

@@ -27,5 +27,5 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     cdef EfficiencyRatio _efficiency_ratio
     cdef double _prior_value
 
-    cpdef void update(self, double point)
-    cpdef void reset(self)
+    cpdef void update(self, double point) except *
+    cpdef void reset(self) except *

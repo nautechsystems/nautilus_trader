@@ -54,13 +54,13 @@ cdef class Pressure(Indicator):
         self.value = 0.0
         self.value_cumulative = 0.0  # The sum of the pressure across the period
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double high,
             double low,
             double close,
-            double volume):
+            double volume) except *:
         """
         Update the indicator with the given values.
 
@@ -83,9 +83,9 @@ cdef class Pressure(Indicator):
 
         # Initialization logic (do not move this to the bottom as guard against zero will return)
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if self._atr.initialized:
-                self._set_initialized()
+                self._set_initialized(True)
 
         # Guard against zero values
         if self._average_volume.value == 0.0 or self._atr.value == 0.0:
@@ -99,7 +99,7 @@ cdef class Pressure(Indicator):
         self.value = buy_pressure - sell_pressure
         self.value_cumulative += self.value
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

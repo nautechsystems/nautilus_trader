@@ -39,12 +39,12 @@ cdef class OnBalanceVolume(Indicator):
         self._obv = deque(maxlen=None if self.period == 0 else self.period)
         self.value = 0.0
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double open_price,
             double close_price,
-            double volume):
+            double volume) except *:
         """
         Update the indicator with the given values.
 
@@ -68,11 +68,11 @@ cdef class OnBalanceVolume(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if (self.period == 0 and len(self._obv) > 0) or len(self._obv) >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

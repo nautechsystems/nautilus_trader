@@ -30,6 +30,6 @@ cdef class HilbertPeriod(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, double high, double low)
-    cpdef void _calc_hilbert_transform(self)
-    cpdef void reset(self)
+    cpdef void update(self, double high, double low) except *
+    cpdef void _calc_hilbert_transform(self) except *
+    cpdef void reset(self) except *

@@ -22,8 +22,8 @@ from nautilus_trader.core.types cimport Label
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.live.guid cimport LiveGuidFactory
 
-# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc)
+# Unix epoch is the UTC date time at 00:00:00 on 1/1/1970
+_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
 cdef class LiveTimer(Timer):
@@ -47,7 +47,7 @@ cdef class LiveTimer(Timer):
         :param now: The datetime now (UTC).
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
-        :raises TypeError: If the function is not of type callable.
+        :raises TypeError: If the callback is not of type callable.
         """
         super().__init__(label, callback, interval, start_time, stop_time)
 
@@ -89,21 +89,21 @@ cdef class LiveClock(Clock):
         """
         super().__init__(LiveGuidFactory())
 
-    cpdef date date_now(self):
-        """
-        Return the current date of the clock (UTC).
-        
-        :return date.
-        """
-        return datetime.now(pytz.utc).date()
-
     cpdef datetime time_now(self):
         """
         Return the current datetime of the clock (UTC).
         
         :return datetime.
         """
-        return datetime.now(pytz.utc)
+        # From the pytz docs https://pythonhosted.org/pytz/
+        # -------------------------------------------------
+        # Unfortunately using the tzinfo argument of the standard datetime
+        # constructors ‘’does not work’’ with pytz for many timezones.
+        # It is safe for timezones without daylight saving transitions though,
+        # such as UTC. The preferred way of dealing with times is to always work
+        # in UTC, converting to localtime only when generating output to be read
+        # by humans.
+        return datetime.now(tz=pytz.utc)
 
     cdef object _get_timer(
             self,

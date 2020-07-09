@@ -24,6 +24,6 @@ cdef class Indicator:
     cdef readonly bint has_inputs
     cdef readonly bint initialized
 
-    cdef void _set_has_inputs(self, bint setting=*)
-    cdef void _set_initialized(self, bint setting=*)
-    cdef void _reset_base(self)
+    cdef void _set_has_inputs(self, bint setting) except *
+    cdef void _set_initialized(self, bint setting) except *
+    cdef void _reset_base(self) except *

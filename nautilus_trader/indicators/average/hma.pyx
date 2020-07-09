@@ -54,8 +54,8 @@ cdef class HullMovingAverage(MovingAverage):
         w = np.arange(1, size + 1)
         return list(w / sum(w))
 
-    @cython.binding(True)
-    cpdef void update(self, double point):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double point) except *:
         """
         Update the indicator with the given point value.
 
@@ -69,7 +69,7 @@ cdef class HullMovingAverage(MovingAverage):
 
         self.value = self._ma3.value
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

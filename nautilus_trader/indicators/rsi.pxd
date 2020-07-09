@@ -26,5 +26,5 @@ cdef class RelativeStrengthIndex(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, double point)
-    cpdef void reset(self)
+    cpdef void update(self, double point) except *
+    cpdef void reset(self) except *

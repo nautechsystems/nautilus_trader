@@ -361,15 +361,6 @@ cdef class Clock:
         self.is_logger_registered = False
         self.is_default_handler_registered = False
 
-    cpdef date date_now(self):
-        """
-        Return the current date of the clock (UTC).
-        
-        :return date.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
     cpdef datetime time_now(self):
         """
         Return the current datetime of the clock (UTC).
@@ -603,14 +594,6 @@ cdef class TestClock(Clock):
 
         self._time = initial_time
         self.is_test_clock = True
-
-    cpdef date date_now(self):
-        """
-        Return the current date of the clock (UTC).
-        
-        :return date.
-        """
-        return self._time.date()
 
     cpdef datetime time_now(self):
         """

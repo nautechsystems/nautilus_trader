@@ -38,8 +38,8 @@ cdef class SimpleMovingAverage(MovingAverage):
         self._inputs = deque(maxlen=period)
         self.value = 0.0
 
-    @cython.binding(True)
-    cpdef update(self, double point):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double point) except *:
         """
         Update the indicator with the given point value.
 
@@ -50,7 +50,7 @@ cdef class SimpleMovingAverage(MovingAverage):
 
         self.value = fast_mean(list(self._inputs))
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

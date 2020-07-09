@@ -52,11 +52,7 @@ cdef class MovingAverage(Indicator):
         self.count = 0
         self.value = 0.0
 
-    def update(self, double point):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError
-
-    cdef void _update(self, double point):
+    cdef void _update(self, double point) except *:
         """
         Update the moving average indicator with the given point value.
         
@@ -66,11 +62,11 @@ cdef class MovingAverage(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if self.count >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
 
-    cdef void _reset_ma(self):
+    cdef void _reset_ma(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

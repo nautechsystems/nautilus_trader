@@ -68,12 +68,12 @@ cdef class KeltnerChannel(Indicator):
         self.value_middle_band = 0.0
         self.value_lower_band = 0.0
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double high,
             double low,
-            double close):
+            double close) except *:
         """
         Update the indicator with the given values.
 
@@ -100,11 +100,11 @@ cdef class KeltnerChannel(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if self._moving_average.initialized:
-                self._set_initialized()
+                self._set_initialized(True)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """
