@@ -17,7 +17,7 @@ import pytz
 import time
 import uuid
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from nautilus_trader.core.types import GUID, Label
 from nautilus_trader.common.logging import LoggerAdapter, TestLogger

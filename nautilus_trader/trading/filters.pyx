@@ -40,7 +40,7 @@ cdef class ForexSessionFilter:
 
     def __init__(self):
         self.tz_sydney = pytz.timezone('Australia/Sydney')
-        self.tz_tokyo = pytz.timezone('Japan')
+        self.tz_tokyo = pytz.timezone('Asia/Tokyo')
         self.tz_london = pytz.timezone('Europe/London')
         self.tz_new_york = pytz.timezone('America/New_York')
 
@@ -89,7 +89,7 @@ cdef class ForexSessionFilter:
         
         Sydney Session    0700-1600 'Australia/Sydney'
         
-        Tokyo Session     0900-1800 'Japan'
+        Tokyo Session     0900-1800 'Asia/Tokyo'
         
         London Session    0800-1600 'Europe/London'
         
@@ -147,7 +147,7 @@ cdef class ForexSessionFilter:
         
         Sydney Session    0700-1600 'Australia/Sydney'
         
-        Tokyo Session     0900-1800 'Japan'
+        Tokyo Session     0900-1800 'Asia/Tokyo'
         
         London Session    0800-1600 'Europe/London'
         
@@ -205,7 +205,7 @@ cdef class ForexSessionFilter:
         
         Sydney Session    0700-1600 'Australia/Sydney'
         
-        Tokyo Session     0900-1800 'Japan'
+        Tokyo Session     0900-1800 'Asia/Tokyo'
         
         London Session    0800-1600 'Europe/London'
         
@@ -263,7 +263,7 @@ cdef class ForexSessionFilter:
         
         Sydney Session    0700-1600 'Australia/Sydney'
         
-        Tokyo Session     0900-1800 'Japan'
+        Tokyo Session     0900-1800 'Asia/Tokyo'
         
         London Session    0800-1600 'Europe/London'
         
@@ -387,7 +387,7 @@ cdef class EconomicNewsEventFilter:
         self.unfiltered_data_end = news_data.index[-1]
 
         self._news_data = news_data[(news_data['Currency'].isin(currencies))
-                                    & news_data['Impact'].isin(impacts)]
+                                   & news_data['Impact'].isin(impacts)]  # noqa (W503) easier to read
 
     cpdef NewsEvent next_event(self, datetime time_now):
         """
