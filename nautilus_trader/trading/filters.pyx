@@ -43,14 +43,16 @@ cdef class ForexSessionFilter:
         self.tz_london = pytz.timezone('Europe/London')
         self.tz_new_york = pytz.timezone('EST')
 
-    cpdef datetime local_from_utc(self, session: ForexSession, datetime utc):
+    cpdef datetime local_from_utc(self, session: ForexSession, datetime utc_now):
         """
         Return the local datetime from the given session and time_now (UTC).
         
         Parameters
         ----------
         session : ForexSession
-        utc : datetime
+            The session for the local timezone conversion.
+        utc_now : datetime
+            The time now (UTC).
 
         Returns
         -------
@@ -61,16 +63,16 @@ cdef class ForexSessionFilter:
         Condition.type(session, ForexSession, 'session')
 
         if session == ForexSession.SYDNEY:
-            return utc.astimezone(self.tz_sydney)
+            return utc_now.astimezone(self.tz_sydney)
 
         if session == ForexSession.TOKYO:
-            return utc.astimezone(self.tz_tokyo)
+            return utc_now.astimezone(self.tz_tokyo)
 
         if session == ForexSession.LONDON:
-            return utc.astimezone(self.tz_london)
+            return utc_now.astimezone(self.tz_london)
 
         if session == ForexSession.NEW_YORK:
-            return utc.astimezone(self.tz_new_york)
+            return utc_now.astimezone(self.tz_new_york)
 
     cpdef datetime next_start(self, session: ForexSession, datetime utc_now):
         """
@@ -312,7 +314,15 @@ cdef class EconomicNewsEventFilter:
         """
         Initializes a new instance of the EconomicNewsEventFilter class.
 
-        :param news_csv_path: The path to the short term interest rate data csv.
+        Parameters
+        ----------
+        currencies : list of str
+            The list of three letter currency symbols to filter.
+        impacts : list of str
+            The list of impact levels to filter ('LOW', 'MEDIUM', 'HIGH').
+        news_csv_path : str
+            The path to the news data csv.
+
         """
         if news_csv_path == 'default':
             news_csv_path = os.path.join(PACKAGE_ROOT + '/_data/news/', 'news_events.zip')
@@ -321,14 +331,16 @@ cdef class EconomicNewsEventFilter:
         self.impacts = impacts
 
         news_data = ensure_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
+        self.unfiltered_data_start = news_data.index[0]
+        self.unfiltered_data_end = news_data.index[-1]
 
         self._news_data = news_data[(news_data['Currency'].isin(currencies))
                                    & news_data['Impact'].isin(impacts)]
 
     cpdef NewsEvent next_event(self, datetime time_now):
         """
-        Returns the next news event matching the initial filter conditions. 
-        If there is no next event then returns None.
+        Returns the next news event matching the filter conditions.
+        Will return None if no news events match the filter conditions.
         
         Parameters
         ----------
@@ -336,10 +348,25 @@ cdef class EconomicNewsEventFilter:
 
         Returns
         -------
-        datetime or None
-            The datetime of the next news event in the filtered data or None.
+        NewsEvent or None
+            The next news event in the filtered data if any.
 
+        Raises
+        ------
+        Value Error
+            The time_now < self.unfiltered_data_start
+        Value Error
+            The time_now > self.unfiltered_data_end
+            
         """
+        if time_now < self.unfiltered_data_start:
+            raise ValueError(f"The given time_now at {time_now} was prior to the "
+                             f"available news data start at {self.unfiltered_data_start}.")
+
+        if time_now > self.unfiltered_data_end:
+            raise ValueError(f"The given time_now at {time_now} was after to the "
+                             f"available news data end at {self.unfiltered_data_end}.")
+
         events = self._news_data[self._news_data.index >= ensure_utc_timestamp(time_now)]
 
         if events.empty:
@@ -351,8 +378,8 @@ cdef class EconomicNewsEventFilter:
 
     cpdef NewsEvent prev_event(self, datetime time_now):
         """
-        Returns the previous news event matching the initial filter conditions. 
-        If there is no next event then returns None.
+        Returns the previous news event matching the initial filter conditions.
+        Will return None if no news events match the filter conditions.
         
         Parameters
         ----------
@@ -360,10 +387,25 @@ cdef class EconomicNewsEventFilter:
 
         Returns
         -------
-        datetime or None
-            The datetime of the previous news event in the filtered data or None.
+        NewsEvent or None
+            The previous news event in the filtered data if any.
 
+        Raises
+        ------
+        Value Error
+            The time_now < self.unfiltered_data_start
+        Value Error
+            The time_now > self.unfiltered_data_end
+            
         """
+        if time_now < self.unfiltered_data_start:
+            raise ValueError(f"The given time_now at {time_now} was prior to the "
+                             f"available news data start at {self.unfiltered_data_start}.")
+
+        if time_now > self.unfiltered_data_end:
+            raise ValueError(f"The given time_now at {time_now} was after to the "
+                             f"available news data end at {self.unfiltered_data_end}.")
+
         events = self._news_data[self._news_data.index <= ensure_utc_timestamp(time_now)]
         if events.empty:
             return None
