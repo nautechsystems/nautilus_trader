@@ -67,7 +67,7 @@ if __name__ == "__main__":
         short_term_interest_csv_path='default',
         commission_rate_bp=0.20,
         bypass_logging=False,
-        level_console=LogLevel.DEBUG,
+        level_console=LogLevel.INFO,
         level_file=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,

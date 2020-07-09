@@ -22,7 +22,7 @@ cdef class ForexSessionFilter:
     cdef readonly object tz_london
     cdef readonly object tz_new_york
 
-    cpdef datetime local_from_utc(self, session, datetime utc)
+    cpdef datetime local_from_utc(self, session, datetime utc_now)
     cpdef datetime next_start(self, session, datetime utc_now)
     cpdef datetime prev_start(self, session, datetime utc_now)
     cpdef datetime next_end(self, session, datetime utc_now)
@@ -39,6 +39,8 @@ cdef class NewsEvent:
 cdef class EconomicNewsEventFilter:
     cdef object _news_data
 
+    cdef readonly datetime unfiltered_data_start
+    cdef readonly datetime unfiltered_data_end
     cdef readonly list currencies
     cdef readonly list impacts
 

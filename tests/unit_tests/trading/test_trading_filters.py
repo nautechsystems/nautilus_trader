@@ -110,6 +110,8 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         # Assert
+        self.assertEqual(Timestamp('2008-01-01 10:00:00+0000', tz='UTC'), news_filter.unfiltered_data_start)
+        self.assertEqual(Timestamp('2020-12-31 23:00:00+0000', tz='UTC'), news_filter.unfiltered_data_end)
         self.assertEqual(currencies, news_filter.currencies)
         self.assertEqual(impacts, news_filter.impacts)
 
@@ -120,34 +122,52 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
         news_filter = EconomicNewsEventFilter(currencies=currencies, impacts=impacts)
 
         # Act
-        event = news_filter.next_event(UNIX_EPOCH)
+        event_next = news_filter.next_event(datetime(2012, 3, 15, 12, 0, tzinfo=timezone.utc))
+        event_prev = news_filter.next_event(datetime(2012, 3, 15, 12, 0, tzinfo=timezone.utc))
 
         # Assert
-        self.assertEqual(currencies, news_filter.currencies)
-        self.assertEqual(impacts, news_filter.impacts)
-        self.assertIsNone(event)
+        self.assertIsNone(event_next)
+        self.assertIsNone(event_prev)
 
-    def test_next_event_given_impossible_date_returns_none(self):
+    def test_next_event_given_time_now_before_data_raises_value_error(self):
         # Arrange
         news_filter = EconomicNewsEventFilter(currencies=['USD'], impacts=['HIGH'])
 
         # Act
-        self.assertIsNone(news_filter.next_event(datetime(2050, 1, 1, 1, 1)))
+        # Assert
+        self.assertRaises(ValueError, news_filter.next_event, UNIX_EPOCH)
 
-    def test_prev_event_given_impossible_date_returns_none(self):
+    def test_next_event_given_time_now_after_data_raises_value_error(self):
         # Arrange
         news_filter = EconomicNewsEventFilter(currencies=['USD'], impacts=['HIGH'])
 
         # Act
-        self.assertIsNone(news_filter.prev_event(UNIX_EPOCH))
+        # Assert
+        self.assertRaises(ValueError, news_filter.next_event, datetime(2050, 1, 1, 1, 1, tzinfo=timezone.utc))
 
-    def test_next_event_given_unix_epoch_returns_first_event_in_data(self):
+    def test_prev_event_given_time_now_before_data_raises_value_error(self):
         # Arrange
         news_filter = EconomicNewsEventFilter(currencies=['USD'], impacts=['HIGH'])
 
         # Act
-        event = news_filter.next_event(UNIX_EPOCH)
-        self.assertEqual(Timestamp('2008-01-04 13:30:00+0000', tz='UTC'), event.timestamp)
+        # Assert
+        self.assertRaises(ValueError, news_filter.prev_event, UNIX_EPOCH)
+
+    def test_prev_event_given_time_now_after_data_raises_value_error(self):
+        # Arrange
+        news_filter = EconomicNewsEventFilter(currencies=['USD'], impacts=['HIGH'])
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, news_filter.prev_event, datetime(2050, 1, 1, 1, 1, tzinfo=timezone.utc))
+
+    def test_next_event_given_valid_date_returns_expected_news_event(self):
+        # Arrange
+        news_filter = EconomicNewsEventFilter(currencies=['USD'], impacts=['HIGH'])
+
+        # Act
+        event = news_filter.prev_event(Timestamp('2015-05-10 12:00:00+0000', tz='UTC'))
+        self.assertEqual(Timestamp('2015-05-08 12:30:00+0000', tz='UTC'), event.timestamp)
 
     def test_prev_event_given_valid_date_returns_expected_news_event(self):
         # Arrange
