@@ -82,12 +82,12 @@ cdef class KeltnerPosition(Indicator):
         """
         return self._kc.k_multiplier
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double high,
             double low,
-            double close):
+            double close) except *:
         """
         Update the indicator with the given values.
 
@@ -107,9 +107,9 @@ cdef class KeltnerPosition(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if self._kc.initialized:
-                self._set_initialized()
+                self._set_initialized(True)
 
         cdef double k_width = (self._kc.value_upper_band - self._kc.value_lower_band) / 2
 
@@ -118,7 +118,7 @@ cdef class KeltnerPosition(Indicator):
         else:
             self.value = 0.0
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

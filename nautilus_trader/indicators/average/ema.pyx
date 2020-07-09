@@ -37,8 +37,8 @@ cdef class ExponentialMovingAverage(MovingAverage):
         self.alpha = 2.0 / (period + 1.0)
         self.value = 0.0
 
-    @cython.binding(True)
-    cpdef update(self, double point):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double point) except *:
         """
         Update the indicator with the given point value.
 
@@ -53,7 +53,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         self._update(point)
         self.value = self.alpha * point + ((1.0 - self.alpha) * self.value)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

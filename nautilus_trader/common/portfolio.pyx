@@ -50,7 +50,7 @@ cdef class Portfolio:
         self.currency = currency
         self.daily_pnl_realized = Money(0, self.currency)
         self.total_pnl_realized = Money(0, self.currency)
-        self.date_now = self._clock.date_now()
+        self.date_now = self._clock.time_now().date()
 
     cpdef void update(self, PositionEvent event) except *:
         """
@@ -81,7 +81,7 @@ cdef class Portfolio:
         self._positions_closed.clear()
         self.daily_pnl_realized = Money(0, self.currency)
         self.total_pnl_realized = Money(0, self.currency)
-        self.date_now = self._clock.date_now()
+        self.date_now = self._clock.time_now().date()
 
         self._log.info("Reset.")
 

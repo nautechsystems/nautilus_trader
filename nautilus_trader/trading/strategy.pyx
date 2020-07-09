@@ -519,9 +519,9 @@ cdef class TradingStrategy:
             return
 
         if to_date is None:
-            to_date = self.clock.date_now()
+            to_date = self.clock.time_now().date()
         if from_date is None:
-            from_date = self.clock.date_now() - timedelta(days=1)
+            from_date = self.clock.time_now().date() - timedelta(days=1)
 
         Condition.true(from_date < to_date, 'from_datetime < to_date')
 
@@ -566,9 +566,9 @@ cdef class TradingStrategy:
             return
 
         if to_date is None:
-            to_date = self.clock.date_now()
+            to_date = self.clock.time_now().date()
         if from_date is None:
-            from_date = self.clock.date_now() - timedelta(days=1)
+            from_date = self.clock.time_now().date() - timedelta(days=1)
 
         Condition.true(from_date < to_date, 'from_datetime < to_date')
 

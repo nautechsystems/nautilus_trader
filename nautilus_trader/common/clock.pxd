@@ -67,7 +67,6 @@ cdef class Clock:
     cdef readonly bint is_logger_registered
     cdef readonly bint is_default_handler_registered
 
-    cpdef date date_now(self)
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
     cpdef list get_timer_labels(self)

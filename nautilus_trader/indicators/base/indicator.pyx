@@ -49,12 +49,12 @@ cdef class Indicator:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cdef void _set_has_inputs(self, bint setting=True):
+    cdef void _set_has_inputs(self, bint setting) except *:
         self.has_inputs = setting
 
-    cdef void _set_initialized(self, bint setting=True):
+    cdef void _set_initialized(self, bint setting) except *:
         self.initialized = setting
 
-    cdef void _reset_base(self):
+    cdef void _reset_base(self) except *:
         self.has_inputs = False
         self.initialized = False

@@ -45,8 +45,8 @@ cdef class RelativeStrengthIndex(Indicator):
         self._last_point = 0.0
         self.value = 0.0
 
-    @cython.binding(True)
-    cpdef void update(self, double point):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double point) except *:
         """
         Update the indicator with the given point value.
 
@@ -55,7 +55,7 @@ cdef class RelativeStrengthIndex(Indicator):
         # Check if first input
         if not self.has_inputs:
             self._last_point = point
-            self._set_has_inputs()
+            self._set_has_inputs(True)
 
         cdef double gain = point - self._last_point
 
@@ -72,7 +72,7 @@ cdef class RelativeStrengthIndex(Indicator):
         # Initialization logic
         if not self.initialized:
             if self._average_gain.initialized and self._average_loss.initialized:
-                self._set_initialized()
+                self._set_initialized(True)
 
         if self._average_loss.value == 0.0:
             self.value = self._rsi_max
@@ -83,7 +83,7 @@ cdef class RelativeStrengthIndex(Indicator):
         self.value = self._rsi_max - (self._rsi_max / (1.0 + rs))
         self._last_point = point
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

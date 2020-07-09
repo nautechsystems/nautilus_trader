@@ -38,7 +38,7 @@ cdef class Swings(Indicator):
     cdef readonly int since_high
     cdef readonly int since_low
 
-    cpdef void update(self, double high, double low, datetime timestamp)
-    cdef void _calculate_swing_logic(self, double high, double low, datetime timestamp)
-    cdef void _swing_changed(self)
-    cpdef void reset(self)
+    cpdef void update(self, double high, double low, datetime timestamp) except *
+    cdef void _calculate_swing_logic(self, double high, double low, datetime timestamp) except *
+    cdef void _swing_changed(self) except *
+    cpdef void reset(self) except *

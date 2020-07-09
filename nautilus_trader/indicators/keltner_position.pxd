@@ -23,5 +23,5 @@ cdef class KeltnerPosition(Indicator):
 
     cdef readonly double value
 
-    cpdef void update(self, double high, double low, double close)
-    cpdef void reset(self)
+    cpdef void update(self, double high, double low, double close) except *
+    cpdef void reset(self) except *

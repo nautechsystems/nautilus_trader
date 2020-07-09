@@ -42,8 +42,8 @@ cdef class EfficiencyRatio(Indicator):
         self._deltas = deque(maxlen=self.period)
         self.value = 0.0
 
-    @cython.binding(True)
-    cpdef void update(self, double price):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double price) except *:
         """
         Update the indicator with the given price value.
         
@@ -56,11 +56,11 @@ cdef class EfficiencyRatio(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if len(self._inputs) < 2:
                 return  # Not enough data
             elif len(self._inputs) >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
 
         # Add data to queues
         self._deltas.append(abs(self._inputs[-1] - self._inputs[-2]))
@@ -74,7 +74,7 @@ cdef class EfficiencyRatio(Indicator):
         else:
             self.value = 0.0
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

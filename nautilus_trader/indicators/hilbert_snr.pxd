@@ -34,8 +34,8 @@ cdef class HilbertSignalNoiseRatio(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, double high, double low)
-    cdef void _calc_hilbert_transform(self)
+    cpdef void update(self, double high, double low) except *
+    cdef void _calc_hilbert_transform(self) except *
     cdef double _calc_amplitude(self)
     cdef double _calc_signal_noise_ratio(self)
-    cpdef void reset(self)
+    cpdef void reset(self) except *

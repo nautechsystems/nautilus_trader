@@ -28,5 +28,5 @@ cdef class KeltnerChannel(Indicator):
     cdef readonly double value_middle_band
     cdef readonly double value_lower_band
 
-    cpdef void update(self, double high, double low, double close)
-    cpdef void reset(self)
+    cpdef void update(self, double high, double low, double close) except *
+    cpdef void reset(self) except *

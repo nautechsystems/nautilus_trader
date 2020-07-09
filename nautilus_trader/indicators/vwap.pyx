@@ -40,12 +40,12 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self.has_inputs = False
         self.initialized = False
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double price,
             double volume,
-            datetime timestamp):
+            datetime timestamp) except *:
         """
         Update the indicator with the given values.
 
@@ -65,8 +65,8 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
-            self._set_initialized()
+            self._set_has_inputs(True)
+            self._set_initialized(True)
 
         # No weighting for this price (also avoiding divide by zero)
         if volume == 0.0:
@@ -76,7 +76,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self._volume_total += volume
         self.value = self._price_volume / self._volume_total
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

@@ -35,9 +35,9 @@ cdef class FuzzyCandlesticks(Indicator):
 
     cdef readonly int period
 
-    cpdef void update(self, double open_price, double high_price, double low_price, double close_price)
+    cpdef void update(self, double open_price, double high_price, double low_price, double close_price) except *
     cpdef int price_comparison(self, double price1, double price2)
     cdef object _fuzzify_size(self, double length, double mean_length, double sd_lengths)
     cdef object _fuzzify_body_size(self, double body_percent, double mean_body_percent, double sd_body_percents)
     cdef object _fuzzify_wick_size(self, double wick_percent, double mean_wick_percent, double sd_wick_percents)
-    cpdef void reset(self)
+    cpdef void reset(self) except *

@@ -60,8 +60,8 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self._prior_value = 0.0
         self.value = 0.0
 
-    @cython.binding(True)
-    cpdef void update(self, double point):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double point) except *:
         """
         Update the indicator with the given point value.
 
@@ -81,7 +81,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         # Calculate AMA
         self.value = self._prior_value + sc * (point - self._prior_value)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

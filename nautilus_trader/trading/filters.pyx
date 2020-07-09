@@ -17,13 +17,14 @@ import os
 import pytz
 import pandas as pd
 from cpython.datetime cimport datetime, timedelta
-from enum import Enum
+from enum import Enum, unique
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index, is_datetime_utc
 from nautilus_trader import PACKAGE_ROOT
 
 
+@unique
 class ForexSession(Enum):
     UNDEFINED = 0,
     SYDNEY = 1,
@@ -41,7 +42,7 @@ cdef class ForexSessionFilter:
         self.tz_sydney = pytz.timezone('Australia/Sydney')
         self.tz_tokyo = pytz.timezone('Japan')
         self.tz_london = pytz.timezone('Europe/London')
-        self.tz_new_york = pytz.timezone('EST')
+        self.tz_new_york = pytz.timezone('America/New_York')
 
     cpdef datetime local_from_utc(self, session: ForexSession, datetime time_now):
         """
@@ -84,13 +85,15 @@ cdef class ForexSessionFilter:
         """
         Returns the next session start.
         
-        Sydney Session    0700-1600 AEST   Monday to Friday
+        All FX sessions run Monday to Friday local time.
         
-        Tokyo Session     0900-1800 Japan  Monday to Friday
+        Sydney Session    0700-1600 'Australia/Sydney'
         
-        London Session    0800-1600 UTC    Monday to Friday
+        Tokyo Session     0900-1800 'Japan'
         
-        New York Session  0800-1700 EST    Monday to Friday
+        London Session    0800-1600 'Europe/London'
+        
+        New York Session  0800-1700 'America/New_York'
 
         Parameters
         ----------
@@ -140,13 +143,15 @@ cdef class ForexSessionFilter:
         """
         Returns the previous session start.
         
-        Sydney Session    0700-1600 AEST   Monday to Friday
+        All FX sessions run Monday to Friday local time.
         
-        Tokyo Session     0900-1800 Japan  Monday to Friday
+        Sydney Session    0700-1600 'Australia/Sydney'
         
-        London Session    0800-1600 UTC    Monday to Friday
+        Tokyo Session     0900-1800 'Japan'
         
-        New York Session  0800-1700 EST    Monday to Friday
+        London Session    0800-1600 'Europe/London'
+        
+        New York Session  0800-1700 'America/New_York'
         
         Parameters
         ----------
@@ -196,13 +201,15 @@ cdef class ForexSessionFilter:
         """
         Returns the next session end.
         
-        Sydney Session    0700-1600 AEST   Monday to Friday
+        All FX sessions run Monday to Friday local time.
         
-        Tokyo Session     0900-1800 Japan  Monday to Friday
+        Sydney Session    0700-1600 'Australia/Sydney'
         
-        London Session    0800-1600 UTC    Monday to Friday
+        Tokyo Session     0900-1800 'Japan'
         
-        New York Session  0800-1700 EST    Monday to Friday
+        London Session    0800-1600 'Europe/London'
+        
+        New York Session  0800-1700 'America/New_York'
         
         Parameters
         ----------
@@ -252,13 +259,15 @@ cdef class ForexSessionFilter:
         """
         Returns the previous sessions end.
         
-        Sydney Session    0700-1600 AEST   Monday to Friday
+        All FX sessions run Monday to Friday local time.
         
-        Tokyo Session     0900-1800 Japan  Monday to Friday
+        Sydney Session    0700-1600 'Australia/Sydney'
         
-        London Session    0800-1600 UTC    Monday to Friday
+        Tokyo Session     0900-1800 'Japan'
         
-        New York Session  0800-1700 EST    Monday to Friday
+        London Session    0800-1600 'Europe/London'
+        
+        New York Session  0800-1700 'America/New_York'
         
         Parameters
         ----------
@@ -305,6 +314,7 @@ cdef class ForexSessionFilter:
         return end.astimezone(pytz.utc)
 
 
+@unique
 class NewsImpact(Enum):
     UNDEFINED = 0,
     NONE = 1,

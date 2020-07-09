@@ -26,8 +26,8 @@ cdef class AverageTrueRange(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, double high, double low, double close)
-    cpdef void update_mid(self, double close)
-    cdef void _floor_value(self)
-    cdef void _check_initialized(self)
-    cpdef void reset(self)
+    cpdef void update(self, double high, double low, double close) except *
+    cpdef void update_mid(self, double close) except *
+    cdef void _floor_value(self) except *
+    cdef void _check_initialized(self) except *
+    cpdef void reset(self) except *

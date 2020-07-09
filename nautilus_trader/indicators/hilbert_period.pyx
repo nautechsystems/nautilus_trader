@@ -52,8 +52,8 @@ cdef class HilbertPeriod(Indicator):
         self._delta_phase = []
         self.value = 0  # The last instantaneous period value
 
-    @cython.binding(True)
-    cpdef void update(self, double high, double low):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double high, double low) except *:
         """
         Update the indicator with the given price values.
 
@@ -69,9 +69,9 @@ cdef class HilbertPeriod(Indicator):
 
         # Initialization logic (leave this here)
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if len(self._inputs) >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
             else:
                 return
 
@@ -118,7 +118,7 @@ cdef class HilbertPeriod(Indicator):
 
         self.value = max(inst_period, self.period)
 
-    cpdef void _calc_hilbert_transform(self):
+    cpdef void _calc_hilbert_transform(self) except *:
         """
         Calculate the Hilbert Transform and update in-phase and quadrature values.
         """
@@ -138,7 +138,7 @@ cdef class HilbertPeriod(Indicator):
         self._quadrature.append(
             feedback2 - (self._q_mult * feedback1) + (self._q_mult * quadrature2))
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

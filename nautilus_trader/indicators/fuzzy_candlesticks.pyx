@@ -177,13 +177,13 @@ cdef class FuzzyCandlesticks(Indicator):
         """
         return self._value_price_comparison
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double open_price,
             double high_price,
             double low_price,
-            double close_price):
+            double close_price) except *:
         """
         Update the indicator with the given values, data should be
         pre-cleaned to ensure it is not invalid.
@@ -282,9 +282,9 @@ cdef class FuzzyCandlesticks(Indicator):
 
         # Initialization logic
         if self.initialized is False:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if len(self._lengths) >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
 
     cpdef int price_comparison(self, double price1, double price2):
         """
@@ -435,7 +435,7 @@ cdef class FuzzyCandlesticks(Indicator):
             if fuzzy_wick_size.x1 <= wick_percent <= fuzzy_wick_size.x2:
                 return CandleWickSize(fuzzy_wick_size.linguistic_variable)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

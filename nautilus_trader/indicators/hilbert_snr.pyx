@@ -60,8 +60,8 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         self._amplitude = 0.0
         self.value = 0.0  # The last amplitude value (dB)
 
-    @cython.binding(True)
-    cpdef void update(self, double high, double low):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double high, double low) except *:
         """
         Update the indicator with the given price values.
 
@@ -79,7 +79,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         if not self.initialized:
             # Do not initialize __has_inputs here
             if len(self._inputs) >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
             else:
                 return
 
@@ -121,13 +121,13 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         if not self.has_inputs:
             self.value = self._calc_signal_noise_ratio()
             self._previous_value = self.value
-            self._set_has_inputs()
+            self._set_has_inputs(True)
 
         # Compute smoothed SNR in Decibels
         self.value = (0.25 * self._calc_signal_noise_ratio()) + (0.75 * self._previous_value)
         self._previous_value = self.value
 
-    cdef void _calc_hilbert_transform(self):
+    cdef void _calc_hilbert_transform(self) except *:
         """
         Calculate the Hilbert Transform and update in-phase and quadrature values.
         """
@@ -164,7 +164,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         cdef double range_squared = np.power(self._range, 2)
         return (10 * np.log(self._amplitude / range_squared)) / np.log(10) + 1.9
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

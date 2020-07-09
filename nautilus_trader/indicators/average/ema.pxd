@@ -19,5 +19,5 @@ from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 cdef class ExponentialMovingAverage(MovingAverage):
     cdef readonly double alpha
 
-    cpdef update(self, double point)
-    cpdef void reset(self)
+    cpdef void update(self, double point) except *
+    cpdef void reset(self) except *

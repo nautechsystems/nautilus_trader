@@ -25,5 +25,5 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
     cdef readonly double value
 
-    cpdef void update(self, double price, double volume, datetime timestamp)
-    cpdef void reset(self)
+    cpdef void update(self, double price, double volume, datetime timestamp) except *
+    cpdef void reset(self) except *

@@ -49,8 +49,8 @@ cdef class HilbertTransform(Indicator):
         self.value_in_phase = 0.0  # The last in-phase value (real part of complex number) held
         self.value_quad = 0.0      # The last quadrature value (imaginary part of complex number) held
 
-    @cython.binding(True)
-    cpdef void update(self, double price):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update(self, double price) except *:
         """
         Update the indicator with the given point value (mid price).
 
@@ -63,9 +63,9 @@ cdef class HilbertTransform(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
             if len(self._inputs) >= self.period:
-                self._set_initialized()
+                self._set_initialized(True)
             else:
                 return
 
@@ -95,7 +95,7 @@ cdef class HilbertTransform(Indicator):
         self.value_in_phase = self._in_phase[-1]
         self.value_quad = self._quadrature[-1]
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """

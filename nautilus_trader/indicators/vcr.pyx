@@ -62,12 +62,12 @@ cdef class VolatilityCompressionRatio(Indicator):
         self._atr_slow = AverageTrueRange(slow_period, ma_type, use_previous, value_floor)
         self.value = 0.0
 
-    @cython.binding(True)
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
             self,
             double high,
             double low,
-            double close):
+            double close) except *:
         """
         Update the indicator with the given values.
 
@@ -91,8 +91,8 @@ cdef class VolatilityCompressionRatio(Indicator):
 
         self._check_initialized()
 
-    @cython.binding(True)
-    cpdef void update_mid(self, double close):
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
+    cpdef void update_mid(self, double close) except *:
         """
         Update the indicator with the given value.
         
@@ -109,14 +109,14 @@ cdef class VolatilityCompressionRatio(Indicator):
 
         self._check_initialized()
 
-    cdef void _check_initialized(self):
+    cdef void _check_initialized(self) except *:
         if not self.initialized:
-            self._set_has_inputs()
+            self._set_has_inputs(True)
 
             if self._atr_fast.initialized and self._atr_slow.initialized:
-                self._set_initialized()
+                self._set_initialized(True)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator by clearing all stateful values.
         """
