@@ -75,24 +75,25 @@ class EMACrossFiltered(TradingStrategy):
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
 
-        # Create the filters for the strategy
+        # Create trading session filter
         self.session_filter = ForexSessionFilter()
+        self.session_start_zone = ForexSession.TOKYO
+        self.session_end_zone = ForexSession.NEW_YORK
+        self.session_next_start = None
+        self.session_next_end = None
+        self.done_for_day = True
+        self.trading_end_buffer = timedelta(minutes=10)
+        self.trading_start = None
+        self.trading_end = None
+
+        # Create news event filter
         self.news_filter = EconomicNewsEventFilter(currencies=news_currencies, impacts=news_impacts)
         self.news_event_next = None
         self.news_buffer_before = timedelta(minutes=10)
         self.news_buffer_after = timedelta(minutes=30)
+        self.news_flatten = False
         self.trading_pause_start = None
         self.trading_pause_end = None
-        self.news_flatten = False
-
-        # Trading sessions
-        self.session_start_zone = ForexSession.TOKYO
-        self.session_end_zone = ForexSession.NEW_YORK
-        self.trading_start_buffer = timedelta(minutes=30)
-        self.trading_end_buffer = timedelta(minutes=10)
-        self.trading_start = None
-        self.trading_end = None
-        self.done_for_day = True
 
     def on_start(self):
         """
@@ -123,8 +124,12 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set trading sessions
         time_now = self.clock.time_now()
-        self.trading_start = self.session_filter.next_start(self.session_start_zone, time_now) + self.trading_start_buffer
-        self.trading_end = self.session_filter.next_end(self.session_end_zone, time_now) - self.trading_end_buffer
+        self.session_next_start = self.session_filter.next_start(self.session_start_zone, time_now)
+        self.session_next_end = self.session_filter.next_end(self.session_end_zone, time_now)
+        self.trading_start = self.session_next_start
+        self.trading_end = self.session_next_end - self.trading_end_buffer
+        self.log.info(f"Set next {self.session_start_zone.name} session open to {self.session_next_start}")
+        self.log.info(f"Set next {self.session_end_zone.name} session close to {self.session_next_end}")
         self.log.info(f"Set trading start to {self.trading_start}")
         self.log.info(f"Set trading end to {self.trading_end}")
 
@@ -170,12 +175,20 @@ class EMACrossFiltered(TradingStrategy):
         time_now = self.clock.time_now()
 
         if time_now >= self.trading_end:
-            self.log.info(f"Past trading end at {self.trading_end}...")
-            self.trading_start = self.session_filter.next_start(self.session_start_zone, time_now) + self.trading_start_buffer
-            self.trading_end = self.session_filter.next_end(self.session_end_zone, time_now) - self.trading_end_buffer
-            self.log.info(f"Set trading start to {self.trading_start}")
-            self.log.info(f"Set trading end to {self.trading_end}")
+            self.log.info(f"Waiting for {self.session_end_zone.name} session close at {self.session_next_end}. "
+                          f"Trading ended at {self.trading_end}.")
+
+            if time_now > self.session_next_end:
+                self.session_next_start = self.session_filter.next_start(self.session_start_zone, time_now)
+                self.session_next_end = self.session_filter.next_end(self.session_end_zone, time_now)
+                self.trading_start = self.session_next_start
+                self.trading_end = self.session_next_end - self.trading_end_buffer
+                self.log.info(f"Set next {self.session_start_zone.name} session open to {self.session_next_start}")
+                self.log.info(f"Set next {self.session_end_zone.name} session close to {self.session_next_end}")
+                self.log.info(f"Set trading start to {self.trading_start}")
+                self.log.info(f"Set trading end to {self.trading_end}")
             if not self.done_for_day:
+                self.log.info(f"Done for day - commencing trading end flatten...")
                 self.flatten_all_positions()
                 self.cancel_all_orders()
                 self.done_for_day = True
@@ -184,7 +197,8 @@ class EMACrossFiltered(TradingStrategy):
 
         if time_now < self.trading_start:
             self.done_for_day = False
-            self.log.info(f"Prior to trading start at {self.trading_start}...")
+            self.log.info(f"Waiting for {self.session_start_zone.name} session open at {self.session_next_start}. "
+                          f"Trading start at {self.trading_start}...")
             return
 
         # Check news events

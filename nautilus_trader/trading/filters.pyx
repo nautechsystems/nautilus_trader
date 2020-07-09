@@ -116,28 +116,28 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime start
+        cdef datetime next_start
 
         # Local days session start
         if session == ForexSession.SYDNEY:
-            start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+            next_start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
         elif session == ForexSession.TOKYO:
-            start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+            next_start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
         elif session == ForexSession.LONDON:
-            start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            next_start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
         elif session == ForexSession.NEW_YORK:
-            start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            next_start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
 
         # Already past this days session start
-        if local_now > start:
-            start += timedelta(days=1)
+        if local_now > next_start:
+            next_start += timedelta(days=1)
 
         # Weekend - next session start becomes next Mondays session start
-        if start.weekday() > 4:
-            diff = 7 - start.weekday()
-            start += timedelta(days=diff)
+        if next_start.weekday() > 4:
+            diff = 7 - next_start.weekday()
+            next_start += timedelta(days=diff)
 
-        return start.astimezone(pytz.utc)
+        return next_start.astimezone(pytz.utc)
 
     cpdef datetime prev_start(self, session: ForexSession, datetime time_now):
         """
@@ -174,28 +174,28 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime start
+        cdef datetime prev_start
 
         # Local days session start
         if session == ForexSession.SYDNEY:
-            start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+            prev_start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
         elif session == ForexSession.TOKYO:
-            start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+            prev_start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
         elif session == ForexSession.LONDON:
-            start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            prev_start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
         elif session == ForexSession.NEW_YORK:
-            start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            prev_start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
 
         # Prior to this days session start
-        if local_now < start:
-            start -= timedelta(days=1)
+        if local_now < prev_start:
+            prev_start -= timedelta(days=1)
 
         # Weekend - previous session start becomes last Fridays session start
-        if start.weekday() > 4:
-            diff = start.weekday() - 4
-            start -= timedelta(days=diff)
+        if prev_start.weekday() > 4:
+            diff = prev_start.weekday() - 4
+            prev_start -= timedelta(days=diff)
 
-        return start.astimezone(pytz.utc)
+        return prev_start.astimezone(pytz.utc)
 
     cpdef datetime next_end(self, session: ForexSession, datetime time_now):
         """
@@ -232,28 +232,28 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime end
+        cdef datetime next_end
 
         # Local days session end
         if session == ForexSession.SYDNEY:
-            end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            next_end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.TOKYO:
-            end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+            next_end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
         elif session == ForexSession.LONDON:
-            end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            next_end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.NEW_YORK:
-            end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+            next_end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
 
         # Already past this days session end
-        if local_now > end:
-            end += timedelta(days=1)
+        if local_now > next_end:
+            next_end += timedelta(days=1)
 
         # Weekend - next session end becomes last Mondays session end
-        if end.weekday() > 4:
-            diff = 7 - end.weekday()
-            end += timedelta(days=diff)
+        if next_end.weekday() > 4:
+            diff = 7 - next_end.weekday()
+            next_end += timedelta(days=diff)
 
-        return end.astimezone(pytz.utc)
+        return next_end.astimezone(pytz.utc)
 
     cpdef datetime prev_end(self, session: ForexSession, datetime time_now):
         """
@@ -290,28 +290,28 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime end
+        cdef datetime prev_end
 
         # Local days session end
         if session == ForexSession.SYDNEY:
-            end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            prev_end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.TOKYO:
-            end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+            prev_end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
         elif session == ForexSession.LONDON:
-            end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            prev_end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.NEW_YORK:
-            end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+            prev_end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
 
         # Prior to this days session end
-        if local_now < end:
-            end -= timedelta(days=1)
+        if local_now < prev_end:
+            prev_end -= timedelta(days=1)
 
         # Weekend - previous session end becomes Fridays session end
-        if end.weekday() > 4:
-            diff = end.weekday() - 4
-            end -= timedelta(days=diff)
+        if prev_end.weekday() > 4:
+            diff = prev_end.weekday() - 4
+            prev_end -= timedelta(days=diff)
 
-        return end.astimezone(pytz.utc)
+        return prev_end.astimezone(pytz.utc)
 
 
 @unique
