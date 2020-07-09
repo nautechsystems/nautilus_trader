@@ -166,7 +166,7 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
         news_filter = EconomicNewsEventFilter(currencies=['USD'], impacts=['HIGH'])
 
         # Act
-        event = news_filter.prev_event(Timestamp('2015-05-10 12:00:00+0000', tz='UTC'))
+        event = news_filter.prev_event(datetime(2015, 5, 10, 12, 0, tzinfo=timezone.utc))
         self.assertEqual(Timestamp('2015-05-08 12:30:00+0000', tz='UTC'), event.timestamp)
 
     def test_prev_event_given_valid_date_returns_expected_news_event(self):
@@ -174,5 +174,5 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
         news_filter = EconomicNewsEventFilter(currencies=['USD'], impacts=['HIGH'])
 
         # Act
-        event = news_filter.prev_event(Timestamp('2017-08-10 15:00:00+0000', tz='UTC'))
+        event = news_filter.prev_event(datetime(2017, 8, 10, 15, 0, tzinfo=timezone.utc))
         self.assertEqual(Timestamp('2017-08-04 12:30:00+0000', tz='UTC'), event.timestamp)

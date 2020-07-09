@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import numpy as np
 from cpython.datetime cimport datetime, timedelta
-from datetime import timezone
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
@@ -25,7 +25,7 @@ from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
 
 
 cdef class TimeEvent(Event):

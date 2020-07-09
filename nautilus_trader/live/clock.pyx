@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 from cpython.datetime cimport date, datetime, timedelta
 from datetime import timezone
 from threading import Timer as TimerThread
@@ -95,7 +96,7 @@ cdef class LiveClock(Clock):
         
         :return date.
         """
-        return datetime.now(timezone.utc).date()
+        return datetime.now(pytz.UTC).date()
 
     cpdef datetime time_now(self):
         """
@@ -103,7 +104,7 @@ cdef class LiveClock(Clock):
         
         :return datetime.
         """
-        return datetime.now(timezone.utc)
+        return datetime.now(pytz.UTC)
 
     cdef object _get_timer(
             self,

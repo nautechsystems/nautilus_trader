@@ -16,12 +16,12 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-import psutil
 import pytz
+import psutil
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport ensure_utc_timestamp, format_iso8601
+from nautilus_trader.core.datetime cimport as_utc_timestamp, format_iso8601
 from nautilus_trader.core.functions cimport format_bytes, pad_string, get_size_of
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
@@ -205,13 +205,13 @@ cdef class BacktestEngine:
         if start is None:
             start = self.data_client.min_timestamp
         else:
-            start = max(ensure_utc_timestamp(start), self.data_client.min_timestamp)
+            start = max(as_utc_timestamp(start), self.data_client.min_timestamp)
 
         # Setup stop datetime
         if stop is None:
             stop = self.data_client.max_timestamp
         else:
-            stop = min(ensure_utc_timestamp(stop), self.data_client.max_timestamp)
+            stop = min(as_utc_timestamp(stop), self.data_client.max_timestamp)
 
         Condition.equal(start.tz, pytz.UTC, 'start.tz', 'UTC')
         Condition.equal(stop.tz, pytz.UTC, 'stop.tz', 'UTC')

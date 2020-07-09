@@ -20,11 +20,31 @@ import pandas as pd
 import pytz
 from cpython.datetime cimport datetime
 from cpython.unicode cimport PyUnicode_Contains
+from datetime import timezone
 
 from nautilus_trader.core.correctness cimport Condition
 
 
-cpdef bint is_tz_aware(time_object) except *:
+cpdef bint is_datetime_utc(datetime timestamp):
+    """
+    Checks if the given timestamp is timezone aware UTC.
+    
+    Parameters
+    ----------
+    timestamp : datetime
+
+    Returns
+    -------
+    bool
+        True if argument timezone aware UTC, else False.
+        
+    """
+    Condition.not_none(timestamp, 'timestamp')
+
+    return timestamp.tzinfo == timezone.utc or timestamp.tzinfo == pytz.utc
+
+
+cpdef bint is_tz_aware(time_object):
     """
     Checks if the given object is timezone aware.
 
@@ -67,7 +87,7 @@ cpdef bint is_tz_naive(time_object):
     return not is_tz_aware(time_object)
 
 
-cpdef datetime ensure_utc_timestamp(datetime timestamp):
+cpdef datetime as_utc_timestamp(datetime timestamp):
     """
     Ensure the given timestamp is a tz-aware UTC pd.Timestamp.
 
@@ -87,14 +107,14 @@ cpdef datetime ensure_utc_timestamp(datetime timestamp):
         timestamp = pd.Timestamp(timestamp)
 
     if timestamp.tz is None:  # tz-naive
-        return timestamp.tz_localize(pytz.utc)
+        return timestamp.tz_localize(pytz.UTC)
     elif timestamp.tz != pytz.UTC:
-        return timestamp.tz_convert(pytz.utc)
+        return timestamp.tz_convert(pytz.UTC)
     else:
         return timestamp  # Already UTC
 
 
-cpdef object ensure_utc_index(data: pd.DataFrame):
+cpdef object as_utc_index(data: pd.DataFrame):
     """
     Ensure the given data has a DateTimeIndex which is tz-aware UTC.
 
@@ -112,16 +132,16 @@ cpdef object ensure_utc_index(data: pd.DataFrame):
         return data
 
     if not hasattr(data.index, 'tz') or data.index.tz is None:  # tz-naive
-        return data.tz_localize('UTC')
+        return data.tz_localize(pytz.UTC)
     elif data.index.tz != pytz.UTC:
-        return data.tz_convert('UTC')
+        return data.tz_convert(pytz.UTC)
     else:
         return data  # Already UTC
 
 
 cpdef str format_iso8601(datetime dt):
     """
-    Format the given string to the ISO 8601 specification with 'Z' zulu. 
+    Format the given string to the ISO 8601 specification with 'Z' zulu.
     
     Parameters
     ----------
