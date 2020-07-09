@@ -213,8 +213,8 @@ cdef class BacktestEngine:
         else:
             stop = min(as_utc_timestamp(stop), self.data_client.max_timestamp)
 
-        Condition.equal(start.tz, pytz.UTC, 'start.tz', 'UTC')
-        Condition.equal(stop.tz, pytz.UTC, 'stop.tz', 'UTC')
+        Condition.equal(start.tz, pytz.utc, 'start.tz', 'UTC')
+        Condition.equal(stop.tz, pytz.utc, 'stop.tz', 'UTC')
         Condition.true(start >= self.data_client.min_timestamp, 'start >= data_client.min_timestamp')
         Condition.true(start <= self.data_client.max_timestamp, 'stop <= data_client.max_timestamp')
         Condition.true(start < stop, 'start < stop')

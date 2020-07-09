@@ -20,14 +20,8 @@ from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import (
-    AccountId,
-    TraderId,
-    IdTag,
-    OrderId,
-    PositionId,
-    ExecutionId,
-    PositionIdBroker)
+from nautilus_trader.model.identifiers import AccountId, TraderId, IdTag, OrderId
+from nautilus_trader.model.identifiers import PositionId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.commands import SubmitOrder

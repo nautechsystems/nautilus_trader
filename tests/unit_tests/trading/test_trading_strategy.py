@@ -16,7 +16,7 @@
 import pytz
 import unittest
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 
 from nautilus_trader.core.types import Label
 from nautilus_trader.model.enums import OrderSide
@@ -163,7 +163,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.time_now()
 
         # Assert
-        self.assertEqual(pytz.UTC, result.tzinfo)
+        self.assertEqual(pytz.utc, result.tzinfo)
 
     def test_initialization(self):
         # Arrange
@@ -221,7 +221,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00002, 5),
                   Price(1.00003, 5),
                   Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -249,7 +249,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00002, 5),
                   Price(1.00003, 5),
                   Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -265,7 +265,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00002, 5),
                   Price(1.00003, 5),
                   Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -290,7 +290,7 @@ class TradeStrategyTests(unittest.TestCase):
                     Price(1.00001, 5),
                     Volume(1),
                     Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
         strategy.handle_tick(tick)
 
@@ -401,7 +401,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00002, 5),
                   Price(1.00003, 5),
                   Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -442,7 +442,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        alert_time = datetime.now(timezone.utc) + timedelta(milliseconds=200)
+        alert_time = datetime.now(pytz.utc) + timedelta(milliseconds=200)
         strategy.clock.set_time_alert(Label("test_alert1"), alert_time)
 
         # Act
@@ -460,7 +460,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
+        start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
         strategy.clock.set_timer(Label("test_timer3"), timedelta(milliseconds=100), start_time, stop_time=None)
 
         # Act
@@ -694,7 +694,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00002, 5),
                   Price(1.00003, 5),
                   Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         # Act
         strategy.handle_bar(bar_type, bar)

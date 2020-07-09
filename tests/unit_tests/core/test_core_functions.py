@@ -56,6 +56,7 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2.75, result)
+        self.assertEqual(2.75, np.mean(values))
 
     def test_fast_mean_iterated_with_empty_list_returns_zero(self):
         # Arrange

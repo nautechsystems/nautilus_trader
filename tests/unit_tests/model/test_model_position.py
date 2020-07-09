@@ -13,11 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
+import pytz
 import unittest
 import uuid
-
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.enums import OrderSide, MarketPosition, Currency
@@ -341,7 +340,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E2'), position.last_execution_id)
         self.assertEqual(PositionIdBroker('T123456'), position.id_broker)
-        self.assertEqual(datetime.datetime(1970, 1, 1, 0, 1, tzinfo=datetime.timezone.utc), position.closed_time)
+        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), position.closed_time)
         self.assertEqual(1.00001, position.average_close_price)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)

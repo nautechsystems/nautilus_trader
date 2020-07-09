@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.core.decimal import Decimal
@@ -32,7 +33,7 @@ from nautilus_trader.common.clock import TestClock
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc)
 
 
 class TestStubs:

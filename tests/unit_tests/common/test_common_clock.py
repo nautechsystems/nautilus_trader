@@ -17,7 +17,7 @@ import pytz
 import time
 import uuid
 import unittest
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timedelta
 
 from nautilus_trader.core.types import GUID, Label
 from nautilus_trader.common.logging import LoggerAdapter, TestLogger
@@ -85,7 +85,7 @@ class LiveClockTests(unittest.TestCase):
         result = self.clock.time_now()
 
         # Assert
-        self.assertEqual(pytz.UTC, result.tzinfo)
+        self.assertEqual(pytz.utc, result.tzinfo)
         self.assertEqual(datetime, type(result))
 
     def test_get_delta(self):
@@ -319,7 +319,7 @@ class TestClockTests(unittest.TestCase):
         result = self.clock.time_now()
 
         # Assert
-        self.assertEqual(pytz.UTC, result.tzinfo)
+        self.assertEqual(pytz.utc, result.tzinfo)
         self.assertEqual(datetime, type(result))
 
     def test_get_delta(self):
@@ -392,7 +392,7 @@ class TestClockTests(unittest.TestCase):
         # Assert
         self.assertEqual([label], self.clock.get_timer_labels())
         self.assertEqual(4, len(events))
-        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=timezone.utc), events[3].event.timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc), events[3].event.timestamp)
 
     def test_can_set_timer(self):
         # Arrange
