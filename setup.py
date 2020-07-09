@@ -28,7 +28,7 @@ MAINTAINER = __author__
 MAINTAINER_EMAIL = 'info@nautechsystems.io'
 DESCRIPTION = 'An algorithmic trading platform and event-driven backtester'
 URL = 'https://github.com/nautechsystems/nautilus_trader'
-PYTHON_REQUIRES = '>=3.6'
+PYTHON_REQUIRES = '>=3.7'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
 PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 
@@ -79,8 +79,6 @@ setup(
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
     ],
