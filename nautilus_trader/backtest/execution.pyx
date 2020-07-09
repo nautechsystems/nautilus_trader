@@ -16,9 +16,9 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-import datetime as dt
 import pytz
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
+from datetime import timezone
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
@@ -276,7 +276,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 rollover_local.year,
                 rollover_local.month,
                 rollover_local.day,
-                17)).astimezone(pytz.utc)
+                17)).astimezone(pytz.UTC)
 
         # Check for and apply any rollover interest
         if not self.rollover_applied and time_now >= self.rollover_time:

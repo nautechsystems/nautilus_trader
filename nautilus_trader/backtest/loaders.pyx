@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import pandas as pd
 
-from datetime import timezone
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -109,4 +109,4 @@ cdef class InstrumentLoader:
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal.zero(),
             rollover_interest_sell=Decimal.zero(),
-            timestamp=datetime.now(timezone.utc))
+            timestamp=datetime.now(pytz.UTC))

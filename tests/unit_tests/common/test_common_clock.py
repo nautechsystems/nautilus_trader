@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import time
 import uuid
 import unittest
@@ -84,7 +85,7 @@ class LiveClockTests(unittest.TestCase):
         result = self.clock.time_now()
 
         # Assert
-        self.assertEqual(timezone.utc, result.tzinfo)
+        self.assertEqual(pytz.UTC, result.tzinfo)
         self.assertEqual(datetime, type(result))
 
     def test_get_delta(self):
@@ -318,7 +319,7 @@ class TestClockTests(unittest.TestCase):
         result = self.clock.time_now()
 
         # Assert
-        self.assertEqual(timezone.utc, result.tzinfo)
+        self.assertEqual(pytz.UTC, result.tzinfo)
         self.assertEqual(datetime, type(result))
 
     def test_get_delta(self):

@@ -17,10 +17,11 @@ import os
 import pytz
 import pandas as pd
 from cpython.datetime cimport datetime, timedelta
+from datetime import timezone
 from enum import Enum
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport ensure_utc_timestamp, ensure_utc_index
+from nautilus_trader.core.datetime cimport as_utc_index, is_datetime_utc
 from nautilus_trader import PACKAGE_ROOT
 
 
@@ -43,7 +44,7 @@ cdef class ForexSessionFilter:
         self.tz_london = pytz.timezone('Europe/London')
         self.tz_new_york = pytz.timezone('EST')
 
-    cpdef datetime local_from_utc(self, session: ForexSession, datetime utc_now):
+    cpdef datetime local_from_utc(self, session: ForexSession, datetime time_now):
         """
         Return the local datetime from the given session and time_now (UTC).
         
@@ -51,7 +52,7 @@ cdef class ForexSessionFilter:
         ----------
         session : ForexSession
             The session for the local timezone conversion.
-        utc_now : datetime
+        time_now : datetime
             The time now (UTC).
 
         Returns
@@ -59,45 +60,60 @@ cdef class ForexSessionFilter:
         datetime
             The converted local datetime.
         
+        Raises
+        ------
+        ValueError
+            If time_now is not tz aware UTC.
+        
         """
         Condition.type(session, ForexSession, 'session')
+        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
         if session == ForexSession.SYDNEY:
-            return utc_now.astimezone(self.tz_sydney)
+            return time_now.astimezone(self.tz_sydney)
 
         if session == ForexSession.TOKYO:
-            return utc_now.astimezone(self.tz_tokyo)
+            return time_now.astimezone(self.tz_tokyo)
 
         if session == ForexSession.LONDON:
-            return utc_now.astimezone(self.tz_london)
+            return time_now.astimezone(self.tz_london)
 
         if session == ForexSession.NEW_YORK:
-            return utc_now.astimezone(self.tz_new_york)
+            return time_now.astimezone(self.tz_new_york)
 
-    cpdef datetime next_start(self, session: ForexSession, datetime utc_now):
+    cpdef datetime next_start(self, session: ForexSession, datetime time_now):
         """
         Returns the next session start.
         
         Sydney Session    0700-1600 AEST   Monday to Friday
+        
         Tokyo Session     0900-1800 Japan  Monday to Friday
+        
         London Session    0800-1600 UTC    Monday to Friday
+        
         New York Session  0800-1700 EST    Monday to Friday
 
         Parameters
         ----------
         session : ForexSession
             The session for the start datetime.
-        utc_now : datetime
+        time_now : datetime
             The datetime now.
 
         Returns
         -------
         datetime
+
+        Raises
+        ------
+        ValueError
+            If time_now is not tz aware UTC.
             
         """
         Condition.type(session, ForexSession, 'session')
+        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
-        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime start
 
         # Local days session start
@@ -119,32 +135,41 @@ cdef class ForexSessionFilter:
             diff = 7 - start.weekday()
             start += timedelta(days=diff)
 
-        return start.astimezone(pytz.utc)
+        return start.astimezone(timezone.utc)
 
-    cpdef datetime prev_start(self, session: ForexSession, datetime utc_now):
+    cpdef datetime prev_start(self, session: ForexSession, datetime time_now):
         """
         Returns the previous session start.
         
         Sydney Session    0700-1600 AEST   Monday to Friday
+        
         Tokyo Session     0900-1800 Japan  Monday to Friday
+        
         London Session    0800-1600 UTC    Monday to Friday
+        
         New York Session  0800-1700 EST    Monday to Friday
         
         Parameters
         ----------
         session : ForexSession
             The session for the start datetime.
-        utc_now : datetime
+        time_now : datetime
             The datetime now.
 
         Returns
         -------
         datetime
+
+        Raises
+        ------
+        ValueError
+            If time_now is not tz aware UTC.
             
         """
         Condition.type(session, ForexSession, 'session')
+        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
-        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime start
 
         # Local days session start
@@ -166,32 +191,41 @@ cdef class ForexSessionFilter:
             diff = start.weekday() - 4
             start -= timedelta(days=diff)
 
-        return start.astimezone(pytz.utc)
+        return start.astimezone(timezone.utc)
 
-    cpdef datetime next_end(self, session: ForexSession, datetime utc_now):
+    cpdef datetime next_end(self, session: ForexSession, datetime time_now):
         """
         Returns the next session end.
         
         Sydney Session    0700-1600 AEST   Monday to Friday
+        
         Tokyo Session     0900-1800 Japan  Monday to Friday
+        
         London Session    0800-1600 UTC    Monday to Friday
+        
         New York Session  0800-1700 EST    Monday to Friday
         
         Parameters
         ----------
         session : ForexSession
             The session for the end datetime.
-        utc_now : datetime
-            The datetime now.
+        time_now : datetime
+            The datetime now (UTC).
 
         Returns
         -------
         datetime
+        
+        Raises
+        ------
+        ValueError
+            If time_now is not tz aware UTC.
             
         """
         Condition.type(session, ForexSession, 'session')
+        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
-        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime end
 
         # Local days session end
@@ -213,32 +247,41 @@ cdef class ForexSessionFilter:
             diff = 7 - end.weekday()
             end += timedelta(days=diff)
 
-        return end.astimezone(pytz.utc)
+        return end.astimezone(timezone.utc)
 
-    cpdef datetime prev_end(self, session: ForexSession, datetime utc_now):
+    cpdef datetime prev_end(self, session: ForexSession, datetime time_now):
         """
         Returns the previous sessions end.
         
         Sydney Session    0700-1600 AEST   Monday to Friday
+        
         Tokyo Session     0900-1800 Japan  Monday to Friday
+        
         London Session    0800-1600 UTC    Monday to Friday
+        
         New York Session  0800-1700 EST    Monday to Friday
         
         Parameters
         ----------
         session : ForexSession
             The session for end datetime.
-        utc_now : datetime
+        time_now : datetime
             The datetime now.
 
         Returns
         -------
         datetime
+        
+        Raises
+        ------
+        ValueError
+            If time_now is not tz aware UTC.
             
         """
         Condition.type(session, ForexSession, 'session')
+        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
-        cdef datetime local_now = self.local_from_utc(session, utc_now)
+        cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime end
 
         # Local days session end
@@ -260,7 +303,7 @@ cdef class ForexSessionFilter:
             diff = end.weekday() - 4
             end -= timedelta(days=diff)
 
-        return end.astimezone(pytz.utc)
+        return end.astimezone(timezone.utc)
 
 
 class NewsImpact(Enum):
@@ -330,12 +373,12 @@ cdef class EconomicNewsEventFilter:
         self.currencies = currencies
         self.impacts = impacts
 
-        news_data = ensure_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
+        news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
         self.unfiltered_data_start = news_data.index[0]
         self.unfiltered_data_end = news_data.index[-1]
 
         self._news_data = news_data[(news_data['Currency'].isin(currencies))
-                                   & news_data['Impact'].isin(impacts)]
+                                    & news_data['Impact'].isin(impacts)]
 
     cpdef NewsEvent next_event(self, datetime time_now):
         """
@@ -353,12 +396,16 @@ cdef class EconomicNewsEventFilter:
 
         Raises
         ------
-        Value Error
+        ValueError
             The time_now < self.unfiltered_data_start
-        Value Error
+        ValueError
             The time_now > self.unfiltered_data_end
+        ValueError
+            If time_now is not tz aware UTC.
             
         """
+        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+
         if time_now < self.unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
                              f"available news data start at {self.unfiltered_data_start}.")
@@ -367,7 +414,7 @@ cdef class EconomicNewsEventFilter:
             raise ValueError(f"The given time_now at {time_now} was after to the "
                              f"available news data end at {self.unfiltered_data_end}.")
 
-        events = self._news_data[self._news_data.index >= ensure_utc_timestamp(time_now)]
+        events = self._news_data[self._news_data.index >= time_now]
 
         if events.empty:
             return None
@@ -392,12 +439,16 @@ cdef class EconomicNewsEventFilter:
 
         Raises
         ------
-        Value Error
+        ValueError
             The time_now < self.unfiltered_data_start
-        Value Error
+        ValueError
             The time_now > self.unfiltered_data_end
+        ValueError
+            If time_now is not tz aware UTC.
             
         """
+        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+
         if time_now < self.unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
                              f"available news data start at {self.unfiltered_data_start}.")
@@ -406,7 +457,7 @@ cdef class EconomicNewsEventFilter:
             raise ValueError(f"The given time_now at {time_now} was after to the "
                              f"available news data end at {self.unfiltered_data_end}.")
 
-        events = self._news_data[self._news_data.index <= ensure_utc_timestamp(time_now)]
+        events = self._news_data[self._news_data.index <= time_now]
         if events.empty:
             return None
 

@@ -47,5 +47,5 @@ class TestClockPerformanceTests(unittest.TestCase):
 
         iterations = 1
         result = PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)
-        # ~1036ms (1036473μs) minimum of 1 runs @ 1000000 iterations each run.
-        self.assertTrue(result < 1.5)
+        # ~1484ms (1484100μs) minimum of 1 runs @ 1000000 iterations each run.
+        self.assertTrue(result < 2.0)

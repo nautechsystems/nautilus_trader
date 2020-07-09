@@ -63,14 +63,15 @@ Stable version;
 
 Latest version;
 
-    $ git clone https://github.com/nautechsystems/nautilus_trader
-    $ pip install -r nautilus_trader/requirements.txt
     $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
 
 For development and live trading install the snappy dependency for serialization;
 
-    # Centos/RHEL
+    # CentOS8
+    $ dnf --enablerepo=PowerTools install -y snappy-devel
+
+    # CentOS7/RHEL
     $ yum install python3-devel
     $ yum install snappy-devel
 

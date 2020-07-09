@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import cProfile
 import pstats
 import unittest
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.backtest.data import BacktestDataContainer
@@ -52,8 +53,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             fill_model=FillModel(),
             config=config)
 
-        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.UTC)
+        stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.UTC)
 
         stats_file = 'perf_stats_backtest_run_empty.prof'
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
@@ -62,7 +63,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         self.assertTrue(True)
 
-        # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.UTC)
         #          3490226 function calls in 0.623 seconds
         #          5407539 function calls (5407535 primitive calls) in 1.187 seconds
         # 26/02/19 4450292 function calls (4450288 primitive calls) in 0.823 seconds
@@ -106,8 +107,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             config=config,
             fill_model=None)
 
-        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.UTC)
+        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.UTC)
 
         stats_file = 'perf_stats_tick_processing.prof'
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
@@ -145,8 +146,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             config=config,
             fill_model=None)
 
-        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.UTC)
+        stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=pytz.UTC)
 
         stats_file = 'perf_stats_backtest_run_ema.prof'
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
@@ -155,8 +156,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         self.assertTrue(True)
 
-        # start datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        # stop  datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        # start datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.UTC)
+        # stop  datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=pytz.UTC)
         #          51112051 function calls (51107866 primitive calls) in 22.586 seconds
         #          52912808 function calls (52908623 primitive calls) in 25.232 seconds
         #          49193278 function calls (49189089 primitive calls) in 19.121 seconds

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import unittest
 import time
 from datetime import datetime, timezone, timedelta
@@ -162,7 +163,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.time_now()
 
         # Assert
-        self.assertEqual(timezone.utc, result.tzinfo)
+        self.assertEqual(pytz.UTC, result.tzinfo)
 
     def test_initialization(self):
         # Arrange
