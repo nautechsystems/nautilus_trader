@@ -17,7 +17,6 @@ import os
 import pytz
 import pandas as pd
 from cpython.datetime cimport datetime, timedelta
-from datetime import timezone
 from enum import Enum
 
 from nautilus_trader.core.correctness cimport Condition
@@ -135,7 +134,7 @@ cdef class ForexSessionFilter:
             diff = 7 - start.weekday()
             start += timedelta(days=diff)
 
-        return start.astimezone(timezone.utc)
+        return start.astimezone(pytz.utc)
 
     cpdef datetime prev_start(self, session: ForexSession, datetime time_now):
         """
@@ -191,7 +190,7 @@ cdef class ForexSessionFilter:
             diff = start.weekday() - 4
             start -= timedelta(days=diff)
 
-        return start.astimezone(timezone.utc)
+        return start.astimezone(pytz.utc)
 
     cpdef datetime next_end(self, session: ForexSession, datetime time_now):
         """
@@ -247,7 +246,7 @@ cdef class ForexSessionFilter:
             diff = 7 - end.weekday()
             end += timedelta(days=diff)
 
-        return end.astimezone(timezone.utc)
+        return end.astimezone(pytz.utc)
 
     cpdef datetime prev_end(self, session: ForexSession, datetime time_now):
         """
@@ -303,7 +302,7 @@ cdef class ForexSessionFilter:
             diff = end.weekday() - 4
             end -= timedelta(days=diff)
 
-        return end.astimezone(timezone.utc)
+        return end.astimezone(pytz.utc)
 
 
 class NewsImpact(Enum):
@@ -411,7 +410,7 @@ cdef class EconomicNewsEventFilter:
                              f"available news data start at {self.unfiltered_data_start}.")
 
         if time_now > self.unfiltered_data_end:
-            raise ValueError(f"The given time_now at {time_now} was after to the "
+            raise ValueError(f"The given time_now at {time_now} was after the "
                              f"available news data end at {self.unfiltered_data_end}.")
 
         events = self._news_data[self._news_data.index >= time_now]
@@ -454,7 +453,7 @@ cdef class EconomicNewsEventFilter:
                              f"available news data start at {self.unfiltered_data_start}.")
 
         if time_now > self.unfiltered_data_end:
-            raise ValueError(f"The given time_now at {time_now} was after to the "
+            raise ValueError(f"The given time_now at {time_now} was after the "
                              f"available news data end at {self.unfiltered_data_end}.")
 
         events = self._news_data[self._news_data.index <= time_now]

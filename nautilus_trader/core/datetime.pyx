@@ -16,11 +16,10 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-import pandas as pd
 import pytz
+import pandas as pd
 from cpython.datetime cimport datetime
 from cpython.unicode cimport PyUnicode_Contains
-from datetime import timezone
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -28,6 +27,7 @@ from nautilus_trader.core.correctness cimport Condition
 cpdef bint is_datetime_utc(datetime timestamp):
     """
     Checks if the given timestamp is timezone aware UTC.
+    Will also return False if timezone is timezone.utc to standardize on pytz.
     
     Parameters
     ----------
@@ -41,7 +41,7 @@ cpdef bint is_datetime_utc(datetime timestamp):
     """
     Condition.not_none(timestamp, 'timestamp')
 
-    return timestamp.tzinfo == timezone.utc or timestamp.tzinfo == pytz.utc
+    return timestamp.tzinfo == pytz.utc
 
 
 cpdef bint is_tz_aware(time_object):
@@ -107,9 +107,9 @@ cpdef datetime as_utc_timestamp(datetime timestamp):
         timestamp = pd.Timestamp(timestamp)
 
     if timestamp.tz is None:  # tz-naive
-        return timestamp.tz_localize(pytz.UTC)
-    elif timestamp.tz != pytz.UTC:
-        return timestamp.tz_convert(pytz.UTC)
+        return timestamp.tz_localize(pytz.utc)
+    elif timestamp.tz != pytz.utc:
+        return timestamp.tz_convert(pytz.utc)
     else:
         return timestamp  # Already UTC
 
@@ -132,9 +132,9 @@ cpdef object as_utc_index(data: pd.DataFrame):
         return data
 
     if not hasattr(data.index, 'tz') or data.index.tz is None:  # tz-naive
-        return data.tz_localize(pytz.UTC)
-    elif data.index.tz != pytz.UTC:
-        return data.tz_convert(pytz.UTC)
+        return data.tz_localize(pytz.utc)
+    elif data.index.tz != pytz.utc:
+        return data.tz_convert(pytz.utc)
     else:
         return data  # Already UTC
 

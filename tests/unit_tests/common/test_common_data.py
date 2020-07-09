@@ -46,7 +46,7 @@ class DataClientTests(unittest.TestCase):
                     Price(110.80010, 5),
                     Volume(1),
                     Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
         self.client._handle_tick(tick)
 
@@ -63,7 +63,7 @@ class DataClientTests(unittest.TestCase):
                     Price(0.80010, 5),
                     Volume(1),
                     Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
         self.client._handle_tick(tick)
 

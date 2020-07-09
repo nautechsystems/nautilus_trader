@@ -15,7 +15,6 @@
 
 import pytz
 from cpython.datetime cimport date, datetime, timedelta
-from datetime import timezone
 from threading import Timer as TimerThread
 
 from nautilus_trader.core.correctness cimport Condition
@@ -24,7 +23,7 @@ from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.live.guid cimport LiveGuidFactory
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc)
 
 
 cdef class LiveTimer(Timer):
@@ -96,7 +95,7 @@ cdef class LiveClock(Clock):
         
         :return date.
         """
-        return datetime.now(pytz.UTC).date()
+        return datetime.now(pytz.utc).date()
 
     cpdef datetime time_now(self):
         """
@@ -104,7 +103,7 @@ cdef class LiveClock(Clock):
         
         :return datetime.
         """
-        return datetime.now(pytz.UTC)
+        return datetime.now(pytz.utc)
 
     cdef object _get_timer(
             self,

@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 import uuid
 import unittest
-import time
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar

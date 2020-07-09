@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-import pandas as pd
 import pytz
-from datetime import datetime, timezone, timedelta
+import pandas as pd
+import unittest
+from datetime import datetime, timedelta
 
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware, is_tz_naive, format_iso8601
@@ -36,7 +36,7 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_is_datetime_utc_given_utc_datetime_returns_true(self):
         # Arrange
-        dt = datetime(2013, 1, 1, 1, 0, tzinfo=pytz.UTC)
+        dt = datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)
 
         # Act
         # Assert
@@ -44,8 +44,8 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_is_tz_awareness_with_various_aware_objects_returns_true(self):
         # Arrange
-        time_object1 = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
-        time_object2 = pd.Timestamp(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
+        time_object1 = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc)
+        time_object2 = pd.Timestamp(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc))
 
         time_object3 = pd.DataFrame({'timestamp': ['2019-05-21T12:00:00+00:00',
                                                    '2019-05-21T12:15:00+00:00']})
@@ -105,7 +105,7 @@ class TestFunctionsTests(unittest.TestCase):
         # Act
         timestamp3 = timestamp1 + min1
         timestamp4 = timestamp2 + min1
-        timestamp5 = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        timestamp5 = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         timestamp6 = timestamp2.tz_localize('UTC')
 
         # Assert
@@ -124,7 +124,7 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
-        self.assertEqual(pytz.UTC, result.tz)
+        self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_given_tz_naive_pandas_timestamp(self):
         # Arrange
@@ -135,18 +135,18 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
-        self.assertEqual(pytz.UTC, result.tz)
+        self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_given_tz_aware_datetime(self):
         # Arrange
-        timestamp = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
         # Act
         result = as_utc_timestamp(timestamp)
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
-        self.assertEqual(pytz.UTC, result.tz)
+        self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_given_tz_aware_pandas(self):
         # Arrange
@@ -157,12 +157,12 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
-        self.assertEqual(pytz.UTC, result.tz)
+        self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_equality(self):
         # Arrange
         timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0)
-        timestamp2 = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        timestamp2 = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         timestamp3 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0)
         timestamp4 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0).tz_localize('UTC')
 
@@ -188,7 +188,7 @@ class TestFunctionsTests(unittest.TestCase):
         result = as_utc_index(data)
 
         # Assert
-        self.assertEqual(pytz.UTC, result.index.tz)
+        self.assertEqual(pytz.utc, result.index.tz)
 
     def test_with_utc_index_given_tz_aware_dataframe(self):
         # Arrange
@@ -201,7 +201,7 @@ class TestFunctionsTests(unittest.TestCase):
         result = as_utc_index(data)
 
         # Assert
-        self.assertEqual(pytz.UTC, result.index.tz)
+        self.assertEqual(pytz.utc, result.index.tz)
 
     def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
         # Arrange

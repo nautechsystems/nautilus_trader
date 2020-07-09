@@ -13,9 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import unittest
 from pandas import Timestamp
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from nautilus_trader.model.enums import PriceType, BarStructure
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar, BarSpecification, BarType
@@ -187,7 +188,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Price(1.00002, 5),
             Price(1.00003, 5),
             Volume(1000),
-            datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
+            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc))
 
         # Act
         updater.update_bar(bar)
@@ -207,7 +208,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Price(1.00002, 5),
             Price(1.00003, 5),
             Volume(1000),
-            datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
+            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc))
 
         # Act
         updater.update_bar(bar)
@@ -506,5 +507,5 @@ class TimeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
         self.assertEqual(3, bar_store.get_store()[0][1].volume)
         self.assertEqual(0, bar_store.get_store()[1][1].volume)
-        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=timezone.utc), bar_store.get_store()[0][1].timestamp)
-        self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=timezone.utc), bar_store.get_store()[1][1].timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), bar_store.get_store()[0][1].timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=pytz.utc), bar_store.get_store()[1][1].timestamp)
