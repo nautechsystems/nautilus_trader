@@ -49,7 +49,7 @@ cdef class Position:
         self.last_order_id = event.order_id
         self.last_execution_id = event.execution_id
         self.symbol = event.symbol
-        self.quote_currency = event.transaction_currency
+        self.quote_currency = event.quote_currency
         self.entry_direction = event.order_side
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
@@ -59,8 +59,8 @@ cdef class Position:
         self.average_close_price = 0.0
         self.realized_points = 0.0
         self.realized_return = 0.0
-        self.realized_pnl = Money(0, event.transaction_currency)
-        self.realized_pnl_last = Money(0, event.transaction_currency)
+        self.realized_pnl = Money(0, event.quote_currency)
+        self.realized_pnl_last = Money(0, event.quote_currency)
 
         self.quantity = Quantity.zero()             # Initialized in _update()
         self.peak_quantity = Quantity.zero()        # Initialized in _update()

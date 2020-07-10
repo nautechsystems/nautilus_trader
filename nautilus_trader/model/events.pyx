@@ -151,7 +151,7 @@ cdef class OrderFillEvent(OrderEvent):
                  OrderSide order_side,
                  Quantity filled_quantity not None,
                  Price average_price not None,
-                 Currency transaction_currency,
+                 Currency quote_currency,
                  datetime execution_time not None,
                  GUID event_id not None,
                  datetime event_timestamp not None):
@@ -166,7 +166,7 @@ cdef class OrderFillEvent(OrderEvent):
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
         :param average_price: The event execution average price.
-        :param transaction_currency: The event order transaction currency.
+        :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -182,7 +182,7 @@ cdef class OrderFillEvent(OrderEvent):
         self.order_side = order_side
         self.filled_quantity = filled_quantity
         self.average_price = average_price
-        self.transaction_currency = transaction_currency
+        self.quote_currency = quote_currency
         self.execution_time = execution_time
 
 
@@ -690,7 +690,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                  Quantity filled_quantity not None,
                  Quantity leaves_quantity not None,
                  Price average_price not None,
-                 Currency transaction_currency,
+                 Currency quote_currency,
                  datetime execution_time not None,
                  GUID event_id not None,
                  datetime event_timestamp not None):
@@ -706,7 +706,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         :param filled_quantity: The event execution filled quantity.
         :param leaves_quantity: The event leaves quantity.
         :param average_price: The event execution average price.
-        :param transaction_currency: The event order transaction currency.
+        :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -719,7 +719,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
-                         transaction_currency,
+                         quote_currency,
                          execution_time,
                          event_id,
                          event_timestamp)
@@ -756,7 +756,7 @@ cdef class OrderFilled(OrderFillEvent):
                  OrderSide order_side,
                  Quantity filled_quantity not None,
                  Price average_price not None,
-                 Currency transaction_currency,
+                 Currency quote_currency,
                  datetime execution_time not None,
                  GUID event_id not None,
                  datetime event_timestamp not None):
@@ -771,7 +771,7 @@ cdef class OrderFilled(OrderFillEvent):
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
         :param average_price: The event execution average price.
-        :param transaction_currency: The event order transaction currency.
+        :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -786,7 +786,7 @@ cdef class OrderFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
-                         transaction_currency,
+                         quote_currency,
                          execution_time,
                          event_id,
                          event_timestamp)

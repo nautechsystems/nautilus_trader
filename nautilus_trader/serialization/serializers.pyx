@@ -429,7 +429,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
             package[LEAVES_QUANTITY] = event.leaves_quantity.to_string()
             package[AVERAGE_PRICE] = event.average_price.to_string()
-            package[CURRENCY] = currency_to_string(event.transaction_currency)
+            package[CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         elif isinstance(event, OrderFilled):
             package[ORDER_ID] = event.order_id.value
@@ -440,7 +440,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
             package[AVERAGE_PRICE] = event.average_price.to_string()
-            package[CURRENCY] = currency_to_string(event.transaction_currency)
+            package[CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
