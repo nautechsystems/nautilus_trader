@@ -370,7 +370,7 @@ cdef class DataClient:
         Unsubscribe from bar data for the given bar type and handler.
         """
         if bar_type not in self._bar_handlers:
-            self._log.error(f"Cannot remove handler (no handlers for {bar_type}).")
+            self._log.debug(f"Cannot remove handler (no handlers for {bar_type}).")
             return
 
         cdef BarHandler bar_handler = BarHandler(handler)
@@ -378,7 +378,7 @@ cdef class DataClient:
             self._bar_handlers[bar_type].remove(bar_handler)
             self._log.debug(f"Removed handler {bar_handler} for {bar_type}.")
         else:
-            self._log.error(f"Cannot remove {bar_handler} (no matching handler found).")
+            self._log.debug(f"Cannot remove {bar_handler} (no matching handler found).")
 
         if not self._bar_handlers[bar_type]:
             del self._bar_handlers[bar_type]
@@ -389,7 +389,7 @@ cdef class DataClient:
         Unsubscribe from tick data for the given symbol and handler.
         """
         if symbol not in self._instrument_handlers:
-            self._log.error(f"Cannot remove handler (no handlers for {symbol}).")
+            self._log.debug(f"Cannot remove handler (no handlers for {symbol}).")
             return
 
         cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
@@ -397,7 +397,7 @@ cdef class DataClient:
             self._instrument_handlers[symbol].remove(instrument_handler)
             self._log.debug(f"Removed handler {instrument_handler} for {symbol}.")
         else:
-            self._log.error(f"Cannot remove {instrument_handler} (no matching handler found).")
+            self._log.debug(f"Cannot remove {instrument_handler} (no matching handler found).")
 
         if not self._instrument_handlers[symbol]:
             del self._instrument_handlers[symbol]

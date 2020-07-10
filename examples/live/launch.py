@@ -20,7 +20,6 @@ from nautilus_trader.model.objects import BarSpecification
 from nautilus_trader.live.node import TradingNode
 
 from examples.strategies.ema_cross_filtered import EMACrossFiltered
-# TODO: AtomicOrder with Market entry not working (needs peg)
 
 # Requirements to run;
 #   - A Redis instance listening on the default port 6379
@@ -30,9 +29,6 @@ from examples.strategies.ema_cross_filtered import EMACrossFiltered
 BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
 BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
-# BAR_SPEC_FX = BarSpecification(100, BarStructure.TICK, PriceType.BID)
-# BAR_SPEC_CFD = BarSpecification(500, BarStructure.TICK, PriceType.BID)
-
 symbols_fx = [
     Symbol('AUD/USD', Venue('FXCM')),
     Symbol('EUR/USD', Venue('FXCM')),
@@ -40,11 +36,13 @@ symbols_fx = [
     Symbol('USD/JPY', Venue('FXCM')),
 ]
 
-strategies_fx = []
+news_impacts = ['HIGH', 'MEDIUM']
+strategies = []
+
 for symbol in symbols_fx:
     ccy1 = symbol.code[:3]
     ccy2 = symbol.code[-3:]
-    strategies_fx.append(EMACrossFiltered(
+    strategies.append(EMACrossFiltered(
         symbol,
         BAR_SPEC_FX,
         risk_bp=10.0,
@@ -54,25 +52,56 @@ for symbol in symbols_fx:
         news_currencies=[ccy1, ccy2],
         news_impacts=['HIGH', 'MEDIUM']))
 
-# symbols_cfd = [
-#     Symbol('XAUUSD', Venue('FXCM')),
-#     Symbol('SPX500', Venue('FXCM')),
-#     Symbol('AUS200', Venue('FXCM')),
-#     Symbol('USOil', Venue('FXCM')),
-#     Symbol('GER30', Venue('FXCM')),
-# ]
+strategies.append(EMACrossFiltered(
+    Symbol('XAUUSD', Venue('FXCM')),
+    BAR_SPEC_CFD,
+    risk_bp=10.0,
+    fast_ema=10,
+    slow_ema=20,
+    atr_period=20,
+    news_currencies=['USD'],
+    news_impacts=news_impacts))
 
-# strategies_cfd = []
-# for symbol in symbols_cfd:
-#     strategies_fx.append(EMACrossPy(
-#         symbol,
-#         BAR_SPEC_CFD,
-#         risk_bp=10.0,
-#         fast_ema=10,
-#         slow_ema=20,
-#         atr_period=20))
+strategies.append(EMACrossFiltered(
+    Symbol('SPX500', Venue('FXCM')),
+    BAR_SPEC_CFD,
+    risk_bp=10.0,
+    fast_ema=10,
+    slow_ema=20,
+    atr_period=20,
+    news_currencies=['USD'],
+    news_impacts=news_impacts))
 
-strategies = strategies_fx  # + strategies_cfd
+strategies.append(EMACrossFiltered(
+    Symbol('AUS200', Venue('FXCM')),
+    BAR_SPEC_CFD,
+    risk_bp=10.0,
+    fast_ema=10,
+    slow_ema=20,
+    atr_period=20,
+    news_currencies=['USD', 'AUD'],
+    news_impacts=news_impacts))
+
+strategies.append(EMACrossFiltered(
+    Symbol('USOil', Venue('FXCM')),
+    BAR_SPEC_CFD,
+    risk_bp=10.0,
+    fast_ema=10,
+    slow_ema=20,
+    atr_period=20,
+    news_currencies=['USD'],
+    news_impacts=news_impacts))
+
+strategies.append(EMACrossFiltered(
+    Symbol('GER30', Venue('FXCM')),
+    BAR_SPEC_CFD,
+    risk_bp=10.0,
+    fast_ema=10,
+    slow_ema=20,
+    atr_period=20,
+    news_currencies=['USD', 'EUR'],
+    news_impacts=news_impacts))
+
 
 if __name__ == "__main__":
 
