@@ -27,6 +27,8 @@ cdef class BypassCompressor(Compressor):
 cdef class LZ4Compressor(Compressor):
     cpdef bytes compress(self, bytes data)
     cpdef bytes decompress(self, bytes data)
+    cpdef bytes compress_frame(self, bytes data)
+    cpdef bytes decompress_frame(self, bytes data)
 
 
 cdef class SnappyCompressor(Compressor):

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import lz4.block
 import lz4.frame
 import snappy
 
@@ -79,9 +80,27 @@ cdef class LZ4Compressor(Compressor):
         :param data: The data to compress.
         :return bytes.
         """
-        return lz4.frame.compress(data)
+        return lz4.block.compress(data, mode='fast')
 
     cpdef bytes decompress(self, bytes data):
+        """
+        Decompress the given data.
+
+        :param data: The data to decompress.
+        :return bytes.
+        """
+        return lz4.block.decompress(data)
+
+    cpdef bytes compress_frame(self, bytes data):
+        """
+        Compress the given data.
+
+        :param data: The data to compress.
+        :return bytes.
+        """
+        return lz4.frame.compress(data)
+
+    cpdef bytes decompress_frame(self, bytes data):
         """
         Decompress the given data.
 
