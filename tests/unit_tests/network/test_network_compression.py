@@ -16,7 +16,7 @@
 import unittest
 from base64 import b64encode
 
-from nautilus_trader.network.compression import BypassCompressor, SnappyCompressor, LZ4Compressor
+from nautilus_trader.network.compression import BypassCompressor, LZ4Compressor
 
 
 class CompressorTests(unittest.TestCase):
@@ -33,10 +33,10 @@ class CompressorTests(unittest.TestCase):
         # Assert
         self.assertEqual(message, decompressed)
 
-    def test_snappy_compressor_can_compress_and_decompress(self):
+    def test_lz4_compressor_can_compress_and_decompress_frame(self):
         # Arrange
         message = b'hello world!'
-        compressor = SnappyCompressor()
+        compressor = LZ4Compressor()
 
         # Act
         compressed = compressor.compress(message)
@@ -46,63 +46,14 @@ class CompressorTests(unittest.TestCase):
         self.assertEqual(message, decompressed)
         print(b64encode(compressed))
 
-    def test_snappy_compressor_can_decompress_from_csharp(self):
+    def test_lz4_compressor_can_decompress_frame_from_csharp(self):
         # Arrange
-        hex_from_csharp = bytes(bytearray.fromhex('0C-2C-68-65-6C-6C-6F-20-77-6F-72-6C-64-21'.replace('-', ' ')))
-        compressor = SnappyCompressor()
+        hex_from_csharp = bytes(bytearray.fromhex('04-22-4D-18-40-40-C0-0C-00-00-80-68-65-6C-6C-6F-20-77-6F-72-6C-64-21-00-00-00-00'.replace('-', ' ')))
+        print(hex_from_csharp)
+        compressor = LZ4Compressor()
 
         # Act
         decompressed = compressor.decompress(hex_from_csharp)
 
         # Assert
         self.assertEqual(b'hello world!', decompressed)
-
-    # def test_lz4_compressor_can_compress_and_decompress_block(self):
-    #     # Arrange
-    #     message = b'hello world!'
-    #     compressor = LZ4Compressor()
-    #
-    #     # Act
-    #     compressed = compressor.compress(message)
-    #     decompressed = compressor.decompress(compressed)
-    #
-    #     # Assert
-    #     self.assertEqual(message, decompressed)
-    #     print(b64encode(compressed))
-    #
-    # def test_lz4_compressor_can_decompress_block_from_csharp(self):
-    #     # Arrange
-    #     hex_from_csharp = bytes(bytearray.fromhex('00-68-65-6C-6C-6F-20-77-6F-72-6C-64-21'.replace('-', ' ')))
-    #     print(hex_from_csharp)
-    #     compressor = LZ4Compressor()
-    #
-    #     # Act
-    #     decompressed = compressor.decompress(hex_from_csharp)
-    #
-    #     # Assert
-    #     self.assertEqual(b'hello world!', decompressed)
-    #
-    # def test_lz4_compressor_can_compress_and_decompress_frame(self):
-    #     # Arrange
-    #     message = b'hello world!'
-    #     compressor = LZ4Compressor()
-    #
-    #     # Act
-    #     compressed = compressor.compress_frame(message)
-    #     decompressed = compressor.decompress_frame(compressed)
-    #
-    #     # Assert
-    #     self.assertEqual(message, decompressed)
-    #     print(b64encode(compressed))
-    #
-    # def test_lz4_compressor_can_decompress_frame_from_csharp(self):
-    #     # Arrange
-    #     hex_from_csharp = bytes(bytearray.fromhex('68-65-6C-6C-6F-20-77-6F-72-6C-64-21'.replace('-', ' ')))
-    #     print(hex_from_csharp)
-    #     compressor = LZ4Compressor()
-    #
-    #     # Act
-    #     decompressed = compressor.decompress_frame(hex_from_csharp)
-    #
-    #     # Assert
-    #     self.assertEqual(b'hello world!', decompressed)

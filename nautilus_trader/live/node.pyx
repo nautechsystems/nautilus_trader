@@ -30,7 +30,7 @@ from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, Executi
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.network.compression cimport BypassCompressor, SnappyCompressor
+from nautilus_trader.network.compression cimport BypassCompressor, LZ4Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trading.trader cimport Trader
@@ -135,11 +135,11 @@ cdef class TradingNode:
         compressor_type = config_messaging['compression']
         if compressor_type in ('', 'none'):
             compressor = BypassCompressor()
-        elif compressor_type == 'snappy':
-            compressor = SnappyCompressor()
+        elif compressor_type == 'lz4':
+            compressor = LZ4Compressor()
         else:
             raise RuntimeError(f"Compressor type {compressor_type} not recognized. "
-                               f"Must be either 'none', or 'snappy'.")
+                               f"Must be either 'none', or 'lz4'.")
 
         # Setup encryption
         working_directory = os.getcwd()

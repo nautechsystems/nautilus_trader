@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import lz4.block
 import lz4.frame
-import py_snappy
 
 
 cdef class Compressor:
@@ -80,27 +78,9 @@ cdef class LZ4Compressor(Compressor):
         :param data: The data to compress.
         :return bytes.
         """
-        return lz4.block.compress(data, mode='fast')
-
-    cpdef bytes decompress(self, bytes data):
-        """
-        Decompress the given data.
-
-        :param data: The data to decompress.
-        :return bytes.
-        """
-        return lz4.block.decompress(data)
-
-    cpdef bytes compress_frame(self, bytes data):
-        """
-        Compress the given data.
-
-        :param data: The data to compress.
-        :return bytes.
-        """
         return lz4.frame.compress(data)
 
-    cpdef bytes decompress_frame(self, bytes data):
+    cpdef bytes decompress(self, bytes data):
         """
         Decompress the given data.
 
@@ -108,27 +88,3 @@ cdef class LZ4Compressor(Compressor):
         :return bytes.
         """
         return lz4.frame.decompress(data)
-
-
-cdef class SnappyCompressor(Compressor):
-    """
-    Provides a compressor for the Snappy specification.
-    """
-
-    cpdef bytes compress(self, bytes data):
-        """
-        Compress the given data.
-
-        :param data: The data to compress.
-        :return bytes.
-        """
-        return py_snappy.compress(data)
-
-    cpdef bytes decompress(self, bytes data):
-        """
-        Decompress the given data.
-
-        :param data: The data to decompress.
-        :return bytes.
-        """
-        return py_snappy.decompress(data)
