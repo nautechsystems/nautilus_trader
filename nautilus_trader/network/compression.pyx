@@ -15,7 +15,7 @@
 
 import lz4.block
 import lz4.frame
-import snappy
+import py_snappy
 
 
 cdef class Compressor:
@@ -122,7 +122,7 @@ cdef class SnappyCompressor(Compressor):
         :param data: The data to compress.
         :return bytes.
         """
-        return snappy.compress(data)
+        return py_snappy.compress(data)
 
     cpdef bytes decompress(self, bytes data):
         """
@@ -131,4 +131,4 @@ cdef class SnappyCompressor(Compressor):
         :param data: The data to decompress.
         :return bytes.
         """
-        return snappy.decompress(data)
+        return py_snappy.decompress(data)
