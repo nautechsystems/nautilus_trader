@@ -31,7 +31,7 @@
 
   "messaging": {
     "api_version": "1.0",
-    "compression": "snappy",
+    "compression": "lz4",
     "encryption": "curve",
     "keys_dir": "/home/nautilus/keys/"
   },
