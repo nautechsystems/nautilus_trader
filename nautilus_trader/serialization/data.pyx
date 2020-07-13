@@ -241,7 +241,6 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
 
         cdef dict bson_map = {
             SYMBOL: instrument.symbol.value,
-            BROKER_SYMBOL: instrument.broker_symbol,
             QUOTE_CURRENCY: currency_to_string(instrument.quote_currency),
             SECURITY_TYPE: security_type_to_string(instrument.security_type),
             PRICE_PRECISION: instrument.price_precision,
@@ -279,7 +278,6 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         if security_type == SecurityType.FOREX:
             return ForexInstrument(
                 symbol=Symbol.from_string(deserialized[SYMBOL]),
-                broker_symbol=deserialized[BROKER_SYMBOL],
                 price_precision=deserialized[PRICE_PRECISION],
                 size_precision=deserialized[SIZE_PRECISION],
                 min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
@@ -296,7 +294,6 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
 
         return Instrument(
             symbol=Symbol.from_string(deserialized[SYMBOL]),
-            broker_symbol=deserialized[BROKER_SYMBOL],
             quote_currency=currency_from_string(deserialized[QUOTE_CURRENCY]),
             security_type=security_type,
             price_precision=deserialized[PRICE_PRECISION],

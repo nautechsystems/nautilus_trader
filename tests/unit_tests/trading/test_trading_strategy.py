@@ -41,8 +41,8 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.strategies import TestStrategy1
 
-USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
+AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
 
 
 class TradeStrategyTests(unittest.TestCase):
@@ -104,8 +104,8 @@ class TradeStrategyTests(unittest.TestCase):
     def test_strategy_equality(self):
         # Arrange
         strategy1 = TradingStrategy(order_id_tag='001')
-        strategy2 = TradingStrategy(order_id_tag='AUDUSD-001')
-        strategy3 = TradingStrategy(order_id_tag='AUDUSD-002')
+        strategy2 = TradingStrategy(order_id_tag='AUD/USD-001')
+        strategy3 = TradingStrategy(order_id_tag='AUD/USD-002')
 
         # Act
         result1 = strategy1 == strategy1
@@ -136,15 +136,15 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_str_and_repr(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='GBPUSD-MM')
+        strategy = TradingStrategy(order_id_tag='GBP/USD-MM')
 
         # Act
         result1 = str(strategy)
         result2 = repr(strategy)
 
         # Assert
-        self.assertEqual('TradingStrategy(TradingStrategy-GBPUSD-MM)', result1)
-        self.assertTrue(result2.startswith('<TradingStrategy(TradingStrategy-GBPUSD-MM) object at'))
+        self.assertEqual('TradingStrategy(TradingStrategy-GBP/USD-MM)', result1)
+        self.assertTrue(result2.startswith('<TradingStrategy(TradingStrategy-GBP/USD-MM) object at'))
         self.assertTrue(result2.endswith('>'))
 
     def test_can_get_strategy_id(self):
@@ -285,7 +285,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_tick(self):
         strategy = TradingStrategy(order_id_tag='001')
 
-        tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
+        tick = Tick(Symbol('AUD/USD', Venue('FXCM')),
                     Price(1.00000, 5),
                     Price(1.00001, 5),
                     Volume(1),

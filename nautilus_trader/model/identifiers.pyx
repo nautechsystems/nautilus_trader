@@ -48,7 +48,7 @@ cdef class Symbol(Identifier):
         Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period '.'.
         
-        Example: 'AUDUSD.FXCM'.
+        Example: 'AUD/USD.FXCM'.
         
         :param value: The symbol string value to parse.
         :return Symbol.
@@ -66,7 +66,7 @@ cdef class Symbol(Identifier):
         Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period '.'.
 
-        Example: 'AUDUSD.FXCM'.
+        Example: 'AUD/USD.FXCM'.
 
         :param value: The symbol string value to parse.
 

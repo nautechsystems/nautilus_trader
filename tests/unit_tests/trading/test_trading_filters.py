@@ -76,6 +76,24 @@ class ForexSessionFilterTests(unittest.TestCase):
         # Assert
         self.assertEqual(datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), result)
 
+    def test_next_start_on_weekend_returns_expected_datetime_monday(self):
+        # Arrange
+        # Act
+        time_now = datetime(2020, 7, 12, 9, 0, tzinfo=pytz.utc)
+        result = self.session_filter.next_start(ForexSession.TOKYO, time_now)
+
+        # Assert
+        self.assertEqual(datetime(2020, 7, 13, 0, 0, tzinfo=pytz.utc), result)
+
+    def test_next_in_session_returns_expected_datetime_next_day(self):
+        # Arrange
+        # Act
+        time_now = datetime(2020, 7, 13, 1, 0, tzinfo=pytz.utc)
+        result = self.session_filter.next_start(ForexSession.TOKYO, time_now)
+
+        # Assert
+        self.assertEqual(datetime(2020, 7, 14, 0, 0, tzinfo=pytz.utc), result)
+
     def test_prev_start_given_london_session_unix_epoch_returns_expected_datetime(self):
         # Arrange
         # Act

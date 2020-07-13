@@ -89,8 +89,10 @@ class EMACrossFiltered(TradingStrategy):
         # Create news event filter
         self.news_filter = EconomicNewsEventFilter(currencies=news_currencies, impacts=news_impacts)
         self.news_event_next = None
-        self.news_buffer_before = timedelta(minutes=10)
-        self.news_buffer_after = timedelta(minutes=30)
+        self.news_buffer_high_before = timedelta(minutes=10)
+        self.news_buffer_high_after = timedelta(minutes=20)
+        self.news_buffer_medium_before = timedelta(minutes=5)
+        self.news_buffer_medium_after = timedelta(minutes=10)
         self.news_flatten = False
         self.trading_pause_start = None
         self.trading_pause_end = None
@@ -139,8 +141,12 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set news events
         self.news_event_next = self.news_filter.next_event(time_now)
-        self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_before
-        self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_after
+        if self.news_event_next.impact == 'HIGH':
+            self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
+            self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
+        elif self.news_event_next.impact == 'MEDIUM':
+            self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
+            self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
         self.log.info(f"Set next news event {self.news_event_next.name} "
                       f"affecting {self.news_event_next.currency} "
                       f"with expected {self.news_event_next.impact} impact "
@@ -219,8 +225,12 @@ class EMACrossFiltered(TradingStrategy):
                               f"at {self.news_event_next.timestamp}")
                 return  # Waiting for end of pause period
             self.news_event_next = self.news_filter.next_event(time_now)
-            self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_before
-            self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_after
+            if self.news_event_next.impact == 'HIGH':
+                self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
+                self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
+            elif self.news_event_next.impact == 'MEDIUM':
+                self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
+                self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
             self.log.info("Trading paused ended.")
             self.log.info(f"Set next news event {self.news_event_next.name} "
                           f"affecting {self.news_event_next.currency} "

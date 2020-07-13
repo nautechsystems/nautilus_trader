@@ -118,7 +118,6 @@ cdef class Bar:
 cdef class Instrument:
     cdef readonly InstrumentId id
     cdef readonly Symbol symbol
-    cdef readonly str broker_symbol
     cdef readonly Currency quote_currency
     cdef readonly SecurityType security_type
     cdef readonly int price_precision

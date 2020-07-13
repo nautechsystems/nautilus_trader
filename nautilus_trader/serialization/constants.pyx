@@ -71,7 +71,6 @@ MARGIN_USED_LIQUIDATION = 'MarginUsedLiquidation'
 MARGIN_USED_MAINTENANCE = 'MarginUsedMaintenance'
 MARGIN_RATIO = 'MarginRatio'
 MARGIN_CALL_STATUS = 'MarginCallStatus'
-BROKER_SYMBOL = 'BrokerSymbol'
 
 CURRENCY = 'Currency'
 BASE_CURRENCY = 'BaseCurrency'

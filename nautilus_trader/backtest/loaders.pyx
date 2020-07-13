@@ -78,13 +78,13 @@ cdef class InstrumentLoader:
         Return a default FX currency pair instrument from the given arguments.
         
         :param symbol: The currency pair symbol.
-        :raises ValueError: If the symbol.code length is not == 6.
+        :raises ValueError: If the symbol.code length is not in range [6, 7].
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.equal(len(symbol.code), 6, 'len(symbol)', '6')
+        Condition.in_range_int(len(symbol.code), 6, 7, 'len(symbol)')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
-        cdef Currency quote_currency = currency_from_string(symbol.code[3:])
+        cdef Currency quote_currency = currency_from_string(symbol.code[-3:])
 
         # Check tick precision of quote currency
         if quote_currency == Currency.JPY:
@@ -94,7 +94,6 @@ cdef class InstrumentLoader:
 
         return Instrument(
             symbol=symbol,
-            broker_symbol=symbol.code[:3] + '/' + symbol.code[3:],
             quote_currency=quote_currency,
             security_type=SecurityType.FOREX,
             price_precision=price_precision,
