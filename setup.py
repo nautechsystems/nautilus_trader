@@ -30,7 +30,6 @@ DESCRIPTION = 'An algorithmic trading platform and event-driven backtester'
 URL = 'https://github.com/nautechsystems/nautilus_trader'
 PYTHON_REQUIRES = '>=3.6.8'
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
-PACKAGE_DATA_EXTENSIONS = ['*.csv', '*.pxd']
 
 
 # Cython build options (edit here only)
@@ -60,9 +59,6 @@ compiler_directives = {
 }
 # -------------------------------------
 
-packages = [module for module in setuptools.find_packages()]
-package_data = {module: PACKAGE_DATA_EXTENSIONS for module in packages}
-
 with open('README.md', encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
 
@@ -88,8 +84,7 @@ setup(
     requires=parse_requirements('requirements.txt', strip=True),
     install_requires=parse_requirements('requirements.txt'),
     tests_require=parse_requirements('requirements.txt'),
-    packages=packages,
-    package_data=package_data,
+    packages=[module for module in setuptools.find_packages()],
     include_package_data=True,
     ext_modules=cythonize(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
