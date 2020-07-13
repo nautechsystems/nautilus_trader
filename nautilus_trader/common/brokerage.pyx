@@ -149,14 +149,14 @@ cdef class RolloverInterestCalculator:
         :param symbol: The forex currency symbol for the calculation.
         :param date: The date for the overnight rate.
         :return: double.
-        :raises ValueError: If the symbol.code length is not == 6.
+        :raises ValueError: If the symbol.code length is not in range [6, 7].
         """
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(date, 'timestamp')
-        Condition.equal(len(symbol.code), 6, 'len(symbol)', '6')
+        Condition.in_range_int(len(symbol.code), 6, 7, 'len(symbol)')
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
-        cdef Currency quote_currency = currency_from_string(symbol.code[3:])
+        cdef Currency quote_currency = currency_from_string(symbol.code[-3:])
 
         cdef str time_monthly = f'{date.year}-{str(date.month).zfill(2)}'
         cdef str time_quarter = f'{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}'

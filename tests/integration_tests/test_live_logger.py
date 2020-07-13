@@ -23,8 +23,8 @@ from nautilus_trader.live.logging import LogStore
 
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBP/USD', Venue('FXCM'))
 
 UTF8 = 'utf8'
 LOCALHOST = "127.0.0.1"

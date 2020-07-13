@@ -923,7 +923,6 @@ cdef class Instrument:
 
     def __init__(self,
                  Symbol symbol not None,
-                 str broker_symbol not None,
                  Currency quote_currency,
                  SecurityType security_type,
                  int price_precision,
@@ -943,8 +942,7 @@ cdef class Instrument:
         Initializes a new instance of the Instrument class.
 
         :param symbol: The symbol.
-        :param broker_symbol: The broker symbol.
-        :param quote_currency: The base currency.
+        :param quote_currency: The quote currency.
         :param security_type: The security type.
         :param price_precision: The price decimal precision.
         :param size_precision: The trading size decimal precision.
@@ -960,7 +958,6 @@ cdef class Instrument:
         :param rollover_interest_sell: The rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
-        Condition.valid_string(broker_symbol, 'broker_symbol')
         Condition.not_equal(quote_currency, Currency.UNDEFINED, 'quote_currency', 'UNDEFINED')
         Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
@@ -969,14 +966,12 @@ cdef class Instrument:
         Condition.not_negative_int(min_stop_distance, 'min_stop_distance')
         Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
         Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
-        # Condition.equal(price_precision, tick_size.precision, 'size_precision', 'tick_size.precision') # TODO
         Condition.equal(size_precision, round_lot_size.precision, 'size_precision', 'round_lot_size.precision')
         Condition.equal(size_precision, min_trade_size.precision, 'size_precision', 'min_trade_size.precision')
         Condition.equal(size_precision, max_trade_size.precision, 'size_precision', 'max_trade_size.precision')
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
-        self.broker_symbol = broker_symbol
         self.quote_currency = quote_currency
         self.security_type = security_type
         self.price_precision = price_precision
@@ -1044,7 +1039,6 @@ cdef class ForexInstrument(Instrument):
 
     def __init__(self,
                  Symbol symbol not None,
-                 str broker_symbol not None,
                  int price_precision,
                  int size_precision,
                  int min_stop_distance_entry,
@@ -1062,7 +1056,6 @@ cdef class ForexInstrument(Instrument):
         Initializes a new instance of the Instrument class.
 
         :param symbol: The symbol.
-        :param broker_symbol: The broker symbol.
         :param price_precision: The price decimal precision.
         :param size_precision: The trading size decimal precision.
         :param min_stop_distance_entry: The minimum distance for stop entry orders.
@@ -1079,7 +1072,6 @@ cdef class ForexInstrument(Instrument):
         """
         super().__init__(
             symbol,
-            broker_symbol,
             currency_from_string(symbol.code[-3:]),
             SecurityType.FOREX,
             price_precision,

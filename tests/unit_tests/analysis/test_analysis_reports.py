@@ -28,8 +28,8 @@ from nautilus_trader.analysis.reports import ReportProvider
 
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBP/USD', Venue('FXCM'))
 
 
 class ReportProviderTests(unittest.TestCase):
@@ -82,7 +82,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(2, len(report))
         self.assertEqual('order_id', report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
-        self.assertEqual('AUDUSD', report.iloc[0]['symbol'])
+        self.assertEqual('AUD/USD', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
@@ -131,7 +131,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(1, len(report))
         self.assertEqual('order_id', report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
-        self.assertEqual('AUDUSD', report.iloc[0]['symbol'])
+        self.assertEqual('AUD/USD', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
@@ -156,7 +156,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(2, len(report))
         self.assertEqual('position_id', report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
-        self.assertEqual('AUDUSD', report.iloc[0]['symbol'])
+        self.assertEqual('AUD/USD', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['direction'])
         self.assertEqual(100000, report.iloc[0]['peak_quantity'])
         self.assertEqual(1.00000, report.iloc[0]['avg_open_price'])

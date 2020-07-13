@@ -19,6 +19,7 @@ import json
 import pymongo
 import redis
 import msgpack
+import lz4
 import zmq
 
 from nautilus_trader.core.correctness cimport Condition
@@ -289,16 +290,11 @@ cdef class TradingNode:
         self._data_client.dispose()
         self._exec_client.dispose()
 
-        self._log.debug("ZMQ context terminating...")
-        time.sleep(0.5)  # Hard coded delay for graceful disposal (refactor)
-        # Assertion failed: pfd.revents & POLLIN (src/signaler.cpp:261)
-        self._zmq_context.destroy()
-        self._log.info("ZMQ context terminated.")
-
     cdef void _log_header(self) except *:
         nautilus_header(self._log)
         self._log.info(f"redis {redis.__version__}")
         self._log.info(f"pymongo {pymongo.__version__}")
         self._log.info(f"pyzmq {zmq.pyzmq_version()}")
         self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
+        self._log.info(f"lz4 {lz4.__version__}")
         self._log.info("=================================================================")

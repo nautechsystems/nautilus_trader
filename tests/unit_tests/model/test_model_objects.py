@@ -408,7 +408,7 @@ class ObjectTests(unittest.TestCase):
 
         # Assert
         self.assertEqual('1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z', result0)
-        self.assertTrue(result1.startswith('<Tick(AUDUSD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z) object at'))
+        self.assertTrue(result1.startswith('<Tick(AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z) object at'))
         self.assertTrue(result1.endswith('>'))
 
     def test_can_parse_tick_from_string(self):
@@ -438,8 +438,8 @@ class ObjectTests(unittest.TestCase):
 
     def test_bar_type_equality(self):
         # Arrange
-        symbol1 = Symbol("AUDUSD", Venue('FXCM'))
-        symbol2 = Symbol("GBPUSD", Venue('FXCM'))
+        symbol1 = Symbol("AUD/USD", Venue('FXCM'))
+        symbol2 = Symbol("GBP/USD", Venue('FXCM'))
         bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
         bar_type1 = BarType(symbol1, bar_spec)
         bar_type2 = BarType(symbol1, bar_spec)
@@ -453,14 +453,14 @@ class ObjectTests(unittest.TestCase):
 
     def test_bar_type_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUDUSD", Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue('FXCM'))
         bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
 
         # Act
         # Assert
-        self.assertEqual("AUDUSD.FXCM-1-MINUTE-BID", str(bar_type))
-        self.assertTrue(repr(bar_type).startswith("<BarType(AUDUSD.FXCM-1-MINUTE-BID) object at"))
+        self.assertEqual("AUD/USD.FXCM-1-MINUTE-BID", str(bar_type))
+        self.assertTrue(repr(bar_type).startswith("<BarType(AUD/USD.FXCM-1-MINUTE-BID) object at"))
 
     def test_can_parse_bar_from_string(self):
         # Arrange

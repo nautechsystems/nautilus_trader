@@ -79,9 +79,9 @@ class IdentifierTests(unittest.TestCase):
 
     def test_symbol_equality(self):
         # Arrange
-        symbol1 = Symbol("AUDUSD", Venue('FXCM'))
-        symbol2 = Symbol("AUDUSD", Venue('IDEAL_PRO'))
-        symbol3 = Symbol("GBPUSD", Venue('FXCM'))
+        symbol1 = Symbol("AUD/USD", Venue('FXCM'))
+        symbol2 = Symbol("AUD/USD", Venue('IDEAL_PRO'))
+        symbol3 = Symbol("GBP/USD", Venue('FXCM'))
 
         # Act
         # Assert
@@ -91,16 +91,16 @@ class IdentifierTests(unittest.TestCase):
 
     def test_symbol_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUDUSD", Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue('FXCM'))
 
         # Act
         # Assert
-        self.assertEqual("AUDUSD.FXCM", str(symbol))
-        self.assertTrue(repr(symbol).startswith("<Symbol(AUDUSD.FXCM) object at"))
+        self.assertEqual("AUD/USD.FXCM", str(symbol))
+        self.assertTrue(repr(symbol).startswith("<Symbol(AUD/USD.FXCM) object at"))
 
     def test_can_parse_symbol_from_string(self):
         # Arrange
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
+        symbol = Symbol('AUD/USD', Venue('FXCM'))
 
         # Act
         result = Symbol.py_from_string(symbol.value)

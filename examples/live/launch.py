@@ -31,9 +31,15 @@ BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
 symbols_fx = [
     Symbol('AUD/USD', Venue('FXCM')),
+    Symbol('AUD/JPY', Venue('FXCM')),
     Symbol('EUR/USD', Venue('FXCM')),
+    Symbol('EUR/GBP', Venue('FXCM')),
+    Symbol('EUR/JPY', Venue('FXCM')),
     Symbol('GBP/USD', Venue('FXCM')),
+    Symbol('GBP/JPY', Venue('FXCM')),
     Symbol('USD/JPY', Venue('FXCM')),
+    Symbol('USD/CAD', Venue('FXCM')),
+    Symbol('USD/CHF', Venue('FXCM')),
 ]
 
 news_impacts = ['HIGH', 'MEDIUM']
@@ -50,57 +56,57 @@ for symbol in symbols_fx:
         slow_ema=20,
         atr_period=20,
         news_currencies=[ccy1, ccy2],
-        news_impacts=['HIGH', 'MEDIUM']))
+        news_impacts=news_impacts))
 
-strategies.append(EMACrossFiltered(
-    Symbol('XAUUSD', Venue('FXCM')),
-    BAR_SPEC_CFD,
-    risk_bp=10.0,
-    fast_ema=10,
-    slow_ema=20,
-    atr_period=20,
-    news_currencies=['USD'],
-    news_impacts=news_impacts))
-
-strategies.append(EMACrossFiltered(
-    Symbol('SPX500', Venue('FXCM')),
-    BAR_SPEC_CFD,
-    risk_bp=10.0,
-    fast_ema=10,
-    slow_ema=20,
-    atr_period=20,
-    news_currencies=['USD'],
-    news_impacts=news_impacts))
-
-strategies.append(EMACrossFiltered(
-    Symbol('AUS200', Venue('FXCM')),
-    BAR_SPEC_CFD,
-    risk_bp=10.0,
-    fast_ema=10,
-    slow_ema=20,
-    atr_period=20,
-    news_currencies=['USD', 'AUD'],
-    news_impacts=news_impacts))
-
-strategies.append(EMACrossFiltered(
-    Symbol('USOil', Venue('FXCM')),
-    BAR_SPEC_CFD,
-    risk_bp=10.0,
-    fast_ema=10,
-    slow_ema=20,
-    atr_period=20,
-    news_currencies=['USD'],
-    news_impacts=news_impacts))
-
-strategies.append(EMACrossFiltered(
-    Symbol('GER30', Venue('FXCM')),
-    BAR_SPEC_CFD,
-    risk_bp=10.0,
-    fast_ema=10,
-    slow_ema=20,
-    atr_period=20,
-    news_currencies=['USD', 'EUR'],
-    news_impacts=news_impacts))
+# strategies.append(EMACrossFiltered(
+#     Symbol('XAU/USD', Venue('FXCM')),
+#     BAR_SPEC_CFD,
+#     risk_bp=10.0,
+#     fast_ema=10,
+#     slow_ema=20,
+#     atr_period=20,
+#     news_currencies=['USD'],
+#     news_impacts=news_impacts))
+#
+# strategies.append(EMACrossFiltered(
+#     Symbol('SPX500', Venue('FXCM')),
+#     BAR_SPEC_CFD,
+#     risk_bp=10.0,
+#     fast_ema=10,
+#     slow_ema=20,
+#     atr_period=20,
+#     news_currencies=['USD'],
+#     news_impacts=news_impacts))
+#
+# strategies.append(EMACrossFiltered(
+#     Symbol('AUS200', Venue('FXCM')),
+#     BAR_SPEC_CFD,
+#     risk_bp=10.0,
+#     fast_ema=10,
+#     slow_ema=20,
+#     atr_period=20,
+#     news_currencies=['USD', 'AUD'],
+#     news_impacts=news_impacts))
+#
+# strategies.append(EMACrossFiltered(
+#     Symbol('USOil', Venue('FXCM')),
+#     BAR_SPEC_CFD,
+#     risk_bp=10.0,
+#     fast_ema=10,
+#     slow_ema=20,
+#     atr_period=20,
+#     news_currencies=['USD'],
+#     news_impacts=news_impacts))
+#
+# strategies.append(EMACrossFiltered(
+#     Symbol('GER30', Venue('FXCM')),
+#     BAR_SPEC_CFD,
+#     risk_bp=10.0,
+#     fast_ema=10,
+#     slow_ema=20,
+#     atr_period=20,
+#     news_currencies=['USD', 'EUR'],
+#     news_impacts=news_impacts))
 
 
 if __name__ == "__main__":
