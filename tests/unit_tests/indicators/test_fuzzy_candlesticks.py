@@ -18,10 +18,10 @@ import numpy as np
 
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandlesticks
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandle
-from nautilus_trader.indicators.fuzzy_candlesticks import CandleDirection
-from nautilus_trader.indicators.fuzzy_candlesticks import CandleSize
-from nautilus_trader.indicators.fuzzy_candlesticks import CandleBodySize
-from nautilus_trader.indicators.fuzzy_candlesticks import CandleWickSize
+from nautilus_trader.indicators.fuzzy_enum import CandleDirection
+from nautilus_trader.indicators.fuzzy_enum import CandleSize
+from nautilus_trader.indicators.fuzzy_enum import CandleBodySize
+from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
 from tests.test_kit.series import BatterySeries
 
 
@@ -110,30 +110,6 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         # Assert
         self.assertEqual(10, self.fc.period)
 
-    def test_fuzzify_direction_returns_expected_values(self):
-        # Arrange
-        # Act
-        result1 = FuzzyCandlesticks.fuzzify_direction(1.00000, 1.00010)
-        result2 = FuzzyCandlesticks.fuzzify_direction(1.00000, 1.00000)
-        result3 = FuzzyCandlesticks.fuzzify_direction(1.00000, 0.99990)
-
-        # Assert
-        self.assertEqual(CandleDirection.BULL, result1)
-        self.assertEqual(CandleDirection.NONE, result2)
-        self.assertEqual(CandleDirection.BEAR, result3)
-
-    def test_price_comparison_returns_expected_results(self):
-        # Arrange
-        # Act
-        result1 = self.fc.price_comparison(1.00000, 1.00010)
-        result2 = self.fc.price_comparison(1.00000, 1.00000)
-        result3 = self.fc.price_comparison(1.00000, 0.99990)
-
-        # Assert
-        self.assertEqual(-1, result1)
-        self.assertEqual(0, result2)
-        self.assertEqual(1, result3)
-
     def test_values_with_doji_bars_returns_expected_results(self):
         # arrange
         self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
@@ -150,12 +126,10 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # act
         result_candle = self.fc.value
-        result_array = self.fc.value_array
-        result_comparison = self.fc.value_price_comparisons
+        result_array = self.fc.vector
 
         # assert
         self.assertTrue(np.array_equal([0, 0, 0, 0, 0], result_array))
-        self.assertTrue(np.array_equal([0, 0, 0, 0, 0], result_comparison))
         self.assertEqual(CandleDirection.NONE, result_candle.direction)
         self.assertEqual(CandleSize.NONE, result_candle.size)
         self.assertEqual(CandleBodySize.NONE, result_candle.body_size)
@@ -177,12 +151,10 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Act
         result_candle = self.fc.value
-        result_array = self.fc.value_array
-        result_comparison = self.fc.value_price_comparisons
+        result_array = self.fc.vector
 
         # Assert
         self.assertTrue(np.array_equal([1, 1, 1, 1, 1], result_array))
-        self.assertTrue(np.array_equal([0, 0, -1, 1, 0], result_comparison))
         self.assertEqual(CandleDirection.BULL, result_candle.direction)
         self.assertEqual(CandleSize.VERY_SMALL, result_candle.size)
         self.assertEqual(CandleBodySize.SMALL, result_candle.body_size)
@@ -204,15 +176,10 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Act
         result_candle = self.fc.value
-        result_array = self.fc.value_array
-        result_comparison = self.fc.value_price_comparisons
+        result_array = self.fc.vector
 
         # Assert
-        print(result_candle)
-        print(result_array)
-        print(result_comparison)
-        self.assertTrue(np.array_equal([-1, 2, 4, 2, 2], result_array))
-        self.assertTrue(np.array_equal([-1, -1, -1, -1, -1], result_comparison))
+        self.assertTrue([-1, 2, 4, 2, 2], result_array)
         self.assertEqual(CandleDirection.BEAR, result_candle.direction)
         self.assertEqual(CandleSize.SMALL, result_candle.size)
         self.assertEqual(CandleBodySize.TREND, result_candle.body_size)
@@ -241,7 +208,7 @@ class FuzzyCandlesticksTests(unittest.TestCase):
                 self.fc.update(point, point, point, point)
             except Exception as ex:
                 print(ex)
-            output.append(self.fc.value)
+            output.append(self.fc.vector)
 
         # Assert
         self.assertEqual(len(battery_signal), len(output))
