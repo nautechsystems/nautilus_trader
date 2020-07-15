@@ -5,11 +5,7 @@ phases:
     runtime-versions:
       python: 3.7
     commands:
-      - cat /etc/os-release
       - yum update -y
-      - yum group install -y "Development Tools"
-      - yum install -y python3-devel
-      - yum install -y snappy-devel
       - curl -O https://bootstrap.pypa.io/get-pip.py
       - python3 get-pip.py --user
       - python3 --version
@@ -23,10 +19,9 @@ phases:
       - echo Build started on `date`
       - python3 -m pip install -r requirements.txt
       - python3 setup.py build_ext --inplace
-      - bash scripts/run_tests.sh
   post_build:
     commands:
-      - rm -r build
+      - python3 -m scripts/cleanup.py
       - echo Build completed on `date`
 
 artifacts:

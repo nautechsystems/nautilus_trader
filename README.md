@@ -92,7 +92,7 @@ The trader must assemble a directory including the following;
 - trading strategy python or cython files
 
 ## Development
-[Development Documentation](docs/development)
+[Development Documentation](docs/development/)
 
 We recommend the PyCharm Professional edition IDE as it interprets Cython syntax.
 Unfortunately the Community edition will not interpret Cython syntax.
