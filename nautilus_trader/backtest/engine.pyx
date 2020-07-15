@@ -27,7 +27,7 @@ from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
 from nautilus_trader.common.clock cimport TestClock, TimeEventHandler, TimeEvent
-from nautilus_trader.common.guid cimport TestGuidFactory
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.common.logging cimport LogLevel, LoggerAdapter, TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
@@ -77,7 +77,7 @@ cdef class BacktestEngine:
 
         self.test_clock = TestClock()
         self.test_clock.set_time(self.clock.time_now())
-        self.guid_factory = TestGuidFactory()
+        self.uuid_factory = TestUUIDFactory()
 
         self.logger = TestLogger(
             name=self.trader_id.value,
@@ -137,7 +137,7 @@ cdef class BacktestEngine:
         self.portfolio = Portfolio(
             currency=self.config.account_currency,
             clock=self.test_clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
         self.analyzer = PerformanceAnalyzer()
@@ -148,7 +148,7 @@ cdef class BacktestEngine:
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=self.test_clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
         self.exec_client = BacktestExecClient(
@@ -157,7 +157,7 @@ cdef class BacktestEngine:
             config=config,
             fill_model=fill_model,
             clock=self.test_clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
         self.exec_engine.register_client(self.exec_client)
@@ -171,7 +171,7 @@ cdef class BacktestEngine:
             data_client=self.data_client,
             exec_engine=self.exec_engine,
             clock=self.test_clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
         self.iteration = 0

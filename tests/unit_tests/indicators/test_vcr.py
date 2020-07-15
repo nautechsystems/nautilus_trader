@@ -17,7 +17,6 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.vcr import VolatilityCompressionRatio
-
 from tests.test_kit.series import BatterySeries
 
 

@@ -15,10 +15,9 @@
 
 import pytz
 import unittest
-import uuid
 from datetime import datetime, timedelta
 
-from nautilus_trader.core.types import GUID
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import OrderSide, MarketPosition, Currency
 from nautilus_trader.model.objects import Quantity, Price, Volume, Tick, Money
 from nautilus_trader.model.identifiers import (
@@ -31,7 +30,6 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock
-
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -67,7 +65,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         last = Tick(AUDUSD_FXCM,
@@ -125,7 +123,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         last = Tick(AUDUSD_FXCM,
@@ -179,7 +177,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         last = Tick(AUDUSD_FXCM,
@@ -233,7 +231,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         order_partially_filled2 = OrderPartiallyFilled(
@@ -248,7 +246,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00002, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         position = Position(PositionId('P-123456'), order_partially_filled1)
@@ -302,7 +300,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         position = Position(PositionId('P-123456'), order_filled1)
@@ -318,7 +316,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH + timedelta(minutes=1),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         last = Tick(AUDUSD_FXCM,
@@ -378,7 +376,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         position = Position(PositionId('P-123456'), order_filled1)
@@ -395,7 +393,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         order_filled3 = OrderPartiallyFilled(
@@ -410,7 +408,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00003, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         last = Tick(AUDUSD_FXCM,
@@ -471,7 +469,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         position = Position(PositionId('P-123456'), order1_filled)
@@ -487,7 +485,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         last = Tick(AUDUSD_FXCM,
@@ -554,7 +552,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         order2_filled = OrderFilled(
@@ -568,7 +566,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         order3_filled = OrderFilled(
@@ -582,7 +580,7 @@ class PositionTests(unittest.TestCase):
             Price(1.00010, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         last = Tick(AUDUSD_FXCM,

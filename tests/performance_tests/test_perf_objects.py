@@ -16,10 +16,8 @@
 import unittest
 
 from nautilus_trader.model.objects import Price, Volume, Bar
-
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
-
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()

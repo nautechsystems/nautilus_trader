@@ -18,7 +18,7 @@ import unittest
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.model.enums import BarStructure, PriceType, Currency
 from nautilus_trader.model.identifiers import IdTag, TraderId, StrategyId
-from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.common.portfolio import Portfolio
@@ -28,7 +28,6 @@ from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
 from nautilus_trader.trading.trader import Trader
-
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.data import TestDataProvider
@@ -47,7 +46,7 @@ class TraderTests(unittest.TestCase):
         data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
         clock = TestClock()
-        guid_factory = TestGuidFactory()
+        uuid_factory = TestUUIDFactory()
         logger = TestLogger()
         trader_id = TraderId('TESTER', '000')
         account_id = TestStubs.account_id()
@@ -61,7 +60,7 @@ class TraderTests(unittest.TestCase):
         self.portfolio = Portfolio(
             currency=Currency.USD,
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
 
         self.analyzer = PerformanceAnalyzer()
@@ -75,7 +74,7 @@ class TraderTests(unittest.TestCase):
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
 
         self.exec_client = BacktestExecClient(
@@ -84,7 +83,7 @@ class TraderTests(unittest.TestCase):
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
         self.exec_engine.register_client(self.exec_client)
 
@@ -98,7 +97,7 @@ class TraderTests(unittest.TestCase):
             data_client=data_client,
             exec_engine=self.exec_engine,
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
 
     def test_can_initialize_trader(self):

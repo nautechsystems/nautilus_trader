@@ -18,7 +18,7 @@ from nautilus_trader.model.commands cimport Command, AccountInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitBracketOrder, ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.network.identifiers cimport ClientId
@@ -32,7 +32,7 @@ from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializ
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 
 
@@ -60,7 +60,7 @@ cdef class LiveExecClient(ExecutionClient):
             ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
             EventSerializer event_serializer not None=MsgPackEventSerializer(),
             Clock clock not None=LiveClock(),
-            GuidFactory guid_factory not None=LiveGuidFactory(),
+            UUIDFactory uuid_factory not None=LiveUUIDFactory(),
             Logger logger not None=LiveLogger()):
         """
         Initializes a new instance of the LiveExecClient class.
@@ -76,7 +76,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the host is not a valid string.
@@ -108,7 +108,7 @@ cdef class LiveExecClient(ExecutionClient):
             compressor,
             encryption,
             clock,
-            guid_factory,
+            uuid_factory,
             self._log)
 
         self._event_subscriber = MessageSubscriber(
@@ -118,7 +118,7 @@ cdef class LiveExecClient(ExecutionClient):
             compressor,
             encryption,
             clock,
-            guid_factory,
+            uuid_factory,
             self._log)
 
         self._event_subscriber.register_handler(self._recv_event)

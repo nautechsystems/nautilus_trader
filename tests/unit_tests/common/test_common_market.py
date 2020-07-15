@@ -26,7 +26,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.atr import AverageTrueRange
-
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.mocks import ObjectStorer
@@ -188,7 +187,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Price(1.00002, 5),
             Price(1.00003, 5),
             Volume(1000),
-            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc))
+            UNIX_EPOCH)
 
         # Act
         updater.update_bar(bar)
@@ -208,7 +207,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Price(1.00002, 5),
             Price(1.00003, 5),
             Volume(1000),
-            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc))
+            UNIX_EPOCH)
 
         # Act
         updater.update_bar(bar)

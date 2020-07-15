@@ -27,7 +27,7 @@ from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport Event, AccountStateEvent, OrderFillEvent, OrderInitialized
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -1011,7 +1011,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                  ExecutionDatabase database not None,
                  Portfolio portfolio not None,
                  Clock clock not None,
-                 GuidFactory guid_factory not None,
+                 UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
         Initializes a new instance of the RedisExecutionEngine class.
@@ -1021,7 +1021,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
         :param clock: The clock for the engine.
-        :param guid_factory: The guid factory for the engine.
+        :param uuid_factory: The uuid factory for the engine.
         :param logger: The logger for the engine.
         """
         super().__init__(
@@ -1030,7 +1030,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             database=database,
             portfolio=portfolio,
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
 
         self._queue = queue.Queue()

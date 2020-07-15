@@ -17,9 +17,9 @@ import zmq
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message, MessageType, message_type_to_string, message_type_from_string
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
@@ -43,7 +43,7 @@ cdef class ServerNode:
             ServerId server_id not None,
             Compressor compressor not None,
             Clock clock not None,
-            GuidFactory guid_factory not None,
+            UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
         Initializes a new instance of the ServerNode class.
@@ -51,12 +51,12 @@ cdef class ServerNode:
         :param server_id: The server identifier.
         :param compressor: The message compressor.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         """
         self._compressor = compressor
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self._log = logger
 
         self.server_id = server_id
@@ -92,7 +92,7 @@ cdef class MessageServer(ServerNode):
             Compressor compressor not None,
             EncryptionSettings encryption not None,
             Clock clock not None,
-            GuidFactory guid_factory not None,
+            UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
         Initializes a new instance of the MessageServer class.
@@ -106,7 +106,7 @@ cdef class MessageServer(ServerNode):
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         """
         Condition.valid_port(send_port, 'send_port')
@@ -115,7 +115,7 @@ cdef class MessageServer(ServerNode):
             server_id,
             compressor,
             clock,
-            guid_factory,
+            uuid_factory,
             logger)
 
         self._socket_inbound = ServerSocket(
@@ -207,7 +207,7 @@ cdef class MessageServer(ServerNode):
 
         self._handlers[message_type] = handler
 
-    cpdef void send_rejected(self, str rejected_message, GUID correlation_id, ClientId receiver) except *:
+    cpdef void send_rejected(self, str rejected_message, UUID correlation_id, ClientId receiver) except *:
         """
         Send a MessageRejected response.
         
@@ -215,7 +215,7 @@ cdef class MessageServer(ServerNode):
         ----------
         rejected_message : str
             The rejected reason message.
-        correlation_id : GUID
+        correlation_id : UUID
             The identifier of the rejected message.
         receiver : ClientId
             The client to send the response to.
@@ -226,7 +226,7 @@ cdef class MessageServer(ServerNode):
         cdef MessageRejected response = MessageRejected(
             rejected_message,
             correlation_id,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self.send_response(response, receiver)
@@ -246,7 +246,7 @@ cdef class MessageServer(ServerNode):
         cdef MessageReceived response = MessageReceived(
             original.__class__.__name__,
             original.id,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self.send_response(response, receiver)
@@ -365,7 +365,7 @@ cdef class MessageServer(ServerNode):
             self.server_id,
             session_id,
             request.id,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self.send_response(response, client_id)
@@ -390,7 +390,7 @@ cdef class MessageServer(ServerNode):
             self.server_id,
             session_id,
             request.id,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self.send_response(response, client_id)
@@ -407,7 +407,7 @@ cdef class MessagePublisher(ServerNode):
                  Compressor compressor not None,
                  EncryptionSettings encryption not None,
                  Clock clock not None,
-                 GuidFactory guid_factory not None,
+                 UUIDFactory uuid_factory not None,
                  LoggerAdapter logger not None):
         """
         Initializes a new instance of the MessagePublisher class.
@@ -417,14 +417,14 @@ cdef class MessagePublisher(ServerNode):
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         """
         super().__init__(
             server_id,
             compressor,
             clock,
-            guid_factory,
+            uuid_factory,
             logger)
 
         self._socket = ServerSocket(

@@ -20,14 +20,14 @@ from nautilus_trader.model.events cimport PositionEvent, PositionOpened, Positio
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class Portfolio:
     cdef LoggerAdapter _log
     cdef Clock _clock
-    cdef GuidFactory _guid_factory
+    cdef UUIDFactory _uuid_factory
 
     cdef dict _positions_open
     cdef dict _positions_closed

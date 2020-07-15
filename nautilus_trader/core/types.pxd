@@ -30,6 +30,6 @@ cdef class Identifier(ValidString):
     cpdef bint equals(self, Identifier other)
 
 
-cdef class GUID(Identifier):
-    @staticmethod
-    cdef GUID none()
+# cdef class GUID(Identifier):
+#     @staticmethod
+#     cdef GUID none()

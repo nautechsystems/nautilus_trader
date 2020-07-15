@@ -25,6 +25,7 @@ from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
 from nautilus_trader.common.market cimport BarAggregator, TickBarAggregator, TimeBarAggregator
@@ -47,21 +48,21 @@ cdef class DataClient:
     def __init__(self,
                  int tick_capacity,
                  Clock clock not None,
-                 GuidFactory guid_factory not None,
+                 UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
         Initializes a new instance of the DataClient class.
 
         :param tick_capacity: The length for the internal bars deque (> 0).
         :param clock: The clock for the component.
-        :param guid_factory: The GUID factory for the component.
+        :param uuid_factory: The UUID factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the tick_capacity is not positive (> 0).
         """
         Condition.positive_int(tick_capacity, 'tick_capacity')
 
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._ticks = {}                # type: {Symbol, Tick}
         self._tick_handlers = {}        # type: {Symbol, [TickHandler]}

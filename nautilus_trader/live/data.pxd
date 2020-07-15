@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.identifiers cimport TraderId
@@ -37,10 +37,10 @@ cdef class LiveDataClient(DataClient):
 
     cdef readonly TraderId trader_id
     cdef readonly ClientId client_id
-    cdef readonly GUID last_request_id
+    cdef readonly UUID last_request_id
 
-    cpdef void _set_callback(self, GUID request_id, handler: callable) except *
-    cpdef object _pop_callback(self, GUID correlation_id)
+    cpdef void _set_callback(self, UUID request_id, handler: callable) except *
+    cpdef object _pop_callback(self, UUID correlation_id)
     cpdef void _handle_response(self, Response response) except *
     cpdef void _handle_data_response(self, DataResponse response) except *
     cpdef void _handle_instruments_py(self, list instruments) except *

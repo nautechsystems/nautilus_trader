@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date, datetime, timedelta
+from cpython.datetime cimport datetime, timedelta
 
-from nautilus_trader.core.types cimport GUID, Label
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.common.guid cimport GuidFactory, TestGuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory, TestUUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 
@@ -41,20 +42,20 @@ cdef class Timer:
     cdef readonly datetime stop_time
     cdef readonly expired
 
-    cpdef TimeEvent pop_event(self, GUID event_id)
+    cpdef TimeEvent pop_event(self, UUID event_id)
     cpdef void iterate_next_time(self, datetime now) except *
     cpdef void cancel(self) except *
 
 
 cdef class TestTimer(Timer):
-    cdef TestGuidFactory _guid_factory
+    cdef TestUUIDFactory _uuid_factory
 
     cpdef list advance(self, datetime to_time)
 
 
 cdef class Clock:
     cdef LoggerAdapter _log
-    cdef GuidFactory _guid_factory
+    cdef UUIDFactory _uuid_factory
     cdef dict _timers
     cdef dict _handlers
     cdef Timer[:] _stack

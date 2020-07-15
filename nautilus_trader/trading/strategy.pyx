@@ -35,7 +35,7 @@ from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
@@ -43,7 +43,7 @@ from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.factories cimport LiveUUIDFactory
 
 
 cdef class TradingStrategy:
@@ -59,7 +59,7 @@ cdef class TradingStrategy:
                  int tick_capacity=1000,
                  int bar_capacity=1000,
                  Clock clock not None=LiveClock(),
-                 GuidFactory guid_factory not None=LiveGuidFactory(),
+                 UUIDFactory uuid_factory not None=LiveUUIDFactory(),
                  Logger logger=None,
                  bint reraise_exceptions=True):
         """
@@ -72,7 +72,7 @@ cdef class TradingStrategy:
         :param bar_capacity: The length for the internal ticks deque.
         :param bar_capacity: The length for the internal bars deque.
         :param clock: The clock for the strategy.
-        :param guid_factory: The GUID factory for the strategy.
+        :param uuid_factory: The UUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
         :param reraise_exceptions: If exceptions raised in handling methods should be re-raised.
         :raises ValueError: If the order_id_tag is not a valid string.
@@ -89,7 +89,7 @@ cdef class TradingStrategy:
 
         # Components
         self.clock = clock
-        self.guid_factory = guid_factory
+        self.uuid_factory = uuid_factory
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.clock.register_logger(self.log)
@@ -106,7 +106,7 @@ cdef class TradingStrategy:
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
             clock=self.clock,
-            guid_factory=self.guid_factory)
+            uuid_factory=self.uuid_factory)
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
@@ -1313,7 +1313,7 @@ cdef class TradingStrategy:
         cdef AccountInquiry command = AccountInquiry(
             self.trader_id,
             self._exec_engine.account_id,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1340,7 +1340,7 @@ cdef class TradingStrategy:
             self.id,
             position_id,
             order,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1367,7 +1367,7 @@ cdef class TradingStrategy:
             self.id,
             position_id,
             bracket_order,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1404,7 +1404,7 @@ cdef class TradingStrategy:
             order.id,
             new_quantity,
             new_price,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1434,7 +1434,7 @@ cdef class TradingStrategy:
             self._exec_engine.account_id,
             order.id,
             ValidString(cancel_reason),
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1470,7 +1470,7 @@ cdef class TradingStrategy:
                 self._exec_engine.account_id,
                 order_id,
                 ValidString(cancel_reason),
-                self.guid_factory.generate(),
+                self.uuid_factory.generate(),
                 self.clock.time_now())
 
             self.log.info(f"{CMD}{SENT} {command}.")
@@ -1588,7 +1588,7 @@ cdef class TradingStrategy:
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
             clock=clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             initial_count=self.order_factory.count())
 
         self.position_id_generator = PositionIdGenerator(
@@ -1597,15 +1597,15 @@ cdef class TradingStrategy:
             clock=clock,
             initial_count=self.position_id_generator.count)
 
-    cpdef void change_guid_factory(self, GuidFactory guid_factory) except *:
+    cpdef void change_uuid_factory(self, UUIDFactory uuid_factory) except *:
         """
-        Backtest only method. Change the strategies GUID factory with the given GUID factory.
+        Backtest only method. Change the strategies UUID factory with the given UUID factory.
         
-        :param guid_factory: The GUID factory to change to.
+        :param uuid_factory: The UUID factory to change to.
         """
-        Condition.not_none(guid_factory, 'guid_factory')
+        Condition.not_none(uuid_factory, 'uuid_factory')
 
-        self.guid_factory = guid_factory
+        self.uuid_factory = uuid_factory
 
     cpdef void change_logger(self, Logger logger) except *:
         """

@@ -22,7 +22,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.commands cimport Command, AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -113,7 +113,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
 cdef class ExecutionEngine:
     cdef Clock _clock
-    cdef GuidFactory _guid_factory
+    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef ExecutionClient _exec_client
     cdef dict _registered_strategies

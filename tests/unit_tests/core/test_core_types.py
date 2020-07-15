@@ -14,9 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 
-from nautilus_trader.core.types import ValidString, GUID
+from nautilus_trader.core.types import ValidString
 
 
 class ValidStringTests(unittest.TestCase):
@@ -91,33 +90,3 @@ class ValidStringTests(unittest.TestCase):
         # Assert
         self.assertTrue(result.startswith("<ValidString(abc) object at "))
         self.assertTrue(result.endswith(">"))
-
-
-class GUIDTests(unittest.TestCase):
-
-    def test_GUID_passed_different_UUID_are_not_equal(self):
-        # Arrange
-        # Act
-        guid1 = GUID(uuid.uuid4()),
-        guid2 = GUID(uuid.uuid4()),
-
-        # Assert
-        self.assertNotEqual(guid1, guid2)
-
-    def test_GUID_passed_UUID_are_equal(self):
-        # Arrange
-        value = uuid.uuid4()
-
-        # Act
-        guid1 = GUID(value)
-        guid2 = GUID(value)
-
-        # Assert
-        self.assertEqual(guid1, guid2)
-
-    def test_none_returns_empty_guid(self):
-        # Arrange
-        value = GUID.py_none()
-
-        # Act
-        self.assertEqual('00000000-0000-0000-0000-000000000000', value.value)

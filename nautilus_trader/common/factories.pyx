@@ -26,9 +26,8 @@ from nautilus_trader.model.identifiers cimport Symbol, IdTag
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.factories cimport LiveUUIDFactory
 
 
 cdef class OrderFactory:
@@ -40,7 +39,7 @@ cdef class OrderFactory:
                  IdTag id_tag_trader not None,
                  IdTag id_tag_strategy not None,
                  Clock clock not None=LiveClock(),
-                 GuidFactory guid_factory not None=LiveGuidFactory(),
+                 UUIDFactory uuid_factory not None=LiveUUIDFactory(),
                  int initial_count=0):
         """
         Initializes a new instance of the OrderFactory class.
@@ -53,7 +52,7 @@ cdef class OrderFactory:
         Condition.not_negative_int(initial_count, 'initial_count')
 
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self._id_generator = OrderIdGenerator(
             id_tag_trader=id_tag_trader,
             id_tag_strategy=id_tag_strategy,
@@ -111,7 +110,7 @@ cdef class OrderFactory:
             order_purpose=order_purpose,
             time_in_force=TimeInForce.DAY,
             expire_time=None,
-            init_id=self._guid_factory.generate(),
+            init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
     cpdef Order limit(
@@ -151,7 +150,7 @@ cdef class OrderFactory:
             order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            init_id=self._guid_factory.generate(),
+            init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
     cpdef Order stop(
@@ -191,7 +190,7 @@ cdef class OrderFactory:
             order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            init_id=self._guid_factory.generate(),
+            init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
     cpdef Order stop_limit(
@@ -231,7 +230,7 @@ cdef class OrderFactory:
             order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            init_id=self._guid_factory.generate(),
+            init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
     cpdef Order market_if_touched(
@@ -271,7 +270,7 @@ cdef class OrderFactory:
             order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            init_id=self._guid_factory.generate(),
+            init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
     cpdef Order fill_or_kill(
@@ -303,7 +302,7 @@ cdef class OrderFactory:
             order_purpose=order_purpose,
             time_in_force=TimeInForce.FOC,
             expire_time=None,
-            init_id=self._guid_factory.generate(),
+            init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
     cpdef Order immediate_or_cancel(
@@ -335,7 +334,7 @@ cdef class OrderFactory:
             order_purpose=order_purpose,
             time_in_force=TimeInForce.IOC,
             expire_time=None,
-            init_id=self._guid_factory.generate(),
+            init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
     cpdef BracketOrder bracket_market(

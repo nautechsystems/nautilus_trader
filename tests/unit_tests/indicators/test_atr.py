@@ -17,7 +17,6 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.atr import AverageTrueRange
-
 from tests.test_kit.series import BatterySeries
 
 

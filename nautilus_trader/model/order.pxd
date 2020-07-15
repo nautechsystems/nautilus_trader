@@ -16,7 +16,8 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.core.types cimport GUID, Label
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -53,7 +54,7 @@ cdef class Order:
     cdef readonly datetime filled_timestamp
     cdef readonly Price average_price
     cdef readonly Decimal slippage
-    cdef readonly GUID init_id
+    cdef readonly UUID init_id
     cdef readonly OrderEvent last_event
     cdef readonly int event_count
     cdef readonly bint is_buy

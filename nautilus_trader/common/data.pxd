@@ -21,14 +21,14 @@ from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class DataClient:
     cdef Clock _clock
-    cdef GuidFactory _guid_factory
+    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef dict _ticks
     cdef dict _tick_handlers

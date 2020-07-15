@@ -14,11 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-
 from datetime import timedelta
 
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
-
 from tests.test_kit.series import BatterySeries
 from tests.test_kit.stubs import UNIX_EPOCH
 

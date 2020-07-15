@@ -22,7 +22,7 @@ from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModif
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
@@ -31,7 +31,6 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
-
 from tests.test_kit.strategies import TestStrategy1
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
@@ -54,19 +53,19 @@ class BacktestExecClientTests(unittest.TestCase):
         self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
 
         self.clock = TestClock()
-        self.guid_factory = TestGuidFactory()
+        self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger()
 
         self.data_client = DataClient(
             tick_capacity=100,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
 
         self.portfolio = Portfolio(
             currency=Currency.USD,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
 
         self.analyzer = PerformanceAnalyzer()
@@ -83,7 +82,7 @@ class BacktestExecClientTests(unittest.TestCase):
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
 
         self.exec_client = BacktestExecClient(
@@ -92,7 +91,7 @@ class BacktestExecClientTests(unittest.TestCase):
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=TestClock(),
-            guid_factory=TestGuidFactory(),
+            uuid_factory=TestUUIDFactory(),
             logger=TestLogger())
         self.exec_engine.register_client(self.exec_client)
 
@@ -258,7 +257,7 @@ class BacktestExecClientTests(unittest.TestCase):
     #         config=BacktestConfig(),
     #         fill_model=fill_model,
     #         clock=TestClock(),
-    #         guid_factory=TestGuidFactory(),
+    #         uuid_factory=TestGuidFactory(),
     #         logger=TestLogger())
     #
     #     self.exec_engine.register_client(exec_client)

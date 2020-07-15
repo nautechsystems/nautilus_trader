@@ -37,7 +37,7 @@ cdef class Trader:
                  DataClient data_client not None,
                  ExecutionEngine exec_engine not None,
                  Clock clock not None,
-                 GuidFactory guid_factory not None,
+                 UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
         Initializes a new instance of the Trader class.
@@ -48,7 +48,7 @@ cdef class Trader:
         :param data_client: The data client to register the traders strategies with.
         :param exec_engine: The execution engine to register the traders strategies with trader.
         :param clock: The clock for the trader.
-        :param guid_factory: The guid_factory for the trader.
+        :param uuid_factory: The uuid_factory for the trader.
         :param logger: The logger for the trader.
         :raises ValueError: If the strategies is None.
         :raises ValueError: If the strategies list is empty.
@@ -60,7 +60,7 @@ cdef class Trader:
         Condition.equal(account_id, exec_engine.account_id, 'account_id', 'exec_engine.account_id')
 
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self.id = trader_id
         self.account_id = account_id
         self._log = LoggerAdapter(f'Trader-{self.id.value}', logger)
@@ -222,7 +222,7 @@ cdef class Trader:
         cdef AccountInquiry command = AccountInquiry(
             trader_id=self.id,
             account_id=self.account_id,
-            command_id=self._guid_factory.generate(),
+            command_id=self._uuid_factory.generate(),
             command_timestamp=self._clock.time_now())
 
         self._exec_engine.execute_command(command)

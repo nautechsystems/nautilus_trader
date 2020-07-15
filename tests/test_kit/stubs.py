@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytz
-import uuid
 from datetime import datetime, timedelta
 
-from nautilus_trader.core.types import GUID, ValidString
+from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.enums import BarStructure, PriceType, Currency, AccountType, OrderSide
 from nautilus_trader.model.objects import Quantity, Money, Price, Volume, Tick
@@ -30,10 +29,10 @@ from nautilus_trader.model.events import AccountStateEvent, OrderWorking, OrderF
 from nautilus_trader.model.events import PositionOpened, PositionModified, PositionClosed
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock
-
+from nautilus_trader.core.uuid import uuid4
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc)
+UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
 class TestStubs:
@@ -179,7 +178,7 @@ class TestStubs:
             Money(0, Currency.USD),
             Decimal(0),
             ValidString('N'),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
     @staticmethod
@@ -195,7 +194,7 @@ class TestStubs:
             order.price if fill_price is None else fill_price,
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
     @staticmethod
@@ -212,7 +211,7 @@ class TestStubs:
             order.price if working_price is None else working_price,
             order.time_in_force,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH,
             order.expire_time)
 
@@ -222,7 +221,7 @@ class TestStubs:
             position,
             StrategyId('SCALPER', '001'),
             position.last_event,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
     @staticmethod
@@ -231,7 +230,7 @@ class TestStubs:
             position,
             StrategyId('SCALPER', '001'),
             position.last_event,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
     @staticmethod
@@ -240,7 +239,7 @@ class TestStubs:
             position,
             StrategyId('SCALPER', '001'),
             position.last_event,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
     @staticmethod
@@ -299,7 +298,7 @@ class TestStubs:
             close_price,
             Currency.USD,
             UNIX_EPOCH + timedelta(minutes=5),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH + timedelta(minutes=5))
 
         position.apply(order_filled)

@@ -17,11 +17,12 @@ import zmq
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID, Label
+from nautilus_trader.core.types cimport Label
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Message, MessageType
 from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
 from nautilus_trader.common.clock cimport Clock, TimeEvent
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
@@ -45,7 +46,7 @@ cdef class ClientNode:
             ClientId client_id not None,
             Compressor compressor not None,
             Clock clock not None,
-            GuidFactory guid_factory not None,
+            UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
         Initializes a new instance of the ClientNode class.
@@ -53,14 +54,14 @@ cdef class ClientNode:
         :param client_id: The client identifier.
         :param compressor: The message compressor.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [49152, 65535].
         """
         self._compressor = compressor
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self._log = logger
         self._message_handler = None
 
@@ -120,7 +121,7 @@ cdef class MessageClient(ClientNode):
             Compressor compressor not None,
             EncryptionSettings encryption not None,
             Clock clock not None,
-            GuidFactory guid_factory not None,
+            UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
         Initializes a new instance of the MessageClient class.
@@ -135,7 +136,7 @@ cdef class MessageClient(ClientNode):
         :param compressor: The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the server_req_port is not in range [49152, 65535].
@@ -148,7 +149,7 @@ cdef class MessageClient(ClientNode):
             client_id,
             compressor,
             clock,
-            guid_factory,
+            uuid_factory,
             logger)
 
         self._socket_outbound = ClientSocket(
@@ -182,7 +183,7 @@ cdef class MessageClient(ClientNode):
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
         self._message_handler = None
-        self._awaiting_reply = {}  # type: {GUID, Message}
+        self._awaiting_reply = {}  # type: {UUID, Message}
 
         self.session_id = None
 
@@ -204,7 +205,7 @@ cdef class MessageClient(ClientNode):
         cdef Connect connect = Connect(
             self.client_id,
             SessionId.create(self.client_id, timestamp, 'None').value,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             timestamp)
 
         # Set check connected alert
@@ -228,7 +229,7 @@ cdef class MessageClient(ClientNode):
         cdef Disconnect disconnect = Disconnect(
             self.client_id,
             self.session_id,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             timestamp)
 
         # Set check disconnected alert
@@ -372,18 +373,18 @@ cdef class MessageClient(ClientNode):
             retry += 1
             self._register_message(message, retry)
 
-    cdef void _deregister_message(self, GUID correlation_id, int retry=0) except *:
+    cdef void _deregister_message(self, UUID correlation_id, int retry=0) except *:
         cdef Message message
         try:
             if retry < 3:
                 message = self._awaiting_reply.pop(correlation_id, None)
                 if message is None:
-                    self._log.error(f"No awaiting message for correlation id {correlation_id.value}.")
+                    self._log.error(f"No awaiting message for correlation id {correlation_id}.")
                 else:
                     self._log.verbose(f"Received reply for message with id {message.id.value}.")
                     pass
             else:
-                self._log.error(f"Could not deregister with correlation id {correlation_id.value}, retries={retry}.")
+                self._log.error(f"Could not deregister with correlation id {correlation_id}, retries={retry}.")
         except RuntimeError as ex:
             retry += 1
             self._deregister_message(message, retry)
@@ -402,7 +403,7 @@ cdef class MessageSubscriber(ClientNode):
             Compressor compressor not None,
             EncryptionSettings encryption not None,
             Clock clock not None,
-            GuidFactory guid_factory not None,
+            UUIDFactory uuid_factory not None,
             LoggerAdapter logger):
         """
         Initializes a new instance of the MessageSubscriber class.
@@ -413,7 +414,7 @@ cdef class MessageSubscriber(ClientNode):
         :param compressor: The The message compressor.
         :param encryption: The encryption configuration.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
@@ -425,7 +426,7 @@ cdef class MessageSubscriber(ClientNode):
             client_id,
             compressor,
             clock,
-            guid_factory,
+            uuid_factory,
             logger)
 
         self.register_handler(self._no_subscriber_handler)

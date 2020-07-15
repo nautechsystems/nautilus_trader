@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 from datetime import timedelta
 
-from nautilus_trader.core.types import GUID
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId, PositionIdBroker
@@ -25,7 +24,6 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.analysis.reports import ReportProvider
-
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
@@ -68,7 +66,7 @@ class ReportProviderTests(unittest.TestCase):
             Price(0.80011, 5),
             Currency.AUD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         order1.apply(event)
@@ -116,7 +114,7 @@ class ReportProviderTests(unittest.TestCase):
             Price(0.80011, 5),
             Currency.AUD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         order1.apply(event)

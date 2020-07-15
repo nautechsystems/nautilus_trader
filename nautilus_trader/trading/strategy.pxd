@@ -28,7 +28,7 @@ from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, 
 from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.clock cimport Clock
@@ -40,7 +40,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 cdef class TradingStrategy:
     cdef readonly Clock clock
-    cdef readonly GuidFactory guid_factory
+    cdef readonly UUIDFactory uuid_factory
     cdef readonly LoggerAdapter log
 
     cdef readonly StrategyId id
@@ -193,5 +193,5 @@ cdef class TradingStrategy:
 
 # -- BACKTEST METHODS -----------------------------------------------------------------------------#
     cpdef void change_clock(self, Clock clock) except *
-    cpdef void change_guid_factory(self, GuidFactory guid_factory) except *
+    cpdef void change_uuid_factory(self, UUIDFactory uuid_factory) except *
     cpdef void change_logger(self, Logger logger) except *

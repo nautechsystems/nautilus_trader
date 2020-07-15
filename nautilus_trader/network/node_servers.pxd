@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Message, MessageType
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, ServerId
 from nautilus_trader.network.compression cimport Compressor
@@ -29,7 +29,7 @@ from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSer
 
 cdef class ServerNode:
     cdef Clock _clock
-    cdef GuidFactory _guid_factory
+    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef Compressor _compressor
 
@@ -55,7 +55,7 @@ cdef class MessageServer(ServerNode):
 
     cpdef void register_request_handler(self, handler) except *
     cpdef void register_handler(self, MessageType message_type, handler) except *
-    cpdef void send_rejected(self, str rejected_message, GUID correlation_id, ClientId receiver) except *
+    cpdef void send_rejected(self, str rejected_message, UUID correlation_id, ClientId receiver) except *
     cpdef void send_received(self, Message original, ClientId receiver) except *
     cpdef void send_response(self, Response response, ClientId receiver) except *
     cpdef void send_string(self, str message, ClientId receiver) except *

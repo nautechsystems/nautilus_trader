@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.roc import RateOfChange
-
 from tests.test_kit.series import BatterySeries
 
 

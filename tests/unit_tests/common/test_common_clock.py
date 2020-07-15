@@ -15,15 +15,14 @@
 
 import pytz
 import time
-import uuid
 import unittest
 from datetime import datetime, timedelta
 
-from nautilus_trader.core.types import GUID, Label
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.types import Label
 from nautilus_trader.common.logging import LoggerAdapter, TestLogger
 from nautilus_trader.common.clock import TimeEventHandler, TestClock, TimeEvent
 from nautilus_trader.live.clock import LiveClock
-
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -31,7 +30,7 @@ class TimeEventTests(unittest.TestCase):
 
     def test_can_hash_time_event(self):
         # Arrange
-        event = TimeEvent(Label('123'), GUID(uuid.uuid4()), UNIX_EPOCH)
+        event = TimeEvent(Label('123'), uuid4(), UNIX_EPOCH)
 
         # Act
         result = hash(event)
@@ -41,8 +40,8 @@ class TimeEventTests(unittest.TestCase):
 
     def test_can_sort_time_events(self):
         # Arrange
-        event1 = TimeEvent(Label('123'), GUID(uuid.uuid4()), UNIX_EPOCH)
-        event2 = TimeEvent(Label('123'), GUID(uuid.uuid4()), UNIX_EPOCH + timedelta(1))
+        event1 = TimeEvent(Label('123'), uuid4(), UNIX_EPOCH)
+        event2 = TimeEvent(Label('123'), uuid4(), UNIX_EPOCH + timedelta(1))
 
         # Act
         result = sorted([event2, event1])

@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.rsi import RelativeStrengthIndex
-
 from tests.test_kit.series import BatterySeries
 
 

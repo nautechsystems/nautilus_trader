@@ -18,7 +18,7 @@ from cpython.datetime cimport date
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
 from nautilus_trader.model.objects cimport BarType
@@ -33,7 +33,7 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.messages cimport Response, MessageReceived, MessageRejected
@@ -64,7 +64,7 @@ cdef class LiveDataClient(DataClient):
                  InstrumentSerializer instrument_serializer not None=BsonInstrumentSerializer(),
                  int tick_capacity=1000,
                  LiveClock clock not None=LiveClock(),
-                 LiveGuidFactory guid_factory not None=LiveGuidFactory(),
+                 LiveUUIDFactory uuid_factory not None=LiveUUIDFactory(),
                  LiveLogger logger not None=LiveLogger()):
         """
         Initializes a new instance of the LiveDataClient class.
@@ -84,7 +84,7 @@ cdef class LiveDataClient(DataClient):
         :param instrument_serializer: The instrument serializer.
         :param tick_capacity: The length for the internal tick deques.
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the data_server_req_port is not in range [0, 65535].
@@ -98,9 +98,9 @@ cdef class LiveDataClient(DataClient):
         Condition.valid_port(data_pub_port, 'data_pub_port')
         Condition.valid_port(tick_pub_port, 'tick_pub_port')
         Condition.positive_int(tick_capacity, 'tick_capacity')
-        super().__init__(tick_capacity, clock, guid_factory, logger)
+        super().__init__(tick_capacity, clock, uuid_factory, logger)
 
-        self._correlation_index = {}  # type: {GUID, callable}
+        self._correlation_index = {}  # type: {UUID, callable}
 
         self.trader_id = trader_id
         self.client_id = ClientId(trader_id.value)
@@ -117,7 +117,7 @@ cdef class LiveDataClient(DataClient):
             compressor,
             encryption,
             clock,
-            guid_factory,
+            uuid_factory,
             self._log)
 
         self._data_client.register_handler(self._handle_response)
@@ -129,7 +129,7 @@ cdef class LiveDataClient(DataClient):
             compressor,
             encryption,
             clock,
-            guid_factory,
+            uuid_factory,
             self._log)
 
         self._data_subscriber.register_handler(self._handle_sub_msg)
@@ -141,7 +141,7 @@ cdef class LiveDataClient(DataClient):
             compressor,
             encryption,
             clock,
-            guid_factory,
+            uuid_factory,
             self._log)
 
         self._tick_subscriber.register_handler(self._handle_tick_msg)
@@ -234,7 +234,7 @@ cdef class LiveDataClient(DataClient):
         cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
         self._log.info(f"Requesting {symbol} ticks from {from_date} to {to_date} {limit_string}...")
 
-        cdef GUID request_id = self._guid_factory.generate()
+        cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
@@ -281,7 +281,7 @@ cdef class LiveDataClient(DataClient):
         cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
         self._log.info(f"Requesting {bar_type} bars from {from_date} to {to_date} {limit_string}...")
 
-        cdef GUID request_id = self._guid_factory.generate()
+        cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
@@ -306,7 +306,7 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting instrument for {symbol}...")
 
-        cdef GUID request_id = self._guid_factory.generate()
+        cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
@@ -330,7 +330,7 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting all instruments for {venue}...")
 
-        cdef GUID request_id = self._guid_factory.generate()
+        cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
         cdef DataRequest request = DataRequest(query, request_id, self.time_now())
@@ -436,10 +436,10 @@ cdef class LiveDataClient(DataClient):
         self._data_subscriber.unsubscribe(f'Instrument:{symbol.value}')
         self._remove_instrument_handler(symbol, handler)
 
-    cpdef void _set_callback(self, GUID request_id, handler: callable) except *:
+    cpdef void _set_callback(self, UUID request_id, handler: callable) except *:
         self._correlation_index[request_id] = handler
 
-    cpdef object _pop_callback(self, GUID correlation_id):
+    cpdef object _pop_callback(self, UUID correlation_id):
         return self._correlation_index.pop(correlation_id, None)
 
     cpdef void _handle_response(self, Response response) except *:
@@ -463,7 +463,7 @@ cdef class LiveDataClient(DataClient):
         # Get callback handler
         handler = self._pop_callback(response.correlation_id)
         if handler is None:
-            self._log.error(f"No callback found for correlation id {response.correlation_id.value}")
+            self._log.error(f"No callback found for correlation id {response.correlation_id}")
             return
 
         # Deserialize and handle data

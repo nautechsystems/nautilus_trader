@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 
 
 cpdef enum MessageType:
@@ -64,7 +64,7 @@ cdef inline MessageType message_type_from_string(str value):
 
 cdef class Message:
     cdef readonly MessageType message_type
-    cdef readonly GUID id
+    cdef readonly UUID id
     cdef readonly datetime timestamp
 
     cpdef bint equals(self, Message other)
@@ -87,4 +87,4 @@ cdef class Request(Message):
 
 
 cdef class Response(Message):
-    cdef readonly GUID correlation_id
+    cdef readonly UUID correlation_id

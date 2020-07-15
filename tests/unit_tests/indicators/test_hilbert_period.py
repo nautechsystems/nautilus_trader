@@ -17,7 +17,6 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.hilbert_period import HilbertPeriod
-
 from tests.test_kit.series import BatterySeries
 
 

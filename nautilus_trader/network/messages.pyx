@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
 
@@ -29,7 +29,7 @@ cdef class Connect(Request):
     def __init__(self,
                  ClientId client_id not None,
                  str authentication not None,
-                 GUID request_id not None,
+                 UUID request_id not None,
                  datetime request_timestamp not None):
         """
         Initializes a new instance of the Connect class.
@@ -54,8 +54,8 @@ cdef class Connected(Response):
                  str message not None,
                  ServerId server_id not None,
                  SessionId session_id not None,
-                 GUID correlation_id not None,
-                 GUID response_id not None,
+                 UUID correlation_id not None,
+                 UUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the Connected class.
@@ -82,7 +82,7 @@ cdef class Disconnect(Request):
     def __init__(self,
                  ClientId client_id not None,
                  SessionId session_id not None,
-                 GUID request_id not None,
+                 UUID request_id not None,
                  datetime request_timestamp not None):
         """
         Initializes a new instance of the Disconnect class.
@@ -107,8 +107,8 @@ cdef class Disconnected(Response):
                  str message not None,
                  ServerId server_id not None,
                  SessionId session_id not None,
-                 GUID correlation_id not None,
-                 GUID response_id not None,
+                 UUID correlation_id not None,
+                 UUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the Disconnected class.
@@ -134,8 +134,8 @@ cdef class MessageReceived(Response):
 
     def __init__(self,
                  str received_type,
-                 GUID correlation_id not None,
-                 GUID response_id not None,
+                 UUID correlation_id not None,
+                 UUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the MessageReceived class.
@@ -169,8 +169,8 @@ cdef class MessageRejected(Response):
 
     def __init__(self,
                  str rejected_message not None,  # Could be an empty string
-                 GUID correlation_id not None,
-                 GUID response_id not None,
+                 UUID correlation_id not None,
+                 UUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the MessageRejected class.
@@ -203,8 +203,8 @@ cdef class QueryFailure(Response):
 
     def __init__(self,
                  str failure_message not None,  # Could be an empty string
-                 GUID correlation_id not None,
-                 GUID response_id not None,
+                 UUID correlation_id not None,
+                 UUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the QueryFailure class.
@@ -237,7 +237,7 @@ cdef class DataRequest(Request):
 
     def __init__(self,
                  dict query not None,
-                 GUID request_id not None,
+                 UUID request_id not None,
                  datetime request_timestamp not None):
         """
         Initializes a new instance of the DataRequest class.
@@ -260,8 +260,8 @@ cdef class DataResponse(Response):
                  bytes data not None,
                  str data_type not None,
                  str data_encoding not None,
-                 GUID correlation_id not None,
-                 GUID response_id not None,
+                 UUID correlation_id not None,
+                 UUID response_id not None,
                  datetime response_timestamp not None):
         """
         Initializes a new instance of the DataResponse class.

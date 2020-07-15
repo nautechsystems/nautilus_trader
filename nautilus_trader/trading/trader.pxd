@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
@@ -26,7 +26,7 @@ from nautilus_trader.analysis.reports cimport ReportProvider
 
 cdef class Trader:
     cdef Clock _clock
-    cdef GuidFactory _guid_factory
+    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine
