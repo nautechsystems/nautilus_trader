@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
-
 from tests.test_kit.series import BatterySeries
 
 

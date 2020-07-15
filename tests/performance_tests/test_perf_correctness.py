@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.core.correctness import PyCondition
-
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.performance import PerformanceHarness
 

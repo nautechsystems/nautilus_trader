@@ -30,7 +30,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.objects cimport Instrument, Price, Volume, Tick, BarType
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.common.clock cimport TimeEventHandler, TestClock
-from nautilus_trader.common.guid cimport TestGuidFactory
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport TickDataWrangler
@@ -162,7 +162,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the tick_capacity is not positive (> 0).
         """
         Condition.positive_int(tick_capacity, 'tick_capacity')
-        super().__init__(tick_capacity, clock, TestGuidFactory(), logger)
+        super().__init__(tick_capacity, clock, TestUUIDFactory(), logger)
 
         # Check data integrity
         data.check_integrity()

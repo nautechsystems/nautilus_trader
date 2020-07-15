@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport MessageType, Message, Request
 from nautilus_trader.common.clock cimport Clock, TimeEvent
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, SessionId
 from nautilus_trader.network.compression cimport Compressor
@@ -27,7 +27,7 @@ from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSer
 
 cdef class ClientNode:
     cdef Clock _clock
-    cdef GuidFactory _guid_factory
+    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef Compressor _compressor
     cdef object _message_handler
@@ -62,7 +62,7 @@ cdef class MessageClient(ClientNode):
     cpdef void _check_connection(self, TimeEvent event) except *
     cpdef void _recv_frames(self, list frames) except *
     cdef void _register_message(self, Message message, int retry=*) except *
-    cdef void _deregister_message(self, GUID correlation_id, int retry=*) except *
+    cdef void _deregister_message(self, UUID correlation_id, int retry=*) except *
 
 
 cdef class MessageSubscriber(ClientNode):

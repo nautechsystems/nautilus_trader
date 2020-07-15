@@ -15,11 +15,11 @@
 
 import msgpack
 from cpython.datetime cimport datetime
-from uuid import UUID
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.types cimport ValidString, GUID
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string, time_in_force_from_string
 from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, order_side_from_string
@@ -183,7 +183,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                      order_purpose=order_purpose_from_string(self.convert_camel_to_snake(unpacked[ORDER_PURPOSE].decode(UTF8))),
                      time_in_force=time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
                      expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
-                     init_id=GUID(UUID(unpacked[INIT_ID].decode(UTF8))),
+                     init_id=UUID(unpacked[INIT_ID].decode(UTF8)),
                      timestamp=convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8)))
 
 
@@ -264,7 +264,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: {str, bytes}
 
         cdef str command_type = unpacked[TYPE].decode(UTF8)
-        cdef GUID command_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef UUID command_id = UUID(unpacked[ID].decode(UTF8))
         cdef datetime command_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if command_type == AccountInquiry.__name__:
@@ -461,7 +461,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: {str, bytes}
 
         cdef str event_type = unpacked[TYPE].decode(UTF8)
-        cdef GUID event_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef UUID event_id = UUID(unpacked[ID].decode(UTF8))
         cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         cdef Currency currency
@@ -666,7 +666,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(request_bytes)  # type: {str, bytes}
 
         cdef str request_type = unpacked[TYPE].decode(UTF8)
-        cdef GUID request_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef UUID request_id = UUID(unpacked[ID].decode(UTF8))
         cdef datetime request_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if request_type == Connect.__name__:
@@ -752,8 +752,8 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(response_bytes)  # type: {str, bytes}
 
         cdef str response_type = unpacked[TYPE].decode(UTF8)
-        cdef GUID correlation_id = GUID(UUID(unpacked[CORRELATION_ID].decode(UTF8)))
-        cdef GUID response_id = GUID(UUID(unpacked[ID].decode(UTF8)))
+        cdef UUID correlation_id = UUID(unpacked[CORRELATION_ID].decode(UTF8))
+        cdef UUID response_id = UUID(unpacked[ID].decode(UTF8))
         cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if response_type == Connected.__name__:

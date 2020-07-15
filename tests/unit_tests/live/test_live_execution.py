@@ -34,11 +34,10 @@ from nautilus_trader.serialization.serializers import MsgPackDictionarySerialize
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.clock import LiveClock
-from nautilus_trader.live.guid import LiveGuidFactory
+from nautilus_trader.live.factories import LiveUUIDFactory
 from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.execution_client import LiveExecClient
-
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.strategies import TestStrategy1
 
@@ -60,7 +59,7 @@ class LiveExecutionTests(unittest.TestCase):
         account_id = TestStubs.account_id()
 
         clock = LiveClock()
-        guid_factory = LiveGuidFactory()
+        uuid_factory = LiveUUIDFactory()
         logger = LiveLogger()
 
         self.command_server = MessageServer(
@@ -73,7 +72,7 @@ class LiveExecutionTests(unittest.TestCase):
             compressor=BypassCompressor(),
             encryption=EncryptionSettings(),
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=LoggerAdapter('CommandServer', logger))
 
         self.command_serializer = MsgPackCommandSerializer()
@@ -87,7 +86,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.portfolio = Portfolio(
             currency=Currency.USD,
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
 
         self.analyzer = PerformanceAnalyzer()
@@ -102,7 +101,7 @@ class LiveExecutionTests(unittest.TestCase):
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
 
         self.exec_engine.handle_event(TestStubs.account_event())
@@ -121,7 +120,7 @@ class LiveExecutionTests(unittest.TestCase):
             response_serializer=MsgPackResponseSerializer(),
             event_serializer=MsgPackEventSerializer(),
             clock=clock,
-            guid_factory=guid_factory,
+            uuid_factory=uuid_factory,
             logger=logger)
 
         self.exec_engine.register_client(self.exec_client)

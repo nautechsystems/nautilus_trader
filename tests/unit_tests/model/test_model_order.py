@@ -14,10 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 
 from nautilus_trader.core.decimal import Decimal
-from nautilus_trader.core.types import GUID, ValidString, Label
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.types import ValidString, Label
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderState, OrderPurpose
 from nautilus_trader.model.enums import TimeInForce, Currency
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted
@@ -28,10 +28,9 @@ from nautilus_trader.model.identifiers import IdTag, OrderId, OrderIdBroker
 from nautilus_trader.model.identifiers import BracketOrderId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import Order
-from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.clock import TestClock
-
+from nautilus_trader.common.factories import OrderFactory
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -47,7 +46,7 @@ class OrderTests(unittest.TestCase):
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
             clock=TestClock(),
-            guid_factory=TestGuidFactory())
+            uuid_factory=TestUUIDFactory())
 
     def test_market_order_with_quantity_zero_raises_exception(self):
         # Arrange
@@ -60,7 +59,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.MARKET,
             Quantity(),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
     def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(self):
@@ -74,7 +73,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.LIMIT,
             Quantity(100000),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH,
             price=Price(1.00000, 5),
             time_in_force=TimeInForce.GTD,
@@ -91,7 +90,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.MARKET,
             Quantity(100000),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH,
             price=Price(1.00000, 5))
 
@@ -106,7 +105,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.STOP,
             Quantity(100000),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
     def test_stop_order_with_zero_price_input_raises_exception(self):
@@ -120,7 +119,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             OrderType.STOP,
             Quantity(100000),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH,
             price=None)
 
@@ -422,7 +421,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -447,7 +446,7 @@ class OrderTests(unittest.TestCase):
             OrderIdBroker('B' + order.id.value),
             Label('E'),
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -469,7 +468,7 @@ class OrderTests(unittest.TestCase):
             order.id,
             UNIX_EPOCH,
             ValidString('ORDER ID INVALID'),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -498,7 +497,7 @@ class OrderTests(unittest.TestCase):
             Price(1.0, 1),
             order.time_in_force,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH,
             order.expire_time)
 
@@ -524,7 +523,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -545,7 +544,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -568,7 +567,7 @@ class OrderTests(unittest.TestCase):
             UNIX_EPOCH,
             ValidString('REJECT_RESPONSE'),
             ValidString('ORDER DOES NOT EXIST'),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -596,7 +595,7 @@ class OrderTests(unittest.TestCase):
             Price(1.00000, 5),
             order.time_in_force,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH,
             order.expire_time)
 
@@ -607,7 +606,7 @@ class OrderTests(unittest.TestCase):
             Quantity(120000),
             Price(1.00001, 5),
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         order.apply(order_working)
@@ -642,7 +641,7 @@ class OrderTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -674,7 +673,7 @@ class OrderTests(unittest.TestCase):
             Price(1.00001, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -709,7 +708,7 @@ class OrderTests(unittest.TestCase):
             Price(0.999999, 6),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -743,7 +742,7 @@ class OrderTests(unittest.TestCase):
             Price(0.99999, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act

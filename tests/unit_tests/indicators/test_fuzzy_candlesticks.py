@@ -22,7 +22,6 @@ from nautilus_trader.indicators.fuzzy_candlesticks import CandleDirection
 from nautilus_trader.indicators.fuzzy_candlesticks import CandleSize
 from nautilus_trader.indicators.fuzzy_candlesticks import CandleBodySize
 from nautilus_trader.indicators.fuzzy_candlesticks import CandleWickSize
-
 from tests.test_kit.series import BatterySeries
 
 

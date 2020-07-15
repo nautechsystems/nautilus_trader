@@ -17,7 +17,6 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.hilbert_snr import HilbertSignalNoiseRatio
-
 from tests.test_kit.series import BatterySeries
 
 

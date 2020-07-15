@@ -25,7 +25,7 @@ from nautilus_trader.model.events cimport PositionModified, PositionClosed
 from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId
 from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter, CMD, EVT, RECV
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -1012,7 +1012,7 @@ cdef class ExecutionEngine:
                  ExecutionDatabase database not None,
                  Portfolio portfolio not None,
                  Clock clock not None,
-                 GuidFactory guid_factory not None,
+                 UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
         Initializes a new instance of the ExecutionEngine class.
@@ -1022,14 +1022,14 @@ cdef class ExecutionEngine:
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.
         :param clock: The clock for the engine.
-        :param guid_factory: The guid_factory for the engine.
+        :param uuid_factory: The uuid_factory for the engine.
         :param logger: The logger for the engine.
         :raises ValueError: If the trader_id is not equal to the database.trader_id.
         """
         Condition.equal(trader_id, database.trader_id, 'trader_id', 'database.trader_id')
 
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
         self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
@@ -1276,7 +1276,7 @@ cdef class ExecutionEngine:
             position,
             strategy_id,
             event,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             event.timestamp)
 
         self._send_to_strategy(event, strategy_id)
@@ -1287,7 +1287,7 @@ cdef class ExecutionEngine:
             position,
             strategy_id,
             event,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             event.timestamp)
 
         self._send_to_strategy(event, strategy_id)
@@ -1299,7 +1299,7 @@ cdef class ExecutionEngine:
             position,
             strategy_id,
             event,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             event.timestamp)
 
         self._send_to_strategy(event, strategy_id)

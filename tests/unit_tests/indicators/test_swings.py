@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.swings import Swings
-
 from tests.test_kit.series import BatterySeries
 from tests.test_kit.stubs import UNIX_EPOCH
 

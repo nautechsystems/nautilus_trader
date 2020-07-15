@@ -28,11 +28,10 @@ from nautilus_trader.serialization.serializers import MsgPackDictionarySerialize
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.live.clock import LiveClock
-from nautilus_trader.live.guid import LiveGuidFactory
+from nautilus_trader.live.factories import LiveUUIDFactory
 from nautilus_trader.live.logging import LiveLogger
-
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.mocks import ObjectStorer
+from tests.test_kit.stubs import UNIX_EPOCH
 
 LOCALHOST = "127.0.0.1"
 TEST_RECV_PORT = 55657
@@ -57,7 +56,7 @@ class MessageClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = LiveClock()
-        guid_factory = LiveGuidFactory()
+        uuid_factory = LiveUUIDFactory()
         logger = LiveLogger()
         self.context = zmq.Context()
         self.client_sink = []
@@ -73,7 +72,7 @@ class MessageClientTests(unittest.TestCase):
             BypassCompressor(),
             EncryptionSettings(),
             clock,
-            guid_factory,
+            uuid_factory,
             LoggerAdapter('MessageServer', logger))
 
         # Register test handlers
@@ -94,7 +93,7 @@ class MessageClientTests(unittest.TestCase):
             BypassCompressor(),
             EncryptionSettings(),
             clock,
-            guid_factory,
+            uuid_factory,
             LoggerAdapter('MessageClient', logger))
 
         self.client.register_handler(self.client_sink.append)
@@ -174,7 +173,7 @@ class SubscriberWorkerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = LiveClock()
-        guid_factory = LiveGuidFactory()
+        uuid_factory = LiveUUIDFactory()
         logger = LiveLogger()
         self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
@@ -186,7 +185,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             BypassCompressor(),
             EncryptionSettings(),
             clock,
-            guid_factory,
+            uuid_factory,
             LoggerAdapter('MessageSubscriber', logger))
 
         self.publisher = MessagePublisher(
@@ -195,7 +194,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             BypassCompressor(),
             EncryptionSettings(),
             clock,
-            guid_factory,
+            uuid_factory,
             LoggerAdapter('MessagePublisher', logger))
 
         self.publisher.start()

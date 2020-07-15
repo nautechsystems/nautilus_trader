@@ -25,7 +25,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionClient
 from nautilus_trader.backtest.models cimport FillModel
@@ -33,7 +33,7 @@ from nautilus_trader.backtest.models cimport FillModel
 
 cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Clock _clock
-    cdef readonly GuidFactory _guid_factory
+    cdef readonly UUIDFactory _uuid_factory
     cdef readonly Account _account
     cdef readonly dict instruments
     cdef readonly dict data_ticks

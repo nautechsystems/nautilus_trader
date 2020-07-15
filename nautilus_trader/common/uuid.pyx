@@ -13,27 +13,42 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import uuid
-
-from nautilus_trader.core.types cimport GUID
-from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.core.uuid cimport UUID, uuid4
 
 
-cdef class LiveGuidFactory(GuidFactory):
+cdef class UUIDFactory:
     """
-    Provides a GUID factory for live trading. Generates UUID4's.
+    The base class for all UUID factories.
     """
+
+    cpdef UUID generate(self):
+        """
+        Return a generated UUID.
+
+        :return UUID.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+
+cdef class TestUUIDFactory(UUIDFactory):
+    """
+    Provides a fake UUID factory for testing purposes.
+    """
+    __test__ = False
 
     def __init__(self):
         """
-        Initializes a new instance of the LiveGuidFactory class.
+        Initializes a new instance of the TestGuidFactory class.
         """
         super().__init__()
 
-    cpdef GUID generate(self):
-        """
-        Return a generated UUID1.
+        self._uuid = uuid4()
 
-        :return GUID.
+    cpdef UUID generate(self):
         """
-        return GUID(uuid.uuid4())
+        Return the single test UUID instance.
+        
+        :return UUID.
+        """
+        return self._uuid

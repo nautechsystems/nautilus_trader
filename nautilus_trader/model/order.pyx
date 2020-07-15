@@ -22,7 +22,8 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.core.types cimport GUID, Label
+from nautilus_trader.core.types cimport Label
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
@@ -68,7 +69,7 @@ cdef class Order:
                  OrderSide order_side,
                  OrderType order_type,  # 'type' hides keyword
                  Quantity quantity not None,
-                 GUID init_id not None,
+                 UUID init_id not None,
                  datetime timestamp not None,
                  Price price=None,
                  Label label=None,
@@ -90,7 +91,7 @@ cdef class Order:
             The order type.
         quantity : Quantity
             The order quantity (> 0).
-        init_id : GUID
+        init_id : UUID
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.

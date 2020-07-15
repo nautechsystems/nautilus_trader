@@ -15,21 +15,19 @@
 
 import numpy as np
 import unittest
-import uuid
 
-from nautilus_trader.core.types import GUID
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.core.message import Message, MessageType
 from nautilus_trader.core.functions import fast_mean
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.model.commands import SubmitOrder
-
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
 _AUDUSD = Symbol('AUDUSD', Venue('IDEALPRO'))
 _TEST_LIST = [0.0, 1.1, 2.2, 3.3, 4.4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-_MESSAGE = Message(MessageType.COMMAND, GUID(uuid.uuid4()), UNIX_EPOCH)
+_MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
 
 
 class Experiments:

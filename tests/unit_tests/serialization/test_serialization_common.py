@@ -20,7 +20,6 @@ from nautilus_trader.serialization.common import convert_price_to_string
 from nautilus_trader.serialization.common import convert_string_to_price
 from nautilus_trader.serialization.common import convert_string_to_datetime
 from nautilus_trader.serialization.common import convert_datetime_to_string
-
 from tests.test_kit.stubs import UNIX_EPOCH
 
 

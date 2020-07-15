@@ -19,12 +19,11 @@ from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.identifiers import IdTag, PositionId
 from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.position import Position
-from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.clock import TestClock
-
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -36,13 +35,13 @@ class PortfolioTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
-        guid_factor = TestGuidFactory()
+        uuid_factor = TestUUIDFactory()
         logger = TestLogger()
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
             clock=TestClock())
-        self.portfolio = Portfolio(Currency.USD, self.clock, guid_factor, logger)
+        self.portfolio = Portfolio(Currency.USD, self.clock, uuid_factor, logger)
 
     def test_initialization(self):
         # Arrange

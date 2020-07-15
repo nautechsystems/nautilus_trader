@@ -14,10 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 
 from nautilus_trader.core.decimal import Decimal
-from nautilus_trader.core.types import GUID, ValidString
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.types import ValidString
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import AccountId, TraderId, IdTag, OrderId
@@ -28,7 +28,7 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.common.account import Account
-from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.clock import TestClock
@@ -36,7 +36,6 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trading.strategy import TradingStrategy
-
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.mocks import MockExecutionClient
 
@@ -194,7 +193,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Decimal(0),
             ValidString('N'),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         account = Account(event)
@@ -217,7 +216,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Decimal(0),
             ValidString('N'),
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         account = Account(event)
@@ -402,7 +401,7 @@ class ExecutionEngineTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.guid_factory = TestGuidFactory()
+        self.uuid_factory = TestUUIDFactory()
         logger = TestLogger()
 
         self.trader_id = TraderId('TESTER', '000')
@@ -416,7 +415,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.portfolio = Portfolio(
             currency=Currency.USD,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=logger)
 
         self.analyzer = PerformanceAnalyzer()
@@ -428,7 +427,7 @@ class ExecutionEngineTests(unittest.TestCase):
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=logger)
 
         self.exec_engine.handle_event(TestStubs.account_event())
@@ -504,7 +503,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             position_id,
             order,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         # Act
@@ -534,7 +533,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             position_id,
             order,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.exec_engine.execute_command(submit_order)
@@ -585,7 +584,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             position_id,
             order1,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         submit_order2 = SubmitOrder(
@@ -594,7 +593,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             position_id,
             order2,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.exec_engine.execute_command(submit_order1)
@@ -649,7 +648,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             position_id,
             order1,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         submit_order2 = SubmitOrder(
@@ -658,7 +657,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             position_id,
             order2,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         self.exec_engine.execute_command(submit_order1)
@@ -718,7 +717,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy1.id,
             position1_id,
             order1,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         submit_order2 = SubmitOrder(
@@ -727,7 +726,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy2.id,
             position2_id,
             order2,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         order1_filled = TestStubs.event_order_filled(order1)
@@ -806,7 +805,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy1.id,
             position_id1,
             order1,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         submit_order2 = SubmitOrder(
@@ -815,7 +814,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy1.id,
             position_id1,
             order2,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         submit_order3 = SubmitOrder(
@@ -824,7 +823,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy2.id,
             position_id2,
             order3,
-            self.guid_factory.generate(),
+            self.uuid_factory.generate(),
             self.clock.time_now())
 
         order1_filled = TestStubs.event_order_filled(order1)
@@ -841,7 +840,7 @@ class ExecutionEngineTests(unittest.TestCase):
             Price(1.00000, 5),
             Currency.USD,
             UNIX_EPOCH,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act

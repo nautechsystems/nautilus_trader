@@ -28,7 +28,7 @@ from nautilus_trader.model.objects import Volume, Tick, Bar
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.common.clock import TestClock
@@ -37,7 +37,6 @@ from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.strategies import TestStrategy1
 
@@ -50,19 +49,19 @@ class TradeStrategyTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.guid_factory = TestGuidFactory()
+        self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger()
 
         self.data_client = DataClient(
             tick_capacity=100,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
 
         self.portfolio = Portfolio(
             currency=Currency.USD,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
 
         self.analyzer = PerformanceAnalyzer()
@@ -79,7 +78,7 @@ class TradeStrategyTests(unittest.TestCase):
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
 
         # noinspection PyPep8Naming
@@ -91,7 +90,7 @@ class TradeStrategyTests(unittest.TestCase):
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)

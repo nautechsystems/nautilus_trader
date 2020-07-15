@@ -37,7 +37,7 @@ from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trading.trader cimport Trader
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase, LiveExecutionEngine
@@ -49,7 +49,7 @@ cdef class TradingNode:
     Provides a trading node to control a live Trader instance with a WebSocket API.
     """
     cdef LiveClock _clock
-    cdef LiveGuidFactory _guid_factory
+    cdef LiveUUIDFactory _uuid_factory
     cdef LiveLogger _logger
     cdef LogStore _log_store
     cdef LoggerAdapter _log
@@ -100,7 +100,7 @@ cdef class TradingNode:
         config_exec_client = config['exec_client']
 
         self._clock = LiveClock()
-        self._guid_factory = LiveGuidFactory()
+        self._uuid_factory = LiveUUIDFactory()
         self._zmq_context = zmq.Context(io_threads=int(config_system['threads']))
 
         # Setup identifiers
@@ -160,14 +160,14 @@ cdef class TradingNode:
             compressor=compressor,
             encryption=encryption,
             clock=self._clock,
-            guid_factory=self._guid_factory,
+            uuid_factory=self._uuid_factory,
             logger=self._logger)
 
         # TODO: Portfolio currency?
         self.portfolio = Portfolio(
             currency=Currency.USD,
             clock=self._clock,
-            guid_factory=self._guid_factory,
+            uuid_factory=self._uuid_factory,
             logger=self._logger)
 
         self.analyzer = PerformanceAnalyzer()
@@ -191,7 +191,7 @@ cdef class TradingNode:
             database=self._exec_db,
             portfolio=self.portfolio,
             clock=self._clock,
-            guid_factory=self._guid_factory,
+            uuid_factory=self._uuid_factory,
             logger=self._logger)
 
         self._exec_client = LiveExecClient(
@@ -213,7 +213,7 @@ cdef class TradingNode:
             data_client=self._data_client,
             exec_engine=self._exec_engine,
             clock=self._clock,
-            guid_factory=self._guid_factory,
+            uuid_factory=self._uuid_factory,
             logger=self._logger)
 
         Condition.equal(self.trader_id, self.trader.id, 'trader_id', 'trader.id')
@@ -246,7 +246,7 @@ cdef class TradingNode:
         account_inquiry = AccountInquiry(
             trader_id=self.trader_id,
             account_id=self.account_id,
-            command_id=self._guid_factory.generate(),
+            command_id=self._uuid_factory.generate(),
             command_timestamp=self._clock.time_now())
         self._exec_client.account_inquiry(account_inquiry)
         time.sleep(0.5)  # Hard coded delay to await instruments and account updates (refactor)

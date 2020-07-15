@@ -31,17 +31,17 @@ cdef class Portfolio:
     def __init__(self,
                  Currency currency,
                  Clock clock not None,
-                 GuidFactory guid_factory not None,
+                 UUIDFactory uuid_factory not None,
                  Logger logger=None):
         """
         Initializes a new instance of the Portfolio class.
 
         :param clock: The clock for the component.
-        :param guid_factory: The guid factory for the component.
+        :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         """
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
         self._positions_open = {}    # type: [Symbol, {PositionId, Position}]

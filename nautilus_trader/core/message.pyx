@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport MessageType
 
 
@@ -27,7 +27,7 @@ cdef class Message:
 
     def __init__(self,
                  MessageType message_type,
-                 GUID identifier not None,
+                 UUID identifier not None,
                  datetime timestamp not None):
         """
         Initializes a new instance of the Message class.
@@ -87,7 +87,7 @@ cdef class Message:
 
         :return str.
         """
-        return f"{self.__class__.__name__}({self.id.value})"
+        return f"{self.__class__.__name__}({self.id})"
 
     def __repr__(self) -> str:
         """
@@ -104,7 +104,7 @@ cdef class Command(Message):
     The base class for all commands.
     """
 
-    def __init__(self, GUID identifier not None, datetime timestamp not None):
+    def __init__(self, UUID identifier not None, datetime timestamp not None):
         """
         Initializes a new instance of the Command class.
 
@@ -120,7 +120,7 @@ cdef class Document(Message):
     """
 
     def __init__(self,
-                 GUID identifier not None,
+                 UUID identifier not None,
                  datetime timestamp not None):
         """
         Initializes a new instance of the Document class.
@@ -137,7 +137,7 @@ cdef class Event(Message):
     """
 
     def __init__(self,
-                 GUID identifier not None,
+                 UUID identifier not None,
                  datetime timestamp not None):
         """
         Initializes a new instance of the Event class.
@@ -153,7 +153,7 @@ cdef class Request(Message):
     The base class for all requests.
     """
 
-    def __init__(self, GUID identifier not None, datetime timestamp not None):
+    def __init__(self, UUID identifier not None, datetime timestamp not None):
         """
         Initializes a new instance of the Request class.
 
@@ -169,8 +169,8 @@ cdef class Response(Message):
     """
 
     def __init__(self,
-                 GUID correlation_id not None,
-                 GUID identifier not None,
+                 UUID correlation_id not None,
+                 UUID identifier not None,
                  datetime timestamp not None):
         """
         Initializes a new instance of the Response class.
@@ -189,4 +189,4 @@ cdef class Response(Message):
 
         :return str.
         """
-        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.correlation_id.value})"
+        return f"{self.__class__.__name__}(id={self.id}, correlation_id={self.correlation_id})"

@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-import uuid
 import unittest
 
-from nautilus_trader.core.types import GUID
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.objects import Price, Volume, Tick, Bar
 from nautilus_trader.model.identifiers import Venue, TraderId
 from nautilus_trader.common.logging import LoggerAdapter
@@ -31,10 +30,9 @@ from nautilus_trader.serialization.data import BsonDataSerializer, BsonInstrumen
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock import LiveClock
-from nautilus_trader.live.guid import LiveGuidFactory
+from nautilus_trader.live.factories import LiveUUIDFactory
 from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
-
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.mocks import ObjectStorer
 
@@ -60,7 +58,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.compressor = BypassCompressor()
         self.encryption = EncryptionSettings()
         self.clock = LiveClock()
-        self.guid_factory = LiveGuidFactory()
+        self.uuid_factory = LiveUUIDFactory()
         self.logger = LiveLogger()
 
         self.data_server = MessageServer(
@@ -73,7 +71,7 @@ class LiveDataClientTests(unittest.TestCase):
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=LoggerAdapter('DataServer', self.logger))
 
         self.data_server_sink = []
@@ -85,7 +83,7 @@ class LiveDataClientTests(unittest.TestCase):
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=LoggerAdapter('DataPublisher', self.logger))
 
         self.tick_publisher = MessagePublisher(
@@ -94,7 +92,7 @@ class LiveDataClientTests(unittest.TestCase):
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=LoggerAdapter('TickPublisher', self.logger))
 
         self.data_server.start()
@@ -116,7 +114,7 @@ class LiveDataClientTests(unittest.TestCase):
             response_serializer=self.response_serializer,
             data_serializer=self.data_serializer,
             clock=self.clock,
-            guid_factory=self.guid_factory,
+            uuid_factory=self.uuid_factory,
             logger=self.logger)
         self.data_client.connect()
         time.sleep(0.1)
@@ -302,7 +300,7 @@ class LiveDataClientTests(unittest.TestCase):
             'Tick[]',
             'BSON',
             self.data_client.last_request_id,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -343,7 +341,7 @@ class LiveDataClientTests(unittest.TestCase):
             'Bar[]',
             'BSON',
             self.data_client.last_request_id,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -373,7 +371,7 @@ class LiveDataClientTests(unittest.TestCase):
             'Instrument[]',
             'BSON',
             self.data_client.last_request_id,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act
@@ -403,7 +401,7 @@ class LiveDataClientTests(unittest.TestCase):
             'Instrument[]',
             'BSON',
             self.data_client.last_request_id,
-            GUID(uuid.uuid4()),
+            uuid4(),
             UNIX_EPOCH)
 
         # Act

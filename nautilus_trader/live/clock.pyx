@@ -14,13 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytz
-from cpython.datetime cimport date, datetime, timedelta
+from cpython.datetime cimport datetime, timedelta
 from threading import Timer as TimerThread
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.common.clock cimport TimeEvent
-from nautilus_trader.live.guid cimport LiveGuidFactory
+from nautilus_trader.live.factories cimport LiveUUIDFactory
 
 # Unix epoch is the UTC date time at 00:00:00 on 1/1/1970
 _UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -87,7 +87,7 @@ cdef class LiveClock(Clock):
         """
         Initializes a new instance of the LiveClock class.
         """
-        super().__init__(LiveGuidFactory())
+        super().__init__(LiveUUIDFactory())
 
     cpdef datetime time_now(self):
         """
@@ -123,7 +123,7 @@ cdef class LiveClock(Clock):
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
         cdef datetime now = self.time_now()
-        cdef TimeEvent event = timer.pop_event(self._guid_factory.generate())
+        cdef TimeEvent event = timer.pop_event(self._uuid_factory.generate())
         timer.iterate_next_time(now)
         self._handle_time_event(event)
 

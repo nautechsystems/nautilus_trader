@@ -15,38 +15,38 @@
 
 import unittest
 
-from nautilus_trader.core.types import GUID
-from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.live.guid import LiveGuidFactory
+from nautilus_trader.core.uuid import UUID
+from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.live.factories import LiveUUIDFactory
 
 
 class TestGuidFactoryTests(unittest.TestCase):
 
-    def test_factory_returns_identical_guids(self):
+    def test_factory_returns_identical_uuids(self):
         # Arrange
-        factory = TestGuidFactory()
+        factory = TestUUIDFactory()
 
         # Act
         result1 = factory.generate()
         result2 = factory.generate()
         result3 = factory.generate()
 
-        self.assertEqual(GUID, type(result1))
+        self.assertEqual(UUID, type(result1))
         self.assertEqual(result1, result2)
         self.assertEqual(result2, result3)
 
 
 class LiveGuidFactoryTests(unittest.TestCase):
 
-    def test_factory_returns_unique_guids(self):
+    def test_factory_returns_unique_uuids(self):
         # Arrange
-        factory = LiveGuidFactory()
+        factory = LiveUUIDFactory()
 
         # Act
         result1 = factory.generate()
         result2 = factory.generate()
         result3 = factory.generate()
 
-        self.assertEqual(GUID, type(result1))
+        self.assertEqual(UUID, type(result1))
         self.assertNotEqual(result1, result2)
         self.assertNotEqual(result2, result3)

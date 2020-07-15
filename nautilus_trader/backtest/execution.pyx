@@ -43,7 +43,7 @@ from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.guid cimport TestGuidFactory
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.backtest.config cimport BacktestConfig
@@ -67,7 +67,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  BacktestConfig config not None,
                  FillModel fill_model not None,
                  TestClock clock not None,
-                 TestGuidFactory guid_factory not None,
+                 TestUUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
         Initializes a new instance of the BacktestExecClient class.
@@ -77,7 +77,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param config: The backtest configuration.
         :param fill_model: The fill model for the backtest.
         :param clock: The clock for the component.
-        :param clock: The GUID factory for the component.
+        :param uuid_factory: The UUID factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the instruments list contains a type other than Instrument.
         """
@@ -85,7 +85,7 @@ cdef class BacktestExecClient(ExecutionClient):
         super().__init__(exec_engine, logger)
 
         self._clock = clock
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
 
         self.instruments = instruments
 
@@ -214,7 +214,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money(0, self.account_currency),
             Decimal.zero(),
             ValidString('N'),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
     cpdef datetime time_now(self):
@@ -385,7 +385,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal.zero(),
                 margin_call_status=ValidString('N'),
-                event_id=self._guid_factory.generate(),
+                event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
             self._exec_engine.handle_event(account_event)
@@ -473,7 +473,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal.zero(),
                 margin_call_status=ValidString('N'),
-                event_id=self._guid_factory.generate(),
+                event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
             self._exec_engine.handle_event(account_event)
@@ -495,7 +495,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.margin_used_maintenance,
             self._account.margin_ratio,
             self._account.margin_call_status,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(event)
@@ -508,7 +508,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command.account_id,
             command.order.id,
             self._clock.time_now(),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(submitted)
@@ -532,7 +532,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command.strategy_id,
             command.position_id,
             command.bracket_order.entry,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self.submit_order(submit_order)
@@ -551,7 +551,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command.account_id,
             order.id,
             self._clock.time_now(),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         # Remove from working orders (checked it was in dictionary above)
@@ -588,7 +588,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command.modified_quantity,
             command.modified_price,
             self._clock.time_now(),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(modified)
@@ -647,7 +647,7 @@ cdef class BacktestExecClient(ExecutionClient):
             OrderIdBroker('B' + order.id.value),
             order.label,
             self._clock.time_now(),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(accepted)
@@ -659,7 +659,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.id,
             self._clock.time_now(),
             ValidString(reason),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(rejected)
@@ -678,7 +678,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             ValidString(response),
             ValidString(reason),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(cancel_reject)
@@ -689,7 +689,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             order.id,
             order.expire_time,
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(expired)
@@ -778,7 +778,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.price,
             order.time_in_force,
             self._clock.time_now(),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now(),
             order.expire_time)
 
@@ -797,7 +797,7 @@ cdef class BacktestExecClient(ExecutionClient):
             fill_price,
             self.instruments[order.symbol].quote_currency,
             self._clock.time_now(),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         # Adjust account if position exists and opposite order side
@@ -853,7 +853,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.id,
             self._clock.time_now(),
             ValidString(f"OCO order rejected from {oco_order_id}"),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(event)
@@ -867,7 +867,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             order.id,
             self._clock.time_now(),
-            self._guid_factory.generate(),
+            self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._log.debug(f"OCO order cancelled from {oco_order_id}.")

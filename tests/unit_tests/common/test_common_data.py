@@ -19,11 +19,10 @@ from datetime import datetime
 
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Price, Volume, Tick
-from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
-
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -36,7 +35,7 @@ class DataClientTests(unittest.TestCase):
         self.client = DataClient(
             tick_capacity=100,
             clock=TestClock(),
-            guid_factory=TestGuidFactory(),
+            uuid_factory=TestUUIDFactory(),
             logger=TestLogger())
 
     def test_get_exchange_rate_returns_correct_rate(self):

@@ -20,7 +20,6 @@ import unittest
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
 from nautilus_trader.common.logging import LogMessage, LogLevel
 from nautilus_trader.live.logging import LogStore
-
 from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))

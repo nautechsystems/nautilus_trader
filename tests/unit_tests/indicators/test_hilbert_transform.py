@@ -17,7 +17,6 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.hilbert_transform import HilbertTransform
-
 from tests.test_kit.series import BatterySeries
 
 

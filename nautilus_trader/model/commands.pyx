@@ -15,7 +15,8 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.types cimport ValidString, GUID
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, PositionId, AccountId
 from nautilus_trader.model.order cimport Order, BracketOrder
@@ -29,7 +30,7 @@ cdef class AccountInquiry(Command):
     def __init__(self,
                  TraderId trader_id not None,
                  AccountId account_id not None,
-                 GUID command_id not None,
+                 UUID command_id not None,
                  datetime command_timestamp not None):
         """
         Initializes a new instance of the AccountInquiry class.
@@ -66,7 +67,7 @@ cdef class SubmitOrder(Command):
                  StrategyId strategy_id not None,
                  PositionId position_id not None,
                  Order order not None,
-                 GUID command_id not None,
+                 UUID command_id not None,
                  datetime command_timestamp not None):
         """
         Initializes a new instance of the SubmitOrder class.
@@ -112,7 +113,7 @@ cdef class SubmitBracketOrder(Command):
                  StrategyId strategy_id not None,
                  PositionId position_id not None,
                  BracketOrder bracket_order not None,
-                 GUID command_id not None,
+                 UUID command_id not None,
                  datetime command_timestamp not None):
         """
         Initializes a new instance of the SubmitBracketOrder class.
@@ -158,7 +159,7 @@ cdef class ModifyOrder(Command):
                  OrderId order_id not None,
                  Quantity modified_quantity not None,
                  Price modified_price not None,
-                 GUID command_id not None,
+                 UUID command_id not None,
                  datetime command_timestamp not None):
         """
         Initializes a new instance of the ModifyOrder class.
@@ -203,7 +204,7 @@ cdef class CancelOrder(Command):
                  AccountId account_id not None,
                  OrderId order_id not None,
                  ValidString cancel_reason not None,
-                 GUID command_id not None,
+                 UUID command_id not None,
                  datetime command_timestamp not None):
         """
         Initializes a new instance of the CancelOrder class.

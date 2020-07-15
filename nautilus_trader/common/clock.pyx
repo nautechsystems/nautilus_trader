@@ -18,14 +18,14 @@ import numpy as np
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.common.clock cimport TestTimer
-from nautilus_trader.common.guid cimport TestGuidFactory
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.utc)
+_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
 cdef class TimeEvent(Event):
@@ -35,7 +35,7 @@ cdef class TimeEvent(Event):
 
     def __init__(self,
                  Label label not None,
-                 GUID event_id not None,
+                 UUID event_id not None,
                  datetime event_timestamp not None):
         """
         Initializes a new instance of the TimeEvent class.
@@ -228,7 +228,7 @@ cdef class Timer:
         self.stop_time = stop_time
         self.expired = False
 
-    cpdef TimeEvent pop_event(self, GUID event_id):
+    cpdef TimeEvent pop_event(self, UUID event_id):
         """
         Returns a generated time event with the given identifier.
 
@@ -310,7 +310,7 @@ cdef class TestTimer(Timer):
         """
         super().__init__(label, callback, interval, start_time, stop_time)
 
-        self._guid_factory = TestGuidFactory()
+        self._uuid_factory = TestUUIDFactory()
 
     cpdef list advance(self, datetime to_time):
         """
@@ -325,7 +325,7 @@ cdef class TestTimer(Timer):
 
         cdef list time_events = []  # type: [TimeEvent]
         while not self.expired and to_time >= self.next_time:
-            time_events.append(self.pop_event(self._guid_factory.generate()))
+            time_events.append(self.pop_event(self._uuid_factory.generate()))
             self.iterate_next_time(self.next_time)
 
         return time_events
@@ -342,14 +342,14 @@ cdef class Clock:
     The base class for all clocks. All times are timezone aware UTC.
     """
 
-    def __init__(self, GuidFactory guid_factory not None):
+    def __init__(self, UUIDFactory uuid_factory not None):
         """
         Initializes a new instance of the Clock class.
 
-        :param guid_factory: The guid factory for producing time events.
+        :param uuid_factory: The uuid factory for the clocks time events.
         """
         self._log = None
-        self._guid_factory = guid_factory
+        self._uuid_factory = uuid_factory
         self._timers = {}    # type: {Label, Timer}
         self._handlers = {}  # type: {Label, callable}
         self._stack = None
@@ -590,7 +590,7 @@ cdef class TestClock(Clock):
 
         :param initial_time: The initial time for the clock.
         """
-        super().__init__(TestGuidFactory())
+        super().__init__(TestUUIDFactory())
 
         self._time = initial_time
         self.is_test_clock = True

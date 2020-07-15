@@ -18,7 +18,6 @@ import unittest
 
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.keltner_channel import KeltnerChannel
-
 from tests.test_kit.series import BatterySeries
 
 
