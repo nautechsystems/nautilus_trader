@@ -21,7 +21,8 @@ phases:
       - python3 setup.py build_ext --inplace
   post_build:
     commands:
-      - python3 -m scripts/cleanup.py
+      - cd scripts
+      - python3 -m cleanup.py
       - echo Build completed on `date`
 
 artifacts:
