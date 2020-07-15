@@ -7,9 +7,10 @@ phases:
     commands:
       - yum update -y
       - curl -O https://bootstrap.pypa.io/get-pip.py
-      - python3 get-pip.py --user
-      - python3 --version
-      - python3 -m pip --version
+      - alternatives --set python /usr/bin/python3
+      - python get-pip.py --user
+      - python --version
+      - python -m pip --version
   pre_build:
     commands:
       - yum install -y redis
@@ -17,12 +18,12 @@ phases:
   build:
     commands:
       - echo Build started on `date`
-      - python3 -m pip install -r requirements.txt
-      - python3 setup.py build_ext --inplace
+      - python -m pip install -r requirements.txt
+      - python setup.py build_ext --inplace
   post_build:
     commands:
       - cd scripts
-      - python3 -m cleanup.py
+      - python cleanup.py
       - echo Build completed on `date`
 
 artifacts:
