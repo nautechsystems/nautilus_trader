@@ -14,7 +14,8 @@ NautilusTrader is an algorithmic trading platform allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
 data with an event-driven engine, and also trade those strategies live in a
 production grade environment. The project heavily utilizes Cython to provide
-type safety and performance through C extension modules.
+type safety and performance through C extension modules. The libraries can be
+accessed from both pure Python and Cython.
 
 Cython is a compiled programming language that aims to be a superset of the
 Python programming language, designed to give C-like performance with code that

@@ -16,7 +16,6 @@
 import cython
 from cpython.datetime cimport datetime
 from collections import deque
-from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -44,10 +43,10 @@ cdef class Swings(Indicator):
         self.value = 0
         self.direction = 0
         self.changed = False
-        self.high_datetime = datetime(1970, 1, 1, 0, 0, 0)
-        self.low_datetime = datetime(1970, 1, 1, 0, 0, 0)
-        self.lengths = []    # type: List[double]
-        self.durations = []  # type: List[double]
+        self.high_datetime = None
+        self.low_datetime = None
+        self.lengths = []
+        self.durations = []
         self.high_price = 0.0
         self.low_price = 0.0
         self.length_last = 0.0
@@ -158,8 +157,8 @@ cdef class Swings(Indicator):
         self.value = 0
         self.direction = 0
         self.changed = False
-        self.high_datetime = datetime(1970, 1, 1, 0, 0, 0)
-        self.low_datetime = datetime(1970, 1, 1, 0, 0, 0)
+        self.high_datetime = None
+        self.low_datetime = None
         self.lengths.clear()
         self.durations.clear()
         self.high_price = 0.0

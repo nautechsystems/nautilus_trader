@@ -71,11 +71,11 @@ cdef class FuzzyCandle:
         :return bool.
 
         """
-        return (self.direction == other.direction
-                and self.size == other.size                         # noqa 503 (line break before binary operator)
-                and self.body_size == other.body_size               # noqa 503 (line break before binary operator)
-                and self.upper_wick_size == other.upper_wick_size   # noqa 503 (line break before binary operator)
-                and self.lower_wick_size == other.lower_wick_size)  # noqa 503 (line break before binary operator)
+        return self.direction == other.direction \
+            and self.size == other.size \
+            and self.body_size == other.body_size \
+            and self.upper_wick_size == other.upper_wick_size \
+            and self.lower_wick_size == other.lower_wick_size
 
     def __ne__(self, FuzzyCandle other) -> bool:
         """
@@ -103,7 +103,16 @@ cdef class FuzzyCandle:
         :return str.
 
         """
-        return f"[{self.direction}, {self.size}, {self.body_size}, {self.lower_wick_size}, {self.upper_wick_size}]"
+        return f"({self.direction}, {self.size}, {self.body_size}, {self.lower_wick_size}, {self.upper_wick_size})"
+
+    def __repr__(self) -> str:
+        """
+        Return the string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{self.__class__.__name__}{str(self)} object at {id(self)}>"
 
 
 cdef class FuzzyCandlesticks(Indicator):
@@ -113,8 +122,10 @@ cdef class FuzzyCandlesticks(Indicator):
 
     Attributes
     ----------
-    value : int[:]
-        The last array representing the fuzzified features of the last bar.
+    value : FuzzyCandle
+        The last fuzzy candle to close.
+    vector : list of int
+        A list representing the fuzzified features of the last fuzzy candle.
         [0] direction: int (-1, 0, 1)
         [1] size: int (0 to 6)
         [2] body size: int (0 to 4)
@@ -133,12 +144,20 @@ cdef class FuzzyCandlesticks(Indicator):
         """
         Initializes a new instance of the FuzzyCandlesticks class.
 
-        :param period: The rolling window period for the indicator (> 0).
-        :param threshold1: The membership function x threshold1 (>= 0).
-        :param threshold2: The membership function x threshold2 (> threshold1).
-        :param threshold3: The membership function x threshold3 (> threshold2).
-        :param threshold4: The membership function x threshold4 (> threshold3).
-        :param check_inputs: The flag indicating whether the input values should be checked.
+        Parameters
+        ----------
+        period : int
+            The rolling window period for the indicator (> 0).
+        threshold1 : float
+            The membership function x threshold1 (>= 0).
+        threshold2 : float
+            The membership function x threshold2 (> threshold1).
+        threshold3 : float
+            The membership function x threshold3 (> threshold2).
+        threshold4 : float
+            The membership function x threshold4 (> threshold3).
+        check_inputs : bool
+            The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, 'period')
         Condition.positive(threshold1, 'threshold1')
