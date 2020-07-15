@@ -14,6 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
+from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
+from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
+from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
+
+
+cdef class FuzzyMembership:
+    cdef readonly int linguistic_variable
+    cdef readonly double x1
+    cdef readonly double x2
+
+
+cdef class FuzzyCandle:
+    cdef readonly CandleDirection direction
+    cdef readonly CandleSize size
+    cdef readonly CandleBodySize body_size
+    cdef readonly CandleWickSize upper_wick_size
+    cdef readonly CandleWickSize lower_wick_size
 
 
 cdef class FuzzyCandlesticks(Indicator):
@@ -29,15 +47,15 @@ cdef class FuzzyCandlesticks(Indicator):
     cdef double _last_high
     cdef double _last_low
     cdef double _last_close
-    cdef object _value
-    cdef long[:] _value_array
-    cdef long[:] _value_price_comparison
 
     cdef readonly int period
+    cdef readonly list vector
+    cdef readonly FuzzyCandle value
 
     cpdef void update(self, double open_price, double high_price, double low_price, double close_price) except *
-    cpdef int price_comparison(self, double price1, double price2)
-    cdef object _fuzzify_size(self, double length, double mean_length, double sd_lengths)
-    cdef object _fuzzify_body_size(self, double body_percent, double mean_body_percent, double sd_body_percents)
-    cdef object _fuzzify_wick_size(self, double wick_percent, double mean_wick_percent, double sd_wick_percents)
     cpdef void reset(self) except *
+
+    cdef CandleDirection _fuzzify_direction(self, double open_price, double close_price)
+    cdef CandleSize _fuzzify_size(self, double length, double mean_length, double sd_lengths)
+    cdef CandleBodySize _fuzzify_body_size(self, double body_percent, double mean_body_percent, double sd_body_percents)
+    cdef CandleWickSize _fuzzify_wick_size(self, double wick_percent, double mean_wick_percent, double sd_wick_percents)
