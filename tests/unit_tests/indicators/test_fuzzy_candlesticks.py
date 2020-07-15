@@ -88,6 +88,20 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         # Assert
         self.assertEqual(hash1, hash2)
 
+    def test_fuzzy_str_and_repr(self):
+        # Arrange
+        fuzzy_candle = FuzzyCandle(
+            CandleDirection.BULL,
+            CandleSize.MEDIUM,
+            CandleBodySize.MEDIUM,
+            CandleWickSize.SMALL,
+            CandleWickSize.SMALL)
+
+        # Act
+        # Assert
+        self.assertEqual('(1, 3, 2, 1, 1)', str(fuzzy_candle))
+        self.assertTrue(repr(fuzzy_candle).startswith('<FuzzyCandle(1, 3, 2, 1, 1) object at'))
+
     def test_name_returns_expected_name(self):
         # Act
         # Assert

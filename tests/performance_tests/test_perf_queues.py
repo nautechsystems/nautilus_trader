@@ -13,22 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
+import unittest
+from collections import deque
 
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+from tests.test_kit.performance import PerformanceHarness
 
 
-__author__ = 'Nautech Systems'
+class PythonDequePerformanceTests(unittest.TestCase):
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 33
-_PATCH_VERSION = 2
-_PRE_RELEASE = 'b2'
+    def setUp(self):
+        self.deque = deque(maxlen=1000)
+        self.deque.append(1.0)
 
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+    def append(self):
+        self.deque.append(1.0)
+
+    def peek(self):
+        return self.deque[0]
+
+    def test_append(self):
+        result = PerformanceHarness.profile_function(self.append, 3, 100000)
+        # ~10ms (10767μs) minimum of 3 runs @ 100,000 iterations each run.
+        self.assertTrue(result < 0.05)
+
+    def test_peek(self):
+        result = PerformanceHarness.profile_function(self.peek, 3, 100000)
+        # ~8ms (8367μs) minimum of 3 runs @ 100,000 iterations each run.
+        self.assertTrue(result < 0.05)

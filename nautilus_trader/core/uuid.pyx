@@ -153,11 +153,11 @@ cdef class UUID:
 
         """
         # Preconditions:
-        if (hex_str is None    # noqa (W503 line break before binary operator)
-        and bytes_val is None  # noqa (W503 line break before binary operator)
-        and bytes_le is None   # noqa (W503 line break before binary operator)
-        and fields is None     # noqa (W503 line break before binary operator)
-        and int_val == -1):    # noqa (W503 line break before binary operator)
+        if hex_str is None and \
+                bytes_val is None and \
+                bytes_le is None and \
+                fields is None and \
+                int_val == -1:
             raise TypeError('one of the hex, bytes, bytes_le, fields, '
                             'or integer arguments must be given')
 
