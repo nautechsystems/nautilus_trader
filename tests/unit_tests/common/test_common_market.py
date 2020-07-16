@@ -25,6 +25,7 @@ from nautilus_trader.common.market import BarBuilder, TickBarAggregator, TimeBar
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
 from nautilus_trader.indicators.atr import AverageTrueRange
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
@@ -192,6 +193,26 @@ class IndicatorUpdaterTests(unittest.TestCase):
         # Act
         updater.update_bar(bar)
         result = ema.value
+
+        # Assert
+        self.assertEqual(1.00003, result)
+
+    def test_can_update_vwap_indicator(self):
+        # Arrange
+        vwap = VolumeWeightedAveragePrice(20)
+        updater = IndicatorUpdater(vwap)
+
+        bar = Bar(
+            Price(1.00001, 5),
+            Price(1.00004, 5),
+            Price(1.00002, 5),
+            Price(1.00003, 5),
+            Volume(1000),
+            UNIX_EPOCH)
+
+        # Act
+        updater.update_bar(bar)
+        result = vwap.value
 
         # Assert
         self.assertEqual(1.00003, result)

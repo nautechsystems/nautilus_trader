@@ -292,6 +292,7 @@ cdef dict _PARAM_MAP = {
     _HIGH_PRICE: _HIGH,
     _LOW_PRICE: _LOW,
     _CLOSE_PRICE: _CLOSE,
+    _VOLUME: _VOLUME,
     _TIMESTAMP: _TIMESTAMP
 }
 
@@ -344,11 +345,20 @@ cdef class IndicatorUpdater:
         """
         Condition.not_none(tick, 'tick')
 
+        # Get input arguments
         cdef str param
+        cdef list inputs = []
+        for param in self._input_params:
+            if param != _TIMESTAMP:
+                inputs.append(PyObject_GetAttr(tick, param).as_double())
+            else:
+                inputs.append(PyObject_GetAttr(tick, param))
+
+        # Pass inputs to indicator
         if self._include_self:
-            self._input_method(self._indicator, *[PyObject_GetAttr(tick, param).as_double().as_double() for param in self._input_params])
+            self._input_method(self._indicator, *inputs)
         else:
-            self._input_method(*[PyObject_GetAttr(tick, param).as_double() for param in self._input_params])
+            self._input_method(*inputs)
 
     cpdef void update_bar(self, Bar bar) except *:
         """
@@ -358,11 +368,20 @@ cdef class IndicatorUpdater:
         """
         Condition.not_none(bar, 'bar')
 
+        # Get input arguments
         cdef str param
+        cdef list inputs = []
+        for param in self._input_params:
+            if param != _TIMESTAMP:
+                inputs.append(PyObject_GetAttr(bar, param).as_double())
+            else:
+                inputs.append(PyObject_GetAttr(bar, param))
+
+        # Pass inputs to indicator
         if self._include_self:
-            self._input_method(self._indicator, *[PyObject_GetAttr(bar, param).as_double() for param in self._input_params])
+            self._input_method(self._indicator, *inputs)
         else:
-            self._input_method(*[PyObject_GetAttr(bar, param).as_double() for param in self._input_params])
+            self._input_method(*inputs)
 
     cpdef dict build_features_ticks(self, list ticks):
         """
@@ -376,7 +395,7 @@ cdef class IndicatorUpdater:
         for output in self._outputs:
             features[output] = []
 
-        cdef Bar bar
+        cdef Tick tick
         cdef tuple value
         for tick in ticks:
             self.update_tick(tick)
