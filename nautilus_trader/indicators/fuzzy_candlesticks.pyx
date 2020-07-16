@@ -168,6 +168,11 @@ cdef class FuzzyCandlesticks(Indicator):
 
         self.vector = None
         self.value = None
+        self.dir = 0
+        self.size = 0
+        self.b_size = 0
+        self.uw_size = 0
+        self.lw_size = 0
 
     @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(
@@ -258,6 +263,13 @@ cdef class FuzzyCandlesticks(Indicator):
             self.value.upper_wick_size,
             self.value.lower_wick_size
         ]
+
+        # Set values
+        self.dir = self.value.direction
+        self.size = self.value.size
+        self.b_size = self.value.body_size
+        self.uw_size = self.value.upper_wick_size
+        self.lw_size = self.value.lower_wick_size
 
         # Initialization logic
         if self.initialized is False:
@@ -411,3 +423,8 @@ cdef class FuzzyCandlesticks(Indicator):
         self._last_close = 0.0
         self.vector = None
         self.value = None
+        self.dir = 0
+        self.size = 0
+        self.b_size = 0
+        self.uw_size = 0
+        self.lw_size = 0

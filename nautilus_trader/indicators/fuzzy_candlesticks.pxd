@@ -44,6 +44,11 @@ cdef class FuzzyCandlesticks(Indicator):
 
     cdef readonly int period
     cdef readonly list vector
+    cdef readonly int dir
+    cdef readonly int size
+    cdef readonly int b_size
+    cdef readonly int uw_size
+    cdef readonly int lw_size
     cdef readonly FuzzyCandle value
 
     cpdef void update(self, double open_price, double high_price, double low_price, double close_price) except *
