@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import decimal
-from libc.math cimport round
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport fast_round
 
 
 cdef Decimal _ZERO_DECIMAL = Decimal()
@@ -36,8 +36,7 @@ cdef class Decimal:
         """
         Condition.not_negative(precision, 'precision')
 
-        cdef int power = 10 ** precision  # Zero power rule 10^0 = 1
-        self._value = round(value * power) / power  # Rounding to nearest
+        self._value = fast_round(value, precision)  # Rounding to nearest
         self.precision = precision
 
     @staticmethod

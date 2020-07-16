@@ -226,3 +226,4 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(len(battery_signal), len(output))
+        # 757ms needs to improve

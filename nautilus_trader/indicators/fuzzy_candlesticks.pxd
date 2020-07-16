@@ -20,12 +20,6 @@ from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
 from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
 
 
-cdef class FuzzyMembership:
-    cdef readonly int linguistic_variable
-    cdef readonly double x1
-    cdef readonly double x2
-
-
 cdef class FuzzyCandle:
     cdef readonly CandleDirection direction
     cdef readonly CandleSize size
