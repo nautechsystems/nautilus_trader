@@ -140,15 +140,20 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # act
         result_candle = self.fc.value
-        result_array = self.fc.vector
+        result_vector = self.fc.vector
 
         # assert
-        self.assertTrue(np.array_equal([0, 0, 0, 0, 0], result_array))
+        self.assertTrue(np.array_equal([0, 0, 0, 0, 0], result_vector))
         self.assertEqual(CandleDirection.NONE, result_candle.direction)
         self.assertEqual(CandleSize.NONE, result_candle.size)
         self.assertEqual(CandleBodySize.NONE, result_candle.body_size)
         self.assertEqual(CandleWickSize.NONE, result_candle.upper_wick_size)
         self.assertEqual(CandleWickSize.NONE, result_candle.lower_wick_size)
+        self.assertEqual(0, self.fc.dir)
+        self.assertEqual(0, self.fc.size)
+        self.assertEqual(0, self.fc.b_size)
+        self.assertEqual(0, self.fc.uw_size)
+        self.assertEqual(0, self.fc.lw_size)
 
     def test_values_with_stub_bars_returns_expected_results(self):
         # Arrange
@@ -165,15 +170,20 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Act
         result_candle = self.fc.value
-        result_array = self.fc.vector
+        result_vector = self.fc.vector
 
         # Assert
-        self.assertTrue(np.array_equal([1, 1, 1, 1, 1], result_array))
+        self.assertTrue(np.array_equal([1, 1, 1, 1, 1], result_vector))
         self.assertEqual(CandleDirection.BULL, result_candle.direction)
         self.assertEqual(CandleSize.VERY_SMALL, result_candle.size)
         self.assertEqual(CandleBodySize.SMALL, result_candle.body_size)
         self.assertEqual(CandleWickSize.SMALL, result_candle.upper_wick_size)
         self.assertEqual(CandleWickSize.SMALL, result_candle.lower_wick_size)
+        self.assertEqual(1, self.fc.dir)
+        self.assertEqual(1, self.fc.size)
+        self.assertEqual(1, self.fc.b_size)
+        self.assertEqual(1, self.fc.uw_size)
+        self.assertEqual(1, self.fc.lw_size)
 
     def test_values_with_down_market_returns_expected_results(self):
         # Arrange
@@ -190,15 +200,20 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Act
         result_candle = self.fc.value
-        result_array = self.fc.vector
+        result_vector = self.fc.vector
 
         # Assert
-        self.assertTrue([-1, 2, 4, 2, 2], result_array)
+        self.assertTrue([-1, 2, 4, 2, 2], result_vector)
         self.assertEqual(CandleDirection.BEAR, result_candle.direction)
         self.assertEqual(CandleSize.SMALL, result_candle.size)
         self.assertEqual(CandleBodySize.TREND, result_candle.body_size)
         self.assertEqual(CandleWickSize.MEDIUM, result_candle.upper_wick_size)
         self.assertEqual(CandleWickSize.MEDIUM, result_candle.lower_wick_size)
+        self.assertEqual(-1, self.fc.dir)
+        self.assertEqual(2, self.fc.size)
+        self.assertEqual(4, self.fc.b_size)
+        self.assertEqual(2, self.fc.uw_size)
+        self.assertEqual(2, self.fc.lw_size)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -226,4 +241,3 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(len(battery_signal), len(output))
-        # 757ms needs to improve
