@@ -132,7 +132,7 @@ class EMACrossFiltered(TradingStrategy):
             # If in the middle of a session then
             self.session_next_start = self.session_filter.prev_start(self.session_start_zone, time_now)
 
-        self.trading_start = self.session_next_start
+        self.trading_start = max(self.session_next_start, time_now + timedelta(minutes=1))
         self.trading_end = self.session_next_end - self.trading_end_buffer
         self.log.info(f"Set next {self.session_start_zone.name} session open to {self.session_next_start}")
         self.log.info(f"Set next {self.session_end_zone.name} session close to {self.session_next_end}")
