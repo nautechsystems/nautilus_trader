@@ -271,8 +271,29 @@ cdef str _OPEN = 'open'
 cdef str _HIGH = 'high'
 cdef str _LOW = 'low'
 cdef str _CLOSE = 'close'
+cdef str _OPEN_PRICE = 'open_price'
+cdef str _HIGH_PRICE = 'high_price'
+cdef str _LOW_PRICE = 'low_price'
+cdef str _CLOSE_PRICE = 'close_price'
 cdef str _VOLUME = 'volume'
 cdef str _TIMESTAMP = 'timestamp'
+
+cdef dict _PARAM_MAP = {
+    _BID: _BID,
+    _ASK: _ASK,
+    _POINT: _CLOSE,
+    _PRICE: _CLOSE,
+    _MID: _CLOSE,
+    _OPEN: _OPEN,
+    _HIGH: _HIGH,
+    _LOW: _LOW,
+    _CLOSE: _CLOSE,
+    _OPEN_PRICE: _OPEN,
+    _HIGH_PRICE: _HIGH,
+    _LOW_PRICE: _LOW,
+    _CLOSE_PRICE: _CLOSE,
+    _TIMESTAMP: _TIMESTAMP
+}
 
 
 cdef class IndicatorUpdater:
@@ -304,24 +325,11 @@ cdef class IndicatorUpdater:
 
         self._input_params = []
 
-        cdef dict param_map = {
-            _BID: _BID,
-            _ASK: _ASK,
-            _POINT: _CLOSE,
-            _PRICE: _CLOSE,
-            _MID: _CLOSE,
-            _OPEN: _OPEN,
-            _HIGH: _HIGH,
-            _LOW: _LOW,
-            _CLOSE: _CLOSE,
-            _TIMESTAMP: _TIMESTAMP
-        }
-
         for param in inspect.signature(self._input_method).parameters:
             if param == 'self':
                 self._include_self = True
             else:
-                self._input_params.append(param_map[param])
+                self._input_params.append(_PARAM_MAP[param])
 
         if outputs is None or not outputs:
             self._outputs = ['value']
