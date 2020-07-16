@@ -135,7 +135,7 @@ cdef class FuzzyCandlesticks(Indicator):
     """
 
     def __init__(self,
-                 int period=10,
+                 int period,
                  double threshold1=0.5,
                  double threshold2=1.0,
                  double threshold3=2.0,
