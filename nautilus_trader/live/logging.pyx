@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import queue
-import multiprocessing
-import redis
 import threading
 
 from nautilus_trader.core.correctness cimport Condition
@@ -33,27 +31,16 @@ cdef class LogStore:
 
     def __init__(self,
                  TraderId trader_id not None,
-                 str host='localhost',
-                 int port=6379,
                  LogSerializer serializer not None=MsgPackLogSerializer()):
         """
         Initializes a new instance of the LogStore class.
 
         :param trader_id: The trader_id.
-        :param host: The redis host to connect to.
-        :param port: The redis port to connect to.
         :raises ValueError: If the redis_host is not a valid string.
         :raises ValueError: If the redis_port is not in range [0, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.in_range(port, 0, 65535, 'port')
-
         self._key = f'Trader-{trader_id.value}:LogStore'
-        self._redis = redis.Redis(host=host, port=port, db=0)
         self._serializer = serializer
-        self._queue = multiprocessing.Queue()
-        self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
-        self._process.start()
 
     cpdef void store(self, LogMessage message):
         """
@@ -63,13 +50,13 @@ cdef class LogStore:
         """
         Condition.not_none(message, 'message')
 
-        self._queue.put(message)
+        # self._queue.put(message)
 
     cpdef void _consume_messages(self) except *:
         cdef LogMessage message
         while True:
-            message = self._queue.get()
-            self._redis.rpush(f'{self._key}:{message.level_string()}', self._serializer.serialize(message))
+            pass
+            # Scaffolding for a future LogStash implementation
 
 
 cdef class LiveLogger(Logger):
@@ -136,5 +123,6 @@ cdef class LiveLogger(Logger):
             message = self._queue.get()
             self._log(message)
 
-            if self._store is not None and message.level >= self._log_level_store:
-                self._store.store(message)
+            # Scaffolding for a future LogStash implementation
+            # if self._store is not None and message.level >= self._log_level_store:
+            #     self._store.store(message)

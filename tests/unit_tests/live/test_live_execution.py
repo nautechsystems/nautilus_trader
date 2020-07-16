@@ -17,7 +17,7 @@ import unittest
 import time
 
 from nautilus_trader.core.message import MessageType
-from nautilus_trader.model.enums import OrderSide, Currency
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.commands import SubmitOrder, SubmitBracketOrder, CancelOrder, ModifyOrder
@@ -84,7 +84,6 @@ class LiveExecutionTests(unittest.TestCase):
         time.sleep(0.1)
 
         self.portfolio = Portfolio(
-            currency=Currency.USD,
             clock=clock,
             uuid_factory=uuid_factory,
             logger=logger)

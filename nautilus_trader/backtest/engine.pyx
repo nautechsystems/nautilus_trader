@@ -135,7 +135,6 @@ cdef class BacktestEngine:
             logger=self.test_logger)
 
         self.portfolio = Portfolio(
-            currency=self.config.account_currency,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
             logger=self.test_logger)

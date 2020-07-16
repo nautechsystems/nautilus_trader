@@ -324,18 +324,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         pipe = self._redis.pipeline()
 
-        for entry in state['StateLog']:
-            if entry:
-                pipe.rpush(self.key_strategies + strategy.id.value + ':StateLog', entry)
-
         for key, value in state.items():
-            if key == 'StateLog':
-                continue  # Already persisted (cannot directly persist list)
             pipe.hset(name=self.key_strategies + strategy.id.value + ':State', key=key, value=value)
             self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
         cdef list reply = pipe.execute()
-
-        strategy.update_state_log(strategy.clock.time_now(), "SAVED")
 
         self._log.info(f"Saved strategy state for {strategy.id.value}.")
 
@@ -397,11 +389,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(strategy, 'strategy')
 
-        cdef list state_log = self._redis.lrange(name=self.key_strategies + strategy.id.value + ':StateLog', start=0, end=-1)
         cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ':State')
-
-        if state_log:
-            state[b'StateLog'] = state_log
 
         if not state:
             self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")

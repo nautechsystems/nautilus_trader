@@ -413,7 +413,6 @@ class ExecutionEngineTests(unittest.TestCase):
             clock=self.clock)
 
         self.portfolio = Portfolio(
-            currency=Currency.USD,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=logger)

@@ -41,7 +41,7 @@ class PortfolioTests(unittest.TestCase):
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
             clock=TestClock())
-        self.portfolio = Portfolio(Currency.USD, self.clock, uuid_factor, logger)
+        self.portfolio = Portfolio(self.clock, uuid_factor, logger)
 
     def test_initialization(self):
         # Arrange

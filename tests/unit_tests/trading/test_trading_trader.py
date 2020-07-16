@@ -16,7 +16,7 @@
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.model.enums import BarStructure, PriceType, Currency
+from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import IdTag, TraderId, StrategyId
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
@@ -58,7 +58,6 @@ class TraderTests(unittest.TestCase):
             logger=logger)
 
         self.portfolio = Portfolio(
-            currency=Currency.USD,
             clock=clock,
             uuid_factory=uuid_factory,
             logger=logger)
