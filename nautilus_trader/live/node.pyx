@@ -90,7 +90,6 @@ cdef class TradingNode:
             config = json.load(config_file)
 
         config_trader = config['trader']
-        config_system = config['system']
         config_account = config['account']
         config_log = config['logging']
         config_strategy = config['strategy']
@@ -101,7 +100,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._uuid_factory = LiveUUIDFactory()
-        self._zmq_context = zmq.Context(io_threads=int(config_system['threads']))
+        self._zmq_context = zmq.Context(io_threads=int(config_messaging['zmq_threads']))
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -114,10 +113,8 @@ cdef class TradingNode:
             account_type=account_type_from_string(config_account['account_type']))
 
         # Setup logging
-        self._log_store = LogStore(
-            trader_id=self.trader_id,
-            host=config_log['host'],
-            port=config_log['port'])
+        self._log_store = LogStore(trader_id=self.trader_id)
+
         self._logger = LiveLogger(
             name=self.trader_id.value,
             level_console=LogLevel[config_log['log_level_console']],
@@ -163,9 +160,7 @@ cdef class TradingNode:
             uuid_factory=self._uuid_factory,
             logger=self._logger)
 
-        # TODO: Portfolio currency?
         self.portfolio = Portfolio(
-            currency=Currency.USD,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
             logger=self._logger)

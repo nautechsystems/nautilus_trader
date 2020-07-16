@@ -23,7 +23,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.enums import OrderState, Currency, MarketPosition
+from nautilus_trader.model.enums import OrderState, MarketPosition
 from nautilus_trader.model.objects import Volume, Tick, Bar
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.common.data import DataClient
@@ -59,7 +59,6 @@ class TradeStrategyTests(unittest.TestCase):
             logger=self.logger)
 
         self.portfolio = Portfolio(
-            currency=Currency.USD,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)

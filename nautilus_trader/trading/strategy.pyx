@@ -21,7 +21,6 @@ from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, Label
-from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -119,7 +118,6 @@ cdef class TradingStrategy:
         self._bars = {}                         # type: {BarType, [Bar]}
         self._indicators = []                   # type: [Indicator]
         self._indicator_updaters = {}           # type: {Indicator, [IndicatorUpdater]}
-        self._state_log = []                    # type: [(datetime, str)]
 
         # Registerable modules
         self._data_client = None                # Initialized when registered with the data client
@@ -287,7 +285,6 @@ cdef class TradingStrategy:
 
         self._exec_engine = engine
         self.log.debug("Registered execution engine.")
-        self.update_state_log(self.time_now(), 'INITIALIZED')
 
     cpdef void register_indicator(
             self,
@@ -1139,7 +1136,6 @@ cdef class TradingStrategy:
         """
         Start the trade strategy and call on_start().
         """
-        self.update_state_log(self.time_now(), 'STARTING')
         self.log.debug(f"Starting...")
 
         if self._data_client is None:
@@ -1156,14 +1152,12 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.is_running = True
-        self.update_state_log(self.time_now(), 'RUNNING')
         self.log.info(f"Running...")
 
     cpdef void stop(self) except *:
         """
         Stop the trade strategy and call on_stop().
         """
-        self.update_state_log(self.time_now(), 'STOPPING')
         self.log.debug(f"Stopping...")
 
         # Clean up clock
@@ -1184,7 +1178,6 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.is_running = False
-        self.update_state_log(self.time_now(), 'STOPPED')
         self.log.info(f"Stopped.")
 
     cpdef void reset(self) except *:
@@ -1205,7 +1198,6 @@ cdef class TradingStrategy:
         self._bars.clear()
         self._indicators.clear()
         self._indicator_updaters.clear()
-        self._state_log.clear()
 
         for indicator in self._indicators:
             indicator.reset()
@@ -1221,10 +1213,7 @@ cdef class TradingStrategy:
         """
         Return the strategy state dictionary to be saved.
         """
-        self.update_state_log(self.time_now(), 'SAVING...')
-
         cpdef dict state = {
-            'StateLog': self._state_log,
             'OrderIdCount': self.order_factory.count(),
             'PositionIdCount': self.position_id_generator.count
         }
@@ -1244,8 +1233,6 @@ cdef class TradingStrategy:
         """
         Condition.not_none(timestamp, 'timestamp')
 
-        self.update_state_log(timestamp, 'SAVED')
-
     cpdef void load(self, dict state) except *:
         """
         Load the strategy state from the give state dictionary.
@@ -1253,16 +1240,6 @@ cdef class TradingStrategy:
         :param state: The state dictionary to load.
         """
         Condition.not_empty(state, 'state')
-
-        state_log = state.get(b'StateLog')
-        cdef list buffered = self._state_log
-        if state_log:
-            self._state_log = []
-            for value in state_log:
-                self._state_log.append(value.decode('utf8'))
-            self._state_log.extend(buffered)
-
-        self.update_state_log(self.time_now(), 'LOADING...')
 
         order_id_count = state.get(b'OrderIdCount')
         if order_id_count:
@@ -1281,8 +1258,6 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self.update_state_log(self.time_now(), 'LOADED')
-
     cpdef void dispose(self) except *:
         """
         Dispose of the strategy to release system resources, then call on_dispose().
@@ -1295,12 +1270,6 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.log.info(f"Disposed.")
-
-    cpdef void update_state_log(self, datetime timestamp, str action) except *:
-        Condition.not_none(timestamp, 'timestamp')
-        Condition.valid_string(action, 'action')
-
-        self._state_log.append(f'{format_iso8601(timestamp)} {action}')
 
     cpdef void account_inquiry(self) except *:
         """

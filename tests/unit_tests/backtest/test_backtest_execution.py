@@ -16,7 +16,7 @@
 import pandas as pd
 import unittest
 
-from nautilus_trader.model.enums import OrderSide, Currency
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
 from nautilus_trader.model.identifiers import TraderId
@@ -63,7 +63,6 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=self.logger)
 
         self.portfolio = Portfolio(
-            currency=Currency.USD,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)

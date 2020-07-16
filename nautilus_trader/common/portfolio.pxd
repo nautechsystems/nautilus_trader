@@ -37,6 +37,7 @@ cdef class Portfolio:
     cdef readonly Money daily_pnl_realized
     cdef readonly Money total_pnl_realized
 
+    cpdef void set_base_currency(self, Currency currency) except *
     cpdef void update(self, PositionEvent event) except *
     cpdef void reset(self) except *
     cpdef set symbols_open(self)

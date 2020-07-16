@@ -29,7 +29,6 @@ cdef class Portfolio:
     """
 
     def __init__(self,
-                 Currency currency,
                  Clock clock not None,
                  UUIDFactory uuid_factory not None,
                  Logger logger=None):
@@ -47,10 +46,18 @@ cdef class Portfolio:
         self._positions_open = {}    # type: [Symbol, {PositionId, Position}]
         self._positions_closed = {}  # type: [Symbol, {PositionId, Position}]
 
-        self.currency = currency
+        self.currency = Currency.USD  # Default
         self.daily_pnl_realized = Money(0, self.currency)
         self.total_pnl_realized = Money(0, self.currency)
         self.date_now = self._clock.time_now().date()
+
+    cpdef void set_base_currency(self, Currency currency) except *:
+        """
+        Set the portfolios base currency.
+        
+        :param currency: The base currency to set.
+        """
+        self.currency = currency
 
     cpdef void update(self, PositionEvent event) except *:
         """
@@ -79,6 +86,7 @@ cdef class Portfolio:
 
         self._positions_open.clear()
         self._positions_closed.clear()
+        self.currency = Currency.USD  # Default
         self.daily_pnl_realized = Money(0, self.currency)
         self.total_pnl_realized = Money(0, self.currency)
         self.date_now = self._clock.time_now().date()

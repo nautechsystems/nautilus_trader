@@ -4,10 +4,6 @@
     "order_id_tag": "000"
   },
 
-  "system": {
-    "threads": 2
-  },
-
   "account": {
     "broker": "FXCM",
     "account_number": "02402856",
@@ -19,9 +15,7 @@
     "log_level_file": "DEBUG",
     "log_level_store": "WARNING",
     "log_to_file": true,
-    "log_file_path": "logs/",
-    "host": "localhost",
-    "port": 6379
+    "log_file_path": "logs/"
   },
 
   "strategy": {
@@ -30,6 +24,7 @@
   },
 
   "messaging": {
+    "zmq_threads": 2,
     "api_version": "1.0",
     "compression": "lz4",
     "encryption": "curve",

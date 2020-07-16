@@ -496,6 +496,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_get_strategy_ids_with_id_returns_correct_set(self):
         # Arrange
         self.database.update_strategy(self.strategy)
+
         # Act
         result = self.database.get_strategy_ids()
 

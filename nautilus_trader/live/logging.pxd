@@ -19,9 +19,6 @@ from nautilus_trader.serialization.base cimport LogSerializer
 
 cdef class LogStore:
     cdef str _key
-    cdef object _queue
-    cdef object _process
-    cdef object _redis
     cdef LogSerializer _serializer
 
     cpdef void store(self, LogMessage message)

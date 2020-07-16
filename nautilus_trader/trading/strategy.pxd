@@ -61,7 +61,6 @@ cdef class TradingStrategy:
     cdef dict _bars
     cdef list _indicators
     cdef dict _indicator_updaters
-    cdef list _state_log
 
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine
@@ -179,7 +178,6 @@ cdef class TradingStrategy:
     cpdef void saved(self, datetime timestamp) except *
     cpdef void load(self, dict state) except *
     cpdef void dispose(self) except *
-    cpdef void update_state_log(self, datetime timestamp, str action) except *
     cpdef void account_inquiry(self) except *
     cpdef void submit_order(self, Order order, PositionId position_id) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, PositionId position_id) except *

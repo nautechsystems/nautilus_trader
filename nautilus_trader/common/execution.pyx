@@ -1261,6 +1261,7 @@ cdef class ExecutionEngine:
             if self.account_id.equals(account.id):
                 self.account = account
                 self.database.add_account(self.account)
+                self.portfolio.set_base_currency(event.currency)
                 return
         elif account.id == event.account_id:
             account.apply(event)
