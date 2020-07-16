@@ -13,37 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 import cython
-import numpy as np
 from libc.math cimport fabs
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_mean
+from nautilus_trader.core.functions cimport fast_mean, fast_std_with_mean
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
 from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
 from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
 from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
-
-cdef double _MAX_FLOAT = sys.float_info.max
-
-
-cdef class FuzzyMembership:
-    """
-    Defines the attributes of a fuzzy membership function. Used internally by the
-    indicator to fuzzify crisp values to linguistic variables.
-    """
-
-    def __init__(self,
-                 int linguistic_variable,
-                 double x1,
-                 double x2):
-
-        self.linguistic_variable = linguistic_variable
-        self.x1 = x1
-        self.x2 = x2
 
 
 cdef class FuzzyCandle:
@@ -245,10 +225,10 @@ cdef class FuzzyCandlesticks(Indicator):
         cdef double mean_upper_wick = fast_mean(list(self._upper_wick_percents))
         cdef double mean_lower_wick = fast_mean(list(self._lower_wick_percents))
 
-        cdef double sd_lengths = float(np.std(self._lengths))
-        cdef double sd_body_percents = float(np.std(self._body_percents))
-        cdef double sd_upper_wick_percents = float(np.std(self._upper_wick_percents))
-        cdef double sd_lower_wick_percents = float(np.std(self._lower_wick_percents))
+        cdef double sd_lengths = fast_std_with_mean(list(self._lengths), mean_length)
+        cdef double sd_body_percents = fast_std_with_mean(list(self._body_percents), mean_body_percent)
+        cdef double sd_upper_wick_percents = fast_std_with_mean(list(self._upper_wick_percents), mean_upper_wick)
+        cdef double sd_lower_wick_percents = fast_std_with_mean(list(self._lower_wick_percents), mean_lower_wick)
 
         # Create fuzzy candle
         self.value = FuzzyCandle(
@@ -316,35 +296,36 @@ cdef class FuzzyCandlesticks(Indicator):
         if length == 0.0:
             return CandleSize.NONE
 
-        cdef list fuzzy_size_table = [
-            FuzzyMembership(
-                linguistic_variable=CandleSize.VERY_SMALL,
-                x1=0.0,
-                x2=mean_length - (sd_lengths * self._threshold2)),
-            FuzzyMembership(
-                linguistic_variable=CandleSize.SMALL,
-                x1=mean_length - (sd_lengths * self._threshold2),
-                x2=mean_length + (sd_lengths * self._threshold1)),
-            FuzzyMembership(
-                linguistic_variable=CandleSize.MEDIUM,
-                x1=mean_length + (sd_lengths * self._threshold1),
-                x2=sd_lengths * self._threshold2),
-            FuzzyMembership(
-                linguistic_variable=CandleSize.LARGE,
-                x1=mean_length + (sd_lengths * self._threshold2),
-                x2=mean_length + (sd_lengths * self._threshold3)),
-            FuzzyMembership(
-                linguistic_variable=CandleSize.VERY_LARGE,
-                x1=mean_length + (sd_lengths * self._threshold3),
-                x2=mean_length + (sd_lengths * self._threshold4)),
-            FuzzyMembership(
-                linguistic_variable=CandleSize.EXTREMELY_LARGE,
-                x1=mean_length + (sd_lengths * self._threshold4),
-                x2=_MAX_FLOAT)]
+        cdef double x
 
-        for fuzzy_size in fuzzy_size_table:
-            if fuzzy_size.x1 <= length <= fuzzy_size.x2:
-                return fuzzy_size.linguistic_variable
+        # Determine CandleSize fuzzy membership
+        # -------------------------------------
+        # CandleSize.VERY_SMALL
+        x = mean_length - (sd_lengths * self._threshold2)
+        if length <= x:
+            return CandleSize.VERY_SMALL
+
+        # CandleSize.SMALL
+        x = mean_length + (sd_lengths * self._threshold1)
+        if length <= x:
+            return CandleSize.SMALL
+
+        # CandleSize.MEDIUM
+        x = sd_lengths * self._threshold2
+        if length <= x:
+            return CandleSize.MEDIUM
+
+        # CandleSize.LARGE
+        x = mean_length + (sd_lengths * self._threshold3)
+        if length <= x:
+            return CandleSize.LARGE
+
+        # CandleSize.VERY_LARGE
+        x = mean_length + (sd_lengths * self._threshold4)
+        if length <= x:
+            return CandleSize.VERY_LARGE
+
+        return CandleSize.EXTREMELY_LARGE
 
     cdef CandleBodySize _fuzzify_body_size(
             self,
@@ -362,27 +343,26 @@ cdef class FuzzyCandlesticks(Indicator):
         if body_percent == 0.0:
             return CandleBodySize.NONE
 
-        cdef list fuzzy_body_size_table = [
-            FuzzyMembership(
-                linguistic_variable=CandleBodySize.SMALL,
-                x1=0.0,
-                x2=mean_body_percent - (sd_body_percents * self._threshold1)),
-            FuzzyMembership(
-                linguistic_variable=CandleBodySize.MEDIUM,
-                x1=mean_body_percent - (sd_body_percents * self._threshold1),
-                x2=mean_body_percent + (sd_body_percents * self._threshold1)),
-            FuzzyMembership(
-                linguistic_variable=CandleBodySize.LARGE,
-                x1=mean_body_percent + (sd_body_percents * self._threshold1),
-                x2=mean_body_percent + (sd_body_percents * self._threshold2)),
-            FuzzyMembership(
-                linguistic_variable=CandleBodySize.TREND,
-                x1=mean_body_percent + (sd_body_percents * self._threshold2),
-                x2=_MAX_FLOAT)]
+        cdef double x
 
-        for fuzzy_body_size in fuzzy_body_size_table:
-            if fuzzy_body_size.x1 <= body_percent <= fuzzy_body_size.x2:
-                return fuzzy_body_size.linguistic_variable
+        # Determine CandleBodySize fuzzy membership
+        # -------------------------------------
+        # CandleBodySize.SMALL
+        x = mean_body_percent - (sd_body_percents * self._threshold1)
+        if body_percent <= x:
+            return CandleBodySize.SMALL
+
+        # CandleBodySize.MEDIUM
+        x = mean_body_percent + (sd_body_percents * self._threshold1)
+        if body_percent <= x:
+            return CandleBodySize.MEDIUM
+
+        # CandleBodySize.LARGE
+        x = mean_body_percent + (sd_body_percents * self._threshold2)
+        if body_percent <= x:
+            return CandleBodySize.LARGE
+
+        return CandleBodySize.TREND
 
     cdef CandleWickSize _fuzzify_wick_size(
             self,
@@ -400,23 +380,21 @@ cdef class FuzzyCandlesticks(Indicator):
         if wick_percent == 0.0:
             return CandleWickSize.NONE
 
-        cdef list fuzzy_wick_size_table = [
-            FuzzyMembership(
-                linguistic_variable=CandleWickSize.SMALL,
-                x1=0.0,
-                x2=mean_wick_percent - (sd_wick_percents * self._threshold1)),
-            FuzzyMembership(
-                linguistic_variable=CandleWickSize.MEDIUM,
-                x1=mean_wick_percent - (sd_wick_percents * self._threshold1),
-                x2=mean_wick_percent + (sd_wick_percents * self._threshold2)),
-            FuzzyMembership(
-                linguistic_variable=CandleWickSize.LARGE,
-                x1=mean_wick_percent + (sd_wick_percents * self._threshold2),
-                x2=_MAX_FLOAT)]
+        cdef double x
 
-        for fuzzy_wick_size in fuzzy_wick_size_table:
-            if fuzzy_wick_size.x1 <= wick_percent <= fuzzy_wick_size.x2:
-                return fuzzy_wick_size.linguistic_variable
+        # Determine CandleWickSize fuzzy membership
+        # -------------------------------------
+        # CandleWickSize.SMALL
+        x = mean_wick_percent - (sd_wick_percents * self._threshold1)
+        if wick_percent <= x:
+            return CandleWickSize.SMALL
+
+        # CandleWickSize.MEDIUM
+        x = mean_wick_percent + (sd_wick_percents * self._threshold2)
+        if wick_percent <= x:
+            return CandleWickSize.MEDIUM
+
+        return CandleWickSize.LARGE
 
     cpdef void reset(self) except *:
         """

@@ -18,7 +18,7 @@
 
 import gc
 import sys
-from libc.math cimport round
+from libc.math cimport round, pow, sqrt
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -31,8 +31,8 @@ cpdef double fast_round(double value, int precision):
     :param precision: The precision to round to.
     :return: double.
     """
-    cdef int power = 10 ** precision
-    return round(value * power) / power
+    cdef int power = 10 ** precision     # Zero power rule 10^0 = 1
+    return round(value * power) / power  # Rounding to nearest
 
 
 cpdef double fast_mean(list values):
@@ -79,6 +79,34 @@ cpdef double fast_mean_iterated(
 
     cdef double value_to_drop = values[0] if drop_left else values[length - 1]
     return current_value + ((next_value - value_to_drop) / length)
+
+
+cpdef double fast_std(list values):
+    """
+    Return the standard deviation from the given values.
+
+    :param values: The values for the calculation.
+    :return: double.
+    """
+    return fast_std_with_mean(values, fast_mean(values))
+
+
+cpdef double fast_std_with_mean(list values, double mean):
+    """
+    Return the standard deviation from the given values and mean.
+    Note - garbage in garbage out for given mean.
+    
+    :param values: The values for the calculation.
+    :param mean: The pre-calculated mean of the given values.
+    :return: double.
+    """
+    cdef int length = len(values)
+    cdef double std_deviation = 0.0
+
+    for i in range(length):
+        std_deviation += pow(values[i] - mean, 2)
+
+    return sqrt(std_deviation / length)
 
 
 cpdef double basis_points_as_percentage(double basis_points):

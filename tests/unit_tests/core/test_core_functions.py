@@ -17,6 +17,7 @@ import unittest
 import numpy as np
 
 from nautilus_trader.core.functions import fast_round, fast_mean, fast_mean_iterated
+from nautilus_trader.core.functions import fast_std, fast_std_with_mean
 from nautilus_trader.core.functions import basis_points_as_percentage, format_bytes, pad_string
 from nautilus_trader.core.functions import max_in_dict
 
@@ -80,6 +81,21 @@ class TestFunctionsTests(unittest.TestCase):
         # Assert
         self.assertEqual(np.mean([0.0, 1.1, 2.2]), result1)
         self.assertAlmostEqual(3.3, result2)
+
+    def test_std_dev_with_mean(self):
+        # Arrange
+        values = [0.0, 1.1, 2.2, 3.3, 4.4, 8.1, 9.9, -3.0]
+        mean = fast_mean(values)
+
+        # Act
+        result1 = fast_std(values)
+        result2 = fast_std_with_mean(values, mean)
+
+        # Assert
+        self.assertEqual(np.std(values), result1)
+        self.assertEqual(np.std(values), result2)
+        self.assertAlmostEqual(3.943665807342199, result1)
+        self.assertAlmostEqual(3.943665807342199, result2)
 
     def test_basis_points_as_percentage(self):
         # Arrange
