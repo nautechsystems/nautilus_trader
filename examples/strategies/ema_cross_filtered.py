@@ -28,10 +28,10 @@ from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-UPDATE_SESSIONS = 'UPDATE_SESSIONS'
-UPDATE_NEWS = 'UPDATE_NEWS'
-NEWS_FLATTEN = 'NEWS_FLATTEN'
-DONE_FOR_DAY = 'DONE_FOR_DAY'
+UPDATE_SESSIONS = 'UPDATE-SESSIONS'
+UPDATE_NEWS = 'UPDATE-NEWS'
+NEWS_FLATTEN = 'NEWS-FLATTEN'
+DONE_FOR_DAY = 'DONE-FOR-DAY'
 
 
 class EMACrossFiltered(TradingStrategy):
@@ -164,6 +164,7 @@ class EMACrossFiltered(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
+        self.log.info(str(bar))
         time_now = self.clock.time_now()
 
         if time_now >= self.trading_end:
@@ -240,16 +241,16 @@ class EMACrossFiltered(TradingStrategy):
         :param event: The received event.
         """
         if isinstance(event, TimeEvent):
-            if event.name == DONE_FOR_DAY:
+            if event.name.startswith(DONE_FOR_DAY):
                 self._done_for_day()
                 return
-            if event.name == NEWS_FLATTEN:
+            if event.name.startswith(NEWS_FLATTEN):
                 self._news_flatten()
                 return
-            if event.name == UPDATE_SESSIONS:
+            if event.name.startswith(UPDATE_SESSIONS):
                 self._update_session_times()
                 return
-            if event.name == UPDATE_NEWS:
+            if event.name.startswith(UPDATE_NEWS):
                 self._update_news_event()
                 return
             self.log.warning(f"Received unknown time event {event}.")
@@ -426,8 +427,9 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set trading end to {self.trading_end}")
 
         # Set session update event
-        self.clock.set_time_alert(DONE_FOR_DAY, self.trading_end)
-        self.clock.set_time_alert(UPDATE_SESSIONS, self.session_next_end + timedelta(seconds=1))
+        alert_label = f'-{time_now.date()}'
+        self.clock.set_time_alert(DONE_FOR_DAY + alert_label, self.trading_end)
+        self.clock.set_time_alert(UPDATE_SESSIONS + alert_label, self.session_next_end + timedelta(seconds=1))
 
     def _done_for_day(self):
         self.log.info(f"Done for day - commencing trading end flatten...")
@@ -458,8 +460,11 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
 
         # Set news update event
-        self.clock.set_time_alert(UPDATE_NEWS, self.trading_pause_end)
-        self.clock.set_time_alert(NEWS_FLATTEN, self.trading_pause_start + timedelta(seconds=1))
+        news_time = self.news_event_next.timestamp
+        news_name = self.news_event_next.name.replace(' ', '')
+        alert_label = f'-{news_time.date()}-{news_time.hour:02d}{news_time.minute:02d}-{news_name}'
+        self.clock.set_time_alert(UPDATE_NEWS + alert_label, self.trading_pause_end)
+        self.clock.set_time_alert(NEWS_FLATTEN + alert_label, self.trading_pause_start + timedelta(seconds=1))
 
     def _news_flatten(self):
         self.log.info("Within trading pause window - commencing news flatten...")
