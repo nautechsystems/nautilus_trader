@@ -144,7 +144,6 @@ cdef class FuzzyCandlesticks(Indicator):
         Condition.true(threshold2 > threshold1, 'threshold2 > threshold1')
         Condition.true(threshold3 > threshold2, 'threshold3 > threshold2')
         Condition.true(threshold4 > threshold3, 'threshold4 > threshold3')
-
         super().__init__(params=[period,
                                  threshold1,
                                  threshold2,

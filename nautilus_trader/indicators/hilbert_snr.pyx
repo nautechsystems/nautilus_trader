@@ -42,8 +42,8 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         Condition.positive_int(period, 'period')
         Condition.not_negative(range_floor, 'range_floor')
         Condition.not_negative(amplitude_floor, 'amplitude_floor')
-
         super().__init__(params=[period], check_inputs=check_inputs)
+
         self.period = period
         self._i_mult = 0.635
         self._q_mult = 0.338

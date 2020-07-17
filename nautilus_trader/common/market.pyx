@@ -20,7 +20,6 @@ from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
 from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument
 from nautilus_trader.model.objects cimport Bar, BarType, BarSpecification
@@ -723,7 +722,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cdef void _set_build_timer(self) except *:
         self._clock.set_timer(
-            label=Label(self.bar_type.to_string()),
+            name=self.bar_type.to_string(),
             interval=self._get_interval(),
             start_time=self._get_start_time(),
             stop_time=None,

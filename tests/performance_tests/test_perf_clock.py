@@ -16,7 +16,6 @@
 import unittest
 from datetime import timedelta
 
-from nautilus_trader.core.types import Label
 from nautilus_trader.common.logging import LogLevel, LoggerAdapter, TestLogger
 from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
@@ -41,7 +40,7 @@ class TestClockPerformanceTests(unittest.TestCase):
         logger = LoggerAdapter('TestClock', TestLogger(level_console=LogLevel.DEBUG))
         store = []
         clock.register_logger(logger)
-        clock.set_timer(Label('test'), timedelta(seconds=1), handler=store.append)
+        clock.set_timer('test', timedelta(seconds=1), handler=store.append)
 
         iterations = 1
         result = PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)

@@ -35,8 +35,8 @@ cdef class HullMovingAverage(MovingAverage):
         :param period: The rolling window period for the indicator (> 0).
         """
         Condition.positive_int(period, 'period')
-
         super().__init__(period, params=[period])
+
         self._period_halved = int(self.period / 2)
         self._period_sqrt = int(np.sqrt(self.period))
 

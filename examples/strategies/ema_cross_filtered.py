@@ -13,17 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
+import pytz
+from datetime import datetime, timedelta
 
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price, Tick, Bar, BarType, BarSpecification
 from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
+from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.trading.filters import ForexSession
 from nautilus_trader.trading.filters import ForexSessionFilter, EconomicNewsEventFilter
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
+
+
+UPDATE_SESSIONS = 'UPDATE_SESSIONS'
+UPDATE_NEWS = 'UPDATE_NEWS'
+NEWS_FLATTEN = 'NEWS_FLATTEN'
+DONE_FOR_DAY = 'DONE_FOR_DAY'
 
 
 class EMACrossFiltered(TradingStrategy):
@@ -81,7 +89,6 @@ class EMACrossFiltered(TradingStrategy):
         self.session_end_zone = ForexSession.NEW_YORK
         self.session_next_start = None
         self.session_next_end = None
-        self.done_for_day = True
         self.trading_end_buffer = timedelta(minutes=10)
         self.trading_start = None
         self.trading_end = None
@@ -93,7 +100,6 @@ class EMACrossFiltered(TradingStrategy):
         self.news_buffer_high_after = timedelta(minutes=20)
         self.news_buffer_medium_before = timedelta(minutes=5)
         self.news_buffer_medium_after = timedelta(minutes=10)
-        self.news_flatten = False
         self.trading_pause_start = None
         self.trading_pause_end = None
 
@@ -125,34 +131,10 @@ class EMACrossFiltered(TradingStrategy):
             update_method=self.atr.update)
 
         # Set trading sessions
-        time_now = self.clock.time_now()
-        self.session_next_start = self.session_filter.next_start(self.session_start_zone, time_now)
-        self.session_next_end = self.session_filter.next_end(self.session_end_zone, time_now)
-        if self.session_next_start > time_now:
-            # If in the middle of a session then
-            self.session_next_start = self.session_filter.prev_start(self.session_start_zone, time_now)
+        self._update_session_times()
 
-        self.trading_start = max(self.session_next_start, time_now + timedelta(minutes=1))
-        self.trading_end = self.session_next_end - self.trading_end_buffer
-        self.log.info(f"Set next {self.session_start_zone.name} session open to {self.session_next_start}")
-        self.log.info(f"Set next {self.session_end_zone.name} session close to {self.session_next_end}")
-        self.log.info(f"Set trading start to {self.trading_start}")
-        self.log.info(f"Set trading end to {self.trading_end}")
-
-        # Set news events
-        self.news_event_next = self.news_filter.next_event(time_now)
-        if self.news_event_next.impact == 'HIGH':
-            self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
-            self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
-        elif self.news_event_next.impact == 'MEDIUM':
-            self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
-            self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
-        self.log.info(f"Set next news event {self.news_event_next.name} "
-                      f"affecting {self.news_event_next.currency} "
-                      f"with expected {self.news_event_next.impact} impact "
-                      f"at {self.news_event_next.timestamp}")
-        self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
-        self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
+        # Set next news event
+        self._update_news_event()
 
         # Get historical data
         self.get_ticks(self.symbol)
@@ -185,59 +167,24 @@ class EMACrossFiltered(TradingStrategy):
         time_now = self.clock.time_now()
 
         if time_now >= self.trading_end:
-            self.log.info(f"Waiting for {self.session_end_zone.name} session close at {self.session_next_end}. "
-                          f"Trading ended at {self.trading_end}.")
-
-            if time_now > self.session_next_end:
-                self.session_next_start = self.session_filter.next_start(self.session_start_zone, time_now)
-                self.session_next_end = self.session_filter.next_end(self.session_end_zone, time_now)
-                self.trading_start = self.session_next_start
-                self.trading_end = self.session_next_end - self.trading_end_buffer
-                self.log.info(f"Set next {self.session_start_zone.name} session open to {self.session_next_start}")
-                self.log.info(f"Set next {self.session_end_zone.name} session close to {self.session_next_end}")
-                self.log.info(f"Set trading start to {self.trading_start}")
-                self.log.info(f"Set trading end to {self.trading_end}")
-            if not self.done_for_day:
-                self.log.info(f"Done for day - commencing trading end flatten...")
-                self.flatten_all_positions()
-                self.cancel_all_orders()
-                self.done_for_day = True
-                self.log.info(f"Done for day...")
+            self.log.info(f"Trading ended at {self.trading_end}. "
+                          f"{self.session_end_zone.name} session close at {self.session_next_end}.")
             return
 
         if time_now < self.trading_start:
-            self.done_for_day = False
-            self.log.info(f"Waiting for {self.session_start_zone.name} session open at {self.session_next_start}. "
-                          f"Trading start at {self.trading_start}...")
+            self.log.info(f"Trading start at {self.trading_start}. "
+                          f"{self.session_start_zone.name} session open at {self.session_next_start}.")
             return
 
         # Check news events
         if time_now >= self.trading_pause_start:
-            if not self.news_flatten:
-                self.log.info("Within trading pause window - commencing news flatten...")
-                self.flatten_all_positions()
-                self.cancel_all_orders()
-                self.news_flatten = True
             if time_now < self.trading_pause_end:
-                self.log.info(f"Trading paused for news event {self.news_event_next.name} "
+                self.log.info(f"Trading paused until {self.trading_pause_end} "
+                              f"for news event {self.news_event_next.name} "
                               f"affecting {self.news_event_next.currency} "
                               f"with expected {self.news_event_next.impact} impact "
                               f"at {self.news_event_next.timestamp}")
                 return  # Waiting for end of pause period
-            self.news_event_next = self.news_filter.next_event(time_now)
-            if self.news_event_next.impact == 'HIGH':
-                self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
-                self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
-            elif self.news_event_next.impact == 'MEDIUM':
-                self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
-                self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
-            self.log.info("Trading paused ended.")
-            self.log.info(f"Set next news event {self.news_event_next.name} "
-                          f"affecting {self.news_event_next.currency} "
-                          f"with expected {self.news_event_next.impact} impact "
-                          f"at {self.news_event_next.timestamp}")
-            self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
-            self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
@@ -274,6 +221,81 @@ class EMACrossFiltered(TradingStrategy):
                 self._enter_short(bar, sl_buffer, spread_buffer)
 
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
+
+    def on_data(self, data):
+        """
+        This method is called whenever the strategy receives a data update.
+
+        :param data: The received data.
+        """
+        # Put custom code for data handling here (or pass)
+        pass
+
+    def on_event(self, event):
+        """
+        This method is called whenever the strategy receives an Event object,
+        and after the event has been processed by the TradingStrategy base class.
+        These events could be AccountEvent, OrderEvent, PositionEvent, TimeEvent.
+
+        :param event: The received event.
+        """
+        if isinstance(event, TimeEvent):
+            if event.name == DONE_FOR_DAY:
+                self._done_for_day()
+                return
+            if event.name == NEWS_FLATTEN:
+                self._news_flatten()
+                return
+            if event.name == UPDATE_SESSIONS:
+                self._update_session_times()
+                return
+            if event.name == UPDATE_NEWS:
+                self._update_news_event()
+                return
+            self.log.warning(f"Received unknown time event {event}.")
+
+    def on_stop(self):
+        """
+        This method is called when self.stop() is called and after internal
+        stopping logic.
+        """
+        # Put custom code to be run on strategy stop here (or pass)
+        pass
+
+    def on_reset(self):
+        """
+        This method is called when self.reset() is called, and after internal
+        reset logic such as clearing the internally held bars, ticks and resetting
+        all indicators.
+        """
+        # Trading session times
+        self.session_next_start = None
+        self.session_next_end = None
+        self.trading_start = None
+        self.trading_end = None
+
+        # News event times
+        self.news_event_next = None
+        self.trading_pause_start = None
+        self.trading_pause_end = None
+
+    def on_save(self) -> {}:
+        # Put custom state to be saved here (or return empty dictionary)
+        return {}
+
+    def on_load(self, state: {}):
+        # Put custom state to be loaded here (or pass)
+        pass
+
+    def on_dispose(self):
+        """
+        This method is called when self.dispose() is called. Dispose of any
+        resources that have been used by the strategy here.
+        """
+        # Put custom code to be run on a strategy disposal here (or pass)
+        self.unsubscribe_instrument(self.symbol)
+        self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_ticks(self.symbol)
 
     def _enter_long(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         price_entry = Price(bar.high.as_double() + self.entry_buffer + spread_buffer, self.precision)
@@ -378,57 +400,69 @@ class EMACrossFiltered(TradingStrategy):
                     if temp_price.lt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
 
-    def on_data(self, data):
-        """
-        This method is called whenever the strategy receives a data update.
+    def _update_session_times(self):
+        time_now = self.clock.time_now()
 
-        :param data: The received data.
-        """
-        # Put custom code for data handling here (or pass)
-        pass
+        # Set trading sessions
+        self.session_next_start = self.session_filter.next_start(self.session_start_zone, time_now)
+        self.session_next_end = self.session_filter.next_end(self.session_end_zone, time_now)
+        if self.session_next_start > time_now:
+            # If in the middle of a session then
+            self.session_next_start = self.session_filter.prev_start(self.session_start_zone, time_now)
 
-    def on_event(self, event):
-        """
-        This method is called whenever the strategy receives an Event object,
-        and after the event has been processed by the TradingStrategy base class.
-        These events could be AccountEvent, OrderEvent, PositionEvent, TimeEvent.
+        tactical_start = datetime(
+            time_now.year,
+            time_now.month,
+            time_now.day,
+            time_now.hour,
+            time_now.minute,
+            tzinfo=pytz.utc) + timedelta(minutes=2)
 
-        :param event: The received event.
-        """
-        # Put custom code for event handling here (or pass)
-        pass
+        self.trading_start = max(self.session_next_start, tactical_start)
+        self.trading_end = self.session_next_end - self.trading_end_buffer
+        self.log.info(f"Set next {self.session_start_zone.name} session open to {self.session_next_start}")
+        self.log.info(f"Set next {self.session_end_zone.name} session close to {self.session_next_end}")
+        self.log.info(f"Set trading start to {self.trading_start}")
+        self.log.info(f"Set trading end to {self.trading_end}")
 
-    def on_stop(self):
-        """
-        This method is called when self.stop() is called and after internal
-        stopping logic.
-        """
-        # Put custom code to be run on strategy stop here (or pass)
-        pass
+        # Set session update event
+        self.clock.set_time_alert(DONE_FOR_DAY, self.trading_end, self.on_event)
+        self.clock.set_time_alert(UPDATE_SESSIONS, self.session_next_end + timedelta(seconds=1), self.on_event)
 
-    def on_reset(self):
-        """
-        This method is called when self.reset() is called, and after internal
-        reset logic such as clearing the internally held bars, ticks and resetting
-        all indicators.
-        """
-        # Put custom code to be run on a strategy reset here (or pass)
-        pass
+    def _done_for_day(self):
+        self.log.info(f"Done for day - commencing trading end flatten...")
+        self.flatten_all_positions(order_label=DONE_FOR_DAY)
+        self.cancel_all_orders(cancel_reason=DONE_FOR_DAY)
+        self.log.info(f"Done for day...")
 
-    def on_save(self) -> {}:
-        # Put custom state to be saved here (or return empty dictionary)
-        return {}
+    def _update_news_event(self):
+        time_now = self.clock.time_now()
 
-    def on_load(self, state: {}):
-        # Put custom state to be loaded here (or pass)
-        pass
+        # Set next news event
+        self.news_event_next = self.news_filter.next_event(time_now)
+        if self.news_event_next.impact == 'HIGH':
+            self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
+            self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
+        elif self.news_event_next.impact == 'MEDIUM':
+            self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
+            self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
 
-    def on_dispose(self):
-        """
-        This method is called when self.dispose() is called. Dispose of any
-        resources that have been used by the strategy here.
-        """
-        # Put custom code to be run on a strategy disposal here (or pass)
-        self.unsubscribe_instrument(self.symbol)
-        self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_ticks(self.symbol)
+        # if self.trading_pause_start == time_now:
+        #     self.news_event_next = self.news_filter.next_event(self.news_event_next.timestamp)
+
+        self.log.info(f"Set next news event {self.news_event_next.name} "
+                      f"affecting {self.news_event_next.currency} "
+                      f"with expected {self.news_event_next.impact} impact "
+                      f"at {self.news_event_next.timestamp}")
+        self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
+        self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
+
+        # Set news update event
+        self.clock.set_time_alert(UPDATE_NEWS, self.trading_pause_end, self.on_event)
+        self.clock.set_time_alert(NEWS_FLATTEN, self.trading_pause_start + timedelta(seconds=1), self.on_event)
+
+    def _news_flatten(self):
+        self.log.info("Within trading pause window - commencing news flatten...")
+        self.flatten_all_positions(order_label=NEWS_FLATTEN)
+        self.cancel_all_orders(cancel_reason=NEWS_FLATTEN)
+        self.log.info(f"Trading paused...")

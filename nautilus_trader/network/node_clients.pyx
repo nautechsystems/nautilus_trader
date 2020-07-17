@@ -210,7 +210,7 @@ cdef class MessageClient(ClientNode):
 
         # Set check connected alert
         self._clock.set_time_alert(
-            Label(connect.id.value + _IS_CONNECTED),
+            connect.id.value + _IS_CONNECTED,
             timestamp + timedelta(seconds=2),
             self._check_connection)
 
@@ -234,7 +234,7 @@ cdef class MessageClient(ClientNode):
 
         # Set check disconnected alert
         self._clock.set_time_alert(
-            Label(disconnect.id.value + _IS_DISCONNECTED),
+            disconnect.id.value + _IS_DISCONNECTED,
             timestamp + timedelta(seconds=2),
             self._check_connection)
 
@@ -353,14 +353,14 @@ cdef class MessageClient(ClientNode):
                 self._message_handler(response)
 
     cpdef void _check_connection(self, TimeEvent event) except *:
-        if event.label.value.endswith(_IS_CONNECTED):
+        if event.name.endswith(_IS_CONNECTED):
             if not self.is_connected():
                 self._log.warning("Connection request timed out...")
-        elif event.label.value.endswith(_IS_DISCONNECTED):
+        elif event.name.endswith(_IS_DISCONNECTED):
             if self.is_connected():
                 self._log.warning(f"Session {self.session_id} is still connected...")
         else:
-            self._log.error(f"Check connection message '{event.label}' not recognized.")
+            self._log.error(f"Check connection message '{event.name}' not recognized.")
 
     cdef void _register_message(self, Message message, int retry=0) except *:
         try:

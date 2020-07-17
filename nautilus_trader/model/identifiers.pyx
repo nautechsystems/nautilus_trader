@@ -38,9 +38,10 @@ cdef class Symbol(Identifier):
         :raises ValueError: If the code is not a valid string.
         """
         Condition.valid_string(code, 'code')
+        super().__init__(f'{code}.{venue.value}')
+
         self.code = code
         self.venue = venue
-        super().__init__(f'{self.code}.{self.venue.value}')
 
     @staticmethod
     cdef Symbol from_string(str value):

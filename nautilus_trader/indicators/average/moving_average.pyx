@@ -46,8 +46,8 @@ cdef class MovingAverage(Indicator):
         :param params: The initialization parameters for the indicator.
         """
         Condition.positive_int(period, 'period')
-
         super().__init__(params)
+
         self.period = period
         self.count = 0
         self.value = 0.0

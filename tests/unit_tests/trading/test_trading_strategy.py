@@ -18,7 +18,6 @@ import unittest
 import time
 from datetime import datetime, timedelta
 
-from nautilus_trader.core.types import Label
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
@@ -441,7 +440,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         alert_time = datetime.now(pytz.utc) + timedelta(milliseconds=200)
-        strategy.clock.set_time_alert(Label("test_alert1"), alert_time)
+        strategy.clock.set_time_alert('test_alert1', alert_time)
 
         # Act
         strategy.start()
@@ -459,7 +458,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
-        strategy.clock.set_timer(Label("test_timer3"), timedelta(milliseconds=100), start_time, stop_time=None)
+        strategy.clock.set_timer("test_timer3", timedelta(milliseconds=100), start_time, stop_time=None)
 
         # Act
         strategy.start()

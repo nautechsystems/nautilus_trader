@@ -43,11 +43,11 @@ cdef class Pressure(Indicator):
         """
         Condition.positive_int(period, 'period')
         Condition.not_negative(atr_floor, 'atr_floor')
-
         super().__init__(params=[period,
                                  ma_type.name,
                                  atr_floor],
                          check_inputs=check_inputs)
+
         self.period = period
         self._atr = AverageTrueRange(period, ma_type, atr_floor)
         self._average_volume = MovingAverageFactory.create(period, ma_type)

@@ -34,8 +34,8 @@ cdef class Swings(Indicator):
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, 'period')
-
         super().__init__(params=[period], check_inputs=check_inputs)
+
         self.period = period
         self._high_inputs = deque(maxlen=self.period)
         self._low_inputs = deque(maxlen=self.period)

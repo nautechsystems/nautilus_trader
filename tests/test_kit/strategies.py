@@ -150,12 +150,12 @@ class TickTock(TradingStrategy):
         self.log.info(f'Received {bar_type} Bar({bar})')
         self.store.append(bar)
         if not self.timer_running:
-            self.clock.set_timer(label=Label(f'Test-Timer'), interval=timedelta(seconds=10))
+            self.clock.set_timer(name=f'Test-Timer', interval=timedelta(seconds=10))
             self.timer_running = True
 
         self.time_alert_counter += 1
         self.clock.set_time_alert(
-            label=Label(f'Test-Alert-{self.time_alert_counter}'),
+            name=f'Test-Alert-{self.time_alert_counter}',
             alert_time=bar.timestamp + timedelta(seconds=30))
 
     def on_instrument(self, instrument):

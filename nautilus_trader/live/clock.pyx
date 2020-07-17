@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime, timedelta
 from threading import Timer as TimerThread
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 
@@ -32,7 +31,7 @@ cdef class LiveTimer(Timer):
     """
 
     def __init__(self,
-                 Label label not None,
+                 str name not None,
                  callback not None,
                  timedelta interval not None,
                  datetime now not None,
@@ -41,7 +40,7 @@ cdef class LiveTimer(Timer):
         """
         Initializes a new instance of the LiveTimer class.
 
-        :param label: The label for the timer.
+        :param name: The name for the timer.
         :param callback: The function to call at the next time.
         :param interval: The time interval for the timer.
         :param now: The datetime now (UTC).
@@ -49,7 +48,8 @@ cdef class LiveTimer(Timer):
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         :raises TypeError: If the callback is not of type callable.
         """
-        super().__init__(label, callback, interval, start_time, stop_time)
+        Condition.valid_string(name, 'name')
+        super().__init__(name, callback, interval, start_time, stop_time)
 
         self._internal = self._start_timer(now)
 
@@ -105,16 +105,16 @@ cdef class LiveClock(Clock):
         # by humans.
         return datetime.now(tz=pytz.utc)
 
-    cdef object _get_timer(
+    cdef Timer _get_timer(
             self,
-            Label label,
+            str name,
             callback,
             timedelta interval,
             datetime now,
             datetime start_time,
             datetime stop_time):
         return LiveTimer(
-            label=label,
+            name=name,
             callback=self._raise_time_event,
             interval=interval,
             now=now,
@@ -134,6 +134,6 @@ cdef class LiveClock(Clock):
             self._update_timing()
 
     cdef void _handle_time_event(self, TimeEvent event) except *:
-        handler = self._handlers.get(event.label)
+        handler = self._handlers.get(event.name)
         if handler:
             handler(event)

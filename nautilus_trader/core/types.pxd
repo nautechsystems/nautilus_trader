@@ -28,8 +28,3 @@ cdef class Identifier(ValidString):
     cdef readonly str id_type
 
     cpdef bint equals(self, Identifier other)
-
-
-# cdef class GUID(Identifier):
-#     @staticmethod
-#     cdef GUID none()

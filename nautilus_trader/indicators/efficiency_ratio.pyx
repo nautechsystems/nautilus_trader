@@ -35,8 +35,8 @@ cdef class EfficiencyRatio(Indicator):
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.true(period >= 2, 'period >= 2')
-
         super().__init__(params=[period], check_inputs=check_inputs)
+
         self.period = period
         self._inputs = deque(maxlen=self.period)
         self._deltas = deque(maxlen=self.period)
