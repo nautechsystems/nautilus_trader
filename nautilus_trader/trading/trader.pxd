@@ -37,8 +37,6 @@ cdef class Trader:
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
     cdef readonly list strategies
-    cdef readonly list started_datetimes
-    cdef readonly list stopped_datetimes
     cdef readonly bint is_running
 
     cpdef void initialize_strategies(self, list strategies) except *

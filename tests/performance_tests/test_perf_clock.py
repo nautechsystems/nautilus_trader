@@ -16,7 +16,6 @@
 import unittest
 from datetime import timedelta
 
-from nautilus_trader.common.logging import LogLevel, LoggerAdapter, TestLogger
 from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -37,9 +36,7 @@ class TestClockTests:
 class TestClockPerformanceTests(unittest.TestCase):
 
     def test_advance_time(self):
-        logger = LoggerAdapter('TestClock', TestLogger(level_console=LogLevel.DEBUG))
         store = []
-        clock.register_logger(logger)
         clock.set_timer('test', timedelta(seconds=1), handler=store.append)
 
         iterations = 1

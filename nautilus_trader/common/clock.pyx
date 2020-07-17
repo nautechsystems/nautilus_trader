@@ -22,7 +22,6 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.common.clock cimport TestTimer
 from nautilus_trader.common.uuid cimport TestUUIDFactory
-from nautilus_trader.common.logging cimport LoggerAdapter
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 _UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -362,7 +361,6 @@ cdef class Clock:
         self.timer_count = 0
         self.next_event_time = None
         self.next_event_name = None
-        self.is_logger_registered = False
         self.is_default_handler_registered = False
 
     cpdef datetime time_now(self):
@@ -392,17 +390,6 @@ cdef class Clock:
         """
         cdef str name
         return [name for name in self._timers.keys()]
-
-    cpdef void register_logger(self, LoggerAdapter logger) except *:
-        """
-        Register the given logger with the clock.
-        
-        :param logger: The logger to register.
-        """
-        Condition.not_none(logger, 'logger')
-
-        self._log = logger
-        self.is_logger_registered = True
 
     cpdef void register_default_handler(self, handler: callable) except *:
         """
@@ -451,9 +438,6 @@ cdef class Clock:
             start_time=now,
             stop_time=alert_time)
         self._add_timer(timer, handler)
-
-        if self.is_logger_registered:
-            self._log.info(f"Set Timer('{name}') with alert for {alert_time}.")
 
     cpdef void set_timer(
             self,
@@ -504,27 +488,22 @@ cdef class Clock:
             stop_time=stop_time)
         self._add_timer(timer, handler)
 
-        if self.is_logger_registered:
-            self._log.info(f"Started {timer}.")
-
     cpdef void cancel_timer(self, str name) except *:
         """
         Cancel the timer corresponding to the given label.
 
         :param name: The name for the timer to cancel.
+        :raises RuntimeError: If no timer with the given name is found.
         """
-        Condition.not_none(name, 'name')
+        Condition.valid_string(name, 'name')
 
         cdef Timer timer = self._timers.pop(name, None)
         if timer is None:
-            if self.is_logger_registered:
-                self._log.warning(f"Cannot cancel timer (no timer found with name '{name}').")
-        else:
-            timer.cancel()
-            if self.is_logger_registered:
-                self._log.info(f"Cancelled Timer(name={timer.name}).")
-            self._handlers.pop(name, None)
-            self._remove_timer(timer)
+            raise RuntimeError(f"Cannot cancel timer (no timer found with name '{name}').")
+
+        timer.cancel()
+        self._handlers.pop(name, None)
+        self._remove_timer(timer)
 
     cpdef void cancel_all_timers(self) except *:
         """

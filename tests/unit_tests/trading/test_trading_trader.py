@@ -108,8 +108,6 @@ class TraderTests(unittest.TestCase):
         self.assertEqual(TraderId('TESTER', '000'), trader_id)
         self.assertEqual(IdTag('000'), trader_id.order_id_tag)
         self.assertFalse(self.trader.is_running)
-        self.assertEqual(0, len(self.trader.started_datetimes))
-        self.assertEqual(0, len(self.trader.stopped_datetimes))
         self.assertEqual(2, len(self.trader.strategy_status()))
 
     def test_can_get_strategy_status(self):
@@ -152,8 +150,6 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.trader.is_running)
-        self.assertEqual(1, len(self.trader.started_datetimes))
-        self.assertEqual(0, len(self.trader.stopped_datetimes))
         self.assertTrue(StrategyId('EmptyStrategy', '001') in self.trader.strategy_status())
         self.assertTrue(StrategyId('EmptyStrategy', '002') in self.trader.strategy_status())
         self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy', '001')])
@@ -168,8 +164,6 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(self.trader.is_running)
-        self.assertEqual(1, len(self.trader.started_datetimes))
-        self.assertEqual(1, len(self.trader.stopped_datetimes))
         self.assertTrue(StrategyId('EmptyStrategy', '001') in self.trader.strategy_status())
         self.assertTrue(StrategyId('EmptyStrategy', '002') in self.trader.strategy_status())
         self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy', '001')])
