@@ -87,9 +87,9 @@ cdef class TradingStrategy:
     cpdef void register_indicator(self, data_source, Indicator indicator, update_method=*) except *
 
 # -- HANDLER METHODS ------------------------------------------------------------------------------#
-    cpdef void handle_tick(self, Tick tick) except *
+    cpdef void handle_tick(self, Tick tick, bint is_historical=*) except *
     cpdef void handle_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
     cpdef void handle_data(self, object data) except *
     cpdef void handle_event(self, Event event) except *
