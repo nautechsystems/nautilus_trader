@@ -323,13 +323,14 @@ cdef class TradingStrategy:
 
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
-    cpdef void handle_tick(self, Tick tick) except *:
+    cpdef void handle_tick(self, Tick tick, bint is_historical=False) except *:
         """"
         System method. Update the internal ticks with the given tick, update
         indicators for the symbol, then call on_tick() and pass the tick
         (if the strategy is running).
 
         :param tick: The tick received.
+        :param is_historical: The flag indicating whether the tick is historical (won't be passed to on_tick).
         """
         Condition.not_none(tick, 'tick')
 
@@ -352,6 +353,9 @@ cdef class TradingStrategy:
         if updaters is not None:
             for updater in updaters:
                 updater.update_tick(tick)
+
+        if is_historical:
+            return  # Don't pass to on_tick()
 
         if self.is_running:
             try:
@@ -376,9 +380,9 @@ cdef class TradingStrategy:
 
         cdef int i
         for i in range(length):
-            self.handle_tick(ticks[i])
+            self.handle_tick(ticks[i], is_historical=True)
 
-    cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
+    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """"
         System method. Update the internal bars with the given bar, update
         indicators for the bar type, then call on_bar() and pass the arguments
@@ -386,6 +390,7 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
+        :param is_historical: The flag indicating whether the bar is historical (won't be passed to on_bar).
         """
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_none(bar, 'bar')
@@ -408,6 +413,9 @@ cdef class TradingStrategy:
             for updater in updaters:
                 updater.update_bar(bar)
 
+        if is_historical:
+            return  # Don't pass to on_bar()
+
         if self.is_running:
             try:
                 self.on_bar(bar_type, bar)
@@ -428,7 +436,7 @@ cdef class TradingStrategy:
 
         cdef int i
         for i in range(len(bars)):
-            self.handle_bar(bar_type, bars[i])
+            self.handle_bar(bar_type, bars[i], is_historical=True)
 
     cpdef void handle_data(self, object data) except *:
         """
@@ -452,7 +460,6 @@ cdef class TradingStrategy:
         """
         Condition.not_none(event, 'event')
 
-        cdef Order order
         if isinstance(event, OrderRejected):
             self.log.warning(f"{RECV}{EVT} {event}.")
             if self.flatten_on_sl_reject:
@@ -717,9 +724,9 @@ cdef class TradingStrategy:
         """
         Condition.not_none(symbol, 'symbol')
 
-        return (self._data_client.has_ticks(symbol)
-                and symbol in self._ticks          # noqa (W503) - easier to read
-                and len(self._ticks[symbol]) > 0)  # noqa (W503) - easier to read
+        return self._data_client.has_ticks(symbol) and \
+            symbol in self._ticks and \
+            len(self._ticks[symbol]) > 0
 
     cpdef bint has_bars(self, BarType bar_type):
         """
