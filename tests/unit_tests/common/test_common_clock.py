@@ -19,7 +19,6 @@ import unittest
 from datetime import datetime, timedelta
 
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.common.logging import LoggerAdapter, TestLogger
 from nautilus_trader.common.clock import TimeEventHandler, TestClock, TimeEvent
 from nautilus_trader.live.clock import LiveClock
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -56,7 +55,6 @@ class LiveClockTests(unittest.TestCase):
         self.handler = []
         self.clock = LiveClock()
         self.clock.register_default_handler(self.handler.append)
-        self.clock.register_logger(LoggerAdapter('LiveClock', TestLogger()))
 
     def tearDown(self):
         self.clock.cancel_all_timers()
@@ -66,7 +64,6 @@ class LiveClockTests(unittest.TestCase):
         # Act
         # Assert
         self.assertTrue(self.clock.is_default_handler_registered)
-        self.assertTrue(self.clock.is_logger_registered)
         self.assertEqual([], self.clock.get_timer_names())
 
     def test_time_now(self):
@@ -281,7 +278,6 @@ class TestClockTests(unittest.TestCase):
         self.handler = []
         self.clock = TestClock()
         self.clock.register_default_handler(self.handler.append)
-        self.clock.register_logger(LoggerAdapter('TestClock', TestLogger()))
 
     def tearDown(self):
         self.clock.cancel_all_timers()
@@ -291,7 +287,6 @@ class TestClockTests(unittest.TestCase):
         # Act
         # Assert
         self.assertTrue(self.clock.is_default_handler_registered)
-        self.assertTrue(self.clock.is_logger_registered)
         self.assertEqual([], self.clock.get_timer_names())
 
     def test_time_now(self):

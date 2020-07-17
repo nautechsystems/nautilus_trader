@@ -721,9 +721,13 @@ cdef class TimeBarAggregator(BarAggregator):
             raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
 
     cdef void _set_build_timer(self) except *:
+        cdef str timer_name = self.bar_type.to_string()
+
         self._clock.set_timer(
-            name=self.bar_type.to_string(),
+            name=timer_name,
             interval=self._get_interval(),
             start_time=self._get_start_time(),
             stop_time=None,
             handler=self._build_event)
+
+        self._log.info(f"Started timer {timer_name}.")

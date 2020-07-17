@@ -256,7 +256,7 @@ class BacktestExecClientTests(unittest.TestCase):
     #         config=BacktestConfig(),
     #         fill_model=fill_model,
     #         clock=TestClock(),
-    #         uuid_factory=TestGuidFactory(),
+    #         uuid_factory=TestUUIDFactory(),
     #         logger=TestLogger())
     #
     #     self.exec_engine.register_client(exec_client)

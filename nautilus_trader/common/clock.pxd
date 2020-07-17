@@ -64,13 +64,11 @@ cdef class Clock:
     cdef readonly datetime next_event_time
     cdef readonly str next_event_name
     cdef readonly bint is_test_clock
-    cdef readonly bint is_logger_registered
     cdef readonly bint is_default_handler_registered
 
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
     cpdef list get_timer_names(self)
-    cpdef void register_logger(self, LoggerAdapter logger) except *
     cpdef void register_default_handler(self, handler) except *
     cpdef void set_time_alert(self, str name, datetime alert_time, handler=*) except *
     cpdef void set_timer(

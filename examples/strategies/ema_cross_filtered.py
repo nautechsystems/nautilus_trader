@@ -426,8 +426,8 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set trading end to {self.trading_end}")
 
         # Set session update event
-        self.clock.set_time_alert(DONE_FOR_DAY, self.trading_end, self.on_event)
-        self.clock.set_time_alert(UPDATE_SESSIONS, self.session_next_end + timedelta(seconds=1), self.on_event)
+        self.clock.set_time_alert(DONE_FOR_DAY, self.trading_end)
+        self.clock.set_time_alert(UPDATE_SESSIONS, self.session_next_end + timedelta(seconds=1))
 
     def _done_for_day(self):
         self.log.info(f"Done for day - commencing trading end flatten...")
@@ -458,8 +458,8 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
 
         # Set news update event
-        self.clock.set_time_alert(UPDATE_NEWS, self.trading_pause_end, self.on_event)
-        self.clock.set_time_alert(NEWS_FLATTEN, self.trading_pause_start + timedelta(seconds=1), self.on_event)
+        self.clock.set_time_alert(UPDATE_NEWS, self.trading_pause_end)
+        self.clock.set_time_alert(NEWS_FLATTEN, self.trading_pause_start + timedelta(seconds=1))
 
     def _news_flatten(self):
         self.log.info("Within trading pause window - commencing news flatten...")

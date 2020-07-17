@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
@@ -70,8 +68,6 @@ cdef class Trader:
 
         self.portfolio = self._exec_engine.portfolio
         self.analyzer = PerformanceAnalyzer()
-        self.started_datetimes = []  # type: [datetime]
-        self.stopped_datetimes = []  # type: [datetime]
         self.is_running = False
 
         self.strategies = []
@@ -142,7 +138,6 @@ cdef class Trader:
         for strategy in self.strategies:
             strategy.start()
 
-        self.started_datetimes.append(self._clock.time_now())
         self.is_running = True
         self._log.info("Running...")
 
@@ -158,7 +153,6 @@ cdef class Trader:
         for strategy in self.strategies:
             strategy.stop()
 
-        self.stopped_datetimes.append(self._clock.time_now())
         self.is_running = False
         self._log.info("Stopped.")
 
@@ -199,8 +193,6 @@ cdef class Trader:
 
         self.portfolio.reset()
         self.analyzer.reset()
-        self.started_datetimes = []  # type: [datetime]
-        self.stopped_datetimes = []  # type: [datetime]
         self.is_running = False
 
         self._log.info("Reset.")

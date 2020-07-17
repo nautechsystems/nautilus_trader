@@ -57,8 +57,8 @@ cdef class TradingStrategy:
                  bint cancel_all_orders_on_stop=True,
                  int tick_capacity=1000,
                  int bar_capacity=1000,
-                 Clock clock not None=LiveClock(),
-                 UUIDFactory uuid_factory not None=LiveUUIDFactory(),
+                 Clock clock=None,
+                 UUIDFactory uuid_factory=None,
                  Logger logger=None,
                  bint reraise_exceptions=True):
         """
@@ -70,8 +70,8 @@ cdef class TradingStrategy:
         :param cancel_all_orders_on_stop: If all residual orders should be cancelled on stop.
         :param bar_capacity: The length for the internal ticks deque.
         :param bar_capacity: The length for the internal bars deque.
-        :param clock: The clock for the strategy.
-        :param uuid_factory: The UUID factory for the strategy.
+        :param clock: The clock for the strategy (can be None, default=LiveClock).
+        :param uuid_factory: The UUID factory for the strategy (can be None, default=LiveUUIDFactory).
         :param logger: The logger for the strategy (can be None).
         :param reraise_exceptions: If exceptions raised in handling methods should be re-raised.
         :raises ValueError: If the order_id_tag is not a valid string.
@@ -87,11 +87,14 @@ cdef class TradingStrategy:
         self.trader_id = TraderId('TEST', '000')
 
         # Components
+        if clock is None:
+            clock = LiveClock()
         self.clock = clock
+        if uuid_factory is None:
+            uuid_factory = LiveUUIDFactory()
         self.uuid_factory = uuid_factory
         self.log = LoggerAdapter(self.id.value, logger)
 
-        self.clock.register_logger(self.log)
         self.clock.register_default_handler(self.handle_event)
 
         # Management flags
@@ -1161,7 +1164,12 @@ cdef class TradingStrategy:
         self.log.debug(f"Stopping...")
 
         # Clean up clock
+        cdef list timer_names = self.clock.get_timer_names()
         self.clock.cancel_all_timers()
+
+        cdef str name
+        for name in timer_names:
+            self.log.info(f"Cancelled Timer(name={name}).")
 
         # Flatten open positions
         if self.flatten_on_stop:
@@ -1548,7 +1556,6 @@ cdef class TradingStrategy:
         Condition.not_none(clock, 'clock')
 
         self.clock = clock
-        self.clock.register_logger(self.log)
         self.clock.register_default_handler(self.handle_event)
 
         self.order_factory = OrderFactory(
