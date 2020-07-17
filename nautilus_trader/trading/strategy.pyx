@@ -1379,18 +1379,16 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void cancel_order(self, Order order, str cancel_reason=None) except *:
+    cpdef void cancel_order(self, Order order, str cancel_reason='NONE') except *:
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
 
         :param order: The order to cancel.
-        :param cancel_reason: The reason for cancellation (will be logged).
+        :param cancel_reason: The optional reason for cancellation (default='NONE').
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        if cancel_reason is None or cancel_reason.isspace():
-            cancel_reason = str(None)
         Condition.not_none(order, 'order')
         Condition.valid_string(cancel_reason, 'cancel_reason')
 
@@ -1414,10 +1412,10 @@ cdef class TradingStrategy:
         Send a cancel order command for orders which are not completed in the
         order book with the given cancel_reason - to the execution engine.
 
-        :param cancel_reason: The reason for cancellation (default='NONE').
+        :param cancel_reason: The optional reason for cancellation (default='CANCEL_ALL_ORDERS').
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        Condition.not_none(cancel_reason, 'cancel_reason')  # Can be empty string
+        Condition.not_none(cancel_reason, 'reason')  # Can be empty string
 
         if self._exec_engine is None:
             self.log.error("Cannot execute cancel_all_orders(), execution client not registered.")
@@ -1445,18 +1443,18 @@ cdef class TradingStrategy:
             self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute_command(command)
 
-    cpdef void flatten_position(self, PositionId position_id, Label label=Label('FLATTEN')) except *:
+    cpdef void flatten_position(self, PositionId position_id, str order_label='FLATTEN') except *:
         """
         Flatten the position corresponding to the given identifier by generating
         the required market order, and sending it to the execution service.
         If the position is None or already FLAT will log a warning.
 
         :param position_id: The position_id to flatten.
-        :param label: The label for the flattening order.
+        :param order_label: The order label for the flattening order.
         :raises ValueError: If the position_id is not found in the position book.
         """
         Condition.not_none(position_id, 'position_id')
-        Condition.not_none(label, 'label')
+        Condition.valid_string(order_label, 'order_label')
 
         if self._exec_engine is None:
             self.log.error("Cannot flatten position (execution client not registered).")
@@ -1475,21 +1473,21 @@ cdef class TradingStrategy:
             position.symbol,
             self.get_flatten_side(position.market_position),
             position.quantity,
-            label,
+            Label(order_label),
             OrderPurpose.EXIT)
 
         self.log.info(f"Flattening {position}...")
         self.submit_order(order, position_id)
 
-    cpdef void flatten_all_positions(self, Label label=Label('FLATTEN')) except *:
+    cpdef void flatten_all_positions(self, str order_label='FLATTEN') except *:
         """
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         
-        :param label: The label for the flattening order(s).
+        :param order_label: The order label for the flattening order(s).
         """
-        Condition.not_none(label, 'label')
+        Condition.valid_string(order_label, 'order_label')
 
         if self._exec_engine is None:
             self.log.error("Cannot flatten all positions (execution client not registered).")
@@ -1515,7 +1513,7 @@ cdef class TradingStrategy:
                 position.symbol,
                 self.get_flatten_side(position.market_position),
                 position.quantity,
-                label,
+                Label(order_label),
                 OrderPurpose.EXIT)
 
             self.log.info(f"Flattening {position}...")

@@ -32,8 +32,8 @@ cdef class ExponentialMovingAverage(MovingAverage):
         :param period: The rolling window period for the indicator (> 0).
         """
         Condition.positive_int(period, 'period')
-
         super().__init__(period, params=[period])
+
         self.alpha = 2.0 / (period + 1.0)
         self.value = 0.0
 

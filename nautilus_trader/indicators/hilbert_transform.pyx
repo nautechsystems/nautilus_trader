@@ -37,8 +37,8 @@ cdef class HilbertTransform(Indicator):
         :param check: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, 'period')
-
         super().__init__(params=[period], check_inputs=check_inputs)
+
         self.period = period
         self._i_mult = 0.635
         self._q_mult = 0.338

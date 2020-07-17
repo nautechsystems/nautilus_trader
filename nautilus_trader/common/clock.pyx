@@ -34,7 +34,7 @@ cdef class TimeEvent(Event):
     """
 
     def __init__(self,
-                 Label label not None,
+                 str name not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -44,8 +44,10 @@ cdef class TimeEvent(Event):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        # Precondition: name checked in Timer
         super().__init__(event_id, event_timestamp)
-        self.label = label
+
+        self.name = name
 
     def __eq__(self, TimeEvent other) -> bool:
         """
@@ -116,7 +118,7 @@ cdef class TimeEvent(Event):
         :return str.
         """
         return (f"{self.__class__.__name__}("
-                f"label={self.label}, "
+                f"name={self.name}, "
                 f"timestamp={format_iso8601(self.timestamp)})")
 
     def __repr__(self) -> str:
@@ -201,7 +203,7 @@ cdef class Timer:
     """
 
     def __init__(self,
-                 Label label not None,
+                 str name not None,
                  callback not None,
                  timedelta interval not None,
                  datetime start_time not None,
@@ -209,18 +211,19 @@ cdef class Timer:
         """
         Initializes a new instance of the Timer class.
 
-        :param label: The label for the timer.
+        :param name: The name for the timer.
         :param callback: The function to call at the next time.
         :param interval: The time interval for the timer (not negative).
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
+        Condition.valid_string(name, 'name')
         Condition.callable(callback, 'function')
         Condition.positive(interval.total_seconds(), 'interval')
         if stop_time:
             Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
 
-        self.label = label
+        self.name = name
         self.callback = callback
         self.interval = interval
         self.start_time = start_time
@@ -236,7 +239,7 @@ cdef class Timer:
         """
         Condition.not_none(event_id, 'event_id')
 
-        return TimeEvent(self.label, event_id, self.next_time)
+        return TimeEvent(self.name, event_id, self.next_time)
 
     cpdef void iterate_next_time(self, datetime now) except *:
         """
@@ -263,7 +266,7 @@ cdef class Timer:
 
         :return int.
         """
-        return hash(self.label.value)
+        return hash(self.name)
 
     def __str__(self) -> str:
         """
@@ -272,7 +275,7 @@ cdef class Timer:
         :return str.
         """
         return (f"Timer("
-                f"label={self.label}, "
+                f"name={self.name}, "
                 f"interval={self.interval}, "
                 f"start_time={self.start_time}, "
                 f"next_time={self.next_time}, "
@@ -295,7 +298,7 @@ cdef class TestTimer(Timer):
     __test__ = False
 
     def __init__(self,
-                 Label label not None,
+                 str name not None,
                  callback not None,
                  timedelta interval not None,
                  datetime start_time not None,
@@ -303,12 +306,13 @@ cdef class TestTimer(Timer):
         """
         Initializes a new instance of the TestTimer class.
 
-        :param label: The label for the timer.
+        :param name: The name for the timer.
         :param interval: The time interval for the timer (not negative).
         :param start_time: The stop datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
-        super().__init__(label, callback, interval, start_time, stop_time)
+        Condition.valid_string(name, 'name')
+        super().__init__(name, callback, interval, start_time, stop_time)
 
         self._uuid_factory = TestUUIDFactory()
 
@@ -350,14 +354,14 @@ cdef class Clock:
         """
         self._log = None
         self._uuid_factory = uuid_factory
-        self._timers = {}    # type: {Label, Timer}
-        self._handlers = {}  # type: {Label, callable}
+        self._timers = {}    # type: {str, Timer}
+        self._handlers = {}  # type: {str, callable}
         self._stack = None
         self._default_handler = None
 
         self.timer_count = 0
         self.next_event_time = None
-        self.next_event_label = None
+        self.next_event_name = None
         self.is_logger_registered = False
         self.is_default_handler_registered = False
 
@@ -380,13 +384,14 @@ cdef class Clock:
 
         return self.time_now() - time
 
-    cpdef list get_timer_labels(self):
+    cpdef list get_timer_names(self):
         """
         Return the timer labels held by the clock.
         
         :return List[Label].
         """
-        return list(self._timers.keys())
+        cdef str name
+        return [name for name in self._timers.keys()]
 
     cpdef void register_logger(self, LoggerAdapter logger) except *:
         """
@@ -413,14 +418,14 @@ cdef class Clock:
 
     cpdef void set_time_alert(
             self,
-            Label label,
+            str name,
             datetime alert_time,
             handler=None) except *:
         """
         Set a time alert for the given time. When the time is reached the
         handler will be passed the TimeEvent containing the timers unique label.
 
-        :param label: The label for the alert (must be unique for this clock).
+        :param name: The name for the alert (must be unique for this clock).
         :param alert_time: The time for the alert.
         :param handler: The optional handler to receive time events (must be Callable).
         :raises ValueError: If the label is not unique for this clock.
@@ -428,18 +433,18 @@ cdef class Clock:
         :raises TypeError: If the handler is not of type Callable or None.
         :raises ValueError: If the handler is None and no default handler is registered.
         """
-        Condition.not_none(label, 'label')
+        Condition.not_none(name, 'name')
         Condition.not_none(alert_time, 'alert_time')
         if handler is None:
             handler = self._default_handler
-        Condition.not_in(label, self._timers, 'label', 'timers')
-        Condition.not_in(label, self._handlers, 'label', 'timers')
+        Condition.not_in(name, self._timers, 'name', 'timers')
+        Condition.not_in(name, self._handlers, 'name', 'timers')
         cdef datetime now = self.time_now()
         Condition.true(alert_time >= now, 'alert_time >= time_now()')
         Condition.callable(handler, 'handler')
 
         cdef Timer timer = self._get_timer(
-            label=label,
+            name=name,
             callback=handler,
             interval=alert_time - now,
             now=now,
@@ -448,11 +453,11 @@ cdef class Clock:
         self._add_timer(timer, handler)
 
         if self.is_logger_registered:
-            self._log.info(f"Set Timer('{label.value}') with alert for {alert_time}.")
+            self._log.info(f"Set Timer('{name}') with alert for {alert_time}.")
 
     cpdef void set_timer(
             self,
-            Label label,
+            str name,
             timedelta interval,
             datetime start_time=None,
             datetime stop_time=None,
@@ -462,7 +467,7 @@ cdef class Clock:
         time (optionally until the stop time). When the intervals are reached the
         handlers will be passed the TimeEvent containing the timers unique label.
 
-        :param label: The label for the timer (must be unique for this clock).
+        :param name: The name for the timer (must be unique for this clock).
         :param interval: The time interval for the timer.
         :param start_time: The optional start time for the timer (if None then starts immediately).
         :param stop_time: The optional stop time for the timer (if None then repeats indefinitely).
@@ -474,14 +479,15 @@ cdef class Clock:
         :raises TypeError: If the handler is not of type Callable or None.
         :raises ValueError: If the handler is None and no default handler is registered.
         """
-        Condition.not_none(label, 'label')
+        Condition.valid_string(name, 'name')
         Condition.not_none(interval, 'interval')
         if handler is None:
             handler = self._default_handler
-        Condition.not_in(label, self._timers, 'label', 'timers')
-        Condition.not_in(label, self._handlers, 'label', 'timers')
+        Condition.not_in(name, self._timers, 'name', 'timers')
+        Condition.not_in(name, self._handlers, 'name', 'timers')
         Condition.true(interval.total_seconds() > 0, 'interval positive')
         Condition.callable(handler, 'handler')
+
         cdef datetime now = self.time_now()
         if start_time is None:
             start_time = now
@@ -490,7 +496,7 @@ cdef class Clock:
             Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
 
         cdef Timer timer = self._get_timer(
-            label=label,
+            name=name,
             interval=interval,
             callback=handler,
             now=now,
@@ -501,36 +507,36 @@ cdef class Clock:
         if self.is_logger_registered:
             self._log.info(f"Started {timer}.")
 
-    cpdef void cancel_timer(self, Label label) except *:
+    cpdef void cancel_timer(self, str name) except *:
         """
         Cancel the timer corresponding to the given label.
 
-        :param label: The label for the timer to cancel.
+        :param name: The name for the timer to cancel.
         """
-        Condition.not_none(label, 'label')
+        Condition.not_none(name, 'name')
 
-        cdef Timer timer = self._timers.pop(label, None)
+        cdef Timer timer = self._timers.pop(name, None)
         if timer is None:
             if self.is_logger_registered:
-                self._log.warning(f"Cannot cancel timer (no timer found with label '{label.value}').")
+                self._log.warning(f"Cannot cancel timer (no timer found with name '{name}').")
         else:
             timer.cancel()
             if self.is_logger_registered:
-                self._log.info(f"Cancelled Timer(label={timer.label.value}).")
-            self._handlers.pop(label, None)
+                self._log.info(f"Cancelled Timer(name={timer.name}).")
+            self._handlers.pop(name, None)
             self._remove_timer(timer)
 
     cpdef void cancel_all_timers(self) except *:
         """
         Cancel all timers inside the clock.
         """
-        cdef Label label
-        for label in self.get_timer_labels():
-            self.cancel_timer(label)
+        cdef str name
+        for name in self.get_timer_names():
+            self.cancel_timer(name)
 
-    cdef object _get_timer(
+    cdef Timer _get_timer(
             self,
-            Label label,
+            str name,
             callback,
             timedelta interval,
             datetime now,
@@ -540,14 +546,14 @@ cdef class Clock:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _add_timer(self, Timer timer, handler) except *:
-        self._timers[timer.label] = timer
-        self._handlers[timer.label] = handler
+        self._timers[timer.name] = timer
+        self._handlers[timer.name] = handler
         self._update_stack()
         self._update_timing()
 
     cdef void _remove_timer(self, Timer timer) except *:
-        self._timers.pop(timer.label, None)
-        self._handlers.pop(timer.label, None)
+        self._timers.pop(timer.name, None)
+        self._handlers.pop(timer.name, None)
         self._update_stack()
         self._update_timing()
 
@@ -643,16 +649,16 @@ cdef class TestClock(Clock):
         self._time = to_time
         return events
 
-    cdef object _get_timer(
+    cdef Timer _get_timer(
             self,
-            Label label,
+            str name,
             callback,
             timedelta interval,
             datetime now,
             datetime start_time,
             datetime stop_time):
         return TestTimer(
-            label=label,
+            name=name,
             callback=callback,
             interval=interval,
             start_time=start_time,

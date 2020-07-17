@@ -53,7 +53,6 @@ cdef class Quantity(Decimal):
         :raises ValueError: If the precision is negative (< 0).
         """
         Condition.not_negative(value, 'value')
-
         super().__init__(value, precision)
 
     @staticmethod
@@ -129,7 +128,6 @@ cdef class Price(Decimal):
         :raises ValueError: If the precision is negative (< 0).
         """
         Condition.not_negative(value, 'value')
-
         super().__init__(value, precision)
 
     @staticmethod
@@ -189,7 +187,6 @@ cdef class Volume(Decimal):
         :raises ValueError: If the precision is negative (< 0).
         """
         Condition.not_negative(value, 'value')
-
         super().__init__(value, precision)
 
     @staticmethod
@@ -257,7 +254,6 @@ cdef class Money(Decimal):
         :param currency: The currency of the money.
         """
         Condition.not_equal(currency, Currency.UNDEFINED, 'currency', 'UNDEFINED')
-
         super().__init__(value, precision=2)
 
         self.currency = currency

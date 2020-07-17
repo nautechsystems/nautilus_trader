@@ -43,7 +43,6 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         Condition.positive_int(fast_period, 'fast_period')
         Condition.positive_int(slow_period, 'slow_period')
         Condition.true(slow_period > fast_period, 'slow_period > fast_period')
-
         super().__init__(params=[fast_period,
                                  slow_period,
                                  ma_type.name],

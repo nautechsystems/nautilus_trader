@@ -32,6 +32,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
         super().__init__(params=[], check_inputs=check_inputs)
+
         self._day = 0
         self._price_volume = 0.0
         self._volume_total = 0.0

@@ -33,8 +33,8 @@ cdef class OnBalanceVolume(Indicator):
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.not_negative(period, 'period')
-
         super().__init__(params=[period], check_inputs=check_inputs)
+
         self.period = period
         self._obv = deque(maxlen=None if self.period == 0 else self.period)
         self.value = 0.0

@@ -39,8 +39,8 @@ cdef class WeightedMovingAverage(MovingAverage):
         Condition.positive_int(period, 'period')
         if weights is not None:
             Condition.equal(len(weights), period, 'len(weights)', 'period')
-
         super().__init__(period, params=[period, weights])
+
         self._inputs = deque(maxlen=self.period)
         self.weights = weights
         self.value = 0.0

@@ -19,7 +19,6 @@ import unittest
 from datetime import datetime, timedelta
 
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.core.types import Label
 from nautilus_trader.common.logging import LoggerAdapter, TestLogger
 from nautilus_trader.common.clock import TimeEventHandler, TestClock, TimeEvent
 from nautilus_trader.live.clock import LiveClock
@@ -30,7 +29,7 @@ class TimeEventTests(unittest.TestCase):
 
     def test_can_hash_time_event(self):
         # Arrange
-        event = TimeEvent(Label('123'), uuid4(), UNIX_EPOCH)
+        event = TimeEvent('123', uuid4(), UNIX_EPOCH)
 
         # Act
         result = hash(event)
@@ -40,8 +39,8 @@ class TimeEventTests(unittest.TestCase):
 
     def test_can_sort_time_events(self):
         # Arrange
-        event1 = TimeEvent(Label('123'), uuid4(), UNIX_EPOCH)
-        event2 = TimeEvent(Label('123'), uuid4(), UNIX_EPOCH + timedelta(1))
+        event1 = TimeEvent('123', uuid4(), UNIX_EPOCH)
+        event2 = TimeEvent('123', uuid4(), UNIX_EPOCH + timedelta(1))
 
         # Act
         result = sorted([event2, event1])
@@ -68,7 +67,7 @@ class LiveClockTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.clock.is_default_handler_registered)
         self.assertTrue(self.clock.is_logger_registered)
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
 
     def test_time_now(self):
         # Arrange
@@ -93,12 +92,12 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_set_time_alert(self):
         # Arrange
-        label = Label('TEST_ALERT')
+        name = 'TEST_ALERT'
         interval = timedelta(milliseconds=100)
         alert_time = self.clock.time_now() + interval
 
         # Act
-        self.clock.set_time_alert(label, alert_time)
+        self.clock.set_time_alert(name, alert_time)
         time.sleep(0.2)
 
         # Assert
@@ -107,17 +106,17 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_cancel_time_alert(self):
         # Arrange
-        label = Label('TEST_ALERT')
+        name = 'TEST_ALERT'
         interval = timedelta(milliseconds=100)
         alert_time = self.clock.time_now() + interval
 
-        self.clock.set_time_alert(label, alert_time)
+        self.clock.set_time_alert(name, alert_time)
 
         # Act
-        self.clock.cancel_timer(label)
+        self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(0, len(self.handler))
 
     def test_can_set_multiple_time_alerts(self):
@@ -126,23 +125,23 @@ class LiveClockTests(unittest.TestCase):
         alert_time2 = self.clock.time_now() + timedelta(milliseconds=300)
 
         # Act
-        self.clock.set_time_alert(Label('TEST_ALERT1'), alert_time1)
-        self.clock.set_time_alert(Label('TEST_ALERT2'), alert_time2)
+        self.clock.set_time_alert('TEST_ALERT1', alert_time1)
+        self.clock.set_time_alert('TEST_ALERT2', alert_time2)
         time.sleep(0.5)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(2, len(self.handler))
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
         self.assertTrue(isinstance(self.handler[1], TimeEvent))
 
     def test_can_set_timer_with_immediate_start_time(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=timedelta(milliseconds=100),
             start_time=None,
             stop_time=None)
@@ -150,18 +149,18 @@ class LiveClockTests(unittest.TestCase):
         time.sleep(0.5)
 
         # Assert
-        self.assertEqual([label], self.clock.get_timer_labels())
+        self.assertEqual([name], self.clock.get_timer_names())
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
     def test_can_set_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now() + interval
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=start_time,
             stop_time=None)
@@ -169,20 +168,20 @@ class LiveClockTests(unittest.TestCase):
         time.sleep(0.55)
 
         # Assert
-        self.assertEqual([label], self.clock.get_timer_labels())
+        self.assertEqual([name], self.clock.get_timer_names())
         self.assertEqual(4, len(self.handler))
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
     def test_can_set_timer_with_stop_time(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now()
         stop_time = start_time + interval
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=start_time,
             stop_time=stop_time)
@@ -190,34 +189,34 @@ class LiveClockTests(unittest.TestCase):
         time.sleep(0.5)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(1, len(self.handler))
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
     def test_can_cancel_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
 
-        self.clock.set_timer(label=label, interval=interval)
+        self.clock.set_timer(name=name, interval=interval)
 
         # Act
         time.sleep(0.25)
-        self.clock.cancel_timer(label)
+        self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(2, len(self.handler))
 
     def test_can_set_repeating_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now()
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=start_time,
             stop_time=None)
@@ -225,7 +224,7 @@ class LiveClockTests(unittest.TestCase):
         time.sleep(0.55)
 
         # Assert
-        self.assertEqual([label], self.clock.get_timer_labels())
+        self.assertEqual([name], self.clock.get_timer_names())
         self.assertEqual(5, len(self.handler))
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
         self.assertTrue(isinstance(self.handler[1], TimeEvent))
@@ -233,20 +232,20 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_cancel_repeating_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now()
         stop_time = start_time + timedelta(seconds=5)
 
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=start_time,
             stop_time=stop_time)
 
         # Act
         time.sleep(0.35)
-        self.clock.cancel_timer(label)
+        self.clock.cancel_timer(name)
 
         # Assert
         self.assertEqual(3, len(self.handler))
@@ -258,13 +257,13 @@ class LiveClockTests(unittest.TestCase):
 
         # Act
         self.clock.set_timer(
-            label=Label('TEST_TIMER1'),
+            name='TEST_TIMER1',
             interval=interval,
             start_time=start_time,
             stop_time=None)
 
         self.clock.set_timer(
-            label=Label('TEST_TIMER2'),
+            name='TEST_TIMER2',
             interval=interval,
             start_time=start_time,
             stop_time=None)
@@ -293,7 +292,7 @@ class TestClockTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.clock.is_default_handler_registered)
         self.assertTrue(self.clock.is_logger_registered)
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
 
     def test_time_now(self):
         # Arrange
@@ -318,31 +317,31 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_time_alert(self):
         # Arrange
-        label = Label('TEST_ALERT')
+        name = 'TEST_ALERT'
         alert_time = self.clock.time_now() + timedelta(milliseconds=100)
 
         # Act
-        self.clock.set_time_alert(label, alert_time)
+        self.clock.set_time_alert(name, alert_time)
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=200))
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(1, len(events))
         self.assertEqual(TimeEventHandler, type(events[0]))
 
     def test_can_cancel_time_alert(self):
         # Arrange
-        label = Label('TEST_ALERT')
+        name = 'TEST_ALERT'
         interval = timedelta(milliseconds=100)
         alert_time = self.clock.time_now() + interval
 
-        self.clock.set_time_alert(label, alert_time)
+        self.clock.set_time_alert(name, alert_time)
 
         # Act
-        self.clock.cancel_timer(label)
+        self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(0, len(self.handler))
 
     def test_can_set_multiple_time_alerts(self):
@@ -351,89 +350,89 @@ class TestClockTests(unittest.TestCase):
         alert_time2 = self.clock.time_now() + timedelta(milliseconds=300)
 
         # Act
-        self.clock.set_time_alert(Label('TEST_ALERT1'), alert_time1)
-        self.clock.set_time_alert(Label('TEST_ALERT2'), alert_time2)
+        self.clock.set_time_alert('TEST_ALERT1', alert_time1)
+        self.clock.set_time_alert('TEST_ALERT2', alert_time2)
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(2, len(events))
 
     def test_can_set_timer_with_immediate_start_time(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=timedelta(milliseconds=100),
             start_time=None,
             stop_time=None)
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
 
         # Assert
-        self.assertEqual([label], self.clock.get_timer_labels())
+        self.assertEqual([name], self.clock.get_timer_names())
         self.assertEqual(4, len(events))
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc), events[3].event.timestamp)
 
     def test_can_set_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=None,
             stop_time=None)
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
 
         # Assert
-        self.assertEqual([label], self.clock.get_timer_labels())
+        self.assertEqual([name], self.clock.get_timer_names())
         self.assertEqual(4, len(events))
 
     def test_can_set_timer_with_stop_time(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             stop_time=self.clock.time_now() + timedelta(milliseconds=300))
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(3, len(events))
 
     def test_can_cancel_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
 
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=self.clock.time_now() + timedelta(milliseconds=10),
             stop_time=None)
 
         # Act
-        self.clock.cancel_timer(label)
+        self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
 
     def test_can_set_repeating_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
 
         # Act
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=self.clock.time_now(),
             stop_time=None)
@@ -441,27 +440,27 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
 
         # Assert
-        self.assertEqual([label], self.clock.get_timer_labels())
+        self.assertEqual([name], self.clock.get_timer_names())
         self.assertEqual(4, len(events))
 
     def test_can_cancel_repeating_timer(self):
         # Arrange
-        label = Label('TEST_TIMER')
+        name = 'TEST_TIMER'
         interval = timedelta(milliseconds=100)
         start_time = self.clock.time_now()
         stop_time = start_time + timedelta(seconds=5)
 
         self.clock.set_timer(
-            label=label,
+            name=name,
             interval=interval,
             start_time=self.clock.time_now(),
             stop_time=stop_time)
 
         # Act
-        self.clock.cancel_timer(label)
+        self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_labels())
+        self.assertEqual([], self.clock.get_timer_names())
 
     def test_can_set_two_repeating_timers(self):
         # Arrange
@@ -470,13 +469,13 @@ class TestClockTests(unittest.TestCase):
 
         # Act
         self.clock.set_timer(
-            label=Label('TEST_TIMER1'),
+            name='TEST_TIMER1',
             interval=interval,
             start_time=self.clock.time_now(),
             stop_time=None)
 
         self.clock.set_timer(
-            label=Label('TEST_TIMER2'),
+            name='TEST_TIMER2',
             interval=interval,
             start_time=self.clock.time_now(),
             stop_time=None)

@@ -36,8 +36,8 @@ cdef class RelativeStrengthIndex(Indicator):
         :param period: The rolling window period for the indicator (> 0).
         """
         Condition.positive_int(period, 'period')
-
         super().__init__(params=[period, ma_type.name])
+
         self.period = period
         self._rsi_max = 1.0
         self._average_gain = MovingAverageFactory.create(self.period, ma_type)

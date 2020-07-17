@@ -33,8 +33,8 @@ cdef class SimpleMovingAverage(MovingAverage):
         :param period: The rolling window period for the indicator (> 0).
         """
         Condition.positive_int(period, 'period')
-
         super().__init__(period, params=[period])
+
         self._inputs = deque(maxlen=period)
         self.value = 0.0
 

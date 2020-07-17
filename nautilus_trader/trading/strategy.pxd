@@ -15,7 +15,6 @@
 
 from cpython.datetime cimport date, datetime
 
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -184,8 +183,8 @@ cdef class TradingStrategy:
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order, str cancel_reason=*) except *
     cpdef void cancel_all_orders(self, str cancel_reason=*) except *
-    cpdef void flatten_position(self, PositionId position_id, Label label=*) except *
-    cpdef void flatten_all_positions(self, Label label=*) except *
+    cpdef void flatten_position(self, PositionId position_id, str order_label=*) except *
+    cpdef void flatten_all_positions(self, str order_label=*) except *
 
     cdef void _flatten_on_sl_reject(self, OrderRejected event) except *
 

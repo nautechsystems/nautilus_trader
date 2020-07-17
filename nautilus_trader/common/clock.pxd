@@ -16,14 +16,13 @@
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.common.uuid cimport UUIDFactory, TestUUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class TimeEvent(Event):
-    cdef readonly Label label
+    cdef readonly str name
 
 
 cdef class TimeEventHandler:
@@ -34,7 +33,7 @@ cdef class TimeEventHandler:
 
 
 cdef class Timer:
-    cdef readonly Label label
+    cdef readonly str name
     cdef readonly object callback
     cdef readonly timedelta interval
     cdef readonly datetime start_time
@@ -63,30 +62,30 @@ cdef class Clock:
 
     cdef readonly int timer_count
     cdef readonly datetime next_event_time
-    cdef readonly Label next_event_label
+    cdef readonly str next_event_name
     cdef readonly bint is_test_clock
     cdef readonly bint is_logger_registered
     cdef readonly bint is_default_handler_registered
 
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
-    cpdef list get_timer_labels(self)
+    cpdef list get_timer_names(self)
     cpdef void register_logger(self, LoggerAdapter logger) except *
     cpdef void register_default_handler(self, handler) except *
-    cpdef void set_time_alert(self, Label label, datetime alert_time, handler=*) except *
+    cpdef void set_time_alert(self, str name, datetime alert_time, handler=*) except *
     cpdef void set_timer(
         self,
-        Label label,
+        str name,
         timedelta interval,
         datetime start_time=*,
         datetime stop_time=*,
         handler=*) except *
-    cpdef void cancel_timer(self, Label label) except *
+    cpdef void cancel_timer(self, str name) except *
     cpdef void cancel_all_timers(self) except *
 
-    cdef object _get_timer(
+    cdef Timer _get_timer(
         self,
-        Label label,
+        str name,
         callback,
         timedelta interval,
         datetime now,
