@@ -2,6 +2,8 @@
 
 ----------
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
+
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
