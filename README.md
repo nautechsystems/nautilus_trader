@@ -5,11 +5,10 @@
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![status](https://img.shields.io/pypi/status/nautilus_trader)
-![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
-![stable-version](https://img.shields.io/pypi/v/nautilus_trader)
-![latest-version](https://img.shields.io/pypi/v/nautilus_trader?include_prereleases)
-![downloads](https://img.shields.io/pypi/dm/nautilus_trader)
+![pypi-status](https://img.shields.io/pypi/status/nautilus_trader)
+![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
+![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
+![pypi-downloads](https://img.shields.io/pypi/dm/nautilus_trader)
 
 ## Introduction
 
