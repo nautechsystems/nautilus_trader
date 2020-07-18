@@ -5,7 +5,6 @@
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![pypi-status](https://img.shields.io/pypi/status/nautilus_trader)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-downloads](https://img.shields.io/pypi/dm/nautilus_trader)
@@ -63,10 +62,9 @@ Stable version;
 
     $ pip install nautilus_trader
 
+Latest version (pre-release);
 
-Latest version;
-
-    $ pip install -U git+https://github.com/nautechsystems/nautilus_trader
+    $ pip install --pre nautilus_trader
 
 
 ## Encryption

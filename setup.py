@@ -16,12 +16,12 @@
 
 import setuptools
 from setuptools import setup
+from flake8.main.setuptools_command import Flake8
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
 from nautilus_trader import __author__, __version__
 from tools.packaging import parse_requirements, make_extensions
-
 
 PACKAGE_NAME = 'nautilus_trader'
 MAINTAINER = __author__
@@ -59,9 +59,10 @@ compiler_directives = {
 }
 # -------------------------------------
 
+
+# Create package
 with open('README.md', encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
-
 
 setup(
     name=PACKAGE_NAME,
@@ -90,7 +91,7 @@ setup(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives,
         build_dir='build'),
-    cmdclass={'build_ext': build_ext},
+    cmdclass={'flake8': Flake8, 'build_ext': build_ext},
     options={'build_ext': {'inplace': True, 'force': False}},
     zip_safe=False  # Allows cimport of pxd files
 )
