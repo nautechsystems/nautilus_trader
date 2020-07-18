@@ -29,7 +29,7 @@ jobs:
         run: bash scripts/run_tests.sh
       - name: Publish
         env:
-          TWINE_USERNAME: __token__
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           python setup.py sdist bdist_wheel
