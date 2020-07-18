@@ -64,7 +64,7 @@ class EMACrossFiltered(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         # Custom strategy variables (all optional)
         self.symbol = symbol
@@ -164,7 +164,6 @@ class EMACrossFiltered(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        self.log.info(str(bar))
         time_now = self.clock.time_now()
 
         if time_now >= self.trading_end:
@@ -204,22 +203,15 @@ class EMACrossFiltered(TradingStrategy):
             self.log.warning(f"average_spread == {average_spread} (not initialized).")
             return  # Protect divide by zero
 
-        # Check liquidity
-        liquidity_ratio = self.atr.value / average_spread
-        if liquidity_ratio < 2.0:
-            self.log.info(f"liquidity_ratio == {liquidity_ratio} (no liquidity).")
-            return
-
         spread_buffer = max(average_spread, self.spread(self.symbol))
         sl_buffer = self.atr.value * self.SL_atr_multiple
 
-        if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
-            # BUY LOGIC
-            if self.fast_ema.value >= self.slow_ema.value:
-                self._enter_long(bar, sl_buffer, spread_buffer)
-            # SELL LOGIC
-            elif self.fast_ema.value < self.slow_ema.value:
-                self._enter_short(bar, sl_buffer, spread_buffer)
+        # Check liquidity
+        liquidity_ratio = self.atr.value / average_spread
+        if liquidity_ratio >= 2.0:
+            self._check_signal(bar, sl_buffer, spread_buffer)
+        else:
+            self.log.info(f"liquidity_ratio == {liquidity_ratio} (no liquidity).")
 
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
@@ -297,6 +289,15 @@ class EMACrossFiltered(TradingStrategy):
         self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
+
+    def _check_signal(self, bar: Bar, sl_buffer: float, spread_buffer: float):
+        if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
+            # BUY LOGIC
+            if self.fast_ema.value >= self.slow_ema.value:
+                self._enter_long(bar, sl_buffer, spread_buffer)
+            # SELL LOGIC
+            elif self.fast_ema.value < self.slow_ema.value:
+                self._enter_short(bar, sl_buffer, spread_buffer)
 
     def _enter_long(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         price_entry = Price(bar.high.as_double() + self.entry_buffer + spread_buffer, self.precision)

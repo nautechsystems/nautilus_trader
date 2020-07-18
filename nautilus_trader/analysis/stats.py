@@ -1,4 +1,5 @@
 # ********** TEMPORARY **********
+# pylint: skip-file
 
 #
 # Copyright 2016 Quantopian, Inc.

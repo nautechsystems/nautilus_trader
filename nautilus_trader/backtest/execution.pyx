@@ -606,10 +606,10 @@ cdef class BacktestExecClient(ExecutionClient):
                                                   f'far from the market, ask={current_market.ask}')
                     return False  # Invalid price
             elif order.type == OrderType.LIMIT:
-                if order.price.gt(current_market.bid.subtract(self._min_limits[order.symbol])):
+                if order.price.gt(current_market.ask.subtract(self._min_limits[order.symbol])):
                     if reject:
                         self._reject_order(order, f'BUY LIMIT order price of {order.price} is too '
-                                                  f'far from the market, bid={current_market.bid}')
+                                                  f'far from the market, ask={current_market.ask}')
                     return False  # Invalid price
         elif order.side == OrderSide.SELL:
             if order.type in STOP_ORDER_TYPES:
@@ -619,10 +619,10 @@ cdef class BacktestExecClient(ExecutionClient):
                                                   f'far from the market, bid={current_market.bid}')
                     return False  # Invalid price
             elif order.type == OrderType.LIMIT:
-                if order.price.lt(current_market.ask.add(self._min_limits[order.symbol])):
+                if order.price.lt(current_market.bid.add(self._min_limits[order.symbol])):
                     if reject:
                         self._reject_order(order, f'SELL LIMIT order price of {order.price} is too '
-                                                  f'far from the market, ask={current_market.ask}')
+                                                  f'far from the market, bid={current_market.bid}')
                     return False  # Invalid price
 
         return True  # Valid price
