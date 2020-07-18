@@ -26,7 +26,11 @@ jobs:
           python -m pip install -r requirements.txt
           python setup.py build_ext --inplace
       - name: Test
-        run: bash scripts/run_tests.sh
+        run: |
+          pip install pytest-cov
+          pytest --ignore=tests/performance_tests/ --cov=./ --cov-report=xml
+      - name: Upload Codecov
+        uses: codecov/codecov-action@v1
       - name: Publish
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
