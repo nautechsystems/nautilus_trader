@@ -114,4 +114,4 @@ Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 
 > https://nautechsystems.io
 
-![Cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
+![cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
