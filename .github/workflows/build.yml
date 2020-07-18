@@ -29,4 +29,5 @@ jobs:
         run: |
           bash scripts/run_tests.sh
       - name: Post Build
+        run: |
           python scripts/cleanup.py
