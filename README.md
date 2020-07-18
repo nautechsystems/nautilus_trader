@@ -4,7 +4,7 @@
 
 # NautilusTrader
 
-![Build Status](![.github/workflows/build](https://github.com/nautechsystems/nautilus_trader/workflows/.github/workflows/build/badge.svg))
+![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
 ![Python Supported](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![Stable Version](https://img.shields.io/pypi/v/nautilus_trader)
 
