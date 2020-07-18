@@ -26,8 +26,6 @@ jobs:
           python -m pip install -r requirements.txt
           python3 setup.py build_ext --inplace
       - name: Test
-        run: |
-          bash scripts/run_tests.sh
+        run: bash scripts/run_tests.sh
       - name: Post Build
-        run: |
-          python scripts/cleanup.py
+        run: python scripts/cleanup.py
