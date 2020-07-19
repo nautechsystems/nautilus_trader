@@ -34,20 +34,28 @@ DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
 
 # Cython build options (edit here only)
 # -------------------------------------
+# https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
+
 # Create a html annotations file for each .pyx
 Options.annotate = True
+
+# Include docstrings in modules
+Options.docstrings = True
 
 # Embed docstrings in extensions
 Options.embed_pos_in_docstring = True
 
+# Abort compilation on first error
+Options.fast_fail = True
+
 # Treat compiler warnings as errors
 Options.warning_errors = True
 
-# Allows cimporting from a pyx file without a pxd file
-Options.cimport_from_pyx = True
-
 # Write profiling hooks into methods (x2 overhead, use for profiling only)
-Profile_Hooks = False
+PROFILE_HOOKS = False
+
+# Enable line tracing for code coverage
+LINE_TRACING = False
 
 # Cython compiler directives
 compiler_directives = {
@@ -55,7 +63,8 @@ compiler_directives = {
     'cdivision': True,           # If division is as per C with no check for zero (35% speed up)
     'embedsignature': True,      # If docstrings should be embedded into C signatures
     'emit_code_comments': True,  # If comments should be emitted to generated C code
-    'profile': Profile_Hooks     # See above
+    'profile': PROFILE_HOOKS,    # See above
+    'linetrace': LINE_TRACING    # See above
 }
 # -------------------------------------
 
