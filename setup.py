@@ -16,9 +16,9 @@
 
 import setuptools
 from setuptools import setup
-from flake8.main.setuptools_command import Flake8
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
+import subprocess
 
 from nautilus_trader import __author__, __version__
 from tools.packaging import parse_requirements, make_extensions
@@ -73,6 +73,12 @@ compiler_directives = {
 with open('README.md', encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
 
+
+# Run flake8
+if subprocess.run("flake8").returncode != 0:
+    raise RuntimeError('flake8 failed build')
+
+
 setup(
     name=PACKAGE_NAME,
     version=__version__,
@@ -100,7 +106,7 @@ setup(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives,
         build_dir='build'),
-    cmdclass={'flake8': Flake8, 'build_ext': build_ext},
+    cmdclass={'build_ext': build_ext},
     options={'build_ext': {'inplace': True, 'force': False}},
     zip_safe=False  # Allows cimport of pxd files
 )
