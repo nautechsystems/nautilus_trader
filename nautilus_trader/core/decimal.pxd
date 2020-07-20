@@ -21,10 +21,13 @@ cdef class Decimal:
 
     @staticmethod
     cdef Decimal zero()
+
     @staticmethod
     cdef Decimal from_string_to_decimal(str value)
+
     @staticmethod
     cdef int precision_from_string(str value)
+
     cpdef bint equals(self, Decimal other)
     cpdef str to_string(self, bint format_commas=*)
     cpdef int as_int(self)

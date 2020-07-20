@@ -21,10 +21,13 @@ from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerial
 cdef class Utf8TickSerializer:
     @staticmethod
     cdef bytes serialize(Tick tick)
+
     @staticmethod
     cdef list serialize_ticks_list(list ticks)
+
     @staticmethod
     cdef Tick deserialize(Symbol symbol, bytes tick_bytes)
+
     @staticmethod
     cdef list deserialize_bytes_list(Symbol symbol, list tick_values)
 
@@ -32,10 +35,13 @@ cdef class Utf8TickSerializer:
 cdef class Utf8BarSerializer:
     @staticmethod
     cdef bytes serialize(Bar bar)
+
     @staticmethod
     cdef list serialize_bars_list(list bars)
+
     @staticmethod
     cdef Bar deserialize(bytes bar_bytes)
+
     @staticmethod
     cdef list deserialize_bytes_list(list bar_values)
 

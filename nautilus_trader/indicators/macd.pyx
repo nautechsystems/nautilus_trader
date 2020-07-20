@@ -54,7 +54,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self._slow_ma = MovingAverageFactory.create(slow_period, ma_type)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate  # Needed for IndicatorUpdater to use this method as a delegate
+    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
     cpdef void update(self, double point) except *:
         """
         Update the indicator with the given point value.
