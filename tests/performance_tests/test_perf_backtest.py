@@ -188,8 +188,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 02/04/19  9189830 function calls  (9152734 primitive calls) in 17.560 seconds (added OCO order handling)
         # 03/04/19  9189830 function calls  (9152734 primitive calls) in 17.493 seconds (added enhanced exchange rate calculations)
         # 09/04/19  8418269 function calls  (8395079 primitive calls) in 19.168 seconds (removed redundant deque processing for backtest execution)
-        # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
-        # 10/04/19 27162891 function calls (26849875 primitive calls) in 27.461 seconds (after fixing bug strategy is processing properly with many more orders and positions)
+        # -----------------------------------------------------------------------------------------------------------------------------------------
         # 11/04/19 27094455 function calls (26782489 primitive calls) in 26.730 seconds (even after enhancing execution detail)
         # 11/04/19 27094455 function calls (26782489 primitive calls) in 57.559 seconds (new order registration has slowed things down a lot)
         # 13/04/19 27087701 function calls (26775735 primitive calls) in 28.216 seconds (found bugs in execution, cleaned up residual objects)
@@ -234,14 +233,14 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 10/07/20 22382460 function calls (22011363 primitive calls) in 19.187 seconds (performance check)
 
         # 10/02/20 Profiling Mission: (Profile_Hooks = True)
-        # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        # -----------------------------------------------------------------------------------------------------------------------------------------
         # 56142966 function calls (55743120 primitive calls) in 30.055 seconds
         # 55005059 function calls (54620583 primitive calls) in 29.593 seconds
         # 53475703 function calls (53091227 primitive calls) in 28.637 seconds (removed logging of bar received)
         # 53104290 function calls (52719814 primitive calls) in 27.489 seconds (not building array for fast_mean in strategy)
         # 54565207 function calls (54177522 primitive calls) in 26.206 seconds (improve average spread calculation)
         # 53865728 function calls (53478043 primitive calls) in 25.729 seconds (not index twice to dicts in handle methods)
-        # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        # -----------------------------------------------------------------------------------------------------------------------------------------
 
         # 10/02/20 21244383 function calls (20869327 primitive calls) in 17.063 seconds (post performance mission)
         # 13/02/20 21196734 function calls (20822532 primitive calls) in 16.774 seconds (performance check)

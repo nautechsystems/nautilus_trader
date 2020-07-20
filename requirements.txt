@@ -1,4 +1,4 @@
-cython>=0.29.20
+cython>=0.29.21
 numpy>=1.18.5
 scipy>=1.5.0
 pandas>=1.0.5
@@ -10,5 +10,5 @@ pymongo>=3.10.1
 msgpack>=1.0.0
 lz4>=3.1.0
 matplotlib>=2.2.2
-flake8>=3.7.9
+flake8>=3.8.3
 pytest>=5.4.3

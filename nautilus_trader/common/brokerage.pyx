@@ -73,8 +73,9 @@ cdef class CommissionCalculator:
         Condition.positive(exchange_rate, 'exchange_rate')
 
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        cdef double value = max(self.minimum.as_double(), filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent)
-        return Money(value, currency)
+        cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
+        cdef double final_commission = max(self.minimum.as_double(), commission)
+        return Money(final_commission, currency)
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """

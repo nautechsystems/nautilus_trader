@@ -24,8 +24,10 @@ from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 
 
 cdef class Quantity(Decimal):
+
     @staticmethod
     cdef Quantity zero()
+
     @staticmethod
     cdef Quantity from_string(str value)
     cpdef Quantity add(self, Quantity other)
@@ -43,8 +45,10 @@ cdef class Price(Decimal):
 cdef class Volume(Decimal):
     @staticmethod
     cdef Volume zero()
+
     @staticmethod
     cdef Volume one()
+
     @staticmethod
     cdef Volume from_string(str value)
     cpdef Volume add(self, Volume other)
@@ -71,6 +75,7 @@ cdef class Tick:
 
     @staticmethod
     cdef Tick from_string_with_symbol(Symbol symbol, str values)
+
     @staticmethod
     cdef Tick from_string(str value)
     cpdef str to_string(self)

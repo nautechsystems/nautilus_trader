@@ -544,7 +544,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         if strategy_id is None:
             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_working))
-        return self._decode_set_to_order_ids(self._redis.sinter(keys=(self.key_index_orders_working, self.key_index_strategy_orders + strategy_id.value)))
+
+        cdef tuple keys = (self.key_index_orders_working, self.key_index_strategy_orders + strategy_id.value)
+        return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
 
     cpdef set get_order_completed_ids(self, StrategyId strategy_id=None):
         """
@@ -555,7 +557,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         if strategy_id is None:
             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_completed))
-        return self._decode_set_to_order_ids(self._redis.sinter(keys=(self.key_index_orders_completed, self.key_index_strategy_orders + strategy_id.value)))
+
+        cdef tuple keys = (self.key_index_orders_completed, self.key_index_strategy_orders + strategy_id.value)
+        return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
 
     cpdef set get_position_ids(self, StrategyId strategy_id=None):
         """
@@ -566,6 +570,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         if strategy_id is None:
             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions))
+
         return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_strategy_positions + strategy_id.value))
 
     cpdef set get_position_open_ids(self, StrategyId strategy_id=None):
@@ -577,7 +582,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         if strategy_id is None:
             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_open))
-        return self._decode_set_to_position_ids(self._redis.sinter(keys=(self.key_index_positions_open, self.key_index_strategy_positions + strategy_id.value)))
+
+        cdef tuple keys = (self.key_index_positions_open, self.key_index_strategy_positions + strategy_id.value)
+        return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
 
     cpdef set get_position_closed_ids(self, StrategyId strategy_id=None):
         """
@@ -588,7 +595,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         if strategy_id is None:
             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_closed))
-        return self._decode_set_to_position_ids(self._redis.sinter(keys=(self.key_index_positions_closed, self.key_index_strategy_positions + strategy_id.value)))
+
+        cdef tuple keys = (self.key_index_positions_closed, self.key_index_strategy_positions + strategy_id.value)
+        return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
 
     cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
         """
@@ -599,7 +608,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(order_id, 'order_id')
 
-        return StrategyId.from_string(self._redis.hget(name=self.key_index_order_strategy, key=order_id.value).decode(_UTF8))
+        cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=order_id.value)
+        return StrategyId.from_string(strategy_id.decode(_UTF8))
 
     cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
         """
@@ -610,7 +620,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position_id, 'position_id')
 
-        return StrategyId.from_string(self._redis.hget(name=self.key_index_position_strategy, key=position_id.value).decode(_UTF8))
+        cdef bytes strategy_id = self._redis.hget(name=self.key_index_position_strategy, key=position_id.value)
+        return StrategyId.from_string(strategy_id.decode(_UTF8))
 
     cpdef Order get_order(self, OrderId order_id):
         """
@@ -660,7 +671,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             if order.is_working:
                 orders[order.id] = order
             else:
-                self._log.error(f"Order indexed as working found not working, state={order.state_as_string()}.")
+                self._log.error(f"Order indexed as working found not working, "
+                                f"state={order.state_as_string()}.")
 
         return orders
 
@@ -685,7 +697,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             if order.is_completed:
                 orders[order.id] = order
             else:
-                self._log.error(f"Order indexed as completed found not completed, state={order.state_as_string()}.")
+                self._log.error(f"Order indexed as completed found not completed, "
+                                f"state={order.state_as_string()}.")
 
         return orders
 
@@ -711,7 +724,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
-            self._log.warning(f"Cannot get Position for {order_id.to_string(with_class=True)} (no matching PositionId found in database).")
+            self._log.warning(f"Cannot get Position for {order_id.to_string(with_class=True)} "
+                              f"(no matching PositionId found in database).")
             return None
 
         return self._cached_positions.get(position_id)
@@ -744,7 +758,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id_broker.value)
         if position_id_bytes is None:
-            self._log.warning(f"Cannot get PositionId for {position_id_broker.to_string(with_class=True)} (no matching PositionId found in database).")
+            self._log.warning(f"Cannot get PositionId for {position_id_broker.to_string(with_class=True)} "
+                              f"(no matching PositionId found in database).")
             return position_id_bytes
 
         return PositionId(position_id_bytes.decode(_UTF8))
@@ -789,7 +804,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             if position.is_open:
                 positions[position.id] = position
             else:
-                self._log.error(f"Position indexed as open found not open, state={position.market_position_as_string()}.")
+                self._log.error(f"Position indexed as open found not open, "
+                                f"state={position.market_position_as_string()}.")
 
         return positions
 
@@ -815,7 +831,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             if position.is_closed:
                 positions[position.id] = position
             else:
-                self._log.error(f"Position indexed as closed found not closed, state={position.market_position_as_string()}.")
+                self._log.error(f"Position indexed as closed found not closed, "
+                                f"state={position.market_position_as_string()}.")
 
         return positions
 
@@ -925,7 +942,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if strategy_id is None:
             return self._redis.scard(self.key_index_orders)
 
-        return len(self._redis.sinter(keys=(self.key_index_orders, self.key_index_strategy_orders + strategy_id.value)))
+        cdef keys = (self.key_index_orders, self.key_index_strategy_orders + strategy_id.value)
+        return len(self._redis.sinter(keys=keys))
 
     cpdef int count_orders_working(self, StrategyId strategy_id=None):
         """
@@ -937,7 +955,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if strategy_id is None:
             return self._redis.scard(self.key_index_orders_working)
 
-        return len(self._redis.sinter(keys=(self.key_index_orders_working, self.key_index_strategy_orders + strategy_id.value)))
+        cdef keys = (self.key_index_orders_working, self.key_index_strategy_orders + strategy_id.value)
+        return len(self._redis.sinter(keys=keys))
 
     cpdef int count_orders_completed(self, StrategyId strategy_id=None):
         """
@@ -949,7 +968,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if strategy_id is None:
             return self._redis.scard(self.key_index_orders_completed)
 
-        return len(self._redis.sinter(keys=(self.key_index_orders_completed, self.key_index_strategy_orders + strategy_id.value)))
+        cdef tuple keys = (self.key_index_orders_completed, self.key_index_strategy_orders + strategy_id.value)
+        return len(self._redis.sinter(keys=keys))
 
     cpdef int count_positions_total(self, StrategyId strategy_id=None):
         """
@@ -961,7 +981,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if strategy_id is None:
             return self._redis.scard(self.key_index_positions)
 
-        return len(self._redis.sinter(keys=(self.key_index_positions, self.key_index_strategy_positions + strategy_id.value)))
+        cdef tuple keys = (self.key_index_positions, self.key_index_strategy_positions + strategy_id.value)
+        return len(self._redis.sinter(keys=keys))
 
     cpdef int count_positions_open(self, StrategyId strategy_id=None):
         """
@@ -973,7 +994,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if strategy_id is None:
             return self._redis.scard(self.key_index_positions_open)
 
-        return len(self._redis.sinter(keys=(self.key_index_positions_open, self.key_index_strategy_positions + strategy_id.value)))
+        cdef tuple keys = (self.key_index_positions_open, self.key_index_strategy_positions + strategy_id.value)
+        return len(self._redis.sinter(keys=keys))
 
     cpdef int count_positions_closed(self, StrategyId strategy_id=None):
         """
@@ -985,7 +1007,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if strategy_id is None:
             return self._redis.scard(self.key_index_positions_closed)
 
-        return len(self._redis.sinter(keys=(self.key_index_positions_closed, self.key_index_strategy_positions + strategy_id.value)))
+        cdef tuple keys = (self.key_index_positions_closed, self.key_index_strategy_positions + strategy_id.value)
+        return len(self._redis.sinter(keys=keys))
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):

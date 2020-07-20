@@ -48,7 +48,8 @@ class CompressorTests(unittest.TestCase):
 
     def test_lz4_compressor_can_decompress_frame_from_csharp(self):
         # Arrange
-        hex_from_csharp = bytes(bytearray.fromhex('04-22-4D-18-40-40-C0-0C-00-00-80-68-65-6C-6C-6F-20-77-6F-72-6C-64-21-00-00-00-00'.replace('-', ' ')))
+        csharp_hex = '04-22-4D-18-40-40-C0-0C-00-00-80-68-65-6C-6C-6F-20-77-6F-72-6C-64-21-00-00-00-00'
+        hex_from_csharp = bytes(bytearray.fromhex(csharp_hex.replace('-', ' ')))
         print(hex_from_csharp)
         compressor = LZ4Compressor()
 

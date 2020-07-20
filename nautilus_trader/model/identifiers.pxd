@@ -20,6 +20,7 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 cdef class Symbol(Identifier):
     cdef readonly str code
     cdef readonly Venue venue
+
     @staticmethod
     cdef Symbol from_string(str value)
 
@@ -43,6 +44,7 @@ cdef class IdTag(Identifier):
 cdef class TraderId(Identifier):
     cdef readonly str name
     cdef readonly IdTag order_id_tag
+
     @staticmethod
     cdef TraderId from_string(str value)
 
@@ -50,6 +52,7 @@ cdef class TraderId(Identifier):
 cdef class StrategyId(Identifier):
     cdef readonly str name
     cdef readonly IdTag order_id_tag
+
     @staticmethod
     cdef StrategyId from_string(str value)
 
@@ -58,6 +61,7 @@ cdef class AccountId(Identifier):
     cdef readonly Brokerage broker
     cdef readonly AccountNumber account_number
     cdef readonly AccountType account_type
+
     @staticmethod
     cdef AccountId from_string(str value)
 
