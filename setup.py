@@ -75,8 +75,15 @@ with open('README.md', encoding='utf-8') as f:
 
 
 # Run flake8
-if subprocess.run("flake8").returncode != 0:
-    raise RuntimeError('flake8 failed build')
+def run_flake8(command):
+    if subprocess.run(command).returncode != 0:
+        raise RuntimeError('flake8 failed build')
+
+
+try:
+    run_flake8("(cd nautilus_trader; flake8)")
+except FileNotFoundError:
+    run_flake8("flake8")
 
 
 setup(
