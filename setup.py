@@ -70,13 +70,21 @@ compiler_directives = {
 
 
 # Run flake8
-if subprocess.run("flake8").returncode != 0:
-    raise RuntimeError('flake8 failed build')
+print('Running flake8 over codebase...')
+if subprocess.run('flake8').returncode != 0:
+    raise RuntimeError("flake8 failed build")
+
+
+# Install pyzmq requirement
+subprocess.call('echo Ensuring pyzmq>=19.0.1 installed for cythonizing C headers...'.split())
+subprocess.call('python3 -m pip install pyzmq>=19.0.1'.split())
 
 
 # Create package description
 with open('README.md', encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
+
+subprocess.call('echo Compiling C code with cython (this may take several minutes)...'.split())
 
 
 setup(
