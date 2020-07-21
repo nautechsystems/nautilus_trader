@@ -69,14 +69,14 @@ compiler_directives = {
 # -------------------------------------
 
 
-# Create package
-with open('README.md', encoding='utf-8') as f:
-    LONG_DESCRIPTION = f.read()
-
-
 # Run flake8
 if subprocess.run("flake8").returncode != 0:
     raise RuntimeError('flake8 failed build')
+
+
+# Create package description
+with open('README.md', encoding='utf-8') as f:
+    LONG_DESCRIPTION = f.read()
 
 
 setup(
