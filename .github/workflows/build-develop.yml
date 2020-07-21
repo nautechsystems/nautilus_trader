@@ -1,0 +1,34 @@
+name: build-develop
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+
+jobs:
+  build-test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel twine
+          sudo apt-get install redis-server
+          sudo redis-server --daemonize yes
+
+      - name: Build
+        run: |
+          python -m pip install -r requirements.txt
+          python setup.py build_ext --inplace
+
+      - name: Test
+        run: bash scripts/run_tests.sh
