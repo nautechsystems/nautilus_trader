@@ -377,7 +377,7 @@ cdef class EconomicNewsEventFilter:
 
         """
         if news_csv_path == 'default':
-            news_csv_path = os.path.join(PACKAGE_ROOT + '/_data/news/', 'news_events.zip')
+            news_csv_path = os.path.join(PACKAGE_ROOT + '/_data/news/', 'news_events.csv')
 
         self.currencies = currencies
         self.impacts = impacts
