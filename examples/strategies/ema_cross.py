@@ -115,7 +115,7 @@ class EMACross(TradingStrategy):
 
         :param tick: The received tick.
         """
-        # self.log.info(f"Received Tick({tick})")  # For debugging
+        self.log.info(f"Received Tick({tick})")  # For debugging
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
