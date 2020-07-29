@@ -68,7 +68,7 @@ cdef class BarBuilder:
     cdef readonly datetime last_update
     cdef readonly int count
 
-    cdef Price _last_open
+    cdef Price _last_close
     cdef Price _open
     cdef Price _high
     cdef Price _low
