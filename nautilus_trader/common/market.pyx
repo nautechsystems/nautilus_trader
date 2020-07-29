@@ -462,7 +462,7 @@ cdef class BarBuilder:
         self.last_update = None
         self.count = 0
 
-        self._last_open = None
+        self._last_close = None
         self._open = None
         self._high = None
         self._low = None
@@ -506,11 +506,11 @@ cdef class BarBuilder:
         if close_time is None:
             close_time = self.last_update
 
-        if self._open is None:
-            self._open = self._last_open
-            self._high = self._last_open
-            self._low = self._last_open
-            self._close = self._last_open
+        if self._open is None:  # No tick was received
+            self._open = self._last_close
+            self._high = self._last_close
+            self._low = self._last_close
+            self._close = self._last_close
 
         cdef Bar bar = Bar(
             open_price=self._open,
@@ -520,7 +520,7 @@ cdef class BarBuilder:
             volume=self._volume,
             timestamp=close_time)
 
-        self._last_open = self._open
+        self._last_close = self._close
         self._reset()
         return bar
 
