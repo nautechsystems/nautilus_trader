@@ -119,6 +119,13 @@ cdef class TickDataWrangler:
         bars_ask = as_utc_index(bars_ask)
         shifted_index = bars_bid.index.shift(periods=-100, freq='ms')
 
+        cdef dict data_open = {
+            'bid': bars_bid['open'].values,
+            'ask': bars_ask['open'].values,
+            'bid_size': bars_bid['volume'].values,
+            'ask_size': bars_ask['volume'].values
+        }
+
         cdef dict data_high = {
             'bid': bars_bid['high'].values,
             'ask': bars_ask['high'].values,
@@ -140,23 +147,31 @@ cdef class TickDataWrangler:
             'ask_size': bars_ask['volume']
         }
 
+        df_ticks_o = pd.DataFrame(data=data_open, index=shifted_index)
         df_ticks_h = pd.DataFrame(data=data_high, index=shifted_index)
         df_ticks_l = pd.DataFrame(data=data_low, index=shifted_index)
         df_ticks_c = pd.DataFrame(data=data_close)
 
         # Drop rows with no volume
+        df_ticks_o = df_ticks_o[(df_ticks_h[['bid_size']] > 0).all(axis=1)]
         df_ticks_h = df_ticks_h[(df_ticks_h[['bid_size']] > 0).all(axis=1)]
         df_ticks_l = df_ticks_l[(df_ticks_l[['bid_size']] > 0).all(axis=1)]
         df_ticks_c = df_ticks_c[(df_ticks_c[['bid_size']] > 0).all(axis=1)]
+        df_ticks_o = df_ticks_o[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
+        df_ticks_h = df_ticks_h[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
+        df_ticks_l = df_ticks_l[(df_ticks_l[['ask_size']] > 0).all(axis=1)]
+        df_ticks_c = df_ticks_c[(df_ticks_c[['ask_size']] > 0).all(axis=1)]
 
         # Set high low tick volumes to zero
+        df_ticks_o['bid_size'] = 0
+        df_ticks_o['ask_size'] = 0
         df_ticks_h['bid_size'] = 0
         df_ticks_h['ask_size'] = 0
         df_ticks_l['bid_size'] = 0
         df_ticks_l['ask_size'] = 0
 
         # Merge tick data
-        df_ticks_final = pd.concat([df_ticks_h, df_ticks_l, df_ticks_c])
+        df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
         df_ticks_final.sort_index(axis=0, inplace=True)
 
         # Build ticks from data
@@ -447,6 +462,7 @@ cdef class BarBuilder:
         self.last_update = None
         self.count = 0
 
+        self._last_open = None
         self._open = None
         self._high = None
         self._low = None
@@ -490,6 +506,12 @@ cdef class BarBuilder:
         if close_time is None:
             close_time = self.last_update
 
+        if self._open is None:
+            self._open = self._last_open
+            self._high = self._last_open
+            self._low = self._last_open
+            self._close = self._last_open
+
         cdef Bar bar = Bar(
             open_price=self._open,
             high_price=self._high,
@@ -498,6 +520,7 @@ cdef class BarBuilder:
             volume=self._volume,
             timestamp=close_time)
 
+        self._last_open = self._open
         self._reset()
         return bar
 
@@ -531,7 +554,7 @@ cdef class BarBuilder:
         if self.bar_spec.price_type == PriceType.MID:
             max_precision = max(self._volume.precision, tick.bid_size.precision, tick.ask_size.precision)
             total_volume = self._volume.as_double() + ((tick.bid_size + tick.ask_size) / 2.0)
-            return Volume(total_volume, max_precision)
+            return self._volume.add(Volume(total_volume, max_precision))
         elif self.bar_spec.price_type == PriceType.BID:
             return self._volume.add(tick.bid_size)
         elif self.bar_spec.price_type == PriceType.ASK:
@@ -626,6 +649,7 @@ cdef class TimeBarAggregator(BarAggregator):
     def __init__(self,
                  BarType bar_type not None,
                  handler not None,
+                 bint use_previous_close,
                  Clock clock not None,
                  Logger logger not None):
         """
@@ -633,13 +657,15 @@ cdef class TimeBarAggregator(BarAggregator):
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.
+        :param use_previous_close: The flag indicating whether the previous close
+        should become the next open.
         :param clock: If the clock for the aggregator.
         :param logger: The logger for the aggregator.
         """
         super().__init__(bar_type=bar_type,
                          handler=handler,
                          logger=logger,
-                         use_previous_close=True)
+                         use_previous_close=use_previous_close)
 
         self._clock = clock
         self.interval = self._get_interval()

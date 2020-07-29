@@ -70,7 +70,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2040, self.engine.iteration)
+        self.assertEqual(2720, self.engine.iteration)
 
     def test_can_reset_engine(self):
         # Arrange
@@ -103,7 +103,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(559, strategies[0].fast_ema.count)
-        self.assertEqual(-359.8, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(206.19, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_can_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
