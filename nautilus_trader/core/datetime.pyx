@@ -163,7 +163,7 @@ cpdef str format_iso8601(datetime dt):
     cdef str tz_stripped = str(dt).replace(' ', 'T').rpartition('+')[0]
 
     if not PyUnicode_Contains(tz_stripped, '.'):
-        return tz_stripped + '.000Z'
+        return f'{tz_stripped}.000Z'
 
     cdef tuple dt_partitioned = tz_stripped.rpartition('.')
     return f'{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z'
