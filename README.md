@@ -59,6 +59,23 @@ There is currently a large effort to develop improved documentation.
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
 ## Installation
+
+### Dependencies
+nautilus-trader requires:
+cython >=0.29.21
+numpy >=1.18.5
+scipy >=1.5.0
+pandas >=1.0.5
+redis >=3.4.1
+psutil >=5.7.0
+pytz >=2020.1
+pyzmq >=19.0.1
+pymongo >=3.10.1
+msgpack >=1.0.0
+lz4 >=3.1.0
+matplotlib >=2.2.2
+flake8 >=3.8.3
+
 Stable version;
 
     $ pip install nautilus_trader

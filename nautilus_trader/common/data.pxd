@@ -89,7 +89,7 @@ cdef class DataClient:
         Currency to_currency,
         PriceType price_type=*)
 
-    cdef void _self_generate_bars(self, BarType bar_type, handler) except *
+    cdef void _generate_bars(self, BarType bar_type, handler) except *
     cdef void _add_tick_handler(self, Symbol symbol, handler) except *
     cdef void _add_bar_handler(self, BarType bar_type, handler) except *
     cdef void _add_instrument_handler(self, Symbol symbol, handler) except *

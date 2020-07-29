@@ -375,7 +375,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         if bar_type.specification.structure == BarStructure.TICK:
-            self._self_generate_bars(bar_type, handler)
+            self._generate_bars(bar_type, handler)
         else:
             self._add_bar_handler(bar_type, handler)
             self._data_subscriber.subscribe(f'Bar:{bar_type.to_string()}')

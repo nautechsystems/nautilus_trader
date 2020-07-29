@@ -83,17 +83,20 @@ class TickDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(BarStructure.MINUTE, self.tick_builder.resolution)
-        self.assertEqual(1118439, len(tick_data))
+        self.assertEqual(1491252, len(tick_data))
         self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), tick_data.iloc[0].name)
         self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), tick_data.iloc[1].name)
-        self.assertEqual(Timestamp('2013-01-01T22:00:00.000000+00:00', tz='UTC'), tick_data.iloc[2].name)
+        self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), tick_data.iloc[2].name)
+        self.assertEqual(Timestamp('2013-01-01T22:00:00.000000+00:00', tz='UTC'), tick_data.iloc[3].name)
         self.assertEqual(0, tick_data.iloc[0]['symbol'])
         self.assertEqual(0, tick_data.iloc[0]['bid_size'])
         self.assertEqual(0, tick_data.iloc[0]['ask_size'])
         self.assertEqual(0, tick_data.iloc[1]['bid_size'])
         self.assertEqual(0, tick_data.iloc[1]['ask_size'])
-        self.assertEqual(1.5, tick_data.iloc[2]['bid_size'])
-        self.assertEqual(2.25, tick_data.iloc[2]['ask_size'])
+        self.assertEqual(0, tick_data.iloc[2]['bid_size'])
+        self.assertEqual(0, tick_data.iloc[2]['ask_size'])
+        self.assertEqual(1.5, tick_data.iloc[3]['bid_size'])
+        self.assertEqual(2.25, tick_data.iloc[3]['ask_size'])
 
 
 class BarDataWranglerTests(unittest.TestCase):
@@ -329,7 +332,7 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price(1.00002, 5), bar.high)
         self.assertEqual(Price(1.00000, 5), bar.low)
         self.assertEqual(Price(1.00000, 5), bar.close)
-        self.assertEqual(3, bar.volume.as_int())
+        self.assertEqual(Volume(3, precision=0), bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
@@ -375,7 +378,7 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price(1.000035, 6), bar.high)
         self.assertEqual(Price(1.000015, 6), bar.low)
         self.assertEqual(Price(1.000015, 6), bar.close)
-        self.assertEqual(3, bar.volume.as_int())
+        self.assertEqual(Volume(7), bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
@@ -422,7 +425,7 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price(1.000015, 6), bar.high)
         self.assertEqual(Price(1.000015, 6), bar.low)
         self.assertEqual(Price(1.000015, 6), bar.close)
-        self.assertEqual(0, bar.volume.as_int())
+        self.assertEqual(Volume(0), bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
@@ -474,7 +477,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
         self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
         self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
-        self.assertEqual(3, bar_store.get_store()[0][1].volume)
+        self.assertEqual(Volume(7), bar_store.get_store()[0][1].volume)
 
 
 class TimeBarAggregatorTests(unittest.TestCase):
@@ -486,7 +489,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         symbol = TestStubs.symbol_audusd_fxcm()
         bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
-        aggregator = TimeBarAggregator(bar_type, handler, TestClock(), TestLogger())
+        aggregator = TimeBarAggregator(bar_type, handler, True, TestClock(), TestLogger())
 
         stop_time = UNIX_EPOCH + timedelta(minutes=2)
 
@@ -525,7 +528,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
         self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
         self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
-        self.assertEqual(3, bar_store.get_store()[0][1].volume)
-        self.assertEqual(0, bar_store.get_store()[1][1].volume)
+        self.assertEqual(Volume(7), bar_store.get_store()[0][1].volume)
+        self.assertEqual(Volume(0), bar_store.get_store()[1][1].volume)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), bar_store.get_store()[0][1].timestamp)
         self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=pytz.utc), bar_store.get_store()[1][1].timestamp)
