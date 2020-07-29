@@ -286,12 +286,17 @@ cdef class DataClient:
             bid_rates=bid_rates,
             ask_rates=ask_rates)
 
-    cdef void _self_generate_bars(self, BarType bar_type, handler) except *:
+    cdef void _generate_bars(self, BarType bar_type, handler) except *:
         if bar_type not in self._bar_aggregators:
             if bar_type.specification.structure == BarStructure.TICK:
                 aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
             elif bar_type.specification.structure in _TIME_BARS:
-                aggregator = TimeBarAggregator(bar_type, self._handle_bar, self._clock, self._log.get_logger())
+                aggregator = TimeBarAggregator(
+                    bar_type=bar_type,
+                    handler=self._handle_bar,
+                    use_previous_close=False,
+                    clock=self._clock,
+                    logger=self._log.get_logger())
             self._bar_aggregators[bar_type] = aggregator
             self.subscribe_ticks(bar_type.symbol, aggregator.update)
 
