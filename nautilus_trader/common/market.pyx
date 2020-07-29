@@ -70,7 +70,7 @@ cdef class TickDataWrangler:
         self.tick_data = []
         self.resolution = BarStructure.UNDEFINED
 
-    cpdef void build(self, int symbol_indexer):
+    cpdef void build(self, int symbol_indexer) except *:
         """
         Return the built ticks from the held data.
 
@@ -117,7 +117,6 @@ cdef class TickDataWrangler:
 
         bars_bid = as_utc_index(bars_bid)
         bars_ask = as_utc_index(bars_ask)
-        shifted_index = bars_bid.index.shift(periods=-100, freq='ms')
 
         cdef dict data_open = {
             'bid': bars_bid['open'].values,
@@ -147,9 +146,9 @@ cdef class TickDataWrangler:
             'ask_size': bars_ask['volume']
         }
 
-        df_ticks_o = pd.DataFrame(data=data_open, index=shifted_index)
-        df_ticks_h = pd.DataFrame(data=data_high, index=shifted_index)
-        df_ticks_l = pd.DataFrame(data=data_low, index=shifted_index)
+        df_ticks_o = pd.DataFrame(data=data_open, index=bars_bid.index.shift(periods=-100, freq='ms'))
+        df_ticks_h = pd.DataFrame(data=data_high, index=bars_bid.index.shift(periods=-100, freq='ms'))
+        df_ticks_l = pd.DataFrame(data=data_low, index=bars_bid.index.shift(periods=-100, freq='ms'))
         df_ticks_c = pd.DataFrame(data=data_close)
 
         # Drop rows with no volume
@@ -172,7 +171,7 @@ cdef class TickDataWrangler:
 
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
-        df_ticks_final.sort_index(axis=0, inplace=True)
+        df_ticks_final.sort_index(axis=0, kind='mergesort', inplace=True)
 
         # Build ticks from data
         self.tick_data = df_ticks_final
