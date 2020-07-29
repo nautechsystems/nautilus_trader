@@ -39,22 +39,22 @@ to integrate with `FIX4.4` connections for data ingestion and trade management.
 There is currently a large effort to develop improved documentation.
 
 ## Features
-* **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
-* **Flexible:** Any FIX or REST broker API can be integrated into the platform, with no changes to your strategy scripts.
-* **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
-* **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
-* **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-* **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
-* **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud environment.
-* **Encryption:** Built-in Curve encryption support with ZeroMQ. Run trading boxes remote from co-located data and execution services.
+*  **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
+*  **Flexible:** Any FIX or REST broker API can be integrated into the platform, with no changes to your strategy scripts.
+*  **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
+*  **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
+*  **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
+*  **Teams Support:** Support for teams with many trader boxes. Suitable for professional algorithmic traders or hedge funds.
+*  **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single box, or deploy across many boxes in a networked or cloud environment.
+*  **Encryption:** Built-in Curve encryption support with ZeroMQ. Run trading boxes remote from co-located data and execution services.
 
 ## Values
-* Reliability
-* Testability
-* Performance
-* Modularity
-* Maintainability
-* Scalability
+*  Reliability
+*  Testability
+*  Performance
+*  Modularity
+*  Maintainability
+*  Scalability
 
 [API Documentation](https://nautechsystems.io/nautilus/api)
 
@@ -62,19 +62,19 @@ There is currently a large effort to develop improved documentation.
 
 ### Dependencies
 nautilus-trader requires:
-* cython >=0.29.21
-* numpy >=1.18.5
-* scipy >=1.5.0
-* pandas >=1.0.5
-* redis >=3.4.1
-* psutil >=5.7.0
-* pytz >=2020.1
-* pyzmq >=19.0.1
-* pymongo >=3.10.1
-* msgpack >=1.0.0
-* lz4 >=3.1.0
-* matplotlib >=2.2.2
-* flake8 >=3.8.3
+*  cython >=0.29.21
+*  numpy >=1.18.5
+*  scipy >=1.5.0
+*  pandas >=1.0.5
+*  redis >=3.4.1
+*  psutil >=5.7.0
+*  pytz >=2020.1
+*  pyzmq >=19.0.1
+*  pymongo >=3.10.1
+*  msgpack >=1.0.0
+*  lz4 >=3.1.0
+*  matplotlib >=2.2.2
+*  flake8 >=3.8.3
 
 Stable version;
 
