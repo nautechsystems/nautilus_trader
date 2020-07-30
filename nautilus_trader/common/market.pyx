@@ -140,16 +140,16 @@ cdef class TickDataWrangler:
         }
 
         cdef dict data_close = {
-            'bid': bars_bid['close'],
-            'ask': bars_ask['close'],
-            'bid_size': bars_bid['volume'],
-            'ask_size': bars_ask['volume']
+            'bid': bars_bid['close'].values,
+            'ask': bars_ask['close'].values,
+            'bid_size': bars_bid['volume'].values,
+            'ask_size': bars_ask['volume'].values
         }
 
         df_ticks_o = pd.DataFrame(data=data_open, index=bars_bid.index.shift(periods=-100, freq='ms'))
         df_ticks_h = pd.DataFrame(data=data_high, index=bars_bid.index.shift(periods=-100, freq='ms'))
         df_ticks_l = pd.DataFrame(data=data_low, index=bars_bid.index.shift(periods=-100, freq='ms'))
-        df_ticks_c = pd.DataFrame(data=data_close)
+        df_ticks_c = pd.DataFrame(data=data_close, index=bars_bid.index.shift(periods=-100, freq='ms'))
 
         # Drop rows with no volume
         df_ticks_o = df_ticks_o[(df_ticks_h[['bid_size']] > 0).all(axis=1)]
@@ -159,7 +159,7 @@ cdef class TickDataWrangler:
         df_ticks_o = df_ticks_o[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
         df_ticks_h = df_ticks_h[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
         df_ticks_l = df_ticks_l[(df_ticks_l[['ask_size']] > 0).all(axis=1)]
-        df_ticks_c = df_ticks_c[(df_ticks_c[['ask_size']] > 0).all(axis=1)]
+        df_ticks_c1 = df_ticks_c[(df_ticks_c[['ask_size']] > 0).all(axis=1)]
 
         # Set high low tick volumes to zero
         df_ticks_o['bid_size'] = 0
@@ -180,7 +180,7 @@ cdef class TickDataWrangler:
     cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
-        be an ndarray with 2 elements [bid, ask] of type double.
+        be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         """
         return Tick(self.instrument.symbol,
                     Price(values[0], self.instrument.price_precision),
@@ -192,7 +192,7 @@ cdef class TickDataWrangler:
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
-        be an ndarray with 2 elements [bid, ask] of type double.
+        be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         """
         return Tick(self.instrument.symbol,
                     Price(values[0], self.instrument.price_precision),
@@ -478,7 +478,7 @@ cdef class BarBuilder:
         Condition.not_none(tick, 'tick')
 
         cdef Price price = self._get_price(tick)
-
+        print(f'Updating {self.bar_spec} with {tick}')  # TODO: Debug print
         if self._open is None:
             # Initialize builder
             self._open = price
@@ -502,6 +502,7 @@ cdef class BarBuilder:
 
         :return: Bar.
         """
+        print(f'Building {self}')
         if close_time is None:
             close_time = self.last_update
 
@@ -560,6 +561,23 @@ cdef class BarBuilder:
             return self._volume.add(tick.ask_size)
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        :return str.
+        """
+        return f"BarBuilder(bar_spec={self.bar_spec},{self._open},{self._high},{self._low},{self._close},{self._volume})"
+
+    def __repr__(self) -> str:
+        """
+        Return the string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 
 cdef class BarAggregator:
@@ -691,6 +709,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _build_event(self, TimeEvent event) except *:
         cdef Bar bar
         try:
+            self._log.critical(f"recevied {event}")  # TODO: Debug
             bar = self._builder.build(event.timestamp)
         except ValueError as ex:
             # Bar was somehow malformed

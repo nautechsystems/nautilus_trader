@@ -334,6 +334,7 @@ cdef class BacktestDataClient(DataClient):
 
         cdef TimeEventHandler event_handler
         for event_handler in self._clock.advance_time(tick.timestamp):
+            self._log.critical(f'event_handler {event_handler.event}')
             event_handler.handle()
 
     cpdef void request_ticks(

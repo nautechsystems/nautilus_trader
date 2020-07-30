@@ -465,6 +465,7 @@ cdef class DataClient:
         cdef TickHandler handler
         if tick_handlers is not None:
             for handler in tick_handlers:
+                self._log.critical(f'using a tick handler')  # TODO: Debug
                 handler.handle(tick)
 
     cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
