@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_s
 from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument
 from nautilus_trader.model.objects cimport Bar, BarType, BarSpecification
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
-from nautilus_trader.common.clock cimport TimeEventHandler, Clock, TestTimer
+from nautilus_trader.common.clock cimport Clock, TestTimer
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -700,9 +700,6 @@ cdef class TimeBarAggregator(BarAggregator):
         Condition.not_none(tick, 'tick')
 
         if self._clock.is_test_clock:
-            if tick.timestamp.microsecond == 900000:
-                # TODO: Temporary to ensure correct ordering of ticks
-                self.next_close = tick.timestamp + self._tick_buffer
             if self.next_close < tick.timestamp:
                 # Build bar first, then update
                 self._build_bar(self.next_close)
@@ -718,7 +715,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef void _build_bar(self, datetime at_time) except *:
         cdef TestTimer timer = self._clock.get_timer(self.bar_type.to_string())
-        cdef TimeEvent event = timer.advance_to_event(self.next_close)
+        cdef TimeEvent event = timer.pop_next_event()
         self._build_event(event)
         self.next_close = timer.next_time
 

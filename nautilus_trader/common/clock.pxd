@@ -50,7 +50,7 @@ cdef class TestTimer(Timer):
     cdef TestUUIDFactory _uuid_factory
 
     cpdef list advance(self, datetime to_time)
-    cpdef Event advance_to_event(self, datetime at_time)
+    cpdef Event pop_next_event(self)
 
 
 cdef class Clock:
