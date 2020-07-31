@@ -422,7 +422,7 @@ cdef class Clock:
         :param handler: The handler to register (must be Callable).
         :raises TypeError: If the handler is not of type callable.
         """
-        Condition.callable(handler, 'handler')
+        # Condition.callable(handler, 'handler')  # TODO: Causing crash on IPython kernel??
 
         self._default_handler = handler
         self.is_default_handler_registered = True
