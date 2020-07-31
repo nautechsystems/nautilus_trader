@@ -482,7 +482,7 @@ class TickBarAggregatorTests(unittest.TestCase):
 
 class TimeBarAggregatorTests(unittest.TestCase):
 
-    def test_update_timed_with_test_clock_sends_bars_to_handler(self):
+    def test_update_timed_with_test_clock_sends_single_bar_to_handler(self):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store_2
@@ -523,12 +523,10 @@ class TimeBarAggregatorTests(unittest.TestCase):
         aggregator.update(tick3)
 
         # Assert
-        self.assertEqual(2, len(bar_store.get_store()))
+        self.assertEqual(1, len(bar_store.get_store()))
         self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].open)
         self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
-        self.assertEqual(Volume(7), bar_store.get_store()[0][1].volume)
-        self.assertEqual(Volume(0), bar_store.get_store()[1][1].volume)
+        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].low)
+        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].close)
+        self.assertEqual(Volume(3), bar_store.get_store()[0][1].volume)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), bar_store.get_store()[0][1].timestamp)
-        self.assertEqual(datetime(1970, 1, 1, 0, 2, tzinfo=pytz.utc), bar_store.get_store()[1][1].timestamp)

@@ -229,8 +229,11 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 29/01/20 15321331 function calls (15093635 primitive calls) in 15.120 seconds (refactored quantity to handle decimals)
         # 30/01/20 15321331 function calls (15093635 primitive calls) in 15.469 seconds (add volume object, refactor tick)
         # 04/02/20 23000530 function calls (22600982 primitive calls) in 19.057 seconds (performance check - changed to pure python strategy)
+        # 10/02/20 21244383 function calls (20869327 primitive calls) in 17.063 seconds (post performance mission)
+        # 13/02/20 21196734 function calls (20822532 primitive calls) in 16.774 seconds (performance check)
         # 10/06/20 22366325 function calls (21995665 primitive calls) in 19.329 seconds (performance check)
         # 10/07/20 22382460 function calls (22011363 primitive calls) in 19.187 seconds (performance check)
+        # 10/07/20 22711531 function calls (22335763 primitive calls) in 21.568 seconds (more accurate bar aggregation)
 
         # 10/02/20 Profiling Mission: (Profile_Hooks = True)
         # -----------------------------------------------------------------------------------------------------------------------------------------
@@ -241,6 +244,3 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 54565207 function calls (54177522 primitive calls) in 26.206 seconds (improve average spread calculation)
         # 53865728 function calls (53478043 primitive calls) in 25.729 seconds (not index twice to dicts in handle methods)
         # -----------------------------------------------------------------------------------------------------------------------------------------
-
-        # 10/02/20 21244383 function calls (20869327 primitive calls) in 17.063 seconds (post performance mission)
-        # 13/02/20 21196734 function calls (20822532 primitive calls) in 16.774 seconds (performance check)

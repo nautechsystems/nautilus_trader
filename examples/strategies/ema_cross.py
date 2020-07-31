@@ -115,7 +115,8 @@ class EMACross(TradingStrategy):
 
         :param tick: The received tick.
         """
-        self.log.info(f"Received Tick({tick})")  # For debugging
+        # self.log.info(f"Received Tick({tick})")  # For debugging
+        pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -195,20 +196,22 @@ class EMACross(TradingStrategy):
             hard_limit=20000000,
             units=1,
             unit_batch_size=10000)
-        if position_size > 0:
-            bracket_order = self.order_factory.bracket_stop(
-                symbol=self.symbol,
-                order_side=OrderSide.BUY,
-                quantity=position_size,
-                entry=price_entry,
-                stop_loss=price_stop_loss,
-                take_profit=price_take_profit,
-                time_in_force=TimeInForce.GTD,
-                expire_time=bar.timestamp + timedelta(minutes=1))
 
-            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
-        else:
+        if position_size == 0:
             self.log.info("Insufficient equity for BUY signal.")
+            return
+
+        bracket_order = self.order_factory.bracket_stop(
+            symbol=self.symbol,
+            order_side=OrderSide.BUY,
+            quantity=position_size,
+            entry=price_entry,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit,
+            time_in_force=TimeInForce.GTD,
+            expire_time=bar.timestamp + timedelta(minutes=1))
+
+        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
     def _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         price_entry = Price(bar.low.as_double() - self.entry_buffer, self.precision)
@@ -240,20 +243,21 @@ class EMACross(TradingStrategy):
             units=1,
             unit_batch_size=10000)
 
-        if position_size > 0:  # Sufficient equity for a position
-            bracket_order = self.order_factory.bracket_stop(
-                symbol=self.symbol,
-                order_side=OrderSide.SELL,
-                quantity=position_size,
-                entry=price_entry,
-                stop_loss=price_stop_loss,
-                take_profit=price_take_profit,
-                time_in_force=TimeInForce.GTD,
-                expire_time=bar.timestamp + timedelta(minutes=1))
-
-            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
-        else:
+        if position_size == 0:
             self.log.info("Insufficient equity for SELL signal.")
+            return
+
+        bracket_order = self.order_factory.bracket_stop(
+            symbol=self.symbol,
+            order_side=OrderSide.SELL,
+            quantity=position_size,
+            entry=price_entry,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit,
+            time_in_force=TimeInForce.GTD,
+            expire_time=bar.timestamp + timedelta(minutes=1))
+
+        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         for working_order in self.orders_working().values():
