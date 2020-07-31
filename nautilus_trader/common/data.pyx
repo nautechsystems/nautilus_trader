@@ -24,7 +24,7 @@ from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport Clock, TestClock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
@@ -455,8 +455,7 @@ cdef class DataClient:
             next_value=spread,
             current_value=average_spread,
             expected_length=self.tick_capacity,
-            drop_left=False
-        )
+            drop_left=False)
 
         self._spreads_average[symbol] = new_average_spread
 

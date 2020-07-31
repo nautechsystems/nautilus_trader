@@ -326,12 +326,24 @@ cdef class TestTimer(Timer):
         """
         Condition.not_none(to_time, 'to_time')
 
-        cdef list time_events = []  # type: [TimeEvent]
+        cdef list events = []  # type: [TimeEvent]
         while not self.expired and to_time >= self.next_time:
-            time_events.append(self.pop_event(self._uuid_factory.generate()))
+            events.append(self.pop_event(self._uuid_factory.generate()))
             self.iterate_next_time(self.next_time)
 
-        return time_events
+        return events
+
+    cpdef Event pop_next_event(self):
+        """
+        Return the next time event for this timer.
+
+        :return TimeEvent.
+        :raises ValueError: If the next event timestamp is not equal to the at_time.
+        """
+        cdef TimeEvent event = self.pop_event(self._uuid_factory.generate())
+        self.iterate_next_time(self.next_time)
+
+        return event
 
     cpdef void cancel(self) except *:
         """
@@ -382,6 +394,14 @@ cdef class Clock:
 
         return self.time_now() - time
 
+    cpdef Timer get_timer(self, str name):
+        """
+        Return the datetime for the given timer name (if found).
+        """
+        Condition.valid_string(name, 'name')
+
+        return self._timers[name]
+
     cpdef list get_timer_names(self):
         """
         Return the timer labels held by the clock.
@@ -398,8 +418,6 @@ cdef class Clock:
         :param handler: The handler to register (must be Callable).
         :raises TypeError: If the handler is not of type callable.
         """
-        Condition.callable(handler, 'handler')
-
         self._default_handler = handler
         self.is_default_handler_registered = True
 
@@ -499,7 +517,8 @@ cdef class Clock:
 
         cdef Timer timer = self._timers.pop(name, None)
         if timer is None:
-            raise RuntimeError(f"Cannot cancel timer (no timer found with name '{name}').")
+            self._log.warning(f"Cannot cancel timer (no timer found with name '{name}').")
+            return
 
         timer.cancel()
         self._handlers.pop(name, None)

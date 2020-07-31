@@ -353,8 +353,16 @@ cdef class BacktestExecClient(ExecutionClient):
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
 
+        cdef MarketPosition direction
+        if position.entry_direction == OrderSide.BUY:
+            direction = MarketPosition.LONG
+        elif position.entry_direction == OrderSide.SELL:
+            direction = MarketPosition.SHORT
+        else:
+            raise RuntimeError(f'Invalid entry direction')
+
         cdef Money pnl = self.calculate_pnl(
-            direction=position.market_position,
+            direction=direction,
             open_price=position.average_open_price,
             close_price=event.average_price.as_double(),
             quantity=event.filled_quantity,

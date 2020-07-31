@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_s
 from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument
 from nautilus_trader.model.objects cimport Bar, BarType, BarSpecification
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
-from nautilus_trader.common.clock cimport TimeEventHandler, Clock
+from nautilus_trader.common.clock cimport Clock, TestTimer
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -180,7 +180,7 @@ cdef class TickDataWrangler:
     cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
-        be an ndarray with 2 elements [bid, ask] of type double.
+        be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         """
         return Tick(self.instrument.symbol,
                     Price(values[0], self.instrument.price_precision),
@@ -192,7 +192,7 @@ cdef class TickDataWrangler:
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
-        be an ndarray with 2 elements [bid, ask] of type double.
+        be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         """
         return Tick(self.instrument.symbol,
                     Price(values[0], self.instrument.price_precision),
@@ -477,6 +477,9 @@ cdef class BarBuilder:
         """
         Condition.not_none(tick, 'tick')
 
+        if tick.ask == 0:
+            return
+
         cdef Price price = self._get_price(tick)
 
         if self._open is None:
@@ -561,6 +564,23 @@ cdef class BarBuilder:
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
 
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        :return str.
+        """
+        return f"BarBuilder(bar_spec={self.bar_spec},{self._open},{self._high},{self._low},{self._close},{self._volume})"
+
+    def __repr__(self) -> str:
+        """
+        Return the string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
 
 cdef class BarAggregator:
     """
@@ -592,7 +612,6 @@ cdef class BarAggregator:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void _handle_bar(self, Bar bar) except *:
-        # self._log.debug(f"Built {self.bar_type} Bar({bar})")
         self._handler.handle(self.bar_type, bar)
 
 
@@ -668,8 +687,9 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._clock = clock
         self.interval = self._get_interval()
-        self.next_close = self._clock.next_event_time
         self._set_build_timer()
+        self.next_close = self._clock.get_timer(self.bar_type.to_string()).next_time
+        self._tick_buffer = timedelta(milliseconds=100)
 
     cpdef void update(self, Tick tick) except *:
         """
@@ -679,14 +699,25 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         Condition.not_none(tick, 'tick')
 
+        if self._clock.is_test_clock:
+            if self.next_close < tick.timestamp:
+                # Build bar first, then update
+                self._build_bar(self.next_close)
+                self._builder.update(tick)
+                return
+            elif self.next_close == tick.timestamp:
+                # Update first, then build bar
+                self._builder.update(tick)
+                self._build_bar(self.next_close)
+                return
+
         self._builder.update(tick)
 
-        cdef TimeEventHandler event_handler
-        if self._clock.is_test_clock:
-            if self._clock.next_event_time <= tick.timestamp:
-                for event_handler in self._clock.advance_time(tick.timestamp):
-                    event_handler.handle()
-                self.next_close = self._clock.next_event_time
+    cpdef void _build_bar(self, datetime at_time) except *:
+        cdef TestTimer timer = self._clock.get_timer(self.bar_type.to_string())
+        cdef TimeEvent event = timer.pop_next_event()
+        self._build_event(event)
+        self.next_close = timer.next_time
 
     cpdef void _build_event(self, TimeEvent event) except *:
         cdef Bar bar

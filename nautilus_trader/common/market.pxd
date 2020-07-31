@@ -101,10 +101,12 @@ cdef class TickBarAggregator(BarAggregator):
 
 cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
+    cdef timedelta _tick_buffer
 
     cdef readonly timedelta interval
     cdef readonly datetime next_close
 
+    cpdef void _build_bar(self, datetime at_time) except *
     cpdef void _build_event(self, TimeEvent event) except *
     cdef timedelta _get_interval(self)
     cdef datetime _get_start_time(self)
