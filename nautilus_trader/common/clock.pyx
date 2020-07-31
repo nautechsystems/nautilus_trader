@@ -333,18 +333,14 @@ cdef class TestTimer(Timer):
 
         return events
 
-    cpdef Event advance_to_event(self, datetime at_time):
+    cpdef Event pop_next_event(self):
         """
-        Return the time event at the given time.
+        Return the next time event for this timer.
 
-        :param at_time: The time of the next event.
         :return TimeEvent.
         :raises ValueError: If the next event timestamp is not equal to the at_time.
         """
         cdef TimeEvent event = self.pop_event(self._uuid_factory.generate())
-        if event.timestamp != at_time:
-            raise ValueError(f"The given at_time {at_time} was not equal to the "
-                             f"popped event timestamp")
         self.iterate_next_time(self.next_time)
 
         return event
@@ -422,8 +418,6 @@ cdef class Clock:
         :param handler: The handler to register (must be Callable).
         :raises TypeError: If the handler is not of type callable.
         """
-        # Condition.callable(handler, 'handler')  # TODO: Causing crash on IPython kernel??
-
         self._default_handler = handler
         self.is_default_handler_registered = True
 
