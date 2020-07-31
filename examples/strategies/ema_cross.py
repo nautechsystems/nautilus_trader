@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price, Tick, Bar, BarType, BarSpecification
-from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce, BarStructure
+from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.trading.sizing import FixedRiskSizer
@@ -104,9 +104,7 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_instrument(self.symbol)
-        ask_bars = BarType(self.symbol, BarSpecification(1, BarStructure.MINUTE, PriceType.ASK))
         self.subscribe_bars(self.bar_type)
-        self.subscribe_bars(ask_bars)
         self.subscribe_ticks(self.symbol)
 
     def on_tick(self, tick: Tick):
@@ -117,7 +115,8 @@ class EMACross(TradingStrategy):
 
         :param tick: The received tick.
         """
-        self.log.info(f"Received Tick({tick})")  # For debugging
+        # self.log.info(f"Received Tick({tick})")  # For debugging
+        pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """

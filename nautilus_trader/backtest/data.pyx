@@ -212,7 +212,7 @@ cdef class BacktestDataClient(DataClient):
         # Merge and sort all ticks
         self._log.info(f"Merging tick data stream...")
         self._tick_data = pd.concat(tick_frames)
-        self._tick_data.sort_index(axis=0, inplace=True)
+        self._tick_data.sort_index(axis=0, kind='mergesort', inplace=True)
 
         # Set min and max timestamps
         self.min_timestamp = self._tick_data.index.min()
@@ -334,7 +334,6 @@ cdef class BacktestDataClient(DataClient):
 
         cdef TimeEventHandler event_handler
         for event_handler in self._clock.advance_time(tick.timestamp):
-            self._log.critical(f'event_handler {event_handler.event}')
             event_handler.handle()
 
     cpdef void request_ticks(

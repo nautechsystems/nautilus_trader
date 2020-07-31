@@ -27,7 +27,7 @@ cdef class TimeEvent(Event):
 
 cdef class TimeEventHandler:
     cdef readonly TimeEvent event
-    cdef object handler
+    cdef readonly object handler
 
     cdef void handle(self) except *
 
@@ -50,6 +50,7 @@ cdef class TestTimer(Timer):
     cdef TestUUIDFactory _uuid_factory
 
     cpdef list advance(self, datetime to_time)
+    cpdef Event advance_to_event(self, datetime at_time)
 
 
 cdef class Clock:
@@ -68,6 +69,7 @@ cdef class Clock:
 
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
+    cpdef Timer get_timer(self, str name)
     cpdef list get_timer_names(self)
     cpdef void register_default_handler(self, handler) except *
     cpdef void set_time_alert(self, str name, datetime alert_time, handler=*) except *

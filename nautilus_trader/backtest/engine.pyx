@@ -263,21 +263,11 @@ cdef class BacktestEngine:
         self.trader.start()
 
         cdef Tick tick
-        cdef TradingStrategy strategy
-        cdef TimeEvent event
-        cdef list time_events = []  # type: [TimeEventHandler]
-        cdef TimeEventHandler event_handler
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self.data_client.has_data:
             tick = self.data_client.generate_tick()
-            for strategy in self.trader.strategies:
-                time_events += strategy.clock.advance_time(tick.timestamp)
-            for event_handler in sorted(time_events):
-                self.test_clock.set_time(event_handler.event.timestamp)
-                event_handler.handle()
-            time_events.clear()
-            self.test_clock.set_time(tick.timestamp)
+            self.advance_time(tick.timestamp)
             self.exec_client.process_tick(tick)
             self.data_client.process_tick(tick)
             self.iteration += 1
@@ -289,6 +279,17 @@ cdef class BacktestEngine:
         self._backtest_footer(run_started, self.clock.time_now(), start, stop)
         if print_log_store:
             self.print_log_store()
+
+    cpdef void advance_time(self, datetime timestamp) except *:
+        cdef TradingStrategy strategy
+        cdef TimeEventHandler event_handler
+        cdef list time_events = []  # type: [TimeEventHandler]
+        for strategy in self.trader.strategies:
+            time_events += strategy.clock.advance_time(timestamp)
+        for event_handler in sorted(time_events):
+            self.test_clock.set_time(event_handler.event.timestamp)
+            event_handler.handle()
+        self.test_clock.set_time(timestamp)
 
     cpdef list get_log_store(self):
         """

@@ -51,6 +51,7 @@ cdef class BacktestEngine:
     cdef readonly int iteration
 
     cpdef void run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*) except *
+    cpdef void advance_time(self, datetime timestamp) except *
     cpdef list get_log_store(self)
     cpdef void print_log_store(self) except *
     cpdef void reset(self) except *

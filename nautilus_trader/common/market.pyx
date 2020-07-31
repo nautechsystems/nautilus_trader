@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_s
 from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument
 from nautilus_trader.model.objects cimport Bar, BarType, BarSpecification
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
-from nautilus_trader.common.clock cimport TimeEventHandler, Clock
+from nautilus_trader.common.clock cimport TimeEventHandler, Clock, TestTimer
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -140,16 +140,16 @@ cdef class TickDataWrangler:
         }
 
         cdef dict data_close = {
-            'bid': bars_bid['close'].values,
-            'ask': bars_ask['close'].values,
-            'bid_size': bars_bid['volume'].values,
-            'ask_size': bars_ask['volume'].values
+            'bid': bars_bid['close'],
+            'ask': bars_ask['close'],
+            'bid_size': bars_bid['volume'],
+            'ask_size': bars_ask['volume']
         }
 
         df_ticks_o = pd.DataFrame(data=data_open, index=bars_bid.index.shift(periods=-100, freq='ms'))
         df_ticks_h = pd.DataFrame(data=data_high, index=bars_bid.index.shift(periods=-100, freq='ms'))
         df_ticks_l = pd.DataFrame(data=data_low, index=bars_bid.index.shift(periods=-100, freq='ms'))
-        df_ticks_c = pd.DataFrame(data=data_close, index=bars_bid.index.shift(periods=-100, freq='ms'))
+        df_ticks_c = pd.DataFrame(data=data_close)
 
         # Drop rows with no volume
         df_ticks_o = df_ticks_o[(df_ticks_h[['bid_size']] > 0).all(axis=1)]
@@ -159,7 +159,7 @@ cdef class TickDataWrangler:
         df_ticks_o = df_ticks_o[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
         df_ticks_h = df_ticks_h[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
         df_ticks_l = df_ticks_l[(df_ticks_l[['ask_size']] > 0).all(axis=1)]
-        df_ticks_c1 = df_ticks_c[(df_ticks_c[['ask_size']] > 0).all(axis=1)]
+        df_ticks_c = df_ticks_c[(df_ticks_c[['ask_size']] > 0).all(axis=1)]
 
         # Set high low tick volumes to zero
         df_ticks_o['bid_size'] = 0
@@ -477,8 +477,11 @@ cdef class BarBuilder:
         """
         Condition.not_none(tick, 'tick')
 
+        if tick.ask == 0:
+            return
+
         cdef Price price = self._get_price(tick)
-        print(f'Updating {self.bar_spec} with {tick}')  # TODO: Debug print
+
         if self._open is None:
             # Initialize builder
             self._open = price
@@ -502,7 +505,6 @@ cdef class BarBuilder:
 
         :return: Bar.
         """
-        print(f'Building {self}')
         if close_time is None:
             close_time = self.last_update
 
@@ -610,7 +612,6 @@ cdef class BarAggregator:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void _handle_bar(self, Bar bar) except *:
-        # self._log.debug(f"Built {self.bar_type} Bar({bar})")
         self._handler.handle(self.bar_type, bar)
 
 
@@ -686,8 +687,9 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._clock = clock
         self.interval = self._get_interval()
-        self.next_close = self._clock.next_event_time
         self._set_build_timer()
+        self.next_close = self._clock.get_timer(self.bar_type.to_string()).next_time
+        self._tick_buffer = timedelta(milliseconds=100)
 
     cpdef void update(self, Tick tick) except *:
         """
@@ -697,19 +699,32 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         Condition.not_none(tick, 'tick')
 
+        if self._clock.is_test_clock:
+            if tick.timestamp.microsecond == 900000:
+                # TODO: Temporary to ensure correct ordering of ticks
+                self.next_close = tick.timestamp + self._tick_buffer
+            if self.next_close < tick.timestamp:
+                # Build bar first, then update
+                self._build_bar(self.next_close)
+                self._builder.update(tick)
+                return
+            elif self.next_close == tick.timestamp:
+                # Update first, then build bar
+                self._builder.update(tick)
+                self._build_bar(self.next_close)
+                return
+
         self._builder.update(tick)
 
-        cdef TimeEventHandler event_handler
-        if self._clock.is_test_clock:
-            if self._clock.next_event_time <= tick.timestamp:
-                for event_handler in self._clock.advance_time(tick.timestamp):
-                    event_handler.handle()
-                self.next_close = self._clock.next_event_time
+    cpdef void _build_bar(self, datetime at_time) except *:
+        cdef TestTimer timer = self._clock.get_timer(self.bar_type.to_string())
+        cdef TimeEvent event = timer.advance_to_event(self.next_close)
+        self._build_event(event)
+        self.next_close = timer.next_time
 
     cpdef void _build_event(self, TimeEvent event) except *:
         cdef Bar bar
         try:
-            self._log.critical(f"recevied {event}")  # TODO: Debug
             bar = self._builder.build(event.timestamp)
         except ValueError as ex:
             # Bar was somehow malformed
