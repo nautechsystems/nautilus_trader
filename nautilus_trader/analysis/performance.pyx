@@ -141,9 +141,7 @@ cdef class PerformanceAnalyzer:
             if symbol not in columns:
                 continue
 
-            # noinspection PyProtectedMember
-            # direct access to protected member _relative_quantity ok here
-            self._positions.loc[index_date][symbol] += position._relative_quantity
+            self._positions.loc[index_date][symbol] += position.relative_quantity()
 
     cpdef void reset(self) except *:
         """

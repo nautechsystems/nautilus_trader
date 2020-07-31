@@ -74,6 +74,7 @@ cdef class Position:
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
     cpdef void apply(self, OrderFillEvent event) except *
+    cpdef double relative_quantity(self)
     cpdef double unrealized_points(self, Tick last)
     cpdef double total_points(self, Tick last)
     cpdef double unrealized_return(self, Tick last)
