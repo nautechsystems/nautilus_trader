@@ -523,7 +523,8 @@ cdef class Clock:
 
         cdef Timer timer = self._timers.pop(name, None)
         if timer is None:
-            raise RuntimeError(f"Cannot cancel timer (no timer found with name '{name}').")
+            self._log.warning(f"Cannot cancel timer (no timer found with name '{name}').")
+            return
 
         timer.cancel()
         self._handlers.pop(name, None)
