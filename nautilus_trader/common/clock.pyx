@@ -326,12 +326,28 @@ cdef class TestTimer(Timer):
         """
         Condition.not_none(to_time, 'to_time')
 
-        cdef list time_events = []  # type: [TimeEvent]
+        cdef list events = []  # type: [TimeEvent]
         while not self.expired and to_time >= self.next_time:
-            time_events.append(self.pop_event(self._uuid_factory.generate()))
+            events.append(self.pop_event(self._uuid_factory.generate()))
             self.iterate_next_time(self.next_time)
 
-        return time_events
+        return events
+
+    cpdef Event advance_to_event(self, datetime at_time):
+        """
+        Return the time event at the given time.
+
+        :param at_time: The time of the next event.
+        :return TimeEvent.
+        :raises ValueError: If the next event timestamp is not equal to the at_time.
+        """
+        cdef TimeEvent event = self.pop_event(self._uuid_factory.generate())
+        if event.timestamp != at_time:
+            raise ValueError(f"The given at_time {at_time} was not equal to the "
+                             f"popped event timestamp")
+        self.iterate_next_time(self.next_time)
+
+        return event
 
     cpdef void cancel(self) except *:
         """
@@ -381,6 +397,14 @@ cdef class Clock:
         Condition.not_none(time, 'time')
 
         return self.time_now() - time
+
+    cpdef Timer get_timer(self, str name):
+        """
+        Return the datetime for the given timer name (if found).
+        """
+        Condition.valid_string(name, 'name')
+
+        return self._timers[name]
 
     cpdef list get_timer_names(self):
         """
