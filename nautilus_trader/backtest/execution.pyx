@@ -311,10 +311,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 elif order.type == OrderType.LIMIT:
                     if tick.ask.le(order.price) or self._is_marginal_buy_limit_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
-                        if self.fill_model.is_slipped():
-                            self._fill_order(order, order.price.add(self._slippages[order.symbol]))
-                        else:
-                            self._fill_order(order, order.price)
+                        self._fill_order(order, order.price)
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type in STOP_ORDER_TYPES:
@@ -328,10 +325,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 elif order.type == OrderType.LIMIT:
                     if tick.bid.ge(order.price) or self._is_marginal_sell_limit_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
-                        if self.fill_model.is_slipped():
-                            self._fill_order(order, order.price.subtract(self._slippages[order.symbol]))
-                        else:
-                            self._fill_order(order, order.price)
+                        self._fill_order(order, order.price)
                         continue  # Continue loop to next order
 
             # Check for order expiry
@@ -758,14 +752,13 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._fill_order(order, current_market.ask)
                 return  # Market order filled - nothing further to process
             elif order.side == OrderSide.SELL:
-                if order.type == OrderType.MARKET:
-                    if self.fill_model.is_slipped():
-                        self._fill_order(
-                            order,
-                            current_market.bid.subtract(self._slippages[order.symbol]))
-                    else:
-                        self._fill_order(order, current_market.bid)
-                    return  # Market order filled - nothing further to process
+                if self.fill_model.is_slipped():
+                    self._fill_order(
+                        order,
+                        current_market.bid.subtract(self._slippages[order.symbol]))
+                else:
+                    self._fill_order(order, current_market.bid)
+                return  # Market order filled - nothing further to process
 
         # Order is valid and accepted
         self._accept_order(order)
