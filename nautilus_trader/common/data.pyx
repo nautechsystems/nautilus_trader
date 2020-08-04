@@ -75,6 +75,7 @@ cdef class DataClient:
         self._exchange_calculator = ExchangeRateCalculator()
 
         self.tick_capacity = tick_capacity
+        self.use_previous_close = False
 
         self._log.info("Initialized.")
 
@@ -286,7 +287,17 @@ cdef class DataClient:
             bid_rates=bid_rates,
             ask_rates=ask_rates)
 
-    cdef void _generate_bars(self, BarType bar_type, handler: callable) except *:
+    cpdef void set_use_previous_close(self, bint value) except *:
+        """
+        Set the value of the use_previous_close flag. Determines whether bar
+        aggregators will use the close of the previous bar as the open of the
+        next bar.
+        
+        :param value: The value to set.
+        """
+        self.use_previous_close = value
+
+    cdef void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:
             if bar_type.specification.structure == BarStructure.TICK:
                 aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
@@ -294,21 +305,22 @@ cdef class DataClient:
                 aggregator = TimeBarAggregator(
                     bar_type=bar_type,
                     handler=self._handle_bar,
-                    use_previous_close=False,
+                    use_previous_close=self.use_previous_close,
                     clock=self._clock,
                     logger=self._log.get_logger())
             self._bar_aggregators[bar_type] = aggregator
             self.subscribe_ticks(bar_type.symbol, aggregator.update)
 
-        self._add_bar_handler(bar_type, handler)
+        self._add_bar_handler(bar_type, handler)  # Add handler last
 
     cdef void _stop_generating_bars(self, BarType bar_type, handler: callable) except *:
-        if bar_type in self._bar_handlers:
+        if bar_type in self._bar_handlers:  # Remove handler first
             self._remove_bar_handler(bar_type, handler)
-            if bar_type not in self._bar_handlers:
+            if bar_type not in self._bar_handlers:  # No longer any handlers for that bar type
                 aggregator = self._bar_aggregators[bar_type]
                 aggregator.stop()
                 self.unsubscribe_ticks(bar_type.symbol, aggregator.update)
+                del self._bar_aggregators[bar_type]
 
     cdef void _add_tick_handler(self, Symbol symbol, handler: callable) except *:
         """

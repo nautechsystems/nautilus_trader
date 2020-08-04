@@ -69,6 +69,7 @@ cdef class Order:
     cpdef str state_as_string(self)
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
+    cpdef datetime last_event_time(self)
     cpdef void apply(self, OrderEvent event) except *
     cdef void _set_is_working_true(self) except *
     cdef void _set_is_completed_true(self) except *
