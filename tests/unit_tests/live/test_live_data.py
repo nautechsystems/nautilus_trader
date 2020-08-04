@@ -25,7 +25,7 @@ from nautilus_trader.network.messages import DataResponse, DataRequest
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.compression import BypassCompressor
 from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
-from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper
+from nautilus_trader.serialization.data import Utf8TickSerializer, DataMapper
 from nautilus_trader.serialization.data import BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
