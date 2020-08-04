@@ -486,7 +486,7 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable_or_none(handler, 'handler')
 
-        self._remove_bar_handler(bar_type, handler)
+        self._stop_generating_bars(bar_type, handler)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """

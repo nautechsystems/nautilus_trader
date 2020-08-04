@@ -374,11 +374,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
 
-        if bar_type.specification.structure == BarStructure.TICK:
-            self._generate_bars(bar_type, handler)
-        else:
-            self._add_bar_handler(bar_type, handler)
-            self._data_subscriber.subscribe(f'Bar:{bar_type.to_string()}')
+        self._generate_bars(bar_type, handler)
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
@@ -419,8 +415,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(bar_type, 'bar_type')
         Condition.callable(handler, 'handler')
 
-        self._data_subscriber.unsubscribe(f'Bar:{bar_type.to_string()}')
-        self._remove_bar_handler(bar_type, handler)
+        self._stop_generating_bars(bar_type, handler)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
