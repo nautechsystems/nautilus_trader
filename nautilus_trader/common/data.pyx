@@ -75,7 +75,7 @@ cdef class DataClient:
         self._exchange_calculator = ExchangeRateCalculator()
 
         self.tick_capacity = tick_capacity
-        self.use_previous_close = False
+        self.use_previous_close = True
 
         self._log.info("Initialized.")
 
