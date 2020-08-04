@@ -106,6 +106,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly timedelta interval
     cdef readonly datetime next_close
 
+    cpdef void stop(self) except *
     cpdef void _build_bar(self, datetime at_time) except *
     cpdef void _build_event(self, TimeEvent event) except *
     cdef timedelta _get_interval(self)
