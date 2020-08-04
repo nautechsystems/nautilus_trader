@@ -29,9 +29,10 @@ from nautilus_trader.model.identifiers import BracketOrderId, ExecutionId, Posit
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import Order
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.clock import TestClock
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -193,6 +194,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_buy)
         self.assertFalse(order.is_sell)
         self.assertEqual(None, order.filled_timestamp)
+        self.assertEqual(UNIX_EPOCH, order.last_event_time())
 
     def test_can_initialize_sell_market_order(self):
         # Arrange

@@ -41,6 +41,7 @@ cdef class DataClient:
     cdef ExchangeRateCalculator _exchange_calculator
 
     cdef readonly int tick_capacity
+    cdef readonly bint use_previous_close
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
     cpdef void connect(self) except *
@@ -89,7 +90,8 @@ cdef class DataClient:
         Currency to_currency,
         PriceType price_type=*)
 
-    cdef void _generate_bars(self, BarType bar_type, handler) except *
+    cpdef void set_use_previous_close(self, bint value) except *
+    cdef void _start_generating_bars(self, BarType bar_type, handler) except *
     cdef void _stop_generating_bars(self, BarType bar_type, handler) except *
     cdef void _add_tick_handler(self, Symbol symbol, handler) except *
     cdef void _add_bar_handler(self, BarType bar_type, handler) except *
