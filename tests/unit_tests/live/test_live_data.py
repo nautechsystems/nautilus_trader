@@ -195,28 +195,29 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertNotIn(bar_type, self.data_client.subscribed_ticks())
 
-    def test_can_receive_published_bar_data(self):
-        # Arrange
-        self.data_client.connect()
-        data_receiver = ObjectStorer()
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Volume(100000),
-                  UNIX_EPOCH)
-
-        # Act
-        self.data_client.subscribe_bars(bar_type, handler=data_receiver.store_2)
-
-        time.sleep(0.1)
-        self.data_publisher.publish('Bar:' + str(bar_type), Utf8BarSerializer.py_serialize(bar))
-        time.sleep(0.1)
-
-        # Assert
-        self.assertEqual(1, len(data_receiver.get_store()))
-        self.assertEqual((bar_type, bar), data_receiver.get_store()[0])
+    # TODO: No longer publishing bars from data service
+    # def test_can_receive_published_bar_data(self):
+    #     # Arrange
+    #     self.data_client.connect()
+    #     data_receiver = ObjectStorer()
+    #     bar_type = TestStubs.bartype_audusd_1min_bid()
+    #     bar = Bar(Price(1.00001, 5),
+    #               Price(1.00004, 5),
+    #               Price(1.00002, 5),
+    #               Price(1.00003, 5),
+    #               Volume(100000),
+    #               UNIX_EPOCH)
+    #
+    #     # Act
+    #     self.data_client.subscribe_bars(bar_type, handler=data_receiver.store_2)
+    #
+    #     time.sleep(0.1)
+    #     self.data_publisher.publish('Bar:' + str(bar_type), Utf8BarSerializer.py_serialize(bar))
+    #     time.sleep(0.1)
+    #
+    #     # Assert
+    #     self.assertEqual(1, len(data_receiver.get_store()))
+    #     self.assertEqual((bar_type, bar), data_receiver.get_store()[0])
 
     def test_can_subscribe_to_instrument_data(self):
         # Arrange

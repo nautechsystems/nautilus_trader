@@ -713,6 +713,12 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update(tick)
 
+    cpdef void stop(self) except *:
+        """
+        Stop the bar aggregator.
+        """
+        self._clock.cancel_timer(self.bar_type.to_string())
+
     cpdef void _build_bar(self, datetime at_time) except *:
         cdef TestTimer timer = self._clock.get_timer(self.bar_type.to_string())
         cdef TimeEvent event = timer.pop_next_event()

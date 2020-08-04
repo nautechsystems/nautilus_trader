@@ -24,7 +24,7 @@ from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
-from nautilus_trader.common.clock cimport Clock, TestClock
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
@@ -286,7 +286,7 @@ cdef class DataClient:
             bid_rates=bid_rates,
             ask_rates=ask_rates)
 
-    cdef void _generate_bars(self, BarType bar_type, handler) except *:
+    cdef void _generate_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:
             if bar_type.specification.structure == BarStructure.TICK:
                 aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
@@ -301,6 +301,14 @@ cdef class DataClient:
             self.subscribe_ticks(bar_type.symbol, aggregator.update)
 
         self._add_bar_handler(bar_type, handler)
+
+    cdef void _stop_generating_bars(self, BarType bar_type, handler: callable) except *:
+        if bar_type in self._bar_handlers:
+            self._remove_bar_handler(bar_type, handler)
+            if bar_type not in self._bar_handlers:
+                aggregator = self._bar_aggregators[bar_type]
+                aggregator.stop()
+                self.unsubscribe_ticks(bar_type.symbol, aggregator.update)
 
     cdef void _add_tick_handler(self, Symbol symbol, handler: callable) except *:
         """
