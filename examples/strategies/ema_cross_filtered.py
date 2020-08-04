@@ -153,6 +153,7 @@ class EMACrossFiltered(TradingStrategy):
 
         :param tick: The received tick.
         """
+        # self.log.info(f"Received Tick({tick})")  # For debugging
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
@@ -164,6 +165,8 @@ class EMACrossFiltered(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
+        self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging
+
         time_now = self.clock.time_now()
 
         if time_now >= self.trading_end:

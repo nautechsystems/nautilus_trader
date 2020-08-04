@@ -72,31 +72,6 @@ cdef class Position:
 
         self._update(event)
 
-    cpdef bint equals(self, Position other):
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.id.equals(other.id)
-
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        :return str.
-        """
-        return f"Position(id={self.id.value}) {self.status_string()}"
-
-    cpdef str market_position_as_string(self):
-        """
-        Return the market position as a string.
-        
-        :return str.
-        """
-        return market_position_to_string(self.market_position)
-
     def __eq__(self, Position other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -131,6 +106,31 @@ cdef class Position:
         :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    cpdef bint equals(self, Position other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.id.equals(other.id)
+
+    cpdef str to_string(self):
+        """
+        Return the string representation of this object.
+
+        :return str.
+        """
+        return f"Position(id={self.id.value}) {self.status_string()}"
+
+    cpdef str market_position_as_string(self):
+        """
+        Return the market position as a string.
+        
+        :return str.
+        """
+        return market_position_to_string(self.market_position)
 
     cpdef str status_string(self):
         """
@@ -186,6 +186,14 @@ cdef class Position:
 
         # Apply event
         self._update(event)
+
+    cpdef double relative_quantity(self):
+        """
+        Return the relative quantity of the position.
+        
+        :return float.
+        """
+        return self._relative_quantity
 
     cpdef double unrealized_points(self, Tick last):
         """

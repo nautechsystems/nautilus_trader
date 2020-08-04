@@ -26,7 +26,7 @@ from nautilus_trader.core.functions cimport format_bytes, pad_string, get_size_o
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Tick
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
-from nautilus_trader.common.clock cimport TestClock, TimeEventHandler, TimeEvent
+from nautilus_trader.common.clock cimport TestClock, TimeEventHandler
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.common.logging cimport LogLevel, LoggerAdapter, TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
