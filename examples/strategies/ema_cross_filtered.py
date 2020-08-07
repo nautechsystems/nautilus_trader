@@ -214,7 +214,7 @@ class EMACrossFiltered(TradingStrategy):
         if liquidity_ratio >= 2.0:
             self._check_signal(bar, sl_buffer, spread_buffer)
         else:
-            self.log.info(f"liquidity_ratio == {liquidity_ratio} (no liquidity).")
+            self.log.info(f"liquidity_ratio == {liquidity_ratio} (low liquidity).")
 
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
@@ -452,9 +452,6 @@ class EMACrossFiltered(TradingStrategy):
         elif self.news_event_next.impact == 'MEDIUM':
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
-
-        # if self.trading_pause_start == time_now:
-        #     self.news_event_next = self.news_filter.next_event(self.news_event_next.timestamp)
 
         self.log.info(f"Set next news event {self.news_event_next.name} "
                       f"affecting {self.news_event_next.currency} "

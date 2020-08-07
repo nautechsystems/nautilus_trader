@@ -21,9 +21,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 
-# Unix epoch is the UTC date time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-
 
 cdef class LiveTimer(Timer):
     """
