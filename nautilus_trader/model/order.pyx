@@ -305,6 +305,14 @@ cdef class Order:
         """
         return self._events.copy()
 
+    cpdef datetime last_event_time(self):
+        """
+        Return the last event time for the order.
+        
+        :return datetime.
+        """
+        return self._events[-1].timestamp
+
     cpdef void apply(self, OrderEvent event) except *:
         """
         Apply the given order event to the order.
