@@ -133,6 +133,7 @@ cdef class BacktestEngine:
             tick_capacity=100,  # TODO: Configurable
             clock=self.test_clock,
             logger=self.test_logger)
+        self.data_client.set_use_previous_close(False)
 
         self.portfolio = Portfolio(
             clock=self.test_clock,

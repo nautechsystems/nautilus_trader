@@ -237,7 +237,7 @@ cdef class TradingStrategy:
     cpdef dict on_save(self):
         """
         Called when the strategy is saved.
-        Note: 'StateLog', 'OrderIdCount' and 'PositionIdCount' are reserved keys.
+        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys.
         """
         return {}  # Override in implementation
 
