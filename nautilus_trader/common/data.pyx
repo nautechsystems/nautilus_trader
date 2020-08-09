@@ -99,8 +99,8 @@ cdef class DataClient:
     cpdef void request_ticks(
         self,
         Symbol symbol,
-        date from_date,
-        date to_date,
+        datetime from_datetime,
+        datetime to_datetime,
         int limit,
         callback: callable) except *:  # noqa (E125)
         # Raise exception if not overridden in implementation
@@ -109,8 +109,8 @@ cdef class DataClient:
     cpdef void request_bars(
         self,
         BarType bar_type,
-        date from_date,
-        date to_date,
+        datetime from_datetime,
+        datetime to_datetime,
         int limit,
         callback: callable) except *:  # noqa (E125)
         # Raise exception if not overridden in implementation
@@ -432,8 +432,8 @@ cdef class DataClient:
     cpdef void _bulk_build_tick_bars(
             self,
             BarType bar_type,
-            date from_date,
-            date to_date,
+            datetime from_datetime,
+            datetime to_datetime,
             int limit,
             callback) except *:
         # Bulk build tick bars
@@ -444,7 +444,12 @@ cdef class DataClient:
             self._log.get_logger(),
             callback)
 
-        self.request_ticks(bar_type.symbol, from_date, to_date, ticks_to_order, bar_builder.deliver)
+        self.request_ticks(
+            bar_type.symbol,
+            from_datetime,
+            to_datetime,
+            ticks_to_order,
+            bar_builder.deliver)
 
     cpdef void _handle_tick(self, Tick tick) except *:
         cdef Symbol symbol = tick.symbol

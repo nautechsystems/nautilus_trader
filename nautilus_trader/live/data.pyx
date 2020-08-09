@@ -14,11 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-from cpython.datetime cimport date
+from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
 from nautilus_trader.model.objects cimport BarType
@@ -202,37 +203,35 @@ cdef class LiveDataClient(DataClient):
     cpdef void request_ticks(
             self,
             Symbol symbol,
-            date from_date,
-            date to_date,
+            datetime from_datetime,
+            datetime to_datetime,
             int limit,
             callback: callable) except *:
         """
         Request ticks for the given symbol and query parameters.
 
         :param symbol: The symbol for the request.
-        :param from_date: The from date for the request.
-        :param to_date: The to date for the request.
+        :param from_datetime: The from datetime for the request (optional can be None).
+        :param to_datetime: The to datetime for the request (optional can be None).
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
         :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.not_none(from_date, 'from_datetime')
-        Condition.not_none(to_date, 'to_datetime')
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
             DATA_TYPE: "Tick[]",
             SYMBOL: symbol.value,
-            FROM_DATE: str(from_date),
-            TO_DATE: str(to_date),
+            FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
+            TO_DATETIME: format_iso8601(to_datetime) if to_datetime is not None else str(None),
             LIMIT: str(limit)
         }
 
         cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
-        self._log.info(f"Requesting {symbol} ticks from {from_date} to {to_date} {limit_string}...")
+        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
@@ -244,42 +243,40 @@ cdef class LiveDataClient(DataClient):
     cpdef void request_bars(
             self,
             BarType bar_type,
-            date from_date,
-            date to_date,
+            datetime from_datetime,
+            datetime to_datetime,
             int limit,
             callback: callable) except *:
         """
         Request bars for the given bar type and query parameters.
 
         :param bar_type: The bar type for the request.
-        :param from_date: The from date for the request.
-        :param to_date: The to date for the request.
+        :param from_datetime: The from datetime for the request.
+        :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
         :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type Callable.
         """
         Condition.not_none(bar_type, 'bar_type')
-        Condition.not_none(from_date, 'from_date')
-        Condition.not_none(to_date, 'to_date')
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
         if bar_type.specification.structure == BarStructure.TICK:
-            self._bulk_build_tick_bars(bar_type, from_date, to_date, limit, callback)
+            self._bulk_build_tick_bars(bar_type, from_datetime, to_datetime, limit, callback)
             return
 
         cdef dict query = {
             DATA_TYPE: "Bar[]",
             SYMBOL: bar_type.symbol.value,
             SPECIFICATION: bar_type.specification.to_string(),
-            FROM_DATE: str(from_date),
-            TO_DATE: str(to_date),
+            FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
+            TO_DATETIME: format_iso8601(to_datetime) if to_datetime is not None else str(None),
             LIMIT: str(limit),
         }
 
         cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
-        self._log.info(f"Requesting {bar_type} bars from {from_date} to {to_date} {limit_string}...")
+        self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)

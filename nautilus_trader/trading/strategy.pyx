@@ -502,19 +502,19 @@ cdef class TradingStrategy:
     cpdef void get_ticks(
             self,
             Symbol symbol,
-            date from_date=None,
-            date to_date=None,
+            datetime from_datetime=None,
+            datetime to_datetime=None,
             int limit=0) except *:
         """
         Request the historical bars for the given parameters from the data service.
         Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
         :param symbol: The symbol for the request.
-        :param from_date: The from date for the request.
-        :param to_date: The to date for the request.
+        :param from_datetime: The from date for the request.
+        :param to_datetime: The to date for the request.
         :param limit: The limit for the number of ticks in the response (default = tick capacity).
         :raises ValueError: If the limit is negative (< 0).
-        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
+        :raises ValueError: If the from_datetime is not less than the to_datetime.
         """
         if limit == 0:
             limit = self.tick_capacity
@@ -525,12 +525,8 @@ cdef class TradingStrategy:
             self.log.error("Cannot request ticks (data client not registered).")
             return
 
-        if to_date is None:
-            to_date = self.clock.time_now().date()
-        if from_date is None:
-            from_date = self.clock.time_now().date() - timedelta(days=1)
-
-        Condition.true(from_date < to_date, 'from_datetime < to_date')
+        if from_datetime is not None and to_datetime is not None:
+            Condition.true(from_datetime < to_datetime, 'from_datetime < to_datetime')
 
         if self._data_client is None:
             self.log.error("Cannot download historical bars (data client not registered).")
@@ -541,27 +537,27 @@ cdef class TradingStrategy:
 
         self._data_client.request_ticks(
             symbol,
-            from_date,
-            to_date,
+            from_datetime,
+            to_datetime,
             limit,
             self.handle_ticks)
 
     cpdef void get_bars(
             self,
             BarType bar_type,
-            date from_date=None,
-            date to_date=None,
+            datetime from_datetime=None,
+            datetime to_datetime=None,
             int limit=0) except *:
         """
         Request the historical bars for the given parameters from the data service.
         Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
         :param bar_type: The historical bar type to download.
-        :param from_date: The from date for the request.
-        :param to_date: The to date for the request.
+        :param from_datetime: The from datetime for the request (optional can be None).
+        :param to_datetime: The to datetime for the request (optional can be None).
         :param limit: The limit for the number of bars in the response (default = bar capacity).
         :raises ValueError: If the limit is negative (< 0).
-        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
+        :raises ValueError: If the from_datetime is not less than the to_datetime.
         """
         if limit == 0:
             limit = self.bar_capacity
@@ -572,12 +568,8 @@ cdef class TradingStrategy:
             self.log.error("Cannot request bars (data client not registered).")
             return
 
-        if to_date is None:
-            to_date = self.clock.time_now().date()
-        if from_date is None:
-            from_date = self.clock.time_now().date() - timedelta(days=1)
-
-        Condition.true(from_date < to_date, 'from_datetime < to_date')
+        if from_datetime is not None and to_datetime is not None:
+            Condition.true(from_datetime < to_datetime, 'from_datetime < to_datetime')
 
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self.bar_capacity)
@@ -588,8 +580,8 @@ cdef class TradingStrategy:
 
         self._data_client.request_bars(
             bar_type,
-            from_date,
-            to_date,
+            from_datetime,
+            to_datetime,
             limit,
             self.handle_bars)
 
