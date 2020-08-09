@@ -106,8 +106,8 @@ cdef str METADATA
 cdef str QUERY
 cdef str BAR_TYPE
 cdef str SPECIFICATION
-cdef str FROM_DATE
-cdef str TO_DATE
+cdef str FROM_DATETIME
+cdef str TO_DATETIME
 cdef str LIMIT
 
 cdef str TICK_ARRAY

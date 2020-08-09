@@ -339,54 +339,50 @@ cdef class BacktestDataClient(DataClient):
     cpdef void request_ticks(
             self,
             Symbol symbol,
-            date from_date,
-            date to_date,
+            datetime from_datetime,
+            datetime to_datetime,
             int limit,
             callback: callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
         :param symbol: The symbol for the bars to download.
-        :param from_date: The from date for the request.
-        :param to_date: The to date for the request.
+        :param from_datetime: The from datetime for the request.
+        :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
         :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type callable.
         """
         Condition.not_none(symbol, 'symbol')
-        Condition.not_none(from_date, 'from_datetime')
-        Condition.not_none(to_date, 'to_datetime')
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
-        self._log.info(f"Simulated request ticks for {symbol} from {from_date} to {to_date}.")
+        self._log.info(f"Simulated request ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
     cpdef void request_bars(
             self,
             BarType bar_type,
-            date from_date,
-            date to_date,
+            datetime from_datetime,
+            datetime to_datetime,
             int limit,
             callback: callable) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
         :param bar_type: The bar type for the bars to download.
-        :param from_date: The from date for the request.
-        :param to_date: The to date for the request.
+        :param from_datetime: The from datetime for the request.
+        :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
         :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type callable.
         """
         Condition.not_none(bar_type, 'bar_type')
-        Condition.not_none(from_date, 'from_datetime')
-        Condition.not_none(to_date, 'to_datetime')
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
-        self._log.info(f"Simulated request bars for {bar_type} from {from_date} to {to_date}.")
+        self._log.info(f"Simulated request bars for {bar_type} from {from_datetime} to {to_datetime}.")
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
