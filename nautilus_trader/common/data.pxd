@@ -51,15 +51,15 @@ cdef class DataClient:
     cpdef void request_ticks(
         self,
         Symbol symbol,
-        date from_date,
-        date to_date,
+        datetime from_datetime,
+        datetime to_datetime,
         int limit,
         callback) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
-        date from_date,
-        date to_date,
+        datetime from_datetime,
+        datetime to_datetime,
         int limit,
         callback) except *
     cpdef void request_instrument(self, Symbol symbol, callback) except *
@@ -102,8 +102,8 @@ cdef class DataClient:
     cpdef void _bulk_build_tick_bars(
         self,
         BarType bar_type,
-        date from_date,
-        date to_date,
+        datetime from_datetime,
+        datetime to_datetime,
         int limit,
         callback) except *
     cpdef void _handle_tick(self, Tick tick) except *

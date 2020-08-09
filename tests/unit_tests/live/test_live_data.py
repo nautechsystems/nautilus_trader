@@ -264,8 +264,8 @@ class LiveDataClientTests(unittest.TestCase):
         # Act
         self.data_client.request_ticks(
             AUDUSD_FXCM,
-            UNIX_EPOCH.date(),
-            UNIX_EPOCH.date(),
+            UNIX_EPOCH,
+            UNIX_EPOCH,
             limit=0,
             callback=data_receiver.store)
 
@@ -279,8 +279,8 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
         self.data_client.request_ticks(
             AUDUSD_FXCM,
-            UNIX_EPOCH.date(),
-            UNIX_EPOCH.date(),
+            UNIX_EPOCH,
+            UNIX_EPOCH,
             limit=0,
             callback=data_receiver.store)
 
@@ -320,8 +320,8 @@ class LiveDataClientTests(unittest.TestCase):
 
         self.data_client.request_bars(
             bar_type,
-            UNIX_EPOCH.date(),
-            UNIX_EPOCH.date(),
+            UNIX_EPOCH,
+            UNIX_EPOCH,
             limit=0,
             callback=data_receiver.store_2)
 

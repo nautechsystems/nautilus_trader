@@ -100,14 +100,14 @@ cdef class TradingStrategy:
     cpdef void get_ticks(
         self,
         Symbol symbol,
-        date from_date=*,
-        date to_date=*,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
         int limit=*) except *
     cpdef void get_bars(
         self,
         BarType bar_type,
-        date from_date=*,
-        date to_date=*,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
         int limit=*) except *
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef dict get_instruments(self)
