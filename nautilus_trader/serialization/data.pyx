@@ -52,6 +52,7 @@ cdef class Utf8TickSerializer:
         """
         Condition.not_none(ticks, 'ticks')
 
+        cdef Tick tick
         return [tick.to_string().encode(UTF8) for tick in ticks]
 
     @staticmethod
@@ -125,6 +126,7 @@ cdef class Utf8BarSerializer:
         """
         Condition.not_none(bars, 'bars')
 
+        cdef Bar bar
         return [bar.to_string().encode(UTF8) for bar in bars]
 
     @staticmethod
