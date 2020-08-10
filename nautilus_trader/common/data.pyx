@@ -16,7 +16,7 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-from cpython.datetime cimport date, datetime
+from cpython.datetime cimport datetime
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
