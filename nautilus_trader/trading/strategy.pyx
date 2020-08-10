@@ -16,7 +16,7 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-from cpython.datetime cimport date, datetime, timedelta
+from cpython.datetime cimport datetime
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
@@ -433,6 +433,9 @@ cdef class TradingStrategy:
         Condition.not_none(bars, 'bars')  # Can be empty
 
         self.log.info(f"Received bar data for {bar_type} of {len(bars)} bars.")
+
+        if len(bars) > 0 and bars[0].timestamp > bars[len(bars) - 1].timestamp:
+            raise RuntimeError("Cannot handle bar data (incorrectly sorted).")
 
         cdef int i
         for i in range(len(bars)):

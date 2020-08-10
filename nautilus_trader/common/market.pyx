@@ -459,6 +459,7 @@ cdef class BarBuilder:
         """
         self.bar_spec = bar_spec
         self.last_update = None
+        self.use_previous_close = use_previous_close
         self.count = 0
 
         self._last_close = None
@@ -467,7 +468,6 @@ cdef class BarBuilder:
         self._low = None
         self._close = None
         self._volume = Volume.zero()
-        self._use_previous_close = use_previous_close
 
     cpdef void update(self, Tick tick) except *:
         """
@@ -527,7 +527,7 @@ cdef class BarBuilder:
         return bar
 
     cdef void _reset(self) except *:
-        if self._use_previous_close:
+        if self.use_previous_close:
             self._open = self._close
             self._high = self._close
             self._low = self._close
@@ -728,6 +728,10 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _build_event(self, TimeEvent event) except *:
         cdef Bar bar
         try:
+            if self._builder.use_previous_close and self._builder.count == 0:
+                self._log.error(f"Cannot build {self.bar_type} (no prices received).")
+                return
+
             bar = self._builder.build(event.timestamp)
         except ValueError as ex:
             # Bar was somehow malformed
