@@ -434,15 +434,12 @@ cdef class TradingStrategy:
 
         self.log.info(f"Received bar data for {bar_type} of {len(bars)} bars.")
 
+        if len(bars) > 0 and bars[0].timestamp > bars[len(bars) - 1].timestamp:
+            raise RuntimeError("Cannot handle bar data (incorrectly sorted).")
+
         cdef int i
-        if len(bars) == 0 or bars[0].timestamp < bars[len(bars) - 1].timestamp:
-            # Handle forward sorted data
-            for i in range(len(bars)):
-                self.handle_bar(bar_type, bars[i], is_historical=True)
-        else:
-            # Handle reverse sorted data
-            for i in range(len(bars) - 1, -1, -1):
-                self.handle_bar(bar_type, bars[i], is_historical=True)
+        for i in range(len(bars)):
+            self.handle_bar(bar_type, bars[i], is_historical=True)
 
     cpdef void handle_data(self, object data) except *:
         """
