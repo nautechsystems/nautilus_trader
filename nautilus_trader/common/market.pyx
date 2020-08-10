@@ -728,6 +728,10 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _build_event(self, TimeEvent event) except *:
         cdef Bar bar
         try:
+            if self._builder.count == 0:
+                self._log.error(f"Cannot build {self.bar_type} (no prices received).")
+                return
+
             bar = self._builder.build(event.timestamp)
         except ValueError as ex:
             # Bar was somehow malformed
