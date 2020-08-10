@@ -19,7 +19,7 @@
 import gc
 import numpy as np
 import pandas as pd
-from cpython.datetime cimport date, datetime
+from cpython.datetime cimport datetime
 from pandas import DatetimeIndex
 
 from nautilus_trader.core.correctness cimport Condition

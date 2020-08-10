@@ -66,6 +66,7 @@ cdef class IndicatorUpdater:
 cdef class BarBuilder:
     cdef readonly BarSpecification bar_spec
     cdef readonly datetime last_update
+    cdef readonly bint use_previous_close
     cdef readonly int count
 
     cdef Price _last_close
@@ -74,7 +75,6 @@ cdef class BarBuilder:
     cdef Price _low
     cdef Price _close
     cdef Volume _volume
-    cdef bint _use_previous_close
 
     cpdef void update(self, Tick tick) except *
     cpdef Bar build(self, datetime close_time=*)
