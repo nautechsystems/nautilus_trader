@@ -74,11 +74,12 @@ cdef class Tick:
     cdef readonly datetime timestamp
 
     @staticmethod
-    cdef Tick from_string_with_symbol(Symbol symbol, str values)
+    cdef Tick from_serializable_string_with_symbol(Symbol symbol, str values)
 
     @staticmethod
-    cdef Tick from_string(str value)
+    cdef Tick from_serializable_string(str value)
     cpdef str to_string(self)
+    cpdef str to_serializable_string(self)
 
 
 cdef class BarSpecification:
@@ -116,8 +117,9 @@ cdef class Bar:
     cdef readonly bint checked
 
     @staticmethod
-    cdef Bar from_string(str value)
+    cdef Bar from_serializable_string(str value)
     cpdef str to_string(self)
+    cpdef str to_serializable_string(self)
 
 
 cdef class Instrument:
