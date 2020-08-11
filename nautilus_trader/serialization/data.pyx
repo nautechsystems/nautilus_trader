@@ -40,7 +40,7 @@ cdef class Utf8TickSerializer:
         """
         Condition.not_none(tick, 'tick')
 
-        return tick.to_string().encode(UTF8)
+        return tick.to_serializable_string().encode(UTF8)
 
     @staticmethod
     cdef list serialize_ticks_list(list ticks):
@@ -53,7 +53,7 @@ cdef class Utf8TickSerializer:
         Condition.not_none(ticks, 'ticks')
 
         cdef Tick tick
-        return [tick.to_string().encode(UTF8) for tick in ticks]
+        return [tick.to_serializable_string().encode(UTF8) for tick in ticks]
 
     @staticmethod
     cdef Tick deserialize(Symbol symbol, bytes tick_bytes):
@@ -67,7 +67,7 @@ cdef class Utf8TickSerializer:
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(tick_bytes, 'tick_bytes')
 
-        return Tick.from_string_with_symbol(symbol, tick_bytes.decode(UTF8))
+        return Tick.from_serializable_string_with_symbol(symbol, tick_bytes.decode(UTF8))
 
     @staticmethod
     cdef list deserialize_bytes_list(Symbol symbol, list tick_values):
@@ -81,7 +81,7 @@ cdef class Utf8TickSerializer:
         Condition.not_none(symbol, 'symbol')
         Condition.not_none(tick_values, 'tick_values')
 
-        return [Tick.from_string_with_symbol(symbol, values.decode(UTF8)) for values in tick_values]
+        return [Tick.from_serializable_string_with_symbol(symbol, values.decode(UTF8)) for values in tick_values]
 
     @staticmethod
     def py_serialize(Tick tick) -> bytes:
@@ -114,7 +114,7 @@ cdef class Utf8BarSerializer:
         """
         Condition.not_none(bar, 'bar')
 
-        return bar.to_string().encode(UTF8)
+        return bar.to_serializable_string().encode(UTF8)
 
     @staticmethod
     cdef list serialize_bars_list(list bars):
@@ -127,7 +127,7 @@ cdef class Utf8BarSerializer:
         Condition.not_none(bars, 'bars')
 
         cdef Bar bar
-        return [bar.to_string().encode(UTF8) for bar in bars]
+        return [bar.to_serializable_string().encode(UTF8) for bar in bars]
 
     @staticmethod
     cdef Bar deserialize(bytes bar_bytes):
@@ -139,7 +139,7 @@ cdef class Utf8BarSerializer:
         """
         Condition.not_none(bar_bytes, 'bar_bytes')
 
-        return Bar.from_string(bar_bytes.decode(UTF8))
+        return Bar.from_serializable_string(bar_bytes.decode(UTF8))
 
     @staticmethod
     cdef list deserialize_bytes_list(list bar_values):
@@ -151,7 +151,7 @@ cdef class Utf8BarSerializer:
         """
         Condition.not_none(bar_values, 'bar_values')
 
-        return [Bar.from_string(values.decode(UTF8)) for values in bar_values]
+        return [Bar.from_serializable_string(values.decode(UTF8)) for values in bar_values]
 
     @staticmethod
     def py_serialize(Bar bar) -> bytes:
