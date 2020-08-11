@@ -387,7 +387,7 @@ class ObjectTests(unittest.TestCase):
                     UNIX_EPOCH)
 
         # Act
-        result = Tick.py_from_string_with_symbol(AUDUSD_FXCM, str(tick))
+        result = Tick.py_from_serializable_string_with_symbol(AUDUSD_FXCM, tick.to_serializable_string())
 
         # Assert
         self.assertEqual(tick, result)
@@ -406,7 +406,7 @@ class ObjectTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual('1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z', result0)
+        self.assertEqual('AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z', result0)
         self.assertTrue(result1.startswith('<Tick(AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z) object at'))
         self.assertTrue(result1.endswith('>'))
 
@@ -420,7 +420,7 @@ class ObjectTests(unittest.TestCase):
                     UNIX_EPOCH)
 
         # Act
-        result = Tick.py_from_string(AUDUSD_FXCM.value + ',' + str(tick))
+        result = Tick.py_from_serializable_string_with_symbol(AUDUSD_FXCM, tick.to_serializable_string())
 
         # Assert
         self.assertEqual(tick, result)
@@ -466,7 +466,7 @@ class ObjectTests(unittest.TestCase):
         bar = TestStubs.bar_5decimal()
 
         # Act
-        result = Bar.py_from_string(str(bar))
+        result = Bar.py_from_serializable_string(bar.to_serializable_string())
 
         # Assert
         self.assertEqual(bar, result)

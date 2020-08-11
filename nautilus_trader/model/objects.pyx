@@ -358,7 +358,7 @@ cdef class Tick:
         self.timestamp = timestamp
 
     @staticmethod
-    cdef Tick from_string_with_symbol(Symbol symbol, str values):
+    cdef Tick from_serializable_string_with_symbol(Symbol symbol, str values):
         """
         Return a tick parsed from the given symbol and values string.
 
@@ -376,10 +376,10 @@ cdef class Tick:
             Price.from_string(split_values[1]),
             Volume.from_string(split_values[2]),
             Volume.from_string(split_values[3]),
-            pd.to_datetime(split_values[4]))
+            pd.to_datetime(long(split_values[4]), utc=True))
 
     @staticmethod
-    cdef Tick from_string(str value):
+    cdef Tick from_serializable_string(str value):
         """
         Return a tick parsed from the given value string.
 
@@ -395,10 +395,10 @@ cdef class Tick:
             Price.from_string(split_values[2]),
             Volume.from_string(split_values[3]),
             Volume.from_string(split_values[4]),
-            pd.to_datetime(split_values[5]))
+            pd.to_datetime(long(split_values[5]), utc=True))
 
     @staticmethod
-    def py_from_string_with_symbol(Symbol symbol, str values) -> Tick:
+    def py_from_serializable_string_with_symbol(Symbol symbol, str values) -> Tick:
         """
         Python wrapper for the from_string_with_symbol method.
 
@@ -408,10 +408,10 @@ cdef class Tick:
         :param values: The tick values string.
         :return Tick.
         """
-        return Tick.from_string_with_symbol(symbol, values)
+        return Tick.from_serializable_string_with_symbol(symbol, values)
 
     @staticmethod
-    def py_from_string(str values) -> Tick:
+    def py_from_serializable_string(str values) -> Tick:
         """
         Python wrapper for the from_string method.
 
@@ -420,7 +420,7 @@ cdef class Tick:
         :param values: The tick values string.
         :return Tick.
         """
-        return Tick.from_string(values)
+        return Tick.from_serializable_string(values)
 
     cpdef str to_string(self):
         """
@@ -428,11 +428,24 @@ cdef class Tick:
 
         :return: str.
         """
-        return (f"{self.bid.to_string()},"
+        return (f"{self.symbol.to_string()},"
+                f"{self.bid.to_string()},"
                 f"{self.ask.to_string()},"
                 f"{self.bid_size.to_string()},"
                 f"{self.ask_size.to_string()},"
                 f"{format_iso8601(self.timestamp)}")
+
+    cpdef str to_serializable_string(self):
+        """
+        Return the serializable string representation of this object.
+
+        :return: str.
+        """
+        return (f"{self.bid.to_string()},"
+                f"{self.ask.to_string()},"
+                f"{self.bid_size.to_string()},"
+                f"{self.ask_size.to_string()},"
+                f"{long(self.timestamp.timestamp())}")
 
     def __eq__(self, Tick other) -> bool:
         """
@@ -517,7 +530,7 @@ cdef class Tick:
 
         :return str.
         """
-        return f"<{self.__class__.__name__}({self.symbol},{self.to_string()}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
 
 cdef class BarSpecification:
@@ -822,7 +835,7 @@ cdef class Bar:
         self.checked = check
 
     @staticmethod
-    cdef Bar from_string(str value):
+    cdef Bar from_serializable_string(str value):
         """
         Return a bar parsed from the given string.
 
@@ -838,10 +851,10 @@ cdef class Bar:
                    Price.from_string(split_bar[2]),
                    Price.from_string(split_bar[3]),
                    Volume.from_string(split_bar[4]),
-                   pd.to_datetime(split_bar[5]))
+                   pd.to_datetime(long(split_bar[5]), utc=True))
 
     @staticmethod
-    def py_from_string(str value) -> Bar:
+    def py_from_serializable_string(str value) -> Bar:
         """
         Python wrapper for the from_string method.
 
@@ -850,7 +863,7 @@ cdef class Bar:
         :param value: The bar string to parse.
         :return Bar.
         """
-        return Bar.from_string(value)
+        return Bar.from_serializable_string(value)
 
     cpdef str to_string(self):
         """
@@ -864,6 +877,19 @@ cdef class Bar:
                 f"{self.close.to_string()},"
                 f"{self.volume.to_string()},"
                 f"{format_iso8601(self.timestamp)}")
+
+    cpdef str to_serializable_string(self):
+        """
+        Return the serializable string representation of this object.
+
+        :return: str.
+        """
+        return (f"{self.open.to_string()},"
+                f"{self.high.to_string()},"
+                f"{self.low.to_string()},"
+                f"{self.close.to_string()},"
+                f"{self.volume.to_string()},"
+                f"{long(self.timestamp.timestamp())}")
 
     def __eq__(self, Bar other) -> bool:
         """
