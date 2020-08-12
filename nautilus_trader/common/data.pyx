@@ -298,6 +298,7 @@ cdef class DataClient:
         self.use_previous_close = value
 
     cdef void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
+        cdef BulkTimeBarUpdater bulk_updater
         if bar_type not in self._bar_aggregators:
             if bar_type.specification.structure == BarStructure.TICK:
                 aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
@@ -308,6 +309,16 @@ cdef class DataClient:
                     use_previous_close=self.use_previous_close,
                     clock=self._clock,
                     logger=self._log.get_logger())
+
+                bulk_updater = BulkTimeBarUpdater(aggregator)
+
+                self.request_ticks(
+                    symbol=bar_type.symbol,
+                    from_datetime=aggregator.get_start_time(),
+                    to_datetime=None,  # Max
+                    limit=0,  # No limit
+                    callback=bulk_updater.receive)
+
             self._bar_aggregators[bar_type] = aggregator
             self.subscribe_ticks(bar_type.symbol, aggregator.update)
 
@@ -318,7 +329,8 @@ cdef class DataClient:
             self._remove_bar_handler(bar_type, handler)
             if bar_type not in self._bar_handlers:  # No longer any handlers for that bar type
                 aggregator = self._bar_aggregators[bar_type]
-                aggregator.stop()
+                if isinstance(aggregator, TimeBarAggregator):
+                    aggregator.stop()
                 self.unsubscribe_ticks(bar_type.symbol, aggregator.update)
                 del self._bar_aggregators[bar_type]
 
@@ -449,7 +461,7 @@ cdef class DataClient:
             from_datetime,
             to_datetime,
             ticks_to_order,
-            bar_builder.deliver)
+            bar_builder.receive)
 
     cpdef void _handle_tick(self, Tick tick) except *:
         cdef Symbol symbol = tick.symbol
@@ -533,7 +545,7 @@ cdef class DataClient:
 
 cdef class BulkTickBarBuilder:
     """
-    Provides a temporary bulk builder for tick bars from bulk ordered ticks.
+    Provides a temporary builder for tick bars from a bulk tick order.
     """
     cdef TickBarAggregator aggregator
     cdef object callback
@@ -557,7 +569,7 @@ cdef class BulkTickBarBuilder:
         self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
         self.callback = callback
 
-    cpdef void deliver(self, list ticks) except *:
+    cpdef void receive(self, list ticks) except *:
         """
         Accepts for delivery the bulk list of ticks and builds aggregated tick
         bars. Then sends the bar type and bars list on to the registered callback.
@@ -572,3 +584,35 @@ cdef class BulkTickBarBuilder:
 
     cpdef void _add_bar(self, BarType bar_type, Bar bar) except *:
         self.bars.append(bar)
+
+
+cdef class BulkTimeBarUpdater:
+    """
+    Provides a temporary updater for time bars from a bulk tick order.
+    """
+    cdef TimeBarAggregator aggregator
+    cdef datetime start_time
+
+    def __init__(self, TimeBarAggregator aggregator):
+        """
+        Initializes a new instance of the BulkTimeBarUpdater class.
+
+        :param aggregator: The time bar aggregator to update.
+        """
+        Condition.not_none(aggregator, 'aggregator')
+
+        self.aggregator = aggregator
+        self.start_time = self.aggregator.next_close - self.aggregator.interval
+
+    cpdef void receive(self, list ticks) except *:
+        """
+        Accepts for delivery the bulk list of ticks and updates the aggregator.
+        
+        :param ticks: The bulk ticks for updating the aggregator.
+        """
+        cdef int i
+        for i in range(len(ticks)):
+            if ticks[i].timestamp < self.start_time:
+                continue
+
+            self.aggregator.update(ticks[i])
