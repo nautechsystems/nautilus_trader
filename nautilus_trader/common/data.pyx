@@ -571,7 +571,7 @@ cdef class BulkTickBarBuilder:
 
     cpdef void receive(self, list ticks) except *:
         """
-        Accepts for delivery the bulk list of ticks and builds aggregated tick
+        Receives the bulk list of ticks and builds aggregated tick
         bars. Then sends the bar type and bars list on to the registered callback.
         
         :param ticks: The bulk ticks for aggregation into tick bars.
@@ -593,26 +593,24 @@ cdef class BulkTimeBarUpdater:
     cdef TimeBarAggregator aggregator
     cdef datetime start_time
 
-    def __init__(self, TimeBarAggregator aggregator):
+    def __init__(self, TimeBarAggregator aggregator not None):
         """
         Initializes a new instance of the BulkTimeBarUpdater class.
 
         :param aggregator: The time bar aggregator to update.
         """
-        Condition.not_none(aggregator, 'aggregator')
-
         self.aggregator = aggregator
         self.start_time = self.aggregator.next_close - self.aggregator.interval
 
     cpdef void receive(self, list ticks) except *:
         """
-        Accepts for delivery the bulk list of ticks and updates the aggregator.
+        Receives the bulk list of ticks and updates the aggregator.
         
         :param ticks: The bulk ticks for updating the aggregator.
         """
         cdef int i
         for i in range(len(ticks)):
             if ticks[i].timestamp < self.start_time:
-                continue
+                continue  # Price not applicable to this bar
 
             self.aggregator.update(ticks[i])
