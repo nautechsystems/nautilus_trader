@@ -455,10 +455,12 @@ cdef class BarBuilder:
         Initializes a new instance of the BarBuilder class.
 
         :param bar_spec: The bar specification for the builder.
-        :param use_previous_close: Set true if the previous close price should be the open price of a new bar.
+        :param use_previous_close: The flag indicating whether the previous close
+        price should be the open price of a new bar.
         """
         self.bar_spec = bar_spec
         self.last_update = None
+        self.initialized = False
         self.use_previous_close = use_previous_close
         self.count = 0
 
@@ -477,9 +479,6 @@ cdef class BarBuilder:
         """
         Condition.not_none(tick, 'tick')
 
-        if tick.ask == 0:
-            return
-
         cdef Price price = self._get_price(tick)
 
         if self._open is None:
@@ -487,6 +486,7 @@ cdef class BarBuilder:
             self._open = price
             self._high = price
             self._low = price
+            self.initialized = True
         elif price.gt(self._high):
             self._high = price
         elif price.lt(self._low):
@@ -785,7 +785,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _build_event(self, TimeEvent event) except *:
         cdef Bar bar
         try:
-            if self._builder.use_previous_close and self._builder.count == 0:
+            if self._builder.use_previous_close and not self._builder.initialized:
                 self._log.error(f"Cannot build {self.bar_type} (no prices received).")
                 return
 
