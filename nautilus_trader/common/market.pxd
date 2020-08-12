@@ -66,6 +66,7 @@ cdef class IndicatorUpdater:
 cdef class BarBuilder:
     cdef readonly BarSpecification bar_spec
     cdef readonly datetime last_update
+    cdef readonly bint initialized
     cdef readonly bint use_previous_close
     cdef readonly int count
 
