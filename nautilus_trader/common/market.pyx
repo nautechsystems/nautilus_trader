@@ -455,10 +455,12 @@ cdef class BarBuilder:
         Initializes a new instance of the BarBuilder class.
 
         :param bar_spec: The bar specification for the builder.
-        :param use_previous_close: Set true if the previous close price should be the open price of a new bar.
+        :param use_previous_close: The flag indicating whether the previous close
+        price should be the open price of a new bar.
         """
         self.bar_spec = bar_spec
         self.last_update = None
+        self.initialized = False
         self.use_previous_close = use_previous_close
         self.count = 0
 
@@ -477,9 +479,6 @@ cdef class BarBuilder:
         """
         Condition.not_none(tick, 'tick')
 
-        if tick.ask == 0:
-            return
-
         cdef Price price = self._get_price(tick)
 
         if self._open is None:
@@ -487,6 +486,7 @@ cdef class BarBuilder:
             self._open = price
             self._high = price
             self._low = price
+            self.initialized = True
         elif price.gt(self._high):
             self._high = price
         elif price.lt(self._low):
@@ -689,7 +689,6 @@ cdef class TimeBarAggregator(BarAggregator):
         self.interval = self._get_interval()
         self._set_build_timer()
         self.next_close = self._clock.get_timer(self.bar_type.to_string()).next_time
-        self._tick_buffer = timedelta(milliseconds=100)
 
     cpdef void update(self, Tick tick) except *:
         """
@@ -719,40 +718,7 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         self._clock.cancel_timer(self.bar_type.to_string())
 
-    cpdef void _build_bar(self, datetime at_time) except *:
-        cdef TestTimer timer = self._clock.get_timer(self.bar_type.to_string())
-        cdef TimeEvent event = timer.pop_next_event()
-        self._build_event(event)
-        self.next_close = timer.next_time
-
-    cpdef void _build_event(self, TimeEvent event) except *:
-        cdef Bar bar
-        try:
-            if self._builder.use_previous_close and self._builder.count == 0:
-                self._log.error(f"Cannot build {self.bar_type} (no prices received).")
-                return
-
-            bar = self._builder.build(event.timestamp)
-        except ValueError as ex:
-            # Bar was somehow malformed
-            self._log.exception(ex)
-            return
-
-        self._handle_bar(bar)
-
-    cdef timedelta _get_interval(self):
-        if self.bar_type.specification.structure == BarStructure.SECOND:
-            return timedelta(seconds=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.MINUTE:
-            return timedelta(minutes=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.HOUR:
-            return timedelta(hours=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.DAY:
-            return timedelta(days=(1 * self.bar_type.specification.step))
-        else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
-
-    cdef datetime _get_start_time(self):
+    cpdef datetime get_start_time(self):
         cdef datetime now = self._clock.time_now()
         if self.bar_type.specification.structure == BarStructure.SECOND:
             return datetime(
@@ -786,14 +752,47 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
 
-    cdef void _set_build_timer(self) except *:
+    cdef timedelta _get_interval(self):
+        if self.bar_type.specification.structure == BarStructure.SECOND:
+            return timedelta(seconds=(1 * self.bar_type.specification.step))
+        elif self.bar_type.specification.structure == BarStructure.MINUTE:
+            return timedelta(minutes=(1 * self.bar_type.specification.step))
+        elif self.bar_type.specification.structure == BarStructure.HOUR:
+            return timedelta(hours=(1 * self.bar_type.specification.step))
+        elif self.bar_type.specification.structure == BarStructure.DAY:
+            return timedelta(days=(1 * self.bar_type.specification.step))
+        else:
+            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
+
+    cpdef void _set_build_timer(self) except *:
         cdef str timer_name = self.bar_type.to_string()
 
         self._clock.set_timer(
             name=timer_name,
             interval=self._get_interval(),
-            start_time=self._get_start_time(),
+            start_time=self.get_start_time(),
             stop_time=None,
             handler=self._build_event)
 
         self._log.info(f"Started timer {timer_name}.")
+
+    cpdef void _build_bar(self, datetime at_time) except *:
+        cdef TestTimer timer = self._clock.get_timer(self.bar_type.to_string())
+        cdef TimeEvent event = timer.pop_next_event()
+        self._build_event(event)
+        self.next_close = timer.next_time
+
+    cpdef void _build_event(self, TimeEvent event) except *:
+        cdef Bar bar
+        try:
+            if self._builder.use_previous_close and not self._builder.initialized:
+                self._log.error(f"Cannot build {self.bar_type} (no prices received).")
+                return
+
+            bar = self._builder.build(event.timestamp)
+        except ValueError as ex:
+            # Bar was somehow malformed
+            self._log.exception(ex)
+            return
+
+        self._handle_bar(bar)

@@ -15,7 +15,7 @@
 
 """Define common trading model value objects."""
 
-import pandas as pd
+import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -370,13 +370,17 @@ cdef class Tick:
         Condition.valid_string(values, 'values')
 
         cdef list split_values = values.split(',', maxsplit=4)
+
+        cdef datetime timestamp = datetime.fromtimestamp(long(split_values[4]) / 1000)
+        timestamp = timestamp.astimezone(pytz.utc)  # Make tz-aware UTC
+
         return Tick(
             symbol,
             Price.from_string(split_values[0]),
             Price.from_string(split_values[1]),
             Volume.from_string(split_values[2]),
             Volume.from_string(split_values[3]),
-            pd.to_datetime(long(split_values[4]), utc=True))
+            timestamp)
 
     @staticmethod
     cdef Tick from_serializable_string(str value):
@@ -389,13 +393,17 @@ cdef class Tick:
         Condition.valid_string(value, 'value')
 
         cdef list split_values = value.split(',', maxsplit=5)
+
+        cdef datetime timestamp = datetime.fromtimestamp(long(split_values[5]) / 1000)
+        timestamp = timestamp.astimezone(pytz.utc)  # Make tz-aware UTC
+
         return Tick(
             Symbol.from_string(split_values[0]),
             Price.from_string(split_values[1]),
             Price.from_string(split_values[2]),
             Volume.from_string(split_values[3]),
             Volume.from_string(split_values[4]),
-            pd.to_datetime(long(split_values[5]), utc=True))
+            timestamp)
 
     @staticmethod
     def py_from_serializable_string_with_symbol(Symbol symbol, str values) -> Tick:
@@ -846,12 +854,15 @@ cdef class Bar:
 
         cdef list split_bar = value.split(',', maxsplit=5)
 
+        cdef datetime timestamp = datetime.fromtimestamp(long(split_bar[5]) / 1000)
+        timestamp = timestamp.astimezone(pytz.utc)  # Make tz-aware UTC
+
         return Bar(Price.from_string(split_bar[0]),
                    Price.from_string(split_bar[1]),
                    Price.from_string(split_bar[2]),
                    Price.from_string(split_bar[3]),
                    Volume.from_string(split_bar[4]),
-                   pd.to_datetime(long(split_bar[5]), utc=True))
+                   timestamp)
 
     @staticmethod
     def py_from_serializable_string(str value) -> Bar:

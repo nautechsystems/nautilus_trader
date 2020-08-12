@@ -230,7 +230,7 @@ cdef class LiveDataClient(DataClient):
             LIMIT: str(limit)
         }
 
-        cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
+        cdef str limit_string = 'None' if limit == 0 else f'(limit={limit})'
         self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
@@ -275,7 +275,7 @@ cdef class LiveDataClient(DataClient):
             LIMIT: str(limit),
         }
 
-        cdef str limit_string = '' if limit == 0 else f'(limit={limit})'
+        cdef str limit_string = 'None' if limit == 0 else f'(limit={limit})'
         self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
