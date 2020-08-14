@@ -19,7 +19,8 @@ from datetime import datetime, timedelta
 
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import OrderSide, MarketPosition, Currency
-from nautilus_trader.model.objects import Quantity, Price, Volume, Tick, Money
+from nautilus_trader.model.objects import Quantity, Price, Volume, Money
+from nautilus_trader.model.tick import Tick
 from nautilus_trader.model.identifiers import (
     IdTag,
     OrderId,

@@ -17,7 +17,9 @@ import pytz
 from datetime import datetime, timedelta
 
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Price, Tick, Bar, BarType, BarSpecification
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.bar import Bar, BarType, BarSpecification
 from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
 from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.indicators.atr import AverageTrueRange

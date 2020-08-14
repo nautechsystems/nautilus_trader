@@ -19,8 +19,10 @@ from datetime import datetime, timedelta
 from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.enums import BarStructure, PriceType, Currency, AccountType, OrderSide
-from nautilus_trader.model.objects import Quantity, Money, Price, Volume, Tick
-from nautilus_trader.model.objects import BarSpecification, BarType, Bar, ForexInstrument
+from nautilus_trader.model.objects import Quantity, Money, Price, Volume
+from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.bar import BarSpecification, BarType, Bar
+from nautilus_trader.model.instrument import ForexInstrument
 from nautilus_trader.model.identifiers import Venue, Symbol, IdTag, TraderId, AccountId
 from nautilus_trader.model.identifiers import StrategyId, OrderIdBroker, ExecutionId, PositionIdBroker
 from nautilus_trader.model.generators import PositionIdGenerator

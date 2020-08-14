@@ -19,11 +19,13 @@ import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.enums import Currency  # Do not remove
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal, Quantity, Price, Instrument
+from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class CSVTickDataLoader:

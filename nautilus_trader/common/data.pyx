@@ -23,7 +23,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
-from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport BarType, Bar
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter

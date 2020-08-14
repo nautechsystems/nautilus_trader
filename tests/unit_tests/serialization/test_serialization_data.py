@@ -15,7 +15,9 @@
 
 import unittest
 
-from nautilus_trader.model.objects import Price, Bar, Tick, Volume
+from nautilus_trader.model.objects import Price, Volume
+from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.bar import Bar
 from nautilus_trader.serialization.data import BsonDataSerializer, DataMapper
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.data import TestDataProvider

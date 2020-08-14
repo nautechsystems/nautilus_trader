@@ -15,7 +15,8 @@
 
 import unittest
 
-from nautilus_trader.model.objects import Price, Volume, Bar
+from nautilus_trader.model.objects import Price, Volume
+from nautilus_trader.model.bar import Bar
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 

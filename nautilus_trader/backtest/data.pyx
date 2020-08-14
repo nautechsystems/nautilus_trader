@@ -27,7 +27,10 @@ from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.functions cimport get_size_of, format_bytes
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.objects cimport Instrument, Price, Volume, Tick, BarType
+from nautilus_trader.model.objects cimport Price, Volume
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.common.clock cimport TimeEventHandler, TestClock
 from nautilus_trader.common.uuid cimport TestUUIDFactory

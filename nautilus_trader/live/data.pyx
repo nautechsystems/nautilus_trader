@@ -22,7 +22,7 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
-from nautilus_trader.model.objects cimport BarType
+from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.serialization.base cimport DictionarySerializer
@@ -482,9 +482,9 @@ cdef class LiveDataClient(DataClient):
     cpdef void _handle_sub_msg(self, str topic, bytes body) except *:
         # Handle the given subscription message published for the given topic
 
-        cdef tuple topic_parts = topic.partition(':')
-        cdef str data_type = topic_parts[0]
-        cdef str data_meta = topic_parts[2]
+        cdef tuple topic_pieces = topic.partition(':')
+        cdef str data_type = topic_pieces[0]
+        cdef str data_meta = topic_pieces[2]
         if data_type == 'Bar':
             self._handle_bar(self._cached_bar_types.get(data_meta), Utf8BarSerializer.deserialize(body))
         elif data_type == 'Instrument':
