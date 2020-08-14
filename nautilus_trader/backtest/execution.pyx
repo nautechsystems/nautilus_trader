@@ -318,7 +318,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     if tick.bid.le(order.price) or self._is_marginal_sell_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
-                            self._fill_order(order, order.price.subtract(self._slippages[order.symbol]))
+                            self._fill_order(order, order.price.sub(self._slippages[order.symbol]))
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
@@ -369,8 +369,8 @@ cdef class BacktestExecClient(ExecutionClient):
             exchange_rate=exchange_rate,
             currency=self.account_currency)
 
-        self.total_commissions = self.total_commissions.subtract(commission)
-        pnl = pnl.subtract(commission)
+        self.total_commissions = self.total_commissions.sub(commission)
+        pnl = pnl.sub(commission)
 
         cdef AccountStateEvent account_event
         if not self.frozen_account:
@@ -608,14 +608,14 @@ cdef class BacktestExecClient(ExecutionClient):
                                                   f'far from the market, ask={current_market.ask}')
                     return False  # Invalid price
             elif order.type == OrderType.LIMIT:
-                if order.price.gt(current_market.ask.subtract(self._min_limits[order.symbol])):
+                if order.price.gt(current_market.ask.sub(self._min_limits[order.symbol])):
                     if reject:
                         self._reject_order(order, f'BUY LIMIT order price of {order.price} is too '
                                                   f'far from the market, ask={current_market.ask}')
                     return False  # Invalid price
         elif order.side == OrderSide.SELL:
             if order.type in STOP_ORDER_TYPES:
-                if order.price.gt(current_market.bid.subtract(self._min_stops[order.symbol])):
+                if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
                     if reject:
                         self._reject_order(order, f'SELL STOP order price of {order.price} is too '
                                                   f'far from the market, bid={current_market.bid}')
@@ -755,7 +755,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 if self.fill_model.is_slipped():
                     self._fill_order(
                         order,
-                        current_market.bid.subtract(self._slippages[order.symbol]))
+                        current_market.bid.sub(self._slippages[order.symbol]))
                 else:
                     self._fill_order(order, current_market.bid)
                 return  # Market order filled - nothing further to process

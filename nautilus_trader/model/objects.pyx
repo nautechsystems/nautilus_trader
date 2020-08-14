@@ -86,7 +86,7 @@ cdef class Quantity(Decimal):
         """
         return Quantity(self._value + other._value, max(self.precision, other.precision))
 
-    cpdef Quantity subtract(self, Quantity other):
+    cpdef Quantity sub(self, Quantity other):
         """
         Return a new quantity by subtracting the quantity from this quantity.
 
@@ -155,7 +155,7 @@ cdef class Price(Decimal):
 
         return Price(self._value + other._value, self.precision)
 
-    cpdef Price subtract(self, Decimal other):
+    cpdef Price sub(self, Decimal other):
         """
         Return a new price by subtracting the decimal price from this price.
 
@@ -230,7 +230,7 @@ cdef class Volume(Decimal):
 
         return Volume(self._value + other._value, max(self.precision, other.precision))
 
-    cpdef Volume subtract(self, Volume other):
+    cpdef Volume sub(self, Volume other):
         """
         Return a new volume by subtracting the decimal from this volume.
 
@@ -284,7 +284,7 @@ cdef class Money(Decimal):
 
         return Money(self._value + other._value, self.currency)
 
-    cpdef Money subtract(self, Money other):
+    cpdef Money sub(self, Money other):
         """
         Return new money by subtracting the given money from this money.
 
