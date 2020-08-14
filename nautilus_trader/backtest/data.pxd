@@ -17,7 +17,8 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.objects cimport Tick, Instrument
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.common.data cimport DataClient
 

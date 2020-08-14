@@ -16,7 +16,8 @@
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Quantity, Price, Tick
+from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport PositionId, ExecutionId
 

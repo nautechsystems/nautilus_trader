@@ -18,7 +18,8 @@ import unittest
 from datetime import datetime
 
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Price, Volume, Tick
+from nautilus_trader.model.objects import Price, Volume
+from nautilus_trader.model.tick import Tick
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.data import DataClient

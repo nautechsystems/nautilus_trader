@@ -23,7 +23,10 @@ from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport Bar, BarType
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account

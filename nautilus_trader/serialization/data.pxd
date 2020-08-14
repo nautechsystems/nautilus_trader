@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Tick, Bar, BarType
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport Bar, BarType
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 
 

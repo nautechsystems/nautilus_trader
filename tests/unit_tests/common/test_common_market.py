@@ -19,7 +19,9 @@ from pandas import Timestamp
 from datetime import datetime, timedelta
 
 from nautilus_trader.model.enums import PriceType, BarStructure
-from nautilus_trader.model.objects import Price, Volume, Tick, Bar, BarSpecification, BarType
+from nautilus_trader.model.objects import Price, Volume
+from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.bar import Bar, BarSpecification, BarType
 from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater
 from nautilus_trader.common.market import BarBuilder, TickBarAggregator, TimeBarAggregator
 from nautilus_trader.common.clock import TestClock

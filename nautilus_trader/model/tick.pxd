@@ -13,17 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
+from nautilus_trader.model.objects cimport Price, Volume
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class CSVTickDataLoader:
-    pass
+cdef class Tick:
+    cdef readonly Symbol symbol
+    cdef readonly Price bid
+    cdef readonly Price ask
+    cdef readonly Volume bid_size
+    cdef readonly Volume ask_size
+    cdef readonly datetime timestamp
 
+    @staticmethod
+    cdef Tick from_serializable_string_with_symbol(Symbol symbol, str values)
 
-cdef class CSVBarDataLoader:
-    pass
+    @staticmethod
+    cdef Tick from_serializable_string(str value)
 
+    @staticmethod
+    cdef Tick _parse(Symbol symbol, list pieces)
 
-cdef class InstrumentLoader:
-    cpdef Instrument default_fx_ccy(self, Symbol symbol)
+    cpdef bint equals(self, Tick other)
+    cpdef str to_string(self)
+    cpdef str to_serializable_string(self)

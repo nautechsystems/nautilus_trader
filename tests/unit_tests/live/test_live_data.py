@@ -17,7 +17,9 @@ import time
 import unittest
 
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.objects import Price, Volume, Tick, Bar
+from nautilus_trader.model.objects import Price, Volume
+from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.identifiers import Venue, TraderId
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.identifiers import ServerId

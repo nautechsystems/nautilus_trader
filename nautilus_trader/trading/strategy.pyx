@@ -31,7 +31,10 @@ from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, Ord
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport BarType, Bar
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory

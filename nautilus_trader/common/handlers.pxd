@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport BarType, Bar
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.core.message cimport Event
 
 # cdef void (*_handler)(Tick tick)

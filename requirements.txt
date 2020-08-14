@@ -1,5 +1,5 @@
 cython>=0.29.21
-numpy>=1.18.5
+numpy>=1.19.1
 scipy>=1.5.0
 pandas>=1.0.5
 redis>=3.4.1
@@ -11,4 +11,3 @@ msgpack>=1.0.0
 lz4>=3.1.0
 matplotlib>=2.2.2
 flake8>=3.8.3
-pytest>=5.4.3

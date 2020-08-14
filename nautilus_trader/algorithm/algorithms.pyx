@@ -16,7 +16,8 @@
 from collections import deque
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Tick, BarType, Bar
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport BarType, Bar
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order cimport Order
 

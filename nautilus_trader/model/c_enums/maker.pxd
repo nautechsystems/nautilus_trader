@@ -13,17 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport Instrument
+
+cpdef enum Maker:
+    UNDEFINED = 0,  # Invalid value
+    BUYER = 1,
+    SELLER = 2
 
 
-cdef class CSVTickDataLoader:
-    pass
+cdef inline str maker_to_string(int value):
+    if value == 1:
+        return 'BUYER'
+    elif value == 2:
+        return 'SELLER'
+    else:
+        return 'UNDEFINED'
 
 
-cdef class CSVBarDataLoader:
-    pass
-
-
-cdef class InstrumentLoader:
-    cpdef Instrument default_fx_ccy(self, Symbol symbol)
+cdef inline Maker maker_from_string(str value):
+    if value == 'BUY':
+        return Maker.BUYER
+    elif value == 'SELL':
+        return Maker.SELLER
+    else:
+        return Maker.UNDEFINED

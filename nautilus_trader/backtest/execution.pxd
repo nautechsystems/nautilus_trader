@@ -19,7 +19,8 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.objects cimport Price, Tick, Money, Quantity
+from nautilus_trader.model.objects cimport Price, Money, Quantity
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.identifiers cimport OrderId

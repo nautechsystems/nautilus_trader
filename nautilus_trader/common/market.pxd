@@ -21,7 +21,10 @@ from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.objects cimport Price, Volume, Tick, BarType, BarSpecification, Bar, Instrument
+from nautilus_trader.model.objects cimport Price, Volume
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport BarType, BarSpecification, Bar
+from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class TickDataWrangler:

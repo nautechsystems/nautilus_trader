@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport Bar, BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order cimport Order
 

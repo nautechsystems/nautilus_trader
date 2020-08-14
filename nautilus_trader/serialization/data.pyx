@@ -18,7 +18,10 @@ from bson.raw_bson import RawBSONDocument
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal, Quantity, Price, Tick, Bar, Instrument, ForexInstrument
+from nautilus_trader.model.objects cimport Decimal, Quantity, Price
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.instrument cimport Instrument, ForexInstrument
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_to_string, security_type_from_string
 from nautilus_trader.serialization.constants cimport *
