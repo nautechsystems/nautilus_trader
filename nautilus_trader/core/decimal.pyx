@@ -202,7 +202,7 @@ cdef class Decimal:
         # direct access to protected member ok here
         return self._value >= other._value
 
-    cpdef Decimal add_decimal(self, Decimal other, bint keep_precision=False):
+    cpdef Decimal add_as_decimal(self, Decimal other, bint keep_precision=False):
         """
         Return a new decimal by adding the given decimal to this decimal.
 
@@ -220,7 +220,7 @@ cdef class Decimal:
             # direct access to protected member ok here
             return Decimal(self._value + other._value, max(self.precision, other.precision))
 
-    cpdef Decimal subtract_decimal(self, Decimal other, bint keep_precision=False):
+    cpdef Decimal sub_as_decimal(self, Decimal other, bint keep_precision=False):
         """
         Return a new decimal by subtracting the given decimal from this decimal.
 

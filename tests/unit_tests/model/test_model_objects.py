@@ -188,7 +188,7 @@ class ObjectTests(unittest.TestCase):
         result2 = Price(1.0000, 5).add(Price(1.0000, 5))
 
         result3 = Price(3.0000, 5) - 1.0000
-        result4 = Price(3.0000, 5).subtract(Price(1.0000, 5))
+        result4 = Price(3.0000, 5).sub(Price(1.0000, 5))
 
         result5 = Price(1.0000, 5) / 1.0000
         result6 = Price(3.0000, 5) * 1.0000
@@ -215,7 +215,7 @@ class ObjectTests(unittest.TestCase):
         price2 = Price(1.00010, 5)
 
         # Act
-        result = price1.add_decimal(price2)
+        result = price1.add_as_decimal(price2)
 
         # Assert
         self.assertEqual(Price(2.00010, 5), result)
@@ -226,7 +226,7 @@ class ObjectTests(unittest.TestCase):
         price2 = Price(1.00010, 5)
 
         # Act
-        result = price1.subtract_decimal(price2)
+        result = price1.sub_as_decimal(price2)
 
         # Assert
         self.assertEqual(Price(0.99990, 5), result)
@@ -322,7 +322,7 @@ class ObjectTests(unittest.TestCase):
         result3 = Money(1.00, Currency.USD) + 1
 
         result4 = Money(3.00, Currency.USD) - 1.00
-        result5 = Money(3.00, Currency.USD).subtract(Money(1.00, Currency.USD))
+        result5 = Money(3.00, Currency.USD).sub(Money(1.00, Currency.USD))
         result6 = Money(3.00, Currency.USD) - 1
 
         result7 = Money(1.00, Currency.USD) / 2.0

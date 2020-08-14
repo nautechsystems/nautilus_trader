@@ -87,7 +87,7 @@ cdef class PerformanceAnalyzer:
             return  # No transaction to handle
 
         # Calculate transaction data
-        cdef Money pnl = event.cash_balance.subtract(self._account_capital)
+        cdef Money pnl = event.cash_balance.sub(self._account_capital)
         self._account_capital = event.cash_balance
 
         # Set index if it does not exist
@@ -192,7 +192,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        return self._account_capital.subtract(self._account_starting_capital).as_double()
+        return self._account_capital.sub(self._account_starting_capital).as_double()
 
     cpdef double total_pnl_percentage(self):
         """
