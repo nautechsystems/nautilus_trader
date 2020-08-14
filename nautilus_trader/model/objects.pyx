@@ -369,15 +369,7 @@ cdef class Tick:
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
 
-        cdef list split_values = values.split(',', maxsplit=4)
-
-        return Tick(
-            symbol,
-            Price.from_string(split_values[0]),
-            Price.from_string(split_values[1]),
-            Volume.from_string(split_values[2]),
-            Volume.from_string(split_values[3]),
-            datetime.fromtimestamp(long(split_values[4]) / 1000, pytz.utc))
+        return Tick._parse(symbol, values.split(',', maxsplit=4))
 
     @staticmethod
     cdef Tick from_serializable_string(str value):
@@ -389,15 +381,19 @@ cdef class Tick:
         """
         Condition.valid_string(value, 'value')
 
-        cdef list split_values = value.split(',', maxsplit=5)
+        cdef list splits = value.split(',', maxsplit=1)
 
+        return Tick._parse(Symbol.from_string(splits[0]), splits[1:])
+
+    @staticmethod
+    cdef Tick _parse(Symbol symbol, list splits):
         return Tick(
-            Symbol.from_string(split_values[0]),
-            Price.from_string(split_values[1]),
-            Price.from_string(split_values[2]),
-            Volume.from_string(split_values[3]),
-            Volume.from_string(split_values[4]),
-            datetime.fromtimestamp(long(split_values[5]) / 1000, pytz.utc))
+            symbol,
+            Price.from_string(splits[0]),
+            Price.from_string(splits[1]),
+            Volume.from_string(splits[2]),
+            Volume.from_string(splits[3]),
+            datetime.fromtimestamp(long(splits[4]) / 1000, pytz.utc))
 
     @staticmethod
     def py_from_serializable_string_with_symbol(Symbol symbol, str values) -> Tick:
@@ -423,6 +419,20 @@ cdef class Tick:
         :return Tick.
         """
         return Tick.from_serializable_string(values)
+
+    cpdef bint equals(self, Tick other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return (self.symbol.equals(other.symbol)
+                and self.bid.equals(other.bid)            # noqa (W503)
+                and self.ask.equals(other.ask)            # noqa (W503)
+                and self.bid_size.equals(other.bid_size)  # noqa (W503)
+                and self.ask_size.equals(other.ask_size)  # noqa (W503)
+                and self.timestamp == other.timestamp)    # noqa (W503)
 
     cpdef str to_string(self):
         """
@@ -457,7 +467,7 @@ cdef class Tick:
         :param other: The other object.
         :return bool.
         """
-        return self.timestamp == other.timestamp
+        return self.equals(other)
 
     def __ne__(self, Tick other) -> bool:
         """
@@ -467,47 +477,7 @@ cdef class Tick:
         :param other: The other object.
         :return bool.
         """
-        return self.timestamp != other.timestamp
-
-    def __lt__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-        Note: The equality is based on the ticks timestamp only.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp < other.timestamp
-
-    def __le__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-        Note: The equality is based on the ticks timestamp only.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp <= other.timestamp
-
-    def __gt__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-        Note: The equality is based on the ticks timestamp only.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp > other.timestamp
-
-    def __ge__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-        Note: The equality is based on the ticks timestamp only.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.timestamp >= other.timestamp
+        return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
@@ -867,6 +837,20 @@ cdef class Bar:
         """
         return Bar.from_serializable_string(value)
 
+    cpdef bint equals(self, Bar other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return (self.open.equals(other.open)            # noqa (W503)
+                and self.high.equals(other.high)        # noqa (W503)
+                and self.low.equals(other.low)          # noqa (W503)
+                and self.close.equals(other.close)      # noqa (W503)
+                and self.volume.equals(other.volume)    # noqa (W503)
+                and self.timestamp == other.timestamp)  # noqa (W503)
+
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -901,7 +885,7 @@ cdef class Bar:
         :param other: The other object.
         :return bool.
         """
-        return self.timestamp == other.timestamp
+        return self.equals(other)
 
     def __ne__(self, Bar other) -> bool:
         """
@@ -911,7 +895,7 @@ cdef class Bar:
         :param other: The other object.
         :return bool.
         """
-        return not self.__eq__(other)
+        return not self.equals(other)
 
     def __hash__(self) -> int:
         """"

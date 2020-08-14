@@ -78,6 +78,11 @@ cdef class Tick:
 
     @staticmethod
     cdef Tick from_serializable_string(str value)
+
+    @staticmethod
+    cdef Tick _parse(Symbol symbol, list splits)
+
+    cpdef bint equals(self, Tick other)
     cpdef str to_string(self)
     cpdef str to_serializable_string(self)
 
@@ -118,6 +123,7 @@ cdef class Bar:
 
     @staticmethod
     cdef Bar from_serializable_string(str value)
+    cpdef bint equals(self, Bar other)
     cpdef str to_string(self)
     cpdef str to_serializable_string(self)
 
