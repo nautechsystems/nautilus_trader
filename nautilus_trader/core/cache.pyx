@@ -36,7 +36,7 @@ cdef class ObjectCache:
         the parsed key.
 
         :param key: The key to check.
-        
+
         :return object.
         """
         Condition.valid_string(key, 'key')
@@ -51,7 +51,7 @@ cdef class ObjectCache:
     cpdef list keys(self):
         """
         Return a list of the keys held in the cache.
-        
+
         :return: List[str].
         """
         return list(self._cache.keys())

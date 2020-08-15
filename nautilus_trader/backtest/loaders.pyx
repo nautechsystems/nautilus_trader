@@ -78,7 +78,7 @@ cdef class InstrumentLoader:
     cpdef Instrument default_fx_ccy(self, Symbol symbol):
         """
         Return a default FX currency pair instrument from the given arguments.
-        
+
         :param symbol: The currency pair symbol.
         :raises ValueError: If the symbol.code length is not in range [6, 7].
         """

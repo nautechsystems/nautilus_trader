@@ -251,7 +251,7 @@ cdef class MessageClient(ClientNode):
     cpdef void send_request(self, Request request) except *:
         """
         Send the given request.
-        
+
         Parameters
         ----------
         request : Request
@@ -263,7 +263,7 @@ cdef class MessageClient(ClientNode):
         """
         Send the given string message. Note that a reply will not be awaited as
         there is no correlation identifier.
-        
+
         Parameters
         ----------
         message : str
@@ -470,7 +470,7 @@ cdef class MessageSubscriber(ClientNode):
     cpdef void subscribe(self, str topic) except *:
         """
         Subscribe the client to the given topic.
-        
+
         :param topic: The topic to subscribe to.
         """
         Condition.valid_string(topic, 'topic')
@@ -480,7 +480,7 @@ cdef class MessageSubscriber(ClientNode):
     cpdef void unsubscribe(self, str topic) except *:
         """
         Unsubscribe the client from the given topic.
-        
+
         :param topic: The topic to unsubscribe from.
         """
         Condition.valid_string(topic, 'topic')

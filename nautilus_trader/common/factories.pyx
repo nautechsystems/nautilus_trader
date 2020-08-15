@@ -62,7 +62,7 @@ cdef class OrderFactory:
     cpdef int count(self):
         """
         System Method: Return the internal order_id generator count.
-        
+
         :return: int.
         """
         return self._id_generator.count
@@ -126,7 +126,7 @@ cdef class OrderFactory:
         """
         Returns a limit order.
         Note: If the time in force is GTD then a valid expire time must be given.
-        
+
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -166,7 +166,7 @@ cdef class OrderFactory:
         """
         Returns a stop-market order.
         Note: If the time in force is GTD then a valid expire time must be given.
-        
+
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -206,7 +206,7 @@ cdef class OrderFactory:
         """
         Return a stop-limit order.
         Note: If the time in force is GTD then a valid expire time must be given.
-    
+
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -246,7 +246,7 @@ cdef class OrderFactory:
         """
         Return a market-if-touched order.
         Note: If the time in force is GTD then a valid expire time must be given.
-    
+
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).

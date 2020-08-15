@@ -148,7 +148,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef dict _build_current_bid_rates(self):
         """
         Return the current currency bid rates in the markets.
-        
+
         :return: Dict[Symbol, double].
         """
         cdef Symbol symbol
@@ -158,7 +158,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef dict _build_current_ask_rates(self):
         """
         Return the current currency ask rates in the markets.
-        
+
         :return: Dict[Symbol, double].
         """
         cdef Symbol symbol
@@ -245,7 +245,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void change_fill_model(self, FillModel fill_model) except *:
         """
         Set the fill model to be the given model.
-        
+
         :param fill_model: The fill model to set.
         """
         Condition.not_none(fill_model, 'fill_model')
@@ -256,7 +256,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Process the execution client with the given tick. Market dynamics are
         simulated against working orders.
-        
+
         :param tick: The tick data to process with.
         """
         Condition.not_none(tick, 'tick')

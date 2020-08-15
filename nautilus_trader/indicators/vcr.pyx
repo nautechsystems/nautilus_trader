@@ -94,7 +94,7 @@ cdef class VolatilityCompressionRatio(Indicator):
     cpdef void update_mid(self, double close) except *:
         """
         Update the indicator with the given value.
-        
+
         :param close: The close price.
         """
         if self.check_inputs:

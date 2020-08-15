@@ -48,7 +48,7 @@ cdef class TestUUIDFactory(UUIDFactory):
     cpdef UUID generate(self):
         """
         Return the single test UUID instance.
-        
+
         :return UUID.
         """
         return self._uuid

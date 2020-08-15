@@ -82,10 +82,10 @@ class TradeStrategyTests(unittest.TestCase):
 
         # noinspection PyPep8Naming
         # USDJPY is clear
-        USDJPY = TestStubs.instrument_usdjpy()
+        usdjpy = TestStubs.instrument_usdjpy()
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
-            instruments={USDJPY.symbol: USDJPY},
+            instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=self.clock,
@@ -95,7 +95,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.handle_event(TestStubs.account_event())
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(USDJPY.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 
         print('\n')
 

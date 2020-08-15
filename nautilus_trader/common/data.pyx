@@ -159,7 +159,7 @@ cdef class DataClient:
     cpdef datetime time_now(self):
         """
         Return the current time of the data client.
-        
+
         :return datetime.
         """
         return self._clock.time_now()
@@ -167,7 +167,7 @@ cdef class DataClient:
     cpdef list subscribed_ticks(self):
         """
         Return the list of tick symbols subscribed to.
-        
+
         :return List[Symbol].
         """
         return list(self._tick_handlers.keys())
@@ -175,7 +175,7 @@ cdef class DataClient:
     cpdef list subscribed_bars(self):
         """
         Return the list of bar types subscribed to.
-        
+
         :return List[BarType].
         """
         return list(self._bar_handlers.keys())
@@ -183,7 +183,7 @@ cdef class DataClient:
     cpdef list subscribed_instruments(self):
         """
         Return the list of instruments subscribed to.
-        
+
         :return List[Symbol].
         """
         return list(self._instrument_handlers.keys())
@@ -191,7 +191,7 @@ cdef class DataClient:
     cpdef list instrument_symbols(self):
         """
         Return all instrument symbols held by the data client.
-        
+
         :return List[Symbol].
         """
         return list(self._instruments.keys())
@@ -211,7 +211,7 @@ cdef class DataClient:
     cpdef dict get_instruments(self):
         """
         Return a dictionary of all instruments for the given venue.
-        
+
         :return Dict[Symbol, Instrument].
         """
         return {instrument.symbol: instrument for instrument in self._instruments}
@@ -231,7 +231,7 @@ cdef class DataClient:
     cpdef bint has_ticks(self, TickType tick_type):
         """
         Return a value indicating whether the data client has ticks for the given symbol.
-        
+
         :param tick_type: The type for the ticks.
         :return bool.
         """
@@ -242,7 +242,7 @@ cdef class DataClient:
     cpdef double spread(self, Symbol symbol):
         """
         Return the current spread for the given symbol.
-        
+
         :param symbol: The symbol for the spread to get.
         :return float.
         :raises ValueError: If the data clients ticks does not contain the symbol.
@@ -255,7 +255,7 @@ cdef class DataClient:
     cpdef double spread_average(self, Symbol symbol):
         """
         Return the average spread of the ticks from the given symbol.
-        
+
         :param symbol: The symbol for the average spread to get.
         :return float.
         :raises ValueError: If the data clients ticks does not contain the symbol.
@@ -302,7 +302,7 @@ cdef class DataClient:
         Set the value of the use_previous_close flag. Determines whether bar
         aggregators will use the close of the previous bar as the open of the
         next bar.
-        
+
         :param value: The value to set.
         """
         self.use_previous_close = value
@@ -611,7 +611,7 @@ cdef class BulkTickBarBuilder:
         """
         Receives the bulk list of ticks and builds aggregated tick
         bars. Then sends the bar type and bars list on to the registered callback.
-        
+
         :param ticks: The bulk ticks for aggregation into tick bars.
         """
         cdef int i
@@ -643,7 +643,7 @@ cdef class BulkTimeBarUpdater:
     cpdef void receive(self, list ticks) except *:
         """
         Receives the bulk list of ticks and updates the aggregator.
-        
+
         :param ticks: The bulk ticks for updating the aggregator.
         """
         cdef int i

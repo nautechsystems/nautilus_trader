@@ -55,7 +55,7 @@ cdef class MovingAverage(Indicator):
     cdef void _update(self, double point) except *:
         """
         Update the moving average indicator with the given point value.
-        
+
         :param point: The input point value.
         """
         self.count += 1
