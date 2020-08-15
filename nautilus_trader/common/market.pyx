@@ -357,7 +357,7 @@ cdef class IndicatorUpdater:
     cpdef void update_tick(self, QuoteTick tick) except *:
         """
         Update the indicator with the given tick.
-        
+
         :param tick: The tick to update with.
         """
         Condition.not_none(tick, 'tick')
@@ -403,7 +403,7 @@ cdef class IndicatorUpdater:
     cpdef dict build_features_ticks(self, list ticks):
         """
         Return a dictionary of output features from the given bars data.
-        
+
         :return Dict[str, float].
         """
         Condition.not_none(ticks, 'ticks')
@@ -424,7 +424,7 @@ cdef class IndicatorUpdater:
     cpdef dict build_features_bars(self, list bars):
         """
         Return a dictionary of output features from the given bars data.
-        
+
         :return Dict[str, float].
         """
         Condition.not_none(bars, 'bars')

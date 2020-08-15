@@ -95,7 +95,7 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
     cpdef void update(self, Tick tick) except *:
         """
         Update the algorithm with the given tick.
-        
+
         :param tick: The tick to update with.
         """
         self._calculate(tick)
@@ -144,7 +144,7 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
     cpdef void update(self, Bar bar) except *:
         """
         Update the algorithm with the given tick.
-        
+
         :param bar: The bar to update with.
         """
         self._calculate(bar)
@@ -152,7 +152,7 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
     cpdef TrailingStopSignal calculate_buy(self, Bar bar):
         """
         Run the trailing stop algorithm for buy order types.
-        
+
         :param bar: The bar to run the algorithm with.
         """
         # Raise exception if not overridden in implementation
@@ -196,7 +196,7 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
     cpdef TrailingStopSignal calculate_buy(self, Bar bar):
         """
         Run the trailing stop algorithm for buy order types.
-        
+
         :param bar: The bar to run the algorithm with.
         """
         self._bars.append(bar)

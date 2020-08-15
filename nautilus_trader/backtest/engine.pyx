@@ -295,7 +295,7 @@ cdef class BacktestEngine:
     cpdef list get_log_store(self):
         """
         Return the store of log message strings for the test logger.
-        
+
         :return List[str].
         """
         return self.test_logger.get_log_store()
@@ -320,9 +320,9 @@ cdef class BacktestEngine:
     cpdef void reset(self) except *:
         """
         Reset the backtest engine.
-        
+
         The following components are reset;
-        
+
         - DataClient
         - ExecutionEngine
         - ExecutionClient

@@ -323,7 +323,7 @@ cdef class LiveDataClient(DataClient):
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
         Request all instrument for given venue.
-        
+
         :param venue: The venue for the request.
         :param callback: The callback for the response.
         :raises ValueError: If the callback is not of type callable.

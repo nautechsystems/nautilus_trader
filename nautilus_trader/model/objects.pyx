@@ -50,7 +50,7 @@ cdef class Quantity(Decimal):
     cdef Quantity zero():
         """
         Return a quantity of zero.
-        
+
         :return Money.
         """
         return _QUANTITY_ZERO
@@ -59,7 +59,7 @@ cdef class Quantity(Decimal):
     cdef Quantity one():
         """
         Return a quantity with a value of 1.
-        
+
         :return Quantity.
         """
         return _QUANTITY_ONE
@@ -191,7 +191,7 @@ cdef class Money(Decimal):
     cdef Money from_string(str value, Currency currency):
         """
         Return money parsed from the given string value.
-        
+
         :param value: The string value to parse.
         :param currency: The currency for the money.
         :return Money.

@@ -154,7 +154,7 @@ cdef class Logger:
     cpdef void change_log_file_name(self, str name) except *:
         """
         Change the log file name.
-        
+
         :param name: The new name of the log file.
         """
         Condition.valid_string(name, 'name')
@@ -167,7 +167,7 @@ cdef class Logger:
     cpdef void log(self, LogMessage message) except *:
         """
         Log the given log message.
-        
+
         :param message: The log message to log.
         """
         # Raise exception if not overridden in implementation
@@ -176,7 +176,7 @@ cdef class Logger:
     cpdef list get_log_store(self):
         """
         Return the log store of message strings.
-        
+
         :return List[str].
         """
         return self._log_store
@@ -273,7 +273,7 @@ cdef class TestLogger(Logger):
     cpdef void log(self, LogMessage message) except *:
         """
         Log the given log message.
-        
+
         :param message: The log message to log.
         """
         Condition.not_none(message, 'message')
@@ -311,7 +311,7 @@ cdef class LoggerAdapter:
     cpdef Logger get_logger(self):
         """
         System method. Return the encapsulated logger
-        
+
         :return logging.logger.
         """
         return self._logger
@@ -319,7 +319,7 @@ cdef class LoggerAdapter:
     cpdef void verbose(self, str message) except *:
         """
         Log the given verbose message with the logger.
-        
+
         :param message: The message to log.
         """
         Condition.not_none(message, 'message')
@@ -379,7 +379,7 @@ cdef class LoggerAdapter:
     cpdef void exception(self, ex) except *:
         """
         Log the given exception including stack trace information.
-        
+
         :param ex: The exception to log.
         """
         Condition.not_none(ex, 'ex')

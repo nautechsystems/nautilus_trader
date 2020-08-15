@@ -47,7 +47,7 @@ cdef class ForexSessionFilter:
     cpdef datetime local_from_utc(self, session: ForexSession, datetime time_now):
         """
         Return the local datetime from the given session and time_now (UTC).
-        
+
         Parameters
         ----------
         session : ForexSession
@@ -59,12 +59,12 @@ cdef class ForexSessionFilter:
         -------
         datetime
             The converted local datetime.
-        
+
         Raises
         ------
         ValueError
             If time_now is not tz aware UTC.
-        
+
         """
         Condition.type(session, ForexSession, 'session')
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
@@ -84,15 +84,15 @@ cdef class ForexSessionFilter:
     cpdef datetime next_start(self, session: ForexSession, datetime time_now):
         """
         Returns the next session start.
-        
+
         All FX sessions run Monday to Friday local time.
-        
+
         Sydney Session    0700-1600 'Australia/Sydney'
-        
+
         Tokyo Session     0900-1800 'Asia/Tokyo'
-        
+
         London Session    0800-1600 'Europe/London'
-        
+
         New York Session  0800-1700 'America/New_York'
 
         Parameters
@@ -110,7 +110,7 @@ cdef class ForexSessionFilter:
         ------
         ValueError
             If time_now is not tz aware UTC.
-            
+
         """
         Condition.type(session, ForexSession, 'session')
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
@@ -142,17 +142,17 @@ cdef class ForexSessionFilter:
     cpdef datetime prev_start(self, session: ForexSession, datetime time_now):
         """
         Returns the previous session start.
-        
+
         All FX sessions run Monday to Friday local time.
-        
+
         Sydney Session    0700-1600 'Australia/Sydney'
-        
+
         Tokyo Session     0900-1800 'Asia/Tokyo'
-        
+
         London Session    0800-1600 'Europe/London'
-        
+
         New York Session  0800-1700 'America/New_York'
-        
+
         Parameters
         ----------
         session : ForexSession
@@ -168,7 +168,7 @@ cdef class ForexSessionFilter:
         ------
         ValueError
             If time_now is not tz aware UTC.
-            
+
         """
         Condition.type(session, ForexSession, 'session')
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
@@ -200,17 +200,17 @@ cdef class ForexSessionFilter:
     cpdef datetime next_end(self, session: ForexSession, datetime time_now):
         """
         Returns the next session end.
-        
+
         All FX sessions run Monday to Friday local time.
-        
+
         Sydney Session    0700-1600 'Australia/Sydney'
-        
+
         Tokyo Session     0900-1800 'Asia/Tokyo'
-        
+
         London Session    0800-1600 'Europe/London'
-        
+
         New York Session  0800-1700 'America/New_York'
-        
+
         Parameters
         ----------
         session : ForexSession
@@ -221,12 +221,12 @@ cdef class ForexSessionFilter:
         Returns
         -------
         datetime
-        
+
         Raises
         ------
         ValueError
             If time_now is not tz aware UTC.
-            
+
         """
         Condition.type(session, ForexSession, 'session')
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
@@ -258,17 +258,17 @@ cdef class ForexSessionFilter:
     cpdef datetime prev_end(self, session: ForexSession, datetime time_now):
         """
         Returns the previous sessions end.
-        
+
         All FX sessions run Monday to Friday local time.
-        
+
         Sydney Session    0700-1600 'Australia/Sydney'
-        
+
         Tokyo Session     0900-1800 'Asia/Tokyo'
-        
+
         London Session    0800-1600 'Europe/London'
-        
+
         New York Session  0800-1700 'America/New_York'
-        
+
         Parameters
         ----------
         session : ForexSession
@@ -279,12 +279,12 @@ cdef class ForexSessionFilter:
         Returns
         -------
         datetime
-        
+
         Raises
         ------
         ValueError
             If time_now is not tz aware UTC.
-            
+
         """
         Condition.type(session, ForexSession, 'session')
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
@@ -393,7 +393,7 @@ cdef class EconomicNewsEventFilter:
         """
         Returns the next news event matching the filter conditions.
         Will return None if no news events match the filter conditions.
-        
+
         Parameters
         ----------
         time_now : datetime
@@ -411,7 +411,7 @@ cdef class EconomicNewsEventFilter:
             The time_now > self.unfiltered_data_end
         ValueError
             If time_now is not tz aware UTC.
-            
+
         """
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 
@@ -436,7 +436,7 @@ cdef class EconomicNewsEventFilter:
         """
         Returns the previous news event matching the initial filter conditions.
         Will return None if no news events match the filter conditions.
-        
+
         Parameters
         ----------
         time_now : datetime
@@ -454,7 +454,7 @@ cdef class EconomicNewsEventFilter:
             The time_now > self.unfiltered_data_end
         ValueError
             If time_now is not tz aware UTC.
-            
+
         """
         Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
 

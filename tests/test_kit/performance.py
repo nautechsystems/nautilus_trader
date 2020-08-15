@@ -33,7 +33,7 @@ class PerformanceHarness:
         :param runs: The number of runs for the test.
         :param iterations: The number of call iterations per run.
         :param print_output: If the output should be printed to the console.
-        :return float.
+        :return: float.
         """
         results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
         minimum = min(results)

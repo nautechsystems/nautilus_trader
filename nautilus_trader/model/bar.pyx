@@ -57,7 +57,7 @@ cdef class BarSpecification:
         """
         Return a bar specification parsed from the given string.
         Note: String format example is '200-TICK-MID'.
-        
+
         :param value: The bar specification string to parse.
         :return BarSpecification.
         """
@@ -86,7 +86,7 @@ cdef class BarSpecification:
     cdef str structure_string(self):
         """
         Return the bar structure as a string
-        
+
         :return str.
         """
         return bar_structure_to_string(self.structure)
@@ -94,7 +94,7 @@ cdef class BarSpecification:
     cdef str price_type_string(self):
         """
         Return the price type as a string.
-        
+
         :return str.
         """
         return price_type_to_string(self.price_type)
@@ -215,7 +215,7 @@ cdef class BarType:
     cdef str structure_string(self):
         """
         Return the bar structure as a string
-        
+
         :return str.
         """
         return self.spec.structure_string()
@@ -223,7 +223,7 @@ cdef class BarType:
     cdef str price_type_string(self):
         """
         Return the price type as a string.
-        
+
         :return str.
         """
         return self.spec.price_type_string()

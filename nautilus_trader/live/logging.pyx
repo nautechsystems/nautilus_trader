@@ -45,7 +45,7 @@ cdef class LogStore:
     cpdef void store(self, LogMessage message):
         """
         Store the given log message.
-        
+
         :param message: The log message to store.
         """
         Condition.not_none(message, 'message')

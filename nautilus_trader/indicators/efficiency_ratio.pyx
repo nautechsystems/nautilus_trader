@@ -46,7 +46,7 @@ cdef class EfficiencyRatio(Indicator):
     cpdef void update(self, double price) except *:
         """
         Update the indicator with the given price value.
-        
+
         :param price: The price (> 0).
         """
         if self.check_inputs:

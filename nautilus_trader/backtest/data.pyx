@@ -68,7 +68,7 @@ cdef class BacktestDataContainer:
     cpdef void add_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
         """
         Add the tick data to the container.
-        
+
         :param symbol: The symbol for the tick data.
         :param data: The tick data to add.
         :raises TypeError: If the data is a type other than DataFrame.
@@ -84,7 +84,7 @@ cdef class BacktestDataContainer:
     cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data: pd.DataFrame) except *:
         """
         Add the bar data to the container.
-        
+
         :param symbol: The symbol for the bar data.
         :param structure: The bar structure of the data.
         :param price_type: The price type of the data.
@@ -114,7 +114,7 @@ cdef class BacktestDataContainer:
     cpdef void check_integrity(self) except *:
         """
         Check the integrity of the data inside the container.
-        
+
         :raises: AssertionFailed: If the any integrity check fails.
         """
         # Check there is the needed instrument for each data symbol
@@ -325,7 +325,7 @@ cdef class BacktestDataClient(DataClient):
     cpdef void process_tick(self, QuoteTick tick) except *:
         """
         Process the given tick with the data client.
-        
+
         :param tick: The tick to process.
         """
         Condition.not_none(tick, 'tick')
@@ -405,7 +405,7 @@ cdef class BacktestDataClient(DataClient):
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
         Request all instrument for given venue.
-        
+
         :param venue: The venue for the request.
         :param callback: The callback for the response.
         :raises TypeError: If the callback is not of type callable.
