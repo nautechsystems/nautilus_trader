@@ -377,7 +377,7 @@ cdef class Clock:
     cpdef datetime time_now(self):
         """
         Return the current datetime of the clock (UTC).
-        
+
         :return datetime.
         """
         # Raise exception if not overridden in implementation
@@ -386,7 +386,7 @@ cdef class Clock:
     cpdef timedelta get_delta(self, datetime time):
         """
         Return the timedelta from the given time.
-        
+
         :return timedelta.
         """
         Condition.not_none(time, 'time')
@@ -404,7 +404,7 @@ cdef class Clock:
     cpdef list get_timer_names(self):
         """
         Return the timer labels held by the clock.
-        
+
         :return List[Label].
         """
         cdef str name
@@ -413,7 +413,7 @@ cdef class Clock:
     cpdef void register_default_handler(self, handler: callable) except *:
         """
         Register the given handler as the clocks default handler.
-        
+
         :param handler: The handler to register (must be Callable).
         :raises TypeError: If the handler is not of type callable.
         """
@@ -609,7 +609,7 @@ cdef class TestClock(Clock):
     cpdef void set_time(self, datetime to_time) except *:
         """
         Set the clocks datetime to the given time (UTC).
-        
+
         :param to_time: The time to set to.
         """
         Condition.not_none(to_time, 'to_time')

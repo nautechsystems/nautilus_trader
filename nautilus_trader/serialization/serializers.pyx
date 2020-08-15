@@ -60,7 +60,7 @@ cdef class MsgPackSerializer:
         Serialize the given message to MessagePack specification bytes.
 
         :param message: The message to serialize.
-        
+
         :return bytes.
         """
         Condition.not_none(message, 'message')

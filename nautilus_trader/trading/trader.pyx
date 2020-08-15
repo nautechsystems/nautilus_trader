@@ -76,7 +76,7 @@ cdef class Trader:
     cpdef void initialize_strategies(self, list strategies: [TradingStrategy]) except *:
         """
         Change strategies with the given list of trading strategies.
-        
+
         :param strategies: The list of strategies to load into the trader.
         :raises ValueError: If the strategies is None.
         :raises ValueError: If the strategies list is empty.
@@ -224,7 +224,7 @@ cdef class Trader:
         Return a dictionary containing the traders strategy status.
         The key is the strategy_id.
         The value is a bool which is True if the strategy is running else False.
-        
+
         :return Dict[StrategyId, bool].
         """
         cdef status = {}
@@ -247,7 +247,7 @@ cdef class Trader:
     cpdef object generate_order_fills_report(self):
         """
         Return an order fills report dataframe.
-        
+
         :return pd.DataFrame.
         """
         return self._report_provider.generate_order_fills_report(self._exec_engine.database.get_orders())

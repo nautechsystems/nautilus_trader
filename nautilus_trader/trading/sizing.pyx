@@ -35,7 +35,7 @@ cdef class PositionSizer:
     cpdef void update_instrument(self, Instrument instrument) except *:
         """
         Update the internal instrument with the given instrument.
-        
+
         :param instrument: The instrument for update.
         :raises ValueError: If the instruments symbol does not equal the held instrument symbol.
         """
@@ -58,7 +58,7 @@ cdef class PositionSizer:
         """
         Return the calculated quantity for the position size.
         Note: 1 basis point = 0.01%.
-        
+
         :param equity: The account equity.
         :param risk_bp: The risk in basis points.
         :param entry: The entry price.
@@ -73,7 +73,7 @@ cdef class PositionSizer:
         :raises ValueError: If the commission_rate is negative (< 0).
         :raises ValueError: If the units is not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
-        
+
         :return Quantity.
         """
         # Raise exception if not overridden in implementation
@@ -82,7 +82,7 @@ cdef class PositionSizer:
     cdef double _calculate_risk_ticks(self, double entry, double stop_loss):
         """
         Return the calculated difference in ticks between the entry and stop loss.
-        
+
         :return int.
         """
         return abs(entry - stop_loss) / self.instrument.tick_size.as_double()
@@ -94,7 +94,7 @@ cdef class PositionSizer:
             double commission_rate_bp):
         """
         Return the calculated amount of risk money available.
-        
+
         :return Money.
         """
         if equity <= 0.0:

@@ -1,0 +1,44 @@
+exclude: ^(.github|docs)/
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.1.0
+    hooks:
+      - id: check-builtin-literals
+      - id: check-byte-order-marker
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-xml
+      - id: check-yaml
+      - id: debug-statements
+      - id: detect-aws-credentials
+      - id: detect-private-key
+      - id: fix-encoding-pragma
+        args: [--remove]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/prettier/prettier
+    rev: 2.0.5
+    hooks:
+      - id: prettier
+  #  - repo: https://github.com/timothycrosley/isort
+  #    rev: 5.1.0
+  #    hooks:
+  #      - id: isort
+  #  - repo: https://github.com/psf/black
+  #    rev: 19.10b0
+  #    hooks:
+  #      - id: black
+  - repo: https://gitlab.com/pycqa/flake8
+    rev: 3.8.3
+    hooks:
+      - id: flake8
+        additional_dependencies:
+          # - flake8-bandit==2.1.2
+          #  - flake8-bugbear==20.1.4
+          - flake8-rst-docstrings==0.0.13
+          - pep8-naming==0.10.0
+          # - darglint==1.3.0

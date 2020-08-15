@@ -63,7 +63,9 @@ class OrderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH)
 
-    def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(self):
+    def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(  # noqa: N802
+        self
+    ):
         # Arrange
         # Act
         self.assertRaises(
