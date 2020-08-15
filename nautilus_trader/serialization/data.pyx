@@ -35,6 +35,7 @@ cdef class Utf8TickSerializer:
     """
     Provides a tick serializer for the UTF-8 specification.
     """
+
     @staticmethod
     cdef bytes serialize(Tick tick):
         """
