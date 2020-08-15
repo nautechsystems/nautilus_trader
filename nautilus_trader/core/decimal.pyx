@@ -43,7 +43,7 @@ cdef class Decimal:
     cdef Decimal zero():
         """
         Return a zero valued decimal.
-        
+
         :return Decimal.
         """
         return _ZERO_DECIMAL
@@ -113,7 +113,7 @@ cdef class Decimal:
     cpdef str to_string(self, bint format_commas=False):
         """
         Return the formatted string representation of this object.
-        
+
         :param format_commas: If the string should be formatted with commas separating thousands.
         :return: str.
         """
@@ -134,7 +134,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
-        
+
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -146,7 +146,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
-        
+
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -158,7 +158,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
-        
+
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -171,7 +171,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
-        
+
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -183,7 +183,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
-        
+
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -196,7 +196,7 @@ cdef class Decimal:
 
         :param other: The other decimal.
         :return bool.
-        
+
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -209,7 +209,7 @@ cdef class Decimal:
         :param other: The other decimal to add.
         :param keep_precision: If the original precision should be maintained.
         :return Decimal.
-        
+
         """
         if keep_precision:
             # noinspection PyProtectedMember
@@ -227,7 +227,7 @@ cdef class Decimal:
         :param other: The other decimal to subtract.
         :param keep_precision: If the original precision should be maintained.
         :return Decimal.
-        
+
         """
         if keep_precision:
             # noinspection PyProtectedMember

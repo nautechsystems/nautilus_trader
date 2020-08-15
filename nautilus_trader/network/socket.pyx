@@ -102,7 +102,7 @@ cdef class Socket:
     cpdef bint is_disposed(self):
         """
         Return a value indicating whether the internal socket is disposed.
-    
+
         Returns
         -------
         bool
@@ -124,7 +124,7 @@ cdef class Socket:
     cpdef list recv(self):
         """
         Receive the next payload of frames from the socket.
-        
+
         Returns
         -------
         list
@@ -227,7 +227,7 @@ cdef class SubscriberSocket(ClientSocket):
     cpdef void subscribe(self, str topic) except *:
         """
         Subscribe the socket to the given topic.
-        
+
         :param topic: The topic to subscribe to.
         """
         Condition.valid_string(topic, 'topic')
@@ -238,7 +238,7 @@ cdef class SubscriberSocket(ClientSocket):
     cpdef void unsubscribe(self, str topic) except *:
         """
         Unsubscribe the socket from the given topic.
-        
+
         :param topic: The topic to unsubscribe from.
         """
         Condition.valid_string(topic, 'topic')

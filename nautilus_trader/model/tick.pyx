@@ -67,7 +67,7 @@ cdef class TickType:
     cdef str spec_string(self):
         """
         Return the tick specification as a string.
-        
+
         :return str.
         """
         return tick_spec_to_string(self.spec)
@@ -164,7 +164,7 @@ cdef class Tick:
     cpdef TickType get_type(self):
         """
         Return the tick type from this ticks internal data.
-        
+
         return TickType.
         """
         return TickType(self.symbol, self.spec)
@@ -182,7 +182,7 @@ cdef class Tick:
     cpdef str spec_string(self):
         """
         Return the tick specification as a string.
-    
+
         :return str.
         """
         return tick_spec_to_string(self.spec)

@@ -34,7 +34,7 @@ cdef class ValidString:
     cpdef str to_string(self, bint with_class=False):
         """
         Return the string representation of this object.
-        
+
         :return: str.
         """
         if with_class:
@@ -157,7 +157,7 @@ cdef class Identifier(ValidString):
     cpdef bint equals(self, Identifier other):
         """
         Return a value indicating whether the given object is equal to this object.
-        
+
         :param other: The other object to compare
         :return bool.
         """

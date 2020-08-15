@@ -28,7 +28,7 @@ cpdef bint is_datetime_utc(datetime timestamp):
     """
     Checks if the given timestamp is timezone aware UTC.
     Will also return False if timezone is timezone.utc to standardize on pytz.
-    
+
     Parameters
     ----------
     timestamp : datetime
@@ -37,7 +37,7 @@ cpdef bint is_datetime_utc(datetime timestamp):
     -------
     bool
         True if argument timezone aware UTC, else False.
-        
+
     """
     Condition.not_none(timestamp, 'timestamp')
 
@@ -72,7 +72,7 @@ cpdef bint is_tz_aware(time_object):
 cpdef bint is_tz_naive(time_object):
     """
     Checks if the given object is timezone naive.
-    
+
     Parameters
     ----------
     time_object : datetime, pd.Timestamp, pd.DataFrame
@@ -142,16 +142,16 @@ cpdef object as_utc_index(data: pd.DataFrame):
 cpdef str format_iso8601(datetime dt):
     """
     Format the given string to the ISO 8601 specification with 'Z' zulu.
-    
+
     Parameters
     ----------
     dt : datetime
         The input datetime to format.
-    
+
     Notes
     -----
     Unit accuracy is millisecond.
-    
+
     Returns
     -------
     str

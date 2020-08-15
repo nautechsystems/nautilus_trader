@@ -52,7 +52,7 @@ cdef class PerformanceAnalyzer:
     cpdef void calculate_statistics(self, Account account, dict positions) except *:
         """
         Calculate performance metrics from the given data.
-        
+
         :param account: The account for the calculations.
         :param positions: The positions for the calculations.
         """
@@ -322,7 +322,7 @@ cdef class PerformanceAnalyzer:
     cpdef double calmar_ratio(self):
         """
         Get the calmar ratio for the portfolio.
-        
+
         :return double.
         """
         return calmar_ratio(returns=self._returns)
@@ -440,7 +440,7 @@ cdef class PerformanceAnalyzer:
         - TailRatio
         - Alpha
         - Beta
-        
+
         :return Dict[str, double].
         """
         return {
@@ -476,7 +476,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the performance statistics from the last backtest run formatted
         for printing in the backtest run footer.
-        
+
         :return List[str].
         """
         cdef str currency = currency_to_string(account_currency)

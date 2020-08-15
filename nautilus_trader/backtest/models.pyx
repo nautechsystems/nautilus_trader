@@ -62,7 +62,7 @@ cdef class FillModel:
     cpdef bint is_limit_filled(self):
         """
         Return the models outcome for the probability of a LIMIT order filling.
-        
+
         :return bool.
         """
         return self._did_event_occur(self.prob_fill_at_limit)
@@ -70,7 +70,7 @@ cdef class FillModel:
     cpdef bint is_stop_filled(self):
         """
         Return the models outcome for the probability of a STOP order filling.
-        
+
         :return bool.
         """
         return self._did_event_occur(self.prob_fill_at_stop)
@@ -78,7 +78,7 @@ cdef class FillModel:
     cpdef bint is_slipped(self):
         """
         Return the models outcome for the probability of an order fill slipping.
-        
+
         :return bool.
         """
         return self._did_event_occur(self.prob_slippage)

@@ -489,7 +489,7 @@ cdef class TradingStrategy:
     cpdef datetime time_now(self):
         """
         Return the current time from the strategies internal clock (UTC).
-        
+
         :return datetime.
         """
         return self.clock.time_now()
@@ -497,7 +497,7 @@ cdef class TradingStrategy:
     cpdef list instrument_symbols(self):
         """
         Return a list of all instrument symbols held by the data client.
-        
+
         :return List[Instrument].
         :raises ValueError: If the strategy has not been registered with a data client.
         """
@@ -608,7 +608,7 @@ cdef class TradingStrategy:
     cpdef dict get_instruments(self):
         """
         Return a dictionary of all instruments for the given venue (if found).
-        
+
         :return Dict[Symbol, Instrument].
         """
         if self._data_client is None:
@@ -716,7 +716,7 @@ cdef class TradingStrategy:
     cpdef bint has_ticks(self, TickType tick_type):
         """
         Return a value indicating whether the strategy has ticks for the given symbol.
-        
+
         :param tick_type: The tick type for the ticks.
         :return bool.
         """
@@ -729,7 +729,7 @@ cdef class TradingStrategy:
     cpdef bint has_bars(self, BarType bar_type):
         """
         Return a value indicating whether the strategy has bars for the given bar type.
-        
+
         :param bar_type: The bar type for the bars.
         :return bool.
         """
@@ -740,7 +740,7 @@ cdef class TradingStrategy:
     cpdef int tick_count(self, TickType tick_type):
         """
         Return the count of ticks held by the strategy for the given symbol.
-        
+
         :param tick_type: The tick type for the ticks.
         :return int.
         """
@@ -751,7 +751,7 @@ cdef class TradingStrategy:
     cpdef int bar_count(self, BarType bar_type):
         """
         Return the count of bars held by the strategy for the given bar type.
-        
+
         :param bar_type: The bar type to count.
         :return int.
         """
@@ -816,7 +816,7 @@ cdef class TradingStrategy:
     cpdef double spread(self, Symbol symbol):
         """
         Return the current spread for the given symbol.
-        
+
         :param symbol: The symbol for the spread to get.
         :return float.
         :raises ValueError: If the data clients ticks does not contain the symbol.
@@ -828,7 +828,7 @@ cdef class TradingStrategy:
     cpdef double spread_average(self, Symbol symbol):
         """
         Return the average spread of the ticks from the given symbol.
-        
+
         :param symbol: The symbol for the average spread to get.
         :return float.
         :raises ValueError: If the strategies ticks does not contain the symbol.
@@ -843,7 +843,7 @@ cdef class TradingStrategy:
     cpdef list registered_indicators(self):
         """
         Return the registered indicators for the strategy (returns copy).
-        
+
         :return List[Indicator].
         """
         return self._indicators.copy()
@@ -866,7 +866,7 @@ cdef class TradingStrategy:
     cpdef Account account(self):
         """
         Return the account for the strategy.
-        
+
         :return: Account.
         :raises: ValueError: If the execution engine is not registered.
         """
@@ -877,7 +877,7 @@ cdef class TradingStrategy:
     cpdef Portfolio portfolio(self):
         """
         Return the portfolio for the strategy.
-        
+
         :return: Portfolio.
         :raises: ValueError: If the execution engine is not registered.
         """
@@ -963,7 +963,7 @@ cdef class TradingStrategy:
     cpdef dict orders(self):
         """
         Return a all orders associated with this strategy.
-        
+
         :return Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders(self.id)
@@ -971,7 +971,7 @@ cdef class TradingStrategy:
     cpdef dict orders_working(self):
         """
         Return all working orders associated with this strategy.
-        
+
         :return Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders_working(self.id)
@@ -979,7 +979,7 @@ cdef class TradingStrategy:
     cpdef dict orders_completed(self):
         """
         Return all completed orders associated with this strategy.
-        
+
         :return Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders_completed(self.id)
@@ -1005,7 +1005,7 @@ cdef class TradingStrategy:
     cpdef dict positions(self):
         """
         Return a dictionary of all positions associated with this strategy.
-        
+
         :return Dict[PositionId, Position]
         """
         return self._exec_engine.database.get_positions(self.id)
@@ -1013,7 +1013,7 @@ cdef class TradingStrategy:
     cpdef dict positions_open(self):
         """
         Return a dictionary of all active positions associated with this strategy.
-        
+
         :return Dict[PositionId, Position]
         """
         return self._exec_engine.database.get_positions_open(self.id)
@@ -1021,7 +1021,7 @@ cdef class TradingStrategy:
     cpdef dict positions_closed(self):
         """
         Return a dictionary of all closed positions associated with this strategy.
-        
+
         :return Dict[PositionId, Position]
         """
         return self._exec_engine.database.get_positions_closed(self.id)
@@ -1029,7 +1029,7 @@ cdef class TradingStrategy:
     cpdef bint position_exists(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists.
-        
+
         :param position_id: The position_id.
         :return bool.
         """
@@ -1038,7 +1038,7 @@ cdef class TradingStrategy:
     cpdef bint order_exists(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier exists.
-        
+
         :param order_id: The order_id.
         :return bool.
         """
@@ -1047,7 +1047,7 @@ cdef class TradingStrategy:
     cpdef bint is_order_working(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is working.
-         
+
         :param order_id: The order_id.
         :return bool.
         """
@@ -1056,7 +1056,7 @@ cdef class TradingStrategy:
     cpdef bint is_order_completed(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is complete.
-         
+
         :param order_id: The order_id.
         :return bool.
         """
@@ -1065,7 +1065,7 @@ cdef class TradingStrategy:
     cpdef bint is_position_open(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier is open.
-         
+
         :param position_id: The position_id.
         :return bool.
         """
@@ -1074,7 +1074,7 @@ cdef class TradingStrategy:
     cpdef bint is_position_closed(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier is closed.
-         
+
         :param position_id: The position_id.
         :return bool.
         """
@@ -1084,7 +1084,7 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether the strategy is completely flat (i.e no market positions
         other than FLAT across all instruments).
-        
+
         :return bool.
         """
         return self._exec_engine.is_strategy_flat(self.id)
@@ -1092,7 +1092,7 @@ cdef class TradingStrategy:
     cpdef int count_orders_working(self):
         """
         Return the count of working orders held by the execution database.
-        
+
         :return int.
         """
         return self._exec_engine.database.count_orders_working(self.id)
@@ -1100,7 +1100,7 @@ cdef class TradingStrategy:
     cpdef int count_orders_completed(self):
         """
         Return the count of completed orders held by the execution database.
-        
+
         :return int.
         """
         return self._exec_engine.database.count_orders_completed(self.id)
@@ -1108,7 +1108,7 @@ cdef class TradingStrategy:
     cpdef int count_orders_total(self):
         """
         Return the total count of orders held by the execution database.
-        
+
         :return int.
         """
         return self._exec_engine.database.count_orders_total(self.id)
@@ -1116,7 +1116,7 @@ cdef class TradingStrategy:
     cpdef int count_positions_open(self):
         """
         Return the count of open positions held by the execution database.
-        
+
         :return int.
         """
         return self._exec_engine.database.count_positions_open(self.id)
@@ -1124,7 +1124,7 @@ cdef class TradingStrategy:
     cpdef int count_positions_closed(self):
         """
         Return the count of closed positions held by the execution database.
-        
+
         :return int.
         """
         return self._exec_engine.database.count_positions_closed(self.id)
@@ -1132,7 +1132,7 @@ cdef class TradingStrategy:
     cpdef int count_positions_total(self):
         """
         Return the total count of positions held by the execution database.
-        
+
         :return int.
         """
         return self._exec_engine.database.count_positions_total(self.id)
@@ -1241,7 +1241,7 @@ cdef class TradingStrategy:
     cpdef void saved(self, datetime timestamp) except *:
         """
         System Method: Add a SAVED state to the state log.
-        
+
         :param timestamp: The timestamp when the strategy was saved.
         """
         Condition.not_none(timestamp, 'timestamp')
@@ -1249,7 +1249,7 @@ cdef class TradingStrategy:
     cpdef void load(self, dict state) except *:
         """
         Load the strategy state from the give state dictionary.
-        
+
         :param state: The state dictionary to load.
         """
         Condition.not_empty(state, 'state')
@@ -1332,7 +1332,7 @@ cdef class TradingStrategy:
         """
         Send a submit bracket order command with the given order and position_id to the
         execution service.
-        
+
         :param bracket_order: The bracket order to submit.
         :param position_id: The position_id to associate with this order.
         """
@@ -1497,7 +1497,7 @@ cdef class TradingStrategy:
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
         then will log a warning.
-        
+
         :param order_label: The order label for the flattening order(s).
         """
         Condition.valid_string(order_label, 'order_label')
@@ -1555,7 +1555,7 @@ cdef class TradingStrategy:
     cpdef void change_clock(self, Clock clock) except *:
         """
         Backtest only method. Change the strategies clock with the given clock.
-        
+
         :param clock: The clock to change to.
         """
         Condition.not_none(clock, 'clock')
@@ -1579,7 +1579,7 @@ cdef class TradingStrategy:
     cpdef void change_uuid_factory(self, UUIDFactory uuid_factory) except *:
         """
         Backtest only method. Change the strategies UUID factory with the given UUID factory.
-        
+
         :param uuid_factory: The UUID factory to change to.
         """
         Condition.not_none(uuid_factory, 'uuid_factory')
@@ -1589,7 +1589,7 @@ cdef class TradingStrategy:
     cpdef void change_logger(self, Logger logger) except *:
         """
         Backtest only method. Change the strategies logger with the given logger.
-        
+
         :param logger: The logger to change to.
         """
         Condition.not_none(logger, 'logger')

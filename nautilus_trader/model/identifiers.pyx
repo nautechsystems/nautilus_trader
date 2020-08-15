@@ -48,9 +48,9 @@ cdef class Symbol(Identifier):
         """
         Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period '.'.
-        
+
         Example: 'AUD/USD.FXCM'.
-        
+
         :param value: The symbol string value to parse.
         :return Symbol.
         """
@@ -166,14 +166,14 @@ cdef class TraderId(Identifier):
         """
         Return a trader_id parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
-        
+
         Its is expected a trader_id is the abbreviated name of the trader with
         an order_id tag number separated by a hyphen '-'.
-        
+
         Example: 'TESTER-001'.
 
         :param value: The value for the strategy_id.
-        
+
         :return TraderId.
         """
         Condition.valid_string(value, 'value')
@@ -229,14 +229,14 @@ cdef class StrategyId(Identifier):
         """
         Return a strategy_id parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
-        
+
         Is is expected a strategy_id is the class name of the strategy with
         an order_id tag number separated by a hyphen '-'.
-        
+
         Example: 'EMACross-001'.
 
         :param value: The value for the strategy_id.
-        
+
         :return StrategyId.
         """
         Condition.valid_string(value, 'value')
@@ -296,11 +296,11 @@ cdef class AccountId(Identifier):
         """
         Return an account_id from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
-        
+
         Example: 'FXCM-02851908-DEMO'.
 
         :param value: The value for the account_id.
-        
+
         :return AccountId.
         """
         Condition.valid_string(value, 'value')

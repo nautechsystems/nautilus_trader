@@ -31,7 +31,7 @@ class ObjectStorer:
     def get_store(self) -> list:
         """"
         Return the list or stored objects.
-        
+
         return: List[Object].
         """
         return self._store

@@ -54,7 +54,7 @@ cdef class IdentifierGenerator:
     cpdef void set_count(self, int count) except *:
         """
         Set the internal counter to the given count.
-        
+
         :param count: The count to set.
         """
         self.count = count
