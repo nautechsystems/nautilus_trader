@@ -18,9 +18,10 @@ from datetime import datetime, timedelta
 
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.tick import Tick, TickType
 from nautilus_trader.model.bar import Bar, BarType, BarSpecification
 from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
+from nautilus_trader.model.enums import TickSpecification
 from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -71,6 +72,7 @@ class EMACrossFiltered(TradingStrategy):
         # Custom strategy variables (all optional)
         self.symbol = symbol
         self.bar_type = BarType(symbol, bar_spec)
+        self.tick_type = TickType(symbol, TickSpecification.QUOTE)
         self.precision = 5          # dummy initial value for FX
         self.risk_bp = risk_bp
         self.entry_buffer = 0.0     # instrument.tick_size
@@ -139,13 +141,13 @@ class EMACrossFiltered(TradingStrategy):
         self._update_news_event()
 
         # Get historical data
-        self.get_ticks(self.symbol)
+        self.get_ticks(self.tick_type)
         self.get_bars(self.bar_type)
 
         # Subscribe to live data
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
-        self.subscribe_ticks(self.symbol)
+        self.subscribe_ticks(self.tick_type)
 
     def on_tick(self, tick: Tick):
         """
@@ -198,7 +200,7 @@ class EMACrossFiltered(TradingStrategy):
             return  # Wait for indicators to warm up...
 
         # Check if tick data available
-        if not self.has_ticks(self.symbol):
+        if not self.has_ticks(self.tick_type):
             self.log.info(f"Waiting for {self.symbol.value} ticks...")
             return  # Wait for ticks...
 
@@ -293,7 +295,7 @@ class EMACrossFiltered(TradingStrategy):
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_ticks(self.symbol)
+        self.unsubscribe_ticks(self.tick_type)
 
     def _check_signal(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions

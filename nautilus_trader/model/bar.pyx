@@ -22,7 +22,7 @@ from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_to_string, bar_structure_from_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport price_type_to_string, price_type_from_string
-from nautilus_trader.model.objects cimport Price, Volume
+from nautilus_trader.model.objects cimport Price, Quantity
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 
 
@@ -45,6 +45,8 @@ cdef class BarSpecification:
         """
         Condition.positive_int(step, 'step')
         Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
+        Condition.not_equal(structure, BarStructure.UNDEFINED, 'structure', 'UNDEFINED')
+        Condition.not_equal(price_type, PriceType.UNDEFINED, 'price_type', 'UNDEFINED')
 
         self.step = step
         self.structure = structure
@@ -175,7 +177,7 @@ cdef class BarType:
         :param bar_spec: The bar specification.
         """
         self.symbol = symbol
-        self.specification = bar_spec
+        self.spec = bar_spec
 
     @staticmethod
     cdef BarType from_string(str value):
@@ -216,7 +218,7 @@ cdef class BarType:
         
         :return str.
         """
-        return self.specification.structure_string()
+        return self.spec.structure_string()
 
     cdef str price_type_string(self):
         """
@@ -224,7 +226,7 @@ cdef class BarType:
         
         :return str.
         """
-        return self.specification.price_type_string()
+        return self.spec.price_type_string()
 
     cpdef bint equals(self, BarType other):
         """
@@ -233,7 +235,7 @@ cdef class BarType:
         :param other: The other object.
         :return bool.
         """
-        return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
+        return self.symbol.equals(other.symbol) and self.spec.equals(other.spec)
 
     cpdef str to_string(self):
         """
@@ -241,7 +243,7 @@ cdef class BarType:
 
         :return: str.
         """
-        return f"{self.symbol.to_string()}-{self.specification}"
+        return f"{self.symbol.to_string()}-{self.spec}"
 
     def __eq__(self, BarType other) -> bool:
         """
@@ -267,7 +269,7 @@ cdef class BarType:
 
         :return int.
         """
-        return hash((self.symbol, self.specification))
+        return hash((self.symbol, self.spec))
 
     def __str__(self) -> str:
         """
@@ -297,7 +299,7 @@ cdef class Bar:
                  Price high_price not None,
                  Price low_price not None,
                  Price close_price not None,
-                 Volume volume not None,
+                 Quantity volume not None,
                  datetime timestamp not None,
                  bint check=False):
         """
@@ -343,7 +345,7 @@ cdef class Bar:
                    Price.from_string(pieces[1]),
                    Price.from_string(pieces[2]),
                    Price.from_string(pieces[3]),
-                   Volume.from_string(pieces[4]),
+                   Quantity.from_string(pieces[4]),
                    datetime.fromtimestamp(long(pieces[5]) / 1000, pytz.utc))
 
     @staticmethod
@@ -365,12 +367,12 @@ cdef class Bar:
         :param other: The other object.
         :return bool.
         """
-        return (self.open.equals(other.open) and      # noqa (W503)
-                self.high.equals(other.high) and      # noqa (W503)
-                self.low.equals(other.low) and        # noqa (W503)
-                self.close.equals(other.close) and    # noqa (W503)
-                self.volume.equals(other.volume) and  # noqa (W503)
-                self.timestamp == other.timestamp)    # noqa (W503)
+        return (self.open.equals(other.open) and      # noqa (W504)
+                self.high.equals(other.high) and      # noqa (W504)
+                self.low.equals(other.low) and        # noqa (W504)
+                self.close.equals(other.close) and    # noqa (W504)
+                self.volume.equals(other.volume) and  # noqa (W504)
+                self.timestamp == other.timestamp)    # noqa (W504)
 
     cpdef str to_string(self):
         """

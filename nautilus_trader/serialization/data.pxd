@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport Tick, TickType
 from nautilus_trader.model.bar cimport Bar, BarType
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 
@@ -27,10 +26,10 @@ cdef class Utf8TickSerializer:
     cdef list serialize_ticks_list(list ticks)
 
     @staticmethod
-    cdef Tick deserialize(Symbol symbol, bytes tick_bytes)
+    cdef Tick deserialize(TickType tick_type, bytes tick_bytes)
 
     @staticmethod
-    cdef list deserialize_bytes_list(Symbol symbol, list tick_values)
+    cdef list deserialize_bytes_list(TickType tick_type, list tick_values)
 
 
 cdef class Utf8BarSerializer:

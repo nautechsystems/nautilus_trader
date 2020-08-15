@@ -20,7 +20,7 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Money, Quantity
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.identifiers cimport OrderId
@@ -76,18 +76,18 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef AccountStateEvent reset_account_event(self)
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
-    cpdef void process_tick(self, Tick tick) except *
+    cpdef void process_tick(self, QuoteTick tick) except *
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *
     cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
-    cdef bint _check_valid_price(self, Order order, Tick current_market, bint reject=*)
-    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, Tick current_market)
-    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, Tick current_market)
-    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, Tick current_market)
-    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, Tick current_market)
+    cdef bint _check_valid_price(self, Order order, QuoteTick current_market, bint reject=*)
+    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
+    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
+    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)
+    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef void _accept_order(self, Order order) except *
     cdef void _reject_order(self, Order order, str reason) except *
     cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason) except *

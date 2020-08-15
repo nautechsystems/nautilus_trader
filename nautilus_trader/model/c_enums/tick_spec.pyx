@@ -13,26 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum Maker:
-    UNDEFINED = 0,  # Invalid value
-    BUYER = 1,
-    SELLER = 2
-
-
-cdef inline str maker_to_string(int value):
-    if value == 1:
-        return 'BUYER'
-    elif value == 2:
-        return 'SELLER'
-    else:
-        return 'UNDEFINED'
-
-
-cdef inline Maker maker_from_string(str value):
-    if value == 'BUYER':
-        return Maker.BUYER
-    elif value == 'SELLER':
-        return Maker.SELLER
-    else:
-        return Maker.UNDEFINED
+from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification

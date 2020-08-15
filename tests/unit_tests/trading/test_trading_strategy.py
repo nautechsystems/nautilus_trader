@@ -22,9 +22,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.enums import OrderState, MarketPosition
-from nautilus_trader.model.objects import Volume
-from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.enums import OrderState, MarketPosition, TickSpecification
+from nautilus_trader.model.tick import QuoteTick, TickType
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.common.data import DataClient
@@ -96,7 +95,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.handle_event(TestStubs.account_event())
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(USDJPY.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(USDJPY.symbol))  # Prepare market
 
         print('\n')
 
@@ -176,9 +175,10 @@ class TradeStrategyTests(unittest.TestCase):
     def test_get_tick_count_for_unknown_symbol_returns_zero(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
-        result = strategy.tick_count(AUDUSD_FXCM)
+        result = strategy.tick_count(tick_type)
 
         # Assert
         self.assertEqual(0, result)
@@ -186,10 +186,11 @@ class TradeStrategyTests(unittest.TestCase):
     def test_get_ticks_for_unknown_symbol_raises_exception(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.ticks, AUDUSD_FXCM)
+        self.assertRaises(ValueError, strategy.ticks, tick_type)
 
     def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
         # Arrange
@@ -215,12 +216,13 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+        bar = Bar(
+            Price(1.00001, 5),
+            Price(1.00004, 5),
+            Price(1.00002, 5),
+            Price(1.00003, 5),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -243,12 +245,13 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+        bar = Bar(
+            Price(1.00001, 5),
+            Price(1.00004, 5),
+            Price(1.00002, 5),
+            Price(1.00003, 5),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -259,12 +262,13 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_bar(self):
         strategy = TradingStrategy(order_id_tag='001')
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+        bar = Bar(
+            Price(1.00001, 5),
+            Price(1.00004, 5),
+            Price(1.00002, 5),
+            Price(1.00003, 5),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -274,27 +278,29 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(bar, result)
 
-    def test_getting_tick_with_unknown_symbol_raises_exception(self):
+    def test_getting_tick_with_unknown_tick_type_raises_exception(self):
         strategy = TradingStrategy(order_id_tag='001')
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.tick, AUDUSD_FXCM, 0)
+        self.assertRaises(ValueError, strategy.tick, tick_type, 0)
 
     def test_can_get_tick(self):
         strategy = TradingStrategy(order_id_tag='001')
 
-        tick = Tick(Symbol('AUD/USD', Venue('FXCM')),
-                    Price(1.00000, 5),
-                    Price(1.00001, 5),
-                    Volume(1),
-                    Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+        tick = QuoteTick(
+            Symbol('AUD/USD', Venue('FXCM')),
+            Price(1.00000, 5),
+            Price(1.00001, 5),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.tick(AUDUSD_FXCM, 0)
+        result = strategy.tick(tick.get_type(), 0)
 
         # Assert
         self.assertEqual(tick, result)
@@ -395,12 +401,13 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1(bar_type)
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Volume(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+        bar = Bar(
+            Price(1.00001, 5),
+            Price(1.00004, 5),
+            Price(1.00002, 5),
+            Price(1.00003, 5),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -692,7 +699,7 @@ class TradeStrategyTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  Volume(100000),
+                  Quantity(100000),
                   datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         # Act

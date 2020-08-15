@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, Ord
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport Tick, TickType
 from nautilus_trader.model.bar cimport Bar, BarType
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order, BracketOrder
@@ -102,7 +102,7 @@ cdef class TradingStrategy:
     cpdef list instrument_symbols(self)
     cpdef void get_ticks(
         self,
-        Symbol symbol,
+        TickType tick_type,
         datetime from_datetime=*,
         datetime to_datetime=*,
         int limit=*) except *
@@ -114,19 +114,19 @@ cdef class TradingStrategy:
         int limit=*) except *
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef dict get_instruments(self)
-    cpdef void subscribe_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_ticks(self, TickType tick_type) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void subscribe_instrument(self, Symbol symbol) except *
-    cpdef void unsubscribe_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_ticks(self, TickType tick_type) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
-    cpdef bint has_ticks(self, Symbol symbol)
+    cpdef bint has_ticks(self, TickType tick_type)
     cpdef bint has_bars(self, BarType bar_type)
-    cpdef int tick_count(self, Symbol symbol)
+    cpdef int tick_count(self, TickType tick_type)
     cpdef int bar_count(self, BarType bar_type)
-    cpdef list ticks(self, Symbol symbol)
+    cpdef list ticks(self, TickType tick_type)
     cpdef list bars(self, BarType bar_type)
-    cpdef Tick tick(self, Symbol symbol, int index=*)
+    cpdef Tick tick(self, TickType tick_type, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef double spread(self, Symbol symbol)
     cpdef double spread_average(self, Symbol symbol)

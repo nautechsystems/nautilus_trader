@@ -21,6 +21,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 
 
 cdef Quantity _QUANTITY_ZERO = Quantity()
+cdef Quantity _QUANTITY_ONE = Quantity(1)
 
 cdef class Quantity(Decimal):
     """
@@ -53,6 +54,15 @@ cdef class Quantity(Decimal):
         :return Money.
         """
         return _QUANTITY_ZERO
+
+    @staticmethod
+    cdef Quantity one():
+        """
+        Return a quantity with a value of 1.
+        
+        :return Quantity.
+        """
+        return _QUANTITY_ONE
 
     @staticmethod
     cdef Quantity from_string(str value):
@@ -157,77 +167,6 @@ cdef class Price(Decimal):
         Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
 
         return Price(self._value - other._value, self.precision)
-
-
-cdef Volume _VOLUME_ZERO = Volume(0)
-cdef Volume _VOLUME_ONE = Volume(1)
-
-cdef class Volume(Decimal):
-    """
-    Represents a non-negative volume.
-    """
-
-    def __init__(self, double value, int precision=0):
-        """
-        Initializes a new instance of the Volume class.
-
-        :param value: The value of the volume (>= 0).
-        :param precision: The decimal precision of the volume (>= 0).
-        :raises ValueError: If the value is negative (< 0).
-        :raises ValueError: If the precision is negative (< 0).
-        """
-        Condition.not_negative(value, 'value')
-        super().__init__(value, precision)
-
-    @staticmethod
-    cdef Volume zero():
-        """
-        Return a volume with a value of 0.
-        
-        :return Volume.
-        """
-        return _VOLUME_ZERO
-
-    @staticmethod
-    cdef Volume one():
-        """
-        Return a volume with a value of 1.
-        
-        :return Volume.
-        """
-        return _VOLUME_ONE
-
-    @staticmethod
-    cdef Volume from_string(str value):
-        """
-        Return a volume from the given string. Precision will be inferred from the
-        number of digits after the decimal place.
-
-        :param value: The string value to parse.
-        :return: Volume.
-        """
-        Condition.valid_string(value, 'value')
-
-        return Volume(float(value), precision=Decimal.precision_from_string(value))
-
-    cpdef Volume add(self, Volume other):
-        """
-        Return a new volume by adding the given decimal to this volume.
-
-        :param other: The other volume to add.
-        :return Volume.
-        """
-
-        return Volume(self._value + other._value, max(self.precision, other.precision))
-
-    cpdef Volume sub(self, Volume other):
-        """
-        Return a new volume by subtracting the decimal from this volume.
-
-        :param other: The other volume to subtract.
-        :return Volume.
-        """
-        return Volume(self._value - other._value, max(self.precision, other.precision))
 
 
 cdef class Money(Decimal):
