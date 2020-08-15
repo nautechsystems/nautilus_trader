@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.objects cimport Price, Volume
+from nautilus_trader.model.objects cimport Price, Quantity
 from nautilus_trader.model.identifiers cimport Symbol
 
 
@@ -36,7 +36,7 @@ cdef class BarSpecification:
 
 cdef class BarType:
     cdef readonly Symbol symbol
-    cdef readonly BarSpecification specification
+    cdef readonly BarSpecification spec
 
     @staticmethod
     cdef BarType from_string(str value)
@@ -51,7 +51,7 @@ cdef class Bar:
     cdef readonly Price high
     cdef readonly Price low
     cdef readonly Price close
-    cdef readonly Volume volume
+    cdef readonly Quantity volume
     cdef readonly datetime timestamp
     cdef readonly bint checked
 

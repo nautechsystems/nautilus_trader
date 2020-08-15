@@ -418,6 +418,20 @@ cdef class ExecutionId(Identifier):
         super().__init__(value)
 
 
+cdef class MatchId(Identifier):
+    """
+    Represents a valid trade match identifier.
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the MatchId class.
+
+        :param value: The execution identifier value.
+        """
+        super().__init__(value)
+
+
 cdef class PositionIdBroker(Identifier):
     """
     Represents a valid broker position identifier.

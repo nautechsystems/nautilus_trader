@@ -15,12 +15,9 @@
 
 import unittest
 
-from nautilus_trader.model.enums import BarStructure, PriceType, Currency
-from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Quantity, Money, Price, Volume
-from nautilus_trader.model.tick import Tick
-from nautilus_trader.model.bar import BarSpecification, BarType, Bar
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.objects import Money, Price, Quantity
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -357,118 +354,3 @@ class ObjectTests(unittest.TestCase):
 
         self.assertEqual(float, type(result10))
         self.assertEqual(float(2), result10)
-
-    def test_bar_spec_equality(self):
-        # Arrange
-        bar_spec1 = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-        bar_spec2 = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-        bar_spec3 = BarSpecification(1, BarStructure.MINUTE, PriceType.ASK)
-
-        # Act
-        # Assert
-        self.assertTrue(bar_spec1 == bar_spec1)
-        self.assertTrue(bar_spec1 == bar_spec2)
-        self.assertTrue(bar_spec1 != bar_spec3)
-
-    def test_bar_spec_str_and_repr(self):
-        # Arrange
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-
-        # Act
-        # Assert
-        self.assertEqual("1-MINUTE-BID", str(bar_spec))
-        self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE-BID) object at"))
-
-    def test_can_parse_tick_from_string_with_symbol(self):
-        # Arrange
-        tick = Tick(AUDUSD_FXCM,
-                    Price(1.00000, 5),
-                    Price(1.00001, 5),
-                    Volume(1),
-                    Volume(1),
-                    UNIX_EPOCH)
-
-        # Act
-        result = Tick.py_from_serializable_string_with_symbol(AUDUSD_FXCM, tick.to_serializable_string())
-
-        # Assert
-        self.assertEqual(tick, result)
-
-    def test_tick_str_and_repr(self):
-        # Arrange
-        tick = Tick(AUDUSD_FXCM,
-                    Price(1.00000, 5),
-                    Price(1.00001, 5),
-                    Volume(1),
-                    Volume(1),
-                    UNIX_EPOCH)
-
-        # Act
-        result0 = str(tick)
-        result1 = repr(tick)
-
-        # Assert
-        self.assertEqual('AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z', result0)
-        self.assertTrue(result1.startswith('<Tick(AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z) object at'))
-        self.assertTrue(result1.endswith('>'))
-
-    def test_can_parse_tick_from_string(self):
-        # Arrange
-        tick = Tick(AUDUSD_FXCM,
-                    Price(1.00000, 5),
-                    Price(1.00001, 5),
-                    Volume(1),
-                    Volume(1),
-                    UNIX_EPOCH)
-
-        # Act
-        result = Tick.py_from_serializable_string_with_symbol(AUDUSD_FXCM, tick.to_serializable_string())
-
-        # Assert
-        self.assertEqual(tick, result)
-
-    def test_can_parse_bar_spec_from_string(self):
-        # Arrange
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
-
-        # Act
-        result = BarSpecification.py_from_string(str(bar_spec))
-
-        # Assert
-        self.assertEqual(bar_spec, result)
-
-    def test_bar_type_equality(self):
-        # Arrange
-        symbol1 = Symbol("AUD/USD", Venue('FXCM'))
-        symbol2 = Symbol("GBP/USD", Venue('FXCM'))
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-        bar_type1 = BarType(symbol1, bar_spec)
-        bar_type2 = BarType(symbol1, bar_spec)
-        bar_type3 = BarType(symbol2, bar_spec)
-
-        # Act
-        # Assert
-        self.assertTrue(bar_type1 == bar_type1)
-        self.assertTrue(bar_type1 == bar_type2)
-        self.assertTrue(bar_type1 != bar_type3)
-
-    def test_bar_type_str_and_repr(self):
-        # Arrange
-        symbol = Symbol("AUD/USD", Venue('FXCM'))
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
-        bar_type = BarType(symbol, bar_spec)
-
-        # Act
-        # Assert
-        self.assertEqual("AUD/USD.FXCM-1-MINUTE-BID", str(bar_type))
-        self.assertTrue(repr(bar_type).startswith("<BarType(AUD/USD.FXCM-1-MINUTE-BID) object at"))
-
-    def test_can_parse_bar_from_string(self):
-        # Arrange
-        bar = TestStubs.bar_5decimal()
-
-        # Act
-        result = Bar.py_from_serializable_string(bar.to_serializable_string())
-
-        # Assert
-        self.assertEqual(bar, result)

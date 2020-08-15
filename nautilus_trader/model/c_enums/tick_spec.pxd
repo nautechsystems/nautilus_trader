@@ -14,25 +14,30 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum Maker:
+cpdef enum TickSpecification:
     UNDEFINED = 0,  # Invalid value
-    BUYER = 1,
-    SELLER = 2
+    QUOTE = 1,
+    TRADE = 2,
+    OPEN_INTEREST = 3,
 
 
-cdef inline str maker_to_string(int value):
+cdef inline str tick_spec_to_string(int value):
     if value == 1:
-        return 'BUYER'
+        return 'QUOTE'
     elif value == 2:
-        return 'SELLER'
+        return 'TRADE'
+    elif value == 3:
+        return 'OPEN_INTEREST'
     else:
         return 'UNDEFINED'
 
 
-cdef inline Maker maker_from_string(str value):
-    if value == 'BUYER':
-        return Maker.BUYER
-    elif value == 'SELLER':
-        return Maker.SELLER
+cdef inline TickSpecification tick_spec_from_string(str value):
+    if value == 'QUOTE':
+        return TickSpecification.QUOTE
+    elif value == 'TRADE':
+        return TickSpecification.TRADE
+    elif value == 'OPEN_INTEREST':
+        return TickSpecification.OPEN_INTEREST
     else:
-        return Maker.UNDEFINED
+        return TickSpecification.UNDEFINED

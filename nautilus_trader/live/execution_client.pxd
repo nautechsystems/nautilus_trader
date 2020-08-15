@@ -20,6 +20,7 @@ from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.serialization.base cimport CommandSerializer, EventSerializer
 
+
 cdef class LiveExecClient(ExecutionClient):
     cdef MessageClient _command_client
     cdef MessageSubscriber _event_subscriber

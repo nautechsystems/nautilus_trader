@@ -23,6 +23,9 @@ cdef class Quantity(Decimal):
     cdef Quantity zero()
 
     @staticmethod
+    cdef Quantity one()
+
+    @staticmethod
     cdef Quantity from_string(str value)
     cpdef Quantity add(self, Quantity other)
     cpdef Quantity sub(self, Quantity other)
@@ -34,19 +37,6 @@ cdef class Price(Decimal):
     cdef Price from_string(str value)
     cpdef Price add(self, Decimal other)
     cpdef Price sub(self, Decimal other)
-
-
-cdef class Volume(Decimal):
-    @staticmethod
-    cdef Volume zero()
-
-    @staticmethod
-    cdef Volume one()
-
-    @staticmethod
-    cdef Volume from_string(str value)
-    cpdef Volume add(self, Volume other)
-    cpdef Volume sub(self, Volume other)
 
 
 cdef class Money(Decimal):

@@ -31,7 +31,7 @@ cdef class LiveDataClient(DataClient):
     cdef MessageSubscriber _tick_subscriber
     cdef DataSerializer _data_serializer
     cdef InstrumentSerializer _instrument_serializer
-    cdef ObjectCache _cached_symbols
+    cdef ObjectCache _cached_tick_types
     cdef ObjectCache _cached_bar_types
     cdef dict _correlation_index
 

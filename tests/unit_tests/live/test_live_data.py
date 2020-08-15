@@ -17,8 +17,9 @@ import time
 import unittest
 
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.objects import Price, Volume
-from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.enums import TickSpecification
+from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.tick import TickType, QuoteTick
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.identifiers import Venue, TraderId
 from nautilus_trader.common.logging import LoggerAdapter
@@ -134,20 +135,22 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_subscribe_to_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
-        self.data_client.subscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_client.subscribe_ticks(tick_type, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_ticks())
+        self.assertIn(tick_type, self.data_client.subscribed_ticks())
 
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
-        self.data_client.subscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
-        self.data_client.unsubscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_client.subscribe_ticks(tick_type, handler=data_receiver.store)
+        self.data_client.unsubscribe_ticks(tick_type, handler=data_receiver.store)
 
         # Assert
         self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_ticks())
@@ -155,19 +158,21 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_receive_published_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
-        tick = Tick(AUDUSD_FXCM,
-                    Price(1.00000, 5),
-                    Price(1.00001, 5),
-                    Volume(1),
-                    Volume(1),
-                    UNIX_EPOCH)
+        tick = QuoteTick(
+            AUDUSD_FXCM,
+            Price(1.00000, 5),
+            Price(1.00001, 5),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
 
         # Act
-        self.data_client.subscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_client.subscribe_ticks(tick_type, handler=data_receiver.store)
 
         time.sleep(0.1)
-        self.tick_publisher.publish(AUDUSD_FXCM.value, Utf8TickSerializer.py_serialize(tick))
+        self.tick_publisher.publish(tick_type.to_string(), Utf8TickSerializer.py_serialize(tick))
         time.sleep(0.1)
 
         # Assert
@@ -196,30 +201,6 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertNotIn(bar_type, self.data_client.subscribed_ticks())
-
-    # TODO: No longer publishing bars from data service
-    # def test_can_receive_published_bar_data(self):
-    #     # Arrange
-    #     self.data_client.connect()
-    #     data_receiver = ObjectStorer()
-    #     bar_type = TestStubs.bartype_audusd_1min_bid()
-    #     bar = Bar(Price(1.00001, 5),
-    #               Price(1.00004, 5),
-    #               Price(1.00002, 5),
-    #               Price(1.00003, 5),
-    #               Volume(100000),
-    #               UNIX_EPOCH)
-    #
-    #     # Act
-    #     self.data_client.subscribe_bars(bar_type, handler=data_receiver.store_2)
-    #
-    #     time.sleep(0.1)
-    #     self.data_publisher.publish('Bar:' + str(bar_type), Utf8BarSerializer.py_serialize(bar))
-    #     time.sleep(0.1)
-    #
-    #     # Assert
-    #     self.assertEqual(1, len(data_receiver.get_store()))
-    #     self.assertEqual((bar_type, bar), data_receiver.get_store()[0])
 
     def test_can_subscribe_to_instrument_data(self):
         # Arrange
@@ -252,7 +233,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_instrument(instrument.symbol, handler=data_receiver.store)
 
         time.sleep(0.1)
-        self.data_publisher.publish('Instrument:' + instrument.symbol.value, serializer.serialize(instrument))
+        self.data_publisher.publish(f'Instrument:{instrument.symbol.value}', serializer.serialize(instrument))
         time.sleep(0.1)
 
         # Assert
@@ -262,10 +243,11 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_request_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
         self.data_client.request_ticks(
-            AUDUSD_FXCM,
+            tick_type,
             UNIX_EPOCH,
             UNIX_EPOCH,
             limit=0,
@@ -276,11 +258,13 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(1, len(self.data_server_sink))
         self.assertEqual(DataRequest, type(self.data_server_sink[0]))
 
-    def test_can_receive_tick_data(self):
+    def test_can_receive_quote_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
+        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
+
         self.data_client.request_ticks(
-            AUDUSD_FXCM,
+            tick_type,
             UNIX_EPOCH,
             UNIX_EPOCH,
             limit=0,
@@ -288,12 +272,14 @@ class LiveDataClientTests(unittest.TestCase):
 
         time.sleep(0.2)
 
-        tick = Tick(AUDUSD_FXCM,
-                    Price(1.00000, 5),
-                    Price(1.00001, 5),
-                    Volume(1),
-                    Volume(1),
-                    UNIX_EPOCH)
+        tick = QuoteTick(
+            AUDUSD_FXCM,
+            Price(1.00000, 5),
+            Price(1.00001, 5),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
+
         ticks = [tick, tick, tick, tick, tick]
         tick_data = self.data_mapper.map_ticks(ticks)
 
@@ -333,7 +319,7 @@ class LiveDataClientTests(unittest.TestCase):
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  Volume(100000),
+                  Quantity(100000),
                   UNIX_EPOCH)
         bars = [bar, bar, bar, bar, bar]
         bar_data = self.data_mapper.map_bars(bars, bar_type)

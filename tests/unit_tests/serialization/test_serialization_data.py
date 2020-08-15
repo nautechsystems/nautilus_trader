@@ -15,8 +15,8 @@
 
 import unittest
 
-from nautilus_trader.model.objects import Price, Volume
-from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.serialization.data import BsonDataSerializer, DataMapper
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
@@ -56,12 +56,13 @@ class DataSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_ticks(self):
         # Arrange
-        tick = Tick(AUDUSD_FXCM,
-                    Price(1.00000, 5),
-                    Price(1.00001, 5),
-                    Volume(1),
-                    Volume(1),
-                    UNIX_EPOCH)
+        tick = QuoteTick(
+            AUDUSD_FXCM,
+            Price(1.00000, 5),
+            Price(1.00001, 5),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
 
         data = self.mapper.map_ticks([tick])
 
@@ -85,7 +86,7 @@ class DataSerializerTests(unittest.TestCase):
                    Price(1.00004, 5),
                    Price(1.00002, 5),
                    Price(1.00003, 5),
-                   Volume(100000),
+                   Quantity(100000),
                    UNIX_EPOCH)
 
         data = self.mapper.map_bars([bar1, bar1], bar_type)
@@ -111,7 +112,7 @@ class DataSerializerTests(unittest.TestCase):
                    Price(1.00004, 5),
                    Price(1.00002, 5),
                    Price(1.00003, 5),
-                   Volume(100000),
+                   Quantity(100000),
                    UNIX_EPOCH)
 
         data = self.mapper.map_bars([bar1, bar1], bar_type)

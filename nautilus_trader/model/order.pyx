@@ -49,18 +49,6 @@ cdef set PRICED_ORDER_TYPES = {
 cdef class Order:
     """
     Represents an order for a financial market instrument.
-
-    Attributes
-    ----------
-    order_id : OrderId
-        The unique user identifier for the order.
-    id_broker : OrderIdBroker
-        The unique broker identifier for the order.
-    account_id : AccountId
-        The account identifier associated with the order.
-    execution_id : ExecutionId
-        The last execution identifier for the order.
-
     """
 
     def __init__(self,

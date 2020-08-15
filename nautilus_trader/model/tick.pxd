@@ -15,27 +15,50 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.objects cimport Price, Volume
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification
+from nautilus_trader.model.c_enums.maker cimport Maker
+from nautilus_trader.model.objects cimport Price, Quantity
+from nautilus_trader.model.identifiers cimport Symbol, MatchId
+
+
+cdef class TickType:
+    cdef readonly Symbol symbol
+    cdef readonly TickSpecification spec
+
+    @staticmethod
+    cdef TickType from_string(str value)
+    cdef str spec_string(self)
+    cpdef bint equals(self, TickType other)
+    cpdef str to_string(self)
 
 
 cdef class Tick:
+    cdef readonly TickSpecification spec
     cdef readonly Symbol symbol
-    cdef readonly Price bid
-    cdef readonly Price ask
-    cdef readonly Volume bid_size
-    cdef readonly Volume ask_size
     cdef readonly datetime timestamp
 
-    @staticmethod
-    cdef Tick from_serializable_string_with_symbol(Symbol symbol, str values)
-
-    @staticmethod
-    cdef Tick from_serializable_string(str value)
-
-    @staticmethod
-    cdef Tick _parse(Symbol symbol, list pieces)
-
+    cpdef TickType get_type(self)
     cpdef bint equals(self, Tick other)
+    cpdef str spec_string(self)
     cpdef str to_string(self)
     cpdef str to_serializable_string(self)
+
+
+cdef class QuoteTick(Tick):
+    cdef readonly Price bid
+    cdef readonly Price ask
+    cdef readonly Quantity bid_size
+    cdef readonly Quantity ask_size
+
+    @staticmethod
+    cdef QuoteTick from_serializable_string(Symbol symbol, str values)
+
+
+cdef class TradeTick(Tick):
+    cdef readonly Price price
+    cdef readonly Quantity size
+    cdef readonly Maker maker
+    cdef readonly MatchId match_id
+
+    @staticmethod
+    cdef TradeTick from_serializable_string(Symbol symbol, str values)

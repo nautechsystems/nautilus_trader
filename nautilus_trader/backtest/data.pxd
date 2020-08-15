@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.common.data cimport DataClient
@@ -55,7 +55,7 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly bint has_data
 
     cpdef void setup(self, datetime start, datetime stop) except *
-    cdef Tick generate_tick(self)
+    cdef QuoteTick generate_tick(self)
 
-    cpdef void process_tick(self, Tick tick) except *
+    cpdef void process_tick(self, QuoteTick tick) except *
     cpdef void reset(self) except *

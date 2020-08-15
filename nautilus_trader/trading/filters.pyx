@@ -387,7 +387,7 @@ cdef class EconomicNewsEventFilter:
         self.unfiltered_data_end = news_data.index[-1]
 
         self._news_data = news_data[(news_data['Currency'].isin(currencies))
-                                   & news_data['Impact'].isin(impacts)]  # noqa (W503) easier to read
+                                   & news_data['Impact'].isin(impacts)]  # noqa (W504) easier to read
 
     cpdef NewsEvent next_event(self, datetime time_now):
         """

@@ -21,6 +21,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -31,7 +32,7 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition, marke
 from nautilus_trader.model.identifiers cimport Symbol, OrderIdBroker
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Decimal, Price, Money, Quantity
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
@@ -151,7 +152,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :return: Dict[Symbol, double].
         """
         cdef Symbol symbol
-        cdef Tick tick
+        cdef QuoteTick tick
         return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
 
     cdef dict _build_current_ask_rates(self):
@@ -161,7 +162,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :return: Dict[Symbol, double].
         """
         cdef Symbol symbol
-        cdef Tick tick
+        cdef QuoteTick tick
         return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
 
     cpdef void check_residuals(self) except *:
@@ -251,7 +252,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.fill_model = fill_model
 
-    cpdef void process_tick(self, Tick tick) except *:
+    cpdef void process_tick(self, QuoteTick tick) except *:
         """
         Process the execution client with the given tick. Market dynamics are
         simulated against working orders.
@@ -432,7 +433,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef double rollover_cumulative = 0.0
         cdef double mid_price
         cdef dict mid_prices = {}
-        cdef Tick market
+        cdef QuoteTick market
         for position in open_positions.values():
             instrument = self.instruments[position.symbol]
             if instrument.security_type == SecurityType.FOREX:
@@ -600,7 +601,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef bint _check_valid_price(self, Order order, Tick current_market, bint reject=True):
+    cdef bint _check_valid_price(self, Order order, QuoteTick current_market, bint reject=True):
         # Check order price is valid and reject if not
         if order.side == OrderSide.BUY:
             if order.type in STOP_ORDER_TYPES:
@@ -631,16 +632,16 @@ cdef class BacktestExecClient(ExecutionClient):
 
         return True  # Valid price
 
-    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, Tick current_market):
+    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
         return current_market.ask.eq(order_price) and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, Tick current_market):
+    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market):
         return current_market.ask.eq(order_price) and self.fill_model.is_limit_filled()
 
-    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, Tick current_market):
+    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market):
         return current_market.bid.eq(order_price) and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, Tick current_market):
+    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market):
         return current_market.bid.eq(order_price) and self.fill_model.is_limit_filled()
 
     cdef void _accept_order(self, Order order) except *:
@@ -729,7 +730,7 @@ cdef class BacktestExecClient(ExecutionClient):
                                       f'the minimum trade size of {instrument.min_trade_size}')
             return  # Cannot accept order
 
-        cdef Tick current_market = self._market.get(order.symbol)
+        cdef QuoteTick current_market = self._market.get(order.symbol)
 
         # Check market exists
         if current_market is None:  # Market not initialized

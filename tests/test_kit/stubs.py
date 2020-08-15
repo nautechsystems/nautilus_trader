@@ -19,8 +19,8 @@ from datetime import datetime, timedelta
 from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.enums import BarStructure, PriceType, Currency, AccountType, OrderSide
-from nautilus_trader.model.objects import Quantity, Money, Price, Volume
-from nautilus_trader.model.tick import Tick
+from nautilus_trader.model.objects import Money, Price, Quantity
+from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.bar import BarSpecification, BarType, Bar
 from nautilus_trader.model.instrument import ForexInstrument
 from nautilus_trader.model.identifiers import Venue, Symbol, IdTag, TraderId, AccountId
@@ -137,7 +137,7 @@ class TestStubs:
                    Price(1.00004, 5),
                    Price(1.00001, 5),
                    Price(1.00003, 5),
-                   Volume(100000),
+                   Quantity(100000),
                    UNIX_EPOCH)
 
     @staticmethod
@@ -146,17 +146,18 @@ class TestStubs:
                    Price(90.004, 3),
                    Price(90.001, 3),
                    Price(90.003, 3),
-                   Volume(100000),
+                   Quantity(100000),
                    UNIX_EPOCH)
 
     @staticmethod
-    def tick_3decimal(symbol) -> Tick:
-        return Tick(symbol,
-                    Price(90.002, 3),
-                    Price(90.003, 3),
-                    Volume(1),
-                    Volume(1),
-                    UNIX_EPOCH)
+    def quote_tick_3decimal(symbol) -> QuoteTick:
+        return QuoteTick(
+            symbol,
+            Price(90.002, 3),
+            Price(90.003, 3),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
 
     @staticmethod
     def trader_id() -> TraderId:
