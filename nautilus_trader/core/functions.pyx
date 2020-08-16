@@ -26,7 +26,7 @@ from nautilus_trader.core.correctness cimport Condition
 cpdef double fast_round(double value, int precision):
     """
     Return the given value rounded to the nearest precision digits.
-    
+
     :param value: The value to round.
     :param precision: The precision to round to.
     :return: double.
@@ -38,7 +38,7 @@ cpdef double fast_round(double value, int precision):
 cpdef double fast_mean(list values):
     """
     Return the average value of the iterable.
-    
+
     :param values: The iterable to evaluate.
     :return: double.
     """
@@ -62,7 +62,7 @@ cpdef double fast_mean_iterated(
         bint drop_left=True):
     """
     Return the calculated average from the given inputs.
-    
+
     :param values: The values for the calculation.
     :param next_value: The next input value for the average.
     :param current_value: The current value for the average.
@@ -95,7 +95,7 @@ cpdef double fast_std_with_mean(list values, double mean):
     """
     Return the standard deviation from the given values and mean.
     Note - garbage in garbage out for given mean.
-    
+
     :param values: The values for the calculation.
     :param mean: The pre-calculated mean of the given values.
     :return: double.
@@ -112,7 +112,7 @@ cpdef double fast_std_with_mean(list values, double mean):
 cpdef double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
-    
+
     :param basis_points: The basis points to convert to percentage.
     :return double.
     """
@@ -178,13 +178,13 @@ cpdef str format_bytes(double size):
 cpdef str pad_string(str string, int length, str pad=' '):
     """
     Return the given string front padded.
-    
+
     :param string: The string to pad.
     :param length: The length to pad to.
     :param pad: The padding character.
-    
+
     :return str.
-    
+
     """
     Condition.not_none(string, 'string')
     Condition.not_negative_int(length, 'length')

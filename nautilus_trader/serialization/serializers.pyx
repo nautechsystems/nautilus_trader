@@ -60,7 +60,7 @@ cdef class MsgPackSerializer:
         Serialize the given message to MessagePack specification bytes.
 
         :param message: The message to serialize.
-        
+
         :return bytes.
         """
         Condition.not_none(message, 'message')
@@ -321,7 +321,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackCommandSerializer class.
+        Initializes a new instance of the MsgPackEventSerializer class.
         """
         super().__init__()
 

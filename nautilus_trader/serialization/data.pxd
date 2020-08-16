@@ -14,19 +14,34 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Tick, Bar, BarType
+from nautilus_trader.model.tick cimport QuoteTick, TradeTick
+from nautilus_trader.model.bar cimport Bar, BarType
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 
 
-cdef class Utf8TickSerializer:
+cdef class Utf8QuoteTickSerializer:
     @staticmethod
-    cdef bytes serialize(Tick tick)
+    cdef bytes serialize(QuoteTick tick)
 
     @staticmethod
     cdef list serialize_ticks_list(list ticks)
 
     @staticmethod
-    cdef Tick deserialize(Symbol symbol, bytes tick_bytes)
+    cdef QuoteTick deserialize(Symbol symbol, bytes tick_bytes)
+
+    @staticmethod
+    cdef list deserialize_bytes_list(Symbol symbol, list tick_values)
+
+
+cdef class Utf8TradeTickSerializer:
+    @staticmethod
+    cdef bytes serialize(TradeTick tick)
+
+    @staticmethod
+    cdef list serialize_ticks_list(list ticks)
+
+    @staticmethod
+    cdef TradeTick deserialize(Symbol symbol, bytes tick_bytes)
 
     @staticmethod
     cdef list deserialize_bytes_list(Symbol symbol, list tick_values)
@@ -53,7 +68,8 @@ cdef class BsonDataSerializer(DataSerializer):
 cdef class DataMapper:
     cdef InstrumentSerializer instrument_serializer
 
-    cpdef dict map_ticks(self, list ticks)
+    cpdef dict map_quote_ticks(self, list ticks)
+    cpdef dict map_trade_ticks(self, list ticks)
     cpdef dict map_bars(self, list bars, BarType bar_type)
     cpdef dict map_instruments(self, list instruments)
 

@@ -26,7 +26,8 @@ from nautilus_trader.model.identifiers import PositionId, PositionIdBroker, Stra
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderPurpose, TimeInForce, Currency
 from nautilus_trader.model.enums import AccountType, SecurityType
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Price, Quantity, Instrument
+from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.commands import AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands import ModifyOrder, CancelOrder
 from nautilus_trader.model.events import AccountStateEvent, OrderInitialized, OrderInvalid

@@ -15,7 +15,8 @@
 
 import unittest
 
-from nautilus_trader.model.objects import Price, Volume, Bar
+from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.bar import Bar
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
@@ -39,7 +40,7 @@ class ObjectTests:
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  Volume(100000),
+                  Quantity(100000),
                   UNIX_EPOCH,
                   check=False)
 
@@ -49,7 +50,7 @@ class ObjectTests:
                   Price(1.00004, 5),
                   Price(1.00002, 5),
                   Price(1.00003, 5),
-                  Volume(100000),
+                  Quantity(100000),
                   UNIX_EPOCH,
                   check=True)
 

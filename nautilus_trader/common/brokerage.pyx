@@ -36,6 +36,7 @@ cdef class CommissionCalculator:
                  Money minimum=Money(2.00, Currency.USD)):
         """
         Initializes a new instance of the CommissionCalculator class.
+
         Note: Commission rates are expressed as basis points of notional transaction value.
 
         :param rates: The dictionary of commission rates Dict[Symbol, double].
@@ -59,7 +60,7 @@ cdef class CommissionCalculator:
             Currency currency):
         """
         Return the calculated commission for the given arguments.
-        
+
         :param symbol: The symbol for calculation.
         :param filled_quantity: The filled quantity.
         :param filled_price: The filled price.
@@ -80,7 +81,7 @@ cdef class CommissionCalculator:
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """
         Return the calculated commission for the given arguments.
-        
+
         :param symbol: The symbol for calculation.
         :param notional_value: The notional value for the transaction.
         :return Money.
@@ -137,7 +138,7 @@ cdef class RolloverInterestCalculator:
     cpdef object get_rate_data(self):
         """
         Return the short-term interest rate dataframe.
-        
+
         :return: pd.DataFrame.
         """
         return self._rate_data
@@ -146,7 +147,7 @@ cdef class RolloverInterestCalculator:
         """
         Return the rollover interest rate between the given base currency and quote currency.
         Note: 1% = 0.01
-        
+
         :param symbol: The forex currency symbol for the calculation.
         :param date: The date for the overnight rate.
         :return: double.

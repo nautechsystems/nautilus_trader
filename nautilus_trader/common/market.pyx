@@ -21,9 +21,11 @@ from cpython.datetime cimport datetime, timedelta
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
-from nautilus_trader.model.objects cimport Price, Volume, Tick, Instrument
-from nautilus_trader.model.objects cimport Bar, BarType, BarSpecification
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
+from nautilus_trader.model.objects cimport Price, Quantity
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.bar cimport Bar, BarType, BarSpecification
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.common.clock cimport Clock, TestTimer
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
@@ -42,7 +44,7 @@ cdef class TickDataWrangler:
                  dict data_bars_bid=None,
                  dict data_bars_ask=None):
         """
-        Initializes a new instance of the TickBuilder class.
+        Initializes a new instance of the TickDataWrangler class.
 
         :param instrument: The instrument for the data wrangler.
         :param data_ticks: The optional pd.DataFrame containing the tick data.
@@ -177,29 +179,31 @@ cdef class TickDataWrangler:
         self.tick_data = df_ticks_final
         self.tick_data['symbol'] = symbol_indexer
 
-    cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
+    cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
         be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         """
-        return Tick(self.instrument.symbol,
-                    Price(values[0], self.instrument.price_precision),
-                    Price(values[1], self.instrument.price_precision),
-                    Volume(values[2], self.instrument.size_precision),
-                    Volume(values[3], self.instrument.size_precision),
-                    timestamp)
+        return QuoteTick(
+            self.instrument.symbol,
+            Price(values[0], self.instrument.price_precision),
+            Price(values[1], self.instrument.price_precision),
+            Quantity(values[2], self.instrument.size_precision),
+            Quantity(values[3], self.instrument.size_precision),
+            timestamp)
 
-    cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
+    cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp):
         """
         Build a tick from the given values. The function expects the values to
         be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         """
-        return Tick(self.instrument.symbol,
-                    Price(values[0], self.instrument.price_precision),
-                    Price(values[1], self.instrument.price_precision),
-                    Volume.one(),
-                    Volume.one(),
-                    timestamp)
+        return QuoteTick(
+            self.instrument.symbol,
+            Price(values[0], self.instrument.price_precision),
+            Price(values[1], self.instrument.price_precision),
+            Quantity.one(),
+            Quantity.one(),
+            timestamp)
 
 
 cdef class BarDataWrangler:
@@ -213,7 +217,7 @@ cdef class BarDataWrangler:
                  int volume_multiple=1,
                  data: pd.DataFrame=None):
         """
-        Initializes a new instance of the BarBuilder class.
+        Initializes a new instance of the BarDataWrangler class.
 
         :param precision: The decimal precision for bar prices (>= 0).
         :param data: The the bars market data.
@@ -271,7 +275,7 @@ cdef class BarDataWrangler:
                    Price(values[1], self._precision),
                    Price(values[2], self._precision),
                    Price(values[3], self._precision),
-                   Volume(values[4] * self._volume_multiple),
+                   Quantity(values[4] * self._volume_multiple),
                    timestamp)
 
 
@@ -350,10 +354,10 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
-    cpdef void update_tick(self, Tick tick) except *:
+    cpdef void update_tick(self, QuoteTick tick) except *:
         """
         Update the indicator with the given tick.
-        
+
         :param tick: The tick to update with.
         """
         Condition.not_none(tick, 'tick')
@@ -399,7 +403,7 @@ cdef class IndicatorUpdater:
     cpdef dict build_features_ticks(self, list ticks):
         """
         Return a dictionary of output features from the given bars data.
-        
+
         :return Dict[str, float].
         """
         Condition.not_none(ticks, 'ticks')
@@ -420,7 +424,7 @@ cdef class IndicatorUpdater:
     cpdef dict build_features_bars(self, list bars):
         """
         Return a dictionary of output features from the given bars data.
-        
+
         :return Dict[str, float].
         """
         Condition.not_none(bars, 'bars')
@@ -469,9 +473,9 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self._volume = Volume.zero()
+        self._volume = Quantity.zero()
 
-    cpdef void update(self, Tick tick) except *:
+    cpdef void update(self, QuoteTick tick) except *:
         """
         Update the builder with the given tick.
 
@@ -537,10 +541,10 @@ cdef class BarBuilder:
             self._low = None
             self._close = None
 
-        self._volume = Volume.zero()
+        self._volume = Quantity.zero()
         self.count = 0
 
-    cdef Price _get_price(self, Tick tick):
+    cdef Price _get_price(self, QuoteTick tick):
         if self.bar_spec.price_type == PriceType.MID:
             return Price((tick.bid.as_double() + tick.ask.as_double()) / 2, tick.bid.precision + 1)
         elif self.bar_spec.price_type == PriceType.BID:
@@ -550,13 +554,13 @@ cdef class BarBuilder:
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
 
-    cdef Volume _get_volume(self, Tick tick):
+    cdef Quantity _get_volume(self, QuoteTick tick):
         cdef int max_precision
         cdef double total_volume
         if self.bar_spec.price_type == PriceType.MID:
             max_precision = max(self._volume.precision, tick.bid_size.precision, tick.ask_size.precision)
             total_volume = self._volume.as_double() + ((tick.bid_size + tick.ask_size) / 2.0)
-            return self._volume.add(Volume(total_volume, max_precision))
+            return self._volume.add(Quantity(total_volume, max_precision))
         elif self.bar_spec.price_type == PriceType.BID:
             return self._volume.add(tick.bid_size)
         elif self.bar_spec.price_type == PriceType.ASK:
@@ -604,10 +608,10 @@ cdef class BarAggregator:
         self._handler = BarHandler(handler)
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._builder = BarBuilder(
-            bar_spec=self.bar_type.specification,
+            bar_spec=self.bar_type.spec,
             use_previous_close=use_previous_close)
 
-    cpdef void update(self, Tick tick) except *:
+    cpdef void update(self, QuoteTick tick) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -636,9 +640,9 @@ cdef class TickBarAggregator(BarAggregator):
                          logger=logger,
                          use_previous_close=False)
 
-        self.step = bar_type.specification.step
+        self.step = bar_type.spec.step
 
-    cpdef void update(self, Tick tick) except *:
+    cpdef void update(self, QuoteTick tick) except *:
         """
         Update the builder with the given tick.
 
@@ -671,7 +675,7 @@ cdef class TimeBarAggregator(BarAggregator):
                  Clock clock not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the TickBarBuilder class.
+        Initializes a new instance of the TimeBarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.
@@ -690,7 +694,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._set_build_timer()
         self.next_close = self._clock.get_timer(self.bar_type.to_string()).next_time
 
-    cpdef void update(self, Tick tick) except *:
+    cpdef void update(self, QuoteTick tick) except *:
         """
         Update the builder with the given tick.
 
@@ -720,7 +724,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef datetime get_start_time(self):
         cdef datetime now = self._clock.time_now()
-        if self.bar_type.specification.structure == BarStructure.SECOND:
+        if self.bar_type.spec.structure == BarStructure.SECOND:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -729,7 +733,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 minute=now.minute,
                 second=now.second,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.specification.structure == BarStructure.MINUTE:
+        elif self.bar_type.spec.structure == BarStructure.MINUTE:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -737,32 +741,32 @@ cdef class TimeBarAggregator(BarAggregator):
                 hour=now.hour,
                 minute=now.minute,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.specification.structure == BarStructure.HOUR:
+        elif self.bar_type.spec.structure == BarStructure.HOUR:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day,
                 hour=now.hour,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.specification.structure == BarStructure.DAY:
+        elif self.bar_type.spec.structure == BarStructure.DAY:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day)
         else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
+            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.spec.structure)} is not supported.")
 
     cdef timedelta _get_interval(self):
-        if self.bar_type.specification.structure == BarStructure.SECOND:
-            return timedelta(seconds=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.MINUTE:
-            return timedelta(minutes=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.HOUR:
-            return timedelta(hours=(1 * self.bar_type.specification.step))
-        elif self.bar_type.specification.structure == BarStructure.DAY:
-            return timedelta(days=(1 * self.bar_type.specification.step))
+        if self.bar_type.spec.structure == BarStructure.SECOND:
+            return timedelta(seconds=(1 * self.bar_type.spec.step))
+        elif self.bar_type.spec.structure == BarStructure.MINUTE:
+            return timedelta(minutes=(1 * self.bar_type.spec.step))
+        elif self.bar_type.spec.structure == BarStructure.HOUR:
+            return timedelta(hours=(1 * self.bar_type.spec.step))
+        elif self.bar_type.spec.structure == BarStructure.DAY:
+            return timedelta(days=(1 * self.bar_type.spec.step))
         else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.specification.structure)} is not supported.")
+            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.spec.structure)} is not supported.")
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = self.bar_type.to_string()

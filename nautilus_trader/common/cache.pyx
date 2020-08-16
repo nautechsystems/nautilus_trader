@@ -33,7 +33,7 @@ cdef class IdentifierCache:
     cpdef TraderId get_trader_id(self, str value):
         """
         Return the cached trader_id.
-        
+
         :param value: The value to be parsed to a trader_id.
         :return: TraderId or None.
         :raises: ValueError: If the string is invalid.
@@ -45,7 +45,7 @@ cdef class IdentifierCache:
     cpdef AccountId get_account_id(self, str value):
         """
         Return the cached account.
-        
+
         :param value: The value to be parsed to a account_id.
         :return: AccountId or None.
         :raises: ValueError: If the string is invalid.
@@ -57,7 +57,7 @@ cdef class IdentifierCache:
     cpdef StrategyId get_strategy_id(self, str value):
         """
         Return the cached strategy_id.
-        
+
         :param value: The value to be parsed to a strategy_id.
         :return: StrategyId or None.
         :raises: ValueError: If the string is invalid.
@@ -69,7 +69,7 @@ cdef class IdentifierCache:
     cpdef Symbol get_symbol(self, str value):
         """
         Return the cached symbol.
-        
+
         :param value: The value to be parsed to a symbol.
         :return: Symbol or None.
         :raises: ValueError: If the string is invalid.

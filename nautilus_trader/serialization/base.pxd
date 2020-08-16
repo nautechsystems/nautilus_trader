@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.objects cimport Instrument
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.common.logging cimport LogMessage
 
 

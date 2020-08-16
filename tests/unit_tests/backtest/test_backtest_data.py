@@ -17,11 +17,11 @@ import unittest
 from pandas import Timestamp
 
 from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
+from nautilus_trader.common.clock import TestClock
 
 USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 

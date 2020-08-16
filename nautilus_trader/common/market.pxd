@@ -21,7 +21,10 @@ from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.objects cimport Price, Volume, Tick, BarType, BarSpecification, Bar, Instrument
+from nautilus_trader.model.objects cimport Price, Quantity
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.bar cimport BarType, BarSpecification, Bar
+from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class TickDataWrangler:
@@ -34,8 +37,8 @@ cdef class TickDataWrangler:
     cdef readonly BarStructure resolution
 
     cpdef void build(self, int symbol_indexer) except *
-    cpdef Tick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp)
-    cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp)
+    cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp)
+    cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp)
 
 
 cdef class BarDataWrangler:
@@ -56,7 +59,7 @@ cdef class IndicatorUpdater:
     cdef list _outputs
     cdef bint _include_self
 
-    cpdef void update_tick(self, Tick tick) except *
+    cpdef void update_tick(self, QuoteTick tick) except *
     cpdef void update_bar(self, Bar bar) except *
     cpdef dict build_features_ticks(self, list ticks)
     cpdef dict build_features_bars(self, list bars)
@@ -75,13 +78,13 @@ cdef class BarBuilder:
     cdef Price _high
     cdef Price _low
     cdef Price _close
-    cdef Volume _volume
+    cdef Quantity _volume
 
-    cpdef void update(self, Tick tick) except *
+    cpdef void update(self, QuoteTick tick) except *
     cpdef Bar build(self, datetime close_time=*)
     cdef void _reset(self) except *
-    cdef Price _get_price(self, Tick tick)
-    cdef Volume _get_volume(self, Tick tick)
+    cdef Price _get_price(self, QuoteTick tick)
+    cdef Quantity _get_volume(self, QuoteTick tick)
 
 
 cdef class BarAggregator:
@@ -92,7 +95,7 @@ cdef class BarAggregator:
 
     cdef readonly BarType bar_type
 
-    cpdef void update(self, Tick tick) except *
+    cpdef void update(self, QuoteTick tick) except *
     cpdef void _handle_bar(self, Bar bar) except *
 
 

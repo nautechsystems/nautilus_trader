@@ -94,7 +94,7 @@ cdef class AverageTrueRange(Indicator):
     cpdef void update_mid(self, double close) except *:
         """
         Update the indicator with the given value.
-        
+
         :param close: The mid close price (> 0).
         """
         if self.check_inputs:
