@@ -32,7 +32,7 @@ from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitB
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Quantity, Price
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick, TradeTick
 from nautilus_trader.model.bar cimport BarType, Bar
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order, BracketOrder
@@ -120,7 +120,8 @@ cdef class TradingStrategy:
         # Data
         self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
-        self._ticks = {}                        # type: {Symbol, [Tick]}
+        self._quote_ticks = {}                  # type: {Symbol, [QuoteTick]}
+        self._trade_ticks = {}                  # type: {Symbol, [TradeTick]}
         self._bars = {}                         # type: {BarType, [Bar]}
         self._indicators = []                   # type: [Indicator]
         self._indicator_updaters = {}           # type: {Indicator, [IndicatorUpdater]}
@@ -192,11 +193,19 @@ cdef class TradingStrategy:
         """
         pass  # Override in implementation
 
-    cpdef void on_tick(self, Tick tick) except *:
+    cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
-        Called when a tick is received by the strategy.
+        Called when a quote tick is received by the strategy.
 
-        :param tick: The tick received.
+        :param tick: The quote tick received.
+        """
+        pass  # Override in implementation
+
+    cpdef void on_trade_tick(self, TradeTick tick) except *:
+        """
+        Called when a trade tick is received by the strategy.
+
+        :param tick: The trade tick received.
         """
         pass  # Override in implementation
 
@@ -326,31 +335,29 @@ cdef class TradingStrategy:
 
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
-    cpdef void handle_tick(self, Tick tick, bint is_historical=False) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """"
-        System method. Update the internal ticks with the given tick, update
-        indicators for the symbol, then call on_tick() and pass the tick
+        System method. Update the internal quote ticks with the given tick, update
+        indicators for the symbol, then call on_quote_tick() and pass the tick
         (if the strategy is running).
 
-        :param tick: The tick received.
+        :param tick: The quote tick received.
         :param is_historical: The flag indicating whether the tick is historical (won't be passed to on_tick).
         """
         Condition.not_none(tick, 'tick')
 
-        cdef TickType tick_type = tick.get_type()
-
         # Update ticks and spreads
-        ticks = self._ticks.get(tick_type)
+        ticks = self._quote_ticks.get(tick.symbol)
         if ticks is None:
             # Symbol was not registered
             ticks = deque(maxlen=self.tick_capacity)
-            self._ticks[tick_type] = ticks
-            self.log.warning(f"Received {tick_type} when symbol not registered. Handling is now setup.")
+            self._quote_ticks[tick.symbol] = ticks
+            self.log.warning(f"Received {tick.symbol} quote tick when symbol not registered. Handling is now setup.")
 
         ticks.appendleft(tick)
 
         # Update indicators
-        cdef list updaters = self._indicator_updaters.get(tick_type)  # Can be None
+        cdef list updaters = self._indicator_updaters.get(tick.symbol)  # Can be None
         cdef IndicatorUpdater updater
         if updaters is not None:
             for updater in updaters:
@@ -361,29 +368,78 @@ cdef class TradingStrategy:
 
         if self.is_running:
             try:
-                self.on_tick(tick)
+                self.on_quote_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
                 if self.reraise_exceptions:
                     raise ex  # Re-raise
 
-    cpdef void handle_ticks(self, list ticks) except *:
+    cpdef void handle_quote_ticks(self, list ticks) except *:
         """
-        System method. Handle the given list of ticks by handling each tick individually.
+        System method. Handle the given list of quote ticks by handling each tick individually.
         """
         Condition.not_none(ticks, 'ticks')  # Could be empty
 
         cdef int length = len(ticks)
-        cdef TickType tick_type = ticks[0].get_type() if length > 0 else None
+        cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
         if length > 0:
-            self.log.info(f"Received tick data for {tick_type} of {length} ticks.")
+            self.log.info(f"Received quote tick data for {symbol} of {length} ticks.")
         else:
-            self.log.warning("Received tick data with no ticks.")
+            self.log.warning("Received quote tick data with no ticks.")
 
         cdef int i
         for i in range(length):
-            self.handle_tick(ticks[i], is_historical=True)
+            self.handle_quote_tick(ticks[i], is_historical=True)
+
+    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
+        """"
+        System method. Update the internal trade ticks with the given tick, 
+        then call on_trade_tick() and pass the tick (if the strategy is running).
+
+        :param tick: The trade tick received.
+        :param is_historical: The flag indicating whether the tick is historical (won't be passed to on_tick).
+        """
+        Condition.not_none(tick, 'tick')
+
+        # Update ticks
+        ticks = self._trade_ticks.get(tick.symbol)
+        if ticks is None:
+            # Symbol was not registered
+            ticks = deque(maxlen=self.tick_capacity)
+            self._trade_ticks[tick.symbol] = ticks
+            self.log.warning(f"Received {tick.symbol} trade tick when symbol not registered. Handling is now setup.")
+
+        ticks.appendleft(tick)
+
+        if is_historical:
+            return  # Don't pass to on_tick()
+
+        if self.is_running:
+            try:
+                self.on_trade_tick(tick)
+            except Exception as ex:
+                self.log.exception(ex)
+                if self.reraise_exceptions:
+                    raise ex  # Re-raise
+
+    cpdef void handle_trade_ticks(self, list ticks) except *:
+        """
+        System method. Handle the given list of trade ticks by handling each tick individually.
+        """
+        Condition.not_none(ticks, 'ticks')  # Could be empty
+
+        cdef int length = len(ticks)
+        cdef Symbol symbol = ticks[0].symbol if length > 0 else None
+
+        if length > 0:
+            self.log.info(f"Received trade tick data for {symbol} of {length} ticks.")
+        else:
+            self.log.warning("Received trade tick data with no ticks.")
+
+        cdef int i
+        for i in range(length):
+            self.handle_trade_tick(ticks[i], is_historical=True)
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """"
@@ -505,26 +561,26 @@ cdef class TradingStrategy:
 
         return self._data_client.instrument_symbols()
 
-    cpdef void get_ticks(
+    cpdef void get_quote_ticks(
             self,
-            TickType tick_type,
+            Symbol symbol,
             datetime from_datetime=None,
             datetime to_datetime=None,
             int limit=0) except *:
         """
-        Request the historical bars for the given parameters from the data service.
+        Request the historical ticks for the given parameters from the data service.
         Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
-        :param tick_type: The tick type for the request.
-        :param from_datetime: The from date for the request.
-        :param to_datetime: The to date for the request.
+        :param symbol: The tick symbol for the request.
+        :param from_datetime: The from datetime for the request.
+        :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = tick capacity).
         :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the from_datetime is not less than the to_datetime.
         """
         if limit == 0:
             limit = self.tick_capacity
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.not_negative_int(limit, 'limit')
 
         if self._data_client is None:
@@ -538,15 +594,15 @@ cdef class TradingStrategy:
             self.log.error("Cannot download historical bars (data client not registered).")
             return
 
-        if tick_type not in self._ticks:
-            self._ticks[tick_type] = deque(maxlen=self.tick_capacity)
+        if symbol not in self._quote_ticks:
+            self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)
 
-        self._data_client.request_ticks(
-            tick_type,
+        self._data_client.request_quote_ticks(
+            symbol,
             from_datetime,
             to_datetime,
             limit,
-            self.handle_ticks)
+            self.handle_quote_ticks)
 
     cpdef void get_bars(
             self,
@@ -617,23 +673,23 @@ cdef class TradingStrategy:
 
         return self._data_client.get_instruments()
 
-    cpdef void subscribe_ticks(self, TickType tick_type) except *:
+    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
         Subscribe to tick data for the given symbol.
 
-        :param tick_type: The tick type to subscribe to.
+        :param symbol: The tick symbol to subscribe to.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
 
         if self._data_client is None:
             self.log.error("Cannot subscribe to ticks (data client not registered).")
             return
 
-        if tick_type not in self._ticks:
-            self._ticks[tick_type] = deque(maxlen=self.tick_capacity)
 
-        self._data_client.subscribe_ticks(tick_type, self.handle_tick)
-        self.log.info(f"Subscribed to {tick_type} tick data.")
+        self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)
+
+        self._data_client.subscribe_quote_ticks(symbol, self.handle_quote_tick)
+        self.log.info(f"Subscribed to {symbol} quote tick data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -668,20 +724,20 @@ cdef class TradingStrategy:
         self._data_client.subscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Subscribed to {symbol} instrument data.")
 
-    cpdef void unsubscribe_ticks(self, TickType tick_type) except *:
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
         Unsubscribe from tick data for the given symbol.
 
-        :param tick_type: The tick type to unsubscribe from.
+        :param symbol: The quote tick type to unsubscribe from.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
 
         if self._data_client is None:
             self.log.error("Cannot unsubscribe from ticks (data client not registered).")
             return
 
-        self._data_client.unsubscribe_ticks(tick_type, self.handle_tick)
-        self.log.info(f"Unsubscribed from {tick_type} tick data.")
+        self._data_client.unsubscribe_quote_ticks(symbol, self.handle_quote_tick)
+        self.log.info(f"Unsubscribed from {symbol} tick data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -713,18 +769,29 @@ cdef class TradingStrategy:
         self._data_client.unsubscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Unsubscribed from {symbol} instrument data.")
 
-    cpdef bint has_ticks(self, TickType tick_type):
+    cpdef bint has_quote_ticks(self, Symbol symbol):
         """
-        Return a value indicating whether the strategy has ticks for the given symbol.
+        Return a value indicating whether the strategy has quote ticks for the given symbol.
 
-        :param tick_type: The tick type for the ticks.
+        :param symbol: The tick symbol for the ticks.
         :return bool.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
 
-        return (self._data_client.has_ticks(tick_type) and  # noqa (W504 - easier to read)
-                tick_type in self._ticks and                # noqa (W504 - easier to read)
-                len(self._ticks[tick_type]) > 0)            # noqa (W504 - easier to read)
+        return (self._data_client.has_quote_ticks(symbol) and  # noqa (W504 - easier to read)
+                len(self._quote_ticks[symbol]) > 0)         # noqa (W504 - easier to read)
+
+    cpdef bint has_trade_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the strategy has trade ticks for the given symbol.
+
+        :param symbol: The tick symbol for the ticks.
+        :return bool.
+        """
+        Condition.not_none(symbol, 'symbol')
+
+        return (self._data_client.has_trade_ticks(symbol) and  # noqa (W504 - easier to read)
+                len(self._trade_ticks[symbol]) > 0)         # noqa (W504 - easier to read)
 
     cpdef bint has_bars(self, BarType bar_type):
         """
@@ -737,16 +804,27 @@ cdef class TradingStrategy:
 
         return bar_type in self._bars and len(self._bars[bar_type]) > 0
 
-    cpdef int tick_count(self, TickType tick_type):
+    cpdef int quote_tick_count(self, Symbol symbol):
         """
-        Return the count of ticks held by the strategy for the given symbol.
+        Return the count of quote ticks held by the strategy for the given symbol.
 
-        :param tick_type: The tick type for the ticks.
+        :param symbol: The symbol for the ticks.
         :return int.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
 
-        return len(self._ticks[tick_type]) if tick_type in self._ticks else 0
+        return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
+
+    cpdef int trade_tick_count(self, Symbol symbol):
+        """
+        Return the count of trade ticks held by the strategy for the given symbol.
+
+        :param symbol: The symbol for the ticks.
+        :return int.
+        """
+        Condition.not_none(symbol, 'symbol')
+
+        return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
 
     cpdef int bar_count(self, BarType bar_type):
         """
@@ -759,17 +837,29 @@ cdef class TradingStrategy:
 
         return len(self._bars[bar_type]) if bar_type in self._bars else 0
 
-    cpdef list ticks(self, TickType tick_type):
+    cpdef list quote_ticks(self, Symbol symbol):
         """
-        Return the ticks for the given symbol (returns a copy of the internal deque).
+        Return the quote ticks for the given symbol (returns a copy of the internal deque).
 
-        :param tick_type: The symbol for the ticks to get.
+        :param symbol: The symbol for the ticks to get.
         :return List[Tick].
         """
-        Condition.not_none(tick_type, 'tick_type')
-        Condition.is_in(tick_type, self._ticks, 'tick_type', 'ticks')
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._quote_ticks, 'symbol', 'ticks')
 
-        return list(self._ticks[tick_type])
+        return list(self._quote_ticks[symbol])
+
+    cpdef list trade_ticks(self, Symbol symbol):
+        """
+        Return the trade ticks for the given symbol (returns a copy of the internal deque).
+
+        :param symbol: The symbol for the ticks to get.
+        :return List[Tick].
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._trade_ticks, 'symbol', 'ticks')
+
+        return list(self._trade_ticks[symbol])
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -783,20 +873,35 @@ cdef class TradingStrategy:
 
         return list(self._bars[bar_type])
 
-    cpdef Tick tick(self, TickType tick_type, int index=0):
+    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
-        Return the tick for the given symbol at the given index or last if no index specified.
+        Return the quote tick for the given symbol at the given index or last if no index specified.
 
-        :param tick_type: The type for the tick to get.
-        :param index: The optional index for the tick to get .
-        :return Tick.
+        :param symbol: The symbol for the tick to get.
+        :param index: The optional index for the tick to get.
+        :return QuoteTick.
         :raises ValueError: If the strategies ticks does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
-        Condition.not_none(tick_type, 'symbol')
-        Condition.is_in(tick_type, self._ticks, 'tick_type', 'ticks')
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._quote_ticks, 'symbol', 'ticks')
 
-        return self._ticks[tick_type][index]
+        return self._quote_ticks[symbol][index]
+
+    cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
+        """
+        Return the trade tick for the given symbol at the given index or last if no index specified.
+
+        :param symbol: The symbol for the tick to get.
+        :param index: The optional index for the tick to get.
+        :return TradeTick.
+        :raises ValueError: If the strategies ticks does not contain the symbol.
+        :raises IndexError: If the tick index is out of range.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.is_in(symbol, self._trade_ticks, 'symbol', 'ticks')
+
+        return self._trade_ticks[symbol][index]
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """
@@ -1207,7 +1312,7 @@ cdef class TradingStrategy:
 
         self.order_factory.reset()
         self.position_id_generator.reset()
-        self._ticks.clear()
+        self._quote_ticks.clear()
         self._bars.clear()
         self._indicators.clear()
         self._indicator_updaters.clear()

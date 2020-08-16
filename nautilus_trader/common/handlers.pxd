@@ -13,19 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick, TradeTick
 from nautilus_trader.model.bar cimport BarType, Bar
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.core.message cimport Event
 
-# cdef void (*_handler)(Tick tick)
 
 cdef class Handler:
     cdef readonly object handle
 
 
-cdef class TickHandler(Handler):
-    cdef void handle(self, Tick tick) except *
+cdef class QuoteTickHandler(Handler):
+    cdef void handle(self, QuoteTick tick) except *
+
+
+cdef class TradeTickHandler(Handler):
+    cdef void handle(self, TradeTick tick) except *
 
 
 cdef class BarHandler(Handler):

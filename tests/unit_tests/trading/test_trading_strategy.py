@@ -20,10 +20,10 @@ from datetime import datetime, timedelta
 
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId, MatchId
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.enums import OrderState, MarketPosition, TickSpecification
-from nautilus_trader.model.tick import QuoteTick, TickType
+from nautilus_trader.model.enums import OrderState, MarketPosition, Maker
+from nautilus_trader.model.tick import QuoteTick, TradeTick
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.common.data import DataClient
@@ -175,10 +175,9 @@ class TradeStrategyTests(unittest.TestCase):
     def test_get_tick_count_for_unknown_symbol_returns_zero(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
-        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
-        result = strategy.tick_count(tick_type)
+        result = strategy.quote_tick_count(AUDUSD_FXCM)
 
         # Assert
         self.assertEqual(0, result)
@@ -186,11 +185,10 @@ class TradeStrategyTests(unittest.TestCase):
     def test_get_ticks_for_unknown_symbol_raises_exception(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
-        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.ticks, tick_type)
+        self.assertRaises(ValueError, strategy.quote_ticks, AUDUSD_FXCM)
 
     def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
         # Arrange
@@ -280,27 +278,45 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_getting_tick_with_unknown_tick_type_raises_exception(self):
         strategy = TradingStrategy(order_id_tag='001')
-        tick_type = TickType(AUDUSD_FXCM, TickSpecification.QUOTE)
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.tick, tick_type, 0)
+        self.assertRaises(ValueError, strategy.quote_tick, AUDUSD_FXCM, 0)
 
-    def test_can_get_tick(self):
+    def test_can_get_quote_tick(self):
         strategy = TradingStrategy(order_id_tag='001')
 
         tick = QuoteTick(
-            Symbol('AUD/USD', Venue('FXCM')),
+            AUDUSD_FXCM,
             Price(1.00000, 5),
             Price(1.00001, 5),
             Quantity(1),
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        strategy.handle_tick(tick)
+        strategy.handle_quote_tick(tick)
 
         # Act
-        result = strategy.tick(tick.get_type(), 0)
+        result = strategy.quote_tick(tick.symbol, 0)
+
+        # Assert
+        self.assertEqual(tick, result)
+
+    def test_can_get_trade_tick(self):
+        strategy = TradingStrategy(order_id_tag='001')
+
+        tick = TradeTick(
+            AUDUSD_FXCM,
+            Price(1.00000, 5),
+            Quantity(10000),
+            Maker.BUYER,
+            MatchId("123456789"),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+
+        strategy.handle_trade_tick(tick)
+
+        # Act
+        result = strategy.trade_tick(tick.symbol, 0)
 
         # Assert
         self.assertEqual(tick, result)

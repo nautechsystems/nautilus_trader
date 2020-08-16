@@ -110,8 +110,13 @@ cdef str FROM_DATETIME
 cdef str TO_DATETIME
 cdef str LIMIT
 
-cdef str TICK_ARRAY
+cdef str QUOTE
+cdef str TRADE
+cdef str QUOTE_TICK_ARRAY
+cdef str TRADE_TICK_ARRAY
+cdef str BAR
 cdef str BAR_ARRAY
+cdef str INSTRUMENT
 cdef str INSTRUMENT_ARRAY
 
 cdef str LOG_LEVEL

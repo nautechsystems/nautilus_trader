@@ -18,120 +18,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification
-from nautilus_trader.model.c_enums.tick_spec cimport tick_spec_to_string, tick_spec_from_string
 from nautilus_trader.model.c_enums.maker cimport Maker, maker_from_string, maker_to_string
 from nautilus_trader.model.objects cimport Price, Quantity
-from nautilus_trader.model.identifiers cimport Symbol, Venue, MatchId
-
-
-cdef class TickType:
-    """
-    Represents a financial market symbol and tick specification.
-    """
-
-    def __init__(self,
-                 Symbol symbol not None,
-                 TickSpecification tick_spec):
-        """
-        Initializes a new instance of the TickType class.
-
-        Parameters
-        ----------
-        tick_spec : TickSpecification
-            The tick specification.
-        symbol : Symbol
-            The ticker symbol.
-
-        """
-        Condition.not_equal(tick_spec, TickSpecification.UNDEFINED, 'tick_spec', 'UNDEFINED')
-
-        self.symbol = symbol
-        self.spec = tick_spec
-
-    @staticmethod
-    cdef TickType from_string(str value):
-        """
-        Return a tick type parsed from the given string.
-
-        :param value: The tick type string to parse.
-        :return TickType.
-        """
-        Condition.valid_string(value, 'value')
-
-        cdef list pieces = value.split('-', maxsplit=1)
-        cdef list symbol_pieces = pieces[0].split('.', maxsplit=1)
-        cdef Symbol symbol = Symbol(symbol_pieces[0], Venue(symbol_pieces[1]))
-
-        return TickType(symbol, tick_spec_from_string(pieces[1]))
-
-    cdef str spec_string(self):
-        """
-        Return the tick specification as a string.
-
-        :return str.
-        """
-        return tick_spec_to_string(self.spec)
-
-    cpdef bint equals(self, TickType other):
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.symbol.equals(other.symbol) and self.spec == other.spec
-
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        :return: str.
-        """
-        return f"{self.symbol.to_string()}-{self.spec_string()}"
-
-    def __eq__(self, TickType other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.equals(other)
-
-    def __ne__(self, TickType other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return not self.equals(other)
-
-    def __hash__(self) -> int:
-        """"
-        Return the hash code of this object.
-
-        :return int.
-        """
-        return hash((self.symbol, self.spec))
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        :return str.
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
+from nautilus_trader.model.identifiers cimport Symbol, MatchId
 
 
 cdef class Tick:
@@ -141,34 +30,20 @@ cdef class Tick:
 
     def __init__(self,
                  Symbol symbol not None,
-                 TickSpecification tick_spec,
                  datetime timestamp not None):
         """
         Initializes a new instance of the Tick class.
 
         Parameters
         ----------
-        tick_spec : TickSpecification
-            The tick specification.
         symbol : Symbol
             The ticker symbol.
         timestamp : datetime
             The tick timestamp (UTC).
 
         """
-        Condition.not_equal(tick_spec, TickSpecification.UNDEFINED, 'tick_type', 'UNDEFINED')
-
         self.symbol = symbol
-        self.spec = tick_spec
         self.timestamp = timestamp
-
-    cpdef TickType get_type(self):
-        """
-        Return the tick type from this ticks internal data.
-
-        return TickType.
-        """
-        return TickType(self.symbol, self.spec)
 
     cpdef bint equals(self, Tick other):
         """
@@ -179,14 +54,6 @@ cdef class Tick:
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef str spec_string(self):
-        """
-        Return the tick specification as a string.
-
-        :return str.
-        """
-        return tick_spec_to_string(self.spec)
 
     cpdef str to_string(self):
         """
@@ -225,6 +92,46 @@ cdef class Tick:
         :return bool.
         """
         return not self.equals(other)
+
+    def __lt__(self, Tick other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+        Note: The equality is based on the ticks timestamp only.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp < other.timestamp
+
+    def __le__(self, Tick other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+        Note: The equality is based on the ticks timestamp only.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp <= other.timestamp
+
+    def __gt__(self, Tick other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+        Note: The equality is based on the ticks timestamp only.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp > other.timestamp
+
+    def __ge__(self, Tick other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+        Note: The equality is based on the ticks timestamp only.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
         """"
@@ -284,7 +191,7 @@ cdef class QuoteTick(Tick):
             The tick timestamp (UTC).
 
         """
-        super().__init__(symbol, TickSpecification.QUOTE, timestamp)
+        super().__init__(symbol, timestamp)
 
         self.bid = bid
         self.ask = ask
@@ -397,7 +304,7 @@ cdef class TradeTick(Tick):
             The tick timestamp (UTC).
 
         """
-        super().__init__(symbol, TickSpecification.TRADE, timestamp)
+        super().__init__(symbol, timestamp)
 
         self.price = price
         self.size = size

@@ -15,31 +15,16 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification
 from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.objects cimport Price, Quantity
 from nautilus_trader.model.identifiers cimport Symbol, MatchId
 
 
-cdef class TickType:
-    cdef readonly Symbol symbol
-    cdef readonly TickSpecification spec
-
-    @staticmethod
-    cdef TickType from_string(str value)
-    cdef str spec_string(self)
-    cpdef bint equals(self, TickType other)
-    cpdef str to_string(self)
-
-
 cdef class Tick:
-    cdef readonly TickSpecification spec
     cdef readonly Symbol symbol
     cdef readonly datetime timestamp
 
-    cpdef TickType get_type(self)
     cpdef bint equals(self, Tick other)
-    cpdef str spec_string(self)
     cpdef str to_string(self)
     cpdef str to_serializable_string(self)
 

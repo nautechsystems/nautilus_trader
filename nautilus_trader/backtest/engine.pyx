@@ -24,7 +24,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_timestamp, format_iso8601
 from nautilus_trader.core.functions cimport format_bytes, pad_string, get_size_of
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
 from nautilus_trader.common.clock cimport TestClock, TimeEventHandler
 from nautilus_trader.common.uuid cimport TestUUIDFactory
@@ -263,7 +263,7 @@ cdef class BacktestEngine:
 
         self.trader.start()
 
-        cdef Tick tick
+        cdef QuoteTick tick
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self.data_client.has_data:

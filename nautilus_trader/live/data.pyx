@@ -20,17 +20,16 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
-from nautilus_trader.model.tick cimport TickType
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
-from nautilus_trader.serialization.data cimport Utf8TickSerializer, Utf8BarSerializer
+from nautilus_trader.serialization.data cimport Utf8QuoteTickSerializer, Utf8TradeTickSerializer
+from nautilus_trader.serialization.data cimport Utf8BarSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
@@ -152,7 +151,7 @@ cdef class LiveDataClient(DataClient):
         self._data_serializer = data_serializer
         self._instrument_serializer = instrument_serializer
 
-        self._cached_tick_types = ObjectCache(TickType, TickType.from_string)
+        self._cached_symbols = ObjectCache(Symbol, Symbol.from_string)
         self._cached_bar_types = ObjectCache(BarType, BarType.from_string)
 
     cpdef void connect(self) except *:
@@ -178,7 +177,7 @@ cdef class LiveDataClient(DataClient):
         """
         Reset the class to its initial state.
         """
-        self._cached_tick_types.clear()
+        self._cached_symbols.clear()
         self._cached_bar_types.clear()
         self._reset()
 
@@ -202,9 +201,9 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Registered strategy {strategy}.")
 
-    cpdef void request_ticks(
+    cpdef void request_quote_ticks(
             self,
-            TickType tick_type,
+            Symbol symbol,
             datetime from_datetime,
             datetime to_datetime,
             int limit,
@@ -212,7 +211,7 @@ cdef class LiveDataClient(DataClient):
         """
         Request ticks for the given symbol and query parameters.
 
-        :param tick_type: The tick type for the request.
+        :param symbol: The tick symbol for the request.
         :param from_datetime: The from datetime for the request (optional can be None).
         :param to_datetime: The to datetime for the request (optional can be None).
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
@@ -220,28 +219,20 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type callable.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
-        cdef str data_type
-        if tick_type.spec == TickSpecification.QUOTE:
-            data_type = "QuoteTick[]"
-        elif tick_type.spec == TickSpecification.TRADE:
-            data_type = "TradeTick[]"
-        else:
-            raise ValueError(f"Cannot request ticks (invalid tick specification '{tick_type.spec_string()}').")
-
         cdef dict query = {
-            DATA_TYPE: data_type,
-            SYMBOL: tick_type.symbol.value,
+            DATA_TYPE: QUOTE_TICK_ARRAY,
+            SYMBOL: symbol.value,
             FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
             TO_DATETIME: format_iso8601(to_datetime) if to_datetime is not None else str(None),
             LIMIT: str(limit)
         }
 
         cdef str limit_string = 'None' if limit == 0 else f'(limit={limit})'
-        self._log.info(f"Requesting {tick_type} ticks from {from_datetime} to {to_datetime} {limit_string}...")
+        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
@@ -277,7 +268,7 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict query = {
-            DATA_TYPE: "Bar[]",
+            DATA_TYPE: BAR_ARRAY,
             SYMBOL: bar_type.symbol.value,
             SPECIFICATION: bar_type.spec.to_string(),
             FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
@@ -307,7 +298,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
-            DATA_TYPE: "Instrument[]",
+            DATA_TYPE: INSTRUMENT_ARRAY,
             SYMBOL: symbol.value,
         }
 
@@ -331,7 +322,7 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(callback, 'callback')
 
         cdef dict query = {
-            DATA_TYPE: "Instrument[]",
+            DATA_TYPE: INSTRUMENT_ARRAY,
             VENUE: venue.value,
         }
 
@@ -356,19 +347,19 @@ cdef class LiveDataClient(DataClient):
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void subscribe_ticks(self, TickType tick_type, handler: callable) except *:
+    cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to live tick data for the given symbol and handler.
 
-        :param tick_type: The tick type to subscribe to.
+        :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         :raises ValueError: If the handler is not of type callable.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
-        self._add_tick_handler(tick_type, handler)
-        self._tick_subscriber.subscribe(tick_type.to_string())
+        self._add_quote_tick_handler(symbol, handler)
+        self._tick_subscriber.subscribe(f"{QUOTE}:{symbol.to_string()}")
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
@@ -395,21 +386,21 @@ cdef class LiveDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         self._add_instrument_handler(symbol, handler)
-        self._data_subscriber.subscribe(f'Instrument:{symbol.value}')
+        self._data_subscriber.subscribe(f'{INSTRUMENT}:{symbol.value}')
 
-    cpdef void unsubscribe_ticks(self, TickType tick_type, handler: callable) except *:
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribe from live tick data for the given symbol and handler.
 
-        :param tick_type: The tick type to unsubscribe from.
+        :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
-        self._tick_subscriber.unsubscribe(tick_type.to_string())
-        self._remove_tick_handler(tick_type, handler)
+        self._tick_subscriber.unsubscribe(f"{QUOTE}:{symbol.to_string()}")
+        self._remove_quote_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
@@ -435,7 +426,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
-        self._data_subscriber.unsubscribe(f'Instrument:{symbol.value}')
+        self._data_subscriber.unsubscribe(f'{INSTRUMENT}:{symbol.value}')
         self._remove_instrument_handler(symbol, handler)
 
     cpdef void _set_callback(self, UUID request_id, handler: callable) except *:
@@ -469,10 +460,15 @@ cdef class LiveDataClient(DataClient):
         cdef dict metadata
         cdef list data
 
-        if data_type == TICK_ARRAY:
+        if data_type == QUOTE_TICK_ARRAY:
             metadata = data_package[METADATA]
-            tick_type = self._cached_tick_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
-            data = Utf8TickSerializer.deserialize_bytes_list(tick_type, data_package[DATA])
+            symbol = self._cached_symbols.get(metadata[SYMBOL])
+            data = Utf8QuoteTickSerializer.deserialize_bytes_list(symbol, data_package[DATA])
+            handler(data)
+        elif data_type == TRADE_TICK_ARRAY:
+            metadata = data_package[METADATA]
+            symbol = self._cached_symbols.get(metadata[SYMBOL])
+            data = Utf8TradeTickSerializer.deserialize_bytes_list(symbol, data_package[DATA])
             handler(data)
         elif data_type == BAR_ARRAY:
             metadata = data_package[METADATA]
@@ -487,9 +483,17 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void _handle_tick_msg(self, str topic, bytes body) except *:
         # Handle the given tick message published for the given topic
-        cdef TickType tick_type = self._cached_tick_types.get(topic.replace(':', '-'))
+        cdef tuple topic_pieces = topic.partition(':')
+        cdef str tick_type = topic_pieces[0]
+        cdef Symbol symbol = self._cached_symbols.get(topic_pieces[2])
 
-        self._handle_tick(tick_type, Utf8TickSerializer.deserialize(tick_type, body))
+        if tick_type == QUOTE:
+            self._handle_quote_tick(Utf8QuoteTickSerializer.deserialize(symbol, body))
+        elif tick_type == TRADE:
+            self._handle_trade_tick(Utf8TradeTickSerializer.deserialize(symbol, body))
+        else:
+            self._log.error(f'Cannot handle published tick, '
+                            f'tick type \'{tick_type}\' not recognized.')
 
     cpdef void _handle_sub_msg(self, str topic, bytes body) except *:
         # Handle the given subscription message published for the given topic
@@ -497,9 +501,9 @@ cdef class LiveDataClient(DataClient):
         cdef str data_type = topic_pieces[0]
         cdef str data_meta = topic_pieces[2]
 
-        if data_type == 'Bar':
+        if data_type == BAR:
             self._handle_bar(self._cached_bar_types.get(data_meta), Utf8BarSerializer.deserialize(body))
-        elif data_type == 'Instrument':
+        elif data_type == INSTRUMENT:
             self._handle_instrument(self._instrument_serializer.deserialize(body))
         else:
             self._log.error(f'Cannot handle published messaged, '
