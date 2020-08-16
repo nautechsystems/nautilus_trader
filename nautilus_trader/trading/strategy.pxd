@@ -23,7 +23,10 @@ from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Quantity, Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.tick cimport QuoteTick, TradeTick
+from nautilus_trader.model.bar cimport Bar, BarType
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
@@ -56,7 +59,8 @@ cdef class TradingStrategy:
     cdef readonly int tick_capacity
     cdef readonly int bar_capacity
 
-    cdef dict _ticks
+    cdef dict _quote_ticks
+    cdef dict _trade_ticks
     cdef dict _bars
     cdef list _indicators
     cdef dict _indicator_updaters
@@ -70,7 +74,8 @@ cdef class TradingStrategy:
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------#
     cpdef void on_start(self) except *
-    cpdef void on_tick(self, Tick tick) except *
+    cpdef void on_quote_tick(self, QuoteTick tick) except *
+    cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *
     cpdef void on_data(self, object data) except *
     cpdef void on_event(self, Event event) except *
@@ -87,8 +92,10 @@ cdef class TradingStrategy:
     cpdef void register_indicator(self, data_source, Indicator indicator, update_method=*) except *
 
 # -- HANDLER METHODS ------------------------------------------------------------------------------#
-    cpdef void handle_tick(self, Tick tick, bint is_historical=*) except *
-    cpdef void handle_ticks(self, list ticks) except *
+    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
+    cpdef void handle_quote_ticks(self, list ticks) except *
+    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
+    cpdef void handle_trade_ticks(self, list ticks) except *
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
     cpdef void handle_data(self, object data) except *
@@ -97,7 +104,13 @@ cdef class TradingStrategy:
 # -- DATA METHODS ---------------------------------------------------------------------------------#
     cpdef datetime time_now(self)
     cpdef list instrument_symbols(self)
-    cpdef void get_ticks(
+    cpdef void get_quote_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
+        int limit=*) except *
+    cpdef void get_trade_ticks(
         self,
         Symbol symbol,
         datetime from_datetime=*,
@@ -111,19 +124,23 @@ cdef class TradingStrategy:
         int limit=*) except *
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef dict get_instruments(self)
-    cpdef void subscribe_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void subscribe_instrument(self, Symbol symbol) except *
-    cpdef void unsubscribe_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
-    cpdef bint has_ticks(self, Symbol symbol)
+    cpdef bint has_quote_ticks(self, Symbol symbol)
+    cpdef bint has_trade_ticks(self, Symbol symbol)
     cpdef bint has_bars(self, BarType bar_type)
-    cpdef int tick_count(self, Symbol symbol)
+    cpdef int quote_tick_count(self, Symbol symbol)
+    cpdef int trade_tick_count(self, Symbol symbol)
     cpdef int bar_count(self, BarType bar_type)
-    cpdef list ticks(self, Symbol symbol)
+    cpdef list quote_ticks(self, Symbol symbol)
+    cpdef list trade_ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
-    cpdef Tick tick(self, Symbol symbol, int index=*)
+    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
+    cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef double spread(self, Symbol symbol)
     cpdef double spread_average(self, Symbol symbol)

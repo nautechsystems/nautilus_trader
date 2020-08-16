@@ -16,7 +16,8 @@
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Quantity, Price, Tick
+from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport PositionId, ExecutionId
 
@@ -127,7 +128,7 @@ cdef class Position:
     cpdef str market_position_as_string(self):
         """
         Return the market position as a string.
-        
+
         :return str.
         """
         return market_position_to_string(self.market_position)
@@ -144,7 +145,7 @@ cdef class Position:
     cpdef list get_order_ids(self):
         """
         Return a list of all order_ids.
-        
+
         :return List[OrderId].
         """
         return sorted(self._order_ids)
@@ -152,7 +153,7 @@ cdef class Position:
     cpdef list get_execution_ids(self):
         """
         Return a list of all execution identifiers.
-        
+
         :return List[ExecutionId].
         """
         return sorted(self._execution_ids)
@@ -160,7 +161,7 @@ cdef class Position:
     cpdef list get_events(self):
         """
         Return a list of all order fill events.
-        
+
         :return List[Event].
         """
         return self._events.copy()
@@ -190,7 +191,7 @@ cdef class Position:
     cpdef double relative_quantity(self):
         """
         Return the relative quantity of the position.
-        
+
         :return float.
         """
         return self._relative_quantity
@@ -198,7 +199,7 @@ cdef class Position:
     cpdef double unrealized_points(self, Tick last):
         """
         Return the calculated unrealized points for the position from the given current price.
-         
+
         :param last: The position symbols last tick.
         :return Decimal.
         """
@@ -215,7 +216,7 @@ cdef class Position:
     cpdef double total_points(self, Tick last):
         """
         Return the calculated unrealized points for the position from the given current price.
-         
+
         :param last: The position symbols last tick.
         :return Decimal.
         """
@@ -227,7 +228,7 @@ cdef class Position:
     cpdef double unrealized_return(self, Tick last):
         """
         Return the calculated unrealized return for the position from the given current price.
-         
+
         :param last: The position symbols last tick.
         :return double.
         """
@@ -244,7 +245,7 @@ cdef class Position:
     cpdef double total_return(self, Tick last):
         """
         Return the calculated unrealized return for the position from the given current price.
-         
+
         :param last: The position symbols last tick.
         :return double.
         """
@@ -256,7 +257,7 @@ cdef class Position:
     cpdef Money unrealized_pnl(self, Tick last):
         """
         Return the calculated unrealized return for the position from the given current price.
-         
+
         :param last: The position symbols last tick.
         :return Money.
         """
@@ -273,7 +274,7 @@ cdef class Position:
     cpdef Money total_pnl(self, Tick last):
         """
         Return the calculated unrealized return for the position from the given current price.
-         
+
         :param last: The position symbols last tick.
         :return Money.
         """

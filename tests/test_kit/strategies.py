@@ -17,8 +17,9 @@ from datetime import timedelta
 
 from nautilus_trader.core.types import Label
 from nautilus_trader.model.identifiers import Symbol, PositionId
-from nautilus_trader.model.objects import Price, Tick
-from nautilus_trader.model.objects import BarSpecification, BarType, Bar
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.bar import BarSpecification, BarType, Bar
 from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
@@ -48,7 +49,7 @@ class PyStrategy(TradingStrategy):
     def on_start(self):
         self.subscribe_bars(self.bar_type)
 
-    def on_tick(self, tick):
+    def on_quote_tick(self, tick):
         pass
 
     def on_bar(self, bar_type, bar):
@@ -93,7 +94,7 @@ class EmptyStrategy(TradingStrategy):
     def on_start(self):
         pass
 
-    def on_tick(self, tick):
+    def on_quote_tick(self, tick):
         pass
 
     def on_bar(self, bar_type, bar):
@@ -140,9 +141,9 @@ class TickTock(TradingStrategy):
 
     def on_start(self):
         self.subscribe_bars(self.bar_type)
-        self.subscribe_ticks(self.instrument.symbol)
+        self.subscribe_ticks(self.bar_type.symbol)
 
-    def on_tick(self, tick):
+    def on_quote_tick(self, tick):
         self.log.info(f'Received Tick({tick})')
         self.store.append(tick)
 
@@ -215,7 +216,7 @@ class TestStrategy1(TradingStrategy):
         self.object_storer.store('custom start logic')
         self.account_inquiry()
 
-    def on_tick(self, tick):
+    def on_quote_tick(self, tick):
         self.object_storer.store(tick)
 
     def on_bar(self, bar_type, bar):
@@ -341,15 +342,15 @@ class EMACross(TradingStrategy):
             update_method=self.atr.update)
 
         # Get historical data
-        self.get_ticks(self.symbol)
+        self.get_quote_ticks(self.symbol)
         self.get_bars(self.bar_type)
 
         # Subscribe to live data
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
-        self.subscribe_ticks(self.symbol)
+        self.subscribe_quote_ticks(self.symbol)
 
-    def on_tick(self, tick: Tick):
+    def on_quote_tick(self, tick: QuoteTick):
         """
         This method is called whenever a Tick is received by the strategy, and
         after the Tick has been processed by the base class.
@@ -358,6 +359,7 @@ class EMACross(TradingStrategy):
         :param tick: The received tick.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
+        pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -377,8 +379,8 @@ class EMACross(TradingStrategy):
             return  # Wait for indicators to warm up...
 
         # Check if tick data available
-        if not self.has_ticks(self.symbol):
-            self.log.info(f"Waiting for {self.symbol.value} ticks...")
+        if not self.has_quote_ticks(self.symbol):
+            self.log.info(f"Waiting for {self.symbol} ticks...")
             return  # Wait for ticks...
 
         # Check average spread
@@ -395,7 +397,7 @@ class EMACross(TradingStrategy):
         if liquidity_ratio >= 2.0:
             self._check_signal(bar, sl_buffer, spread_buffer)
         else:
-            self.log.info(f"liquidity_ratio == {liquidity_ratio} (no liquidity).")
+            self.log.info(f"liquidity_ratio == {liquidity_ratio} (low liquidity).")
 
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
@@ -437,20 +439,22 @@ class EMACross(TradingStrategy):
             hard_limit=20000000,
             units=1,
             unit_batch_size=10000)
-        if position_size > 0:
-            bracket_order = self.order_factory.bracket_stop(
-                symbol=self.symbol,
-                order_side=OrderSide.BUY,
-                quantity=position_size,
-                entry=price_entry,
-                stop_loss=price_stop_loss,
-                take_profit=price_take_profit,
-                time_in_force=TimeInForce.GTD,
-                expire_time=bar.timestamp + timedelta(minutes=1))
 
-            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
-        else:
+        if position_size == 0:
             self.log.info("Insufficient equity for BUY signal.")
+            return
+
+        bracket_order = self.order_factory.bracket_stop(
+            symbol=self.symbol,
+            order_side=OrderSide.BUY,
+            quantity=position_size,
+            entry=price_entry,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit,
+            time_in_force=TimeInForce.GTD,
+            expire_time=bar.timestamp + timedelta(minutes=1))
+
+        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
     def _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         price_entry = Price(bar.low.as_double() - self.entry_buffer, self.precision)
@@ -482,20 +486,21 @@ class EMACross(TradingStrategy):
             units=1,
             unit_batch_size=10000)
 
-        if position_size > 0:  # Sufficient equity for a position
-            bracket_order = self.order_factory.bracket_stop(
-                symbol=self.symbol,
-                order_side=OrderSide.SELL,
-                quantity=position_size,
-                entry=price_entry,
-                stop_loss=price_stop_loss,
-                take_profit=price_take_profit,
-                time_in_force=TimeInForce.GTD,
-                expire_time=bar.timestamp + timedelta(minutes=1))
-
-            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
-        else:
+        if position_size == 0:
             self.log.info("Insufficient equity for SELL signal.")
+            return
+
+        bracket_order = self.order_factory.bracket_stop(
+            symbol=self.symbol,
+            order_side=OrderSide.SELL,
+            quantity=position_size,
+            entry=price_entry,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit,
+            time_in_force=TimeInForce.GTD,
+            expire_time=bar.timestamp + timedelta(minutes=1))
+
+        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         for working_order in self.orders_working().values():
@@ -564,4 +569,4 @@ class EMACross(TradingStrategy):
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_ticks(self.symbol)
+        self.unsubscribe_quote_ticks(self.symbol)

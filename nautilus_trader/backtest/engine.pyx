@@ -24,7 +24,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_timestamp, format_iso8601
 from nautilus_trader.core.functions cimport format_bytes, pad_string, get_size_of
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.objects cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
 from nautilus_trader.common.clock cimport TestClock, TimeEventHandler
 from nautilus_trader.common.uuid cimport TestUUIDFactory
@@ -39,7 +39,7 @@ from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer  # noqa
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
 
 
 cdef class BacktestEngine:
@@ -263,7 +263,7 @@ cdef class BacktestEngine:
 
         self.trader.start()
 
-        cdef Tick tick
+        cdef QuoteTick tick
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self.data_client.has_data:
@@ -295,7 +295,7 @@ cdef class BacktestEngine:
     cpdef list get_log_store(self):
         """
         Return the store of log message strings for the test logger.
-        
+
         :return List[str].
         """
         return self.test_logger.get_log_store()
@@ -320,9 +320,9 @@ cdef class BacktestEngine:
     cpdef void reset(self) except *:
         """
         Reset the backtest engine.
-        
+
         The following components are reset;
-        
+
         - DataClient
         - ExecutionEngine
         - ExecutionClient

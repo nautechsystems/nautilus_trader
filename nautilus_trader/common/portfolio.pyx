@@ -54,7 +54,7 @@ cdef class Portfolio:
     cpdef void set_base_currency(self, Currency currency) except *:
         """
         Set the portfolios base currency.
-        
+
         :param currency: The base currency to set.
         """
         self.currency = currency
@@ -62,7 +62,7 @@ cdef class Portfolio:
     cpdef void update(self, PositionEvent event) except *:
         """
         Update the portfolio with the given event.
-        
+
         :param event: The event to update with.
         """
         Condition.not_none(event, 'event')
@@ -96,7 +96,7 @@ cdef class Portfolio:
     cpdef set symbols_open(self):
         """
         Return the open symbols in the portfolio.
-        
+
         :return: Set[Symbol].
         """
         return set(self._positions_open.keys())
@@ -104,7 +104,7 @@ cdef class Portfolio:
     cpdef set symbols_closed(self):
         """
         Return the closed symbols in the portfolio.
-        
+
         :return: Set[Symbol].
         """
         return set(self._positions_closed.keys())
@@ -112,7 +112,7 @@ cdef class Portfolio:
     cpdef set symbols_all(self):
         """
         Return the symbols in the portfolio.
-        
+
         :return: Set[Symbol].
         """
         return self.symbols_open().union(self.symbols_closed())
@@ -120,7 +120,7 @@ cdef class Portfolio:
     cpdef dict positions_open(self, Symbol symbol=None):
         """
         Return the open positions in the portfolio.
-        
+
         :param symbol: The optional symbol query filter.
         :return: Dict[PositionId, Position].
         """
@@ -139,7 +139,7 @@ cdef class Portfolio:
     cpdef dict positions_closed(self, Symbol symbol=None):
         """
         Return the closed positions in the portfolio.
-        
+
         :param symbol: The optional symbol query filter.
         :return: Dict[PositionId, Position].
         """
@@ -158,7 +158,7 @@ cdef class Portfolio:
     cpdef dict positions_all(self, Symbol symbol=None):
         """
         Return all positions in the portfolio.
-        
+
         :param symbol: The optional symbol query filter.
         :return: Dict[PositionId, Position].
         """

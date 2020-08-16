@@ -19,7 +19,7 @@ cpdef enum SecurityType:
     FOREX = 1,
     BOND = 2,
     EQUITY = 3,
-    FUTURE = 4,
+    FUTURES = 4,
     CFD = 5,
     OPTION = 6,
     CRYPTO = 7
@@ -33,7 +33,7 @@ cdef inline str security_type_to_string(int value):
     elif value == 3:
         return 'EQUITY'
     elif value == 4:
-        return 'FUTURE'
+        return 'FUTURES'
     elif value == 5:
         return 'CFD'
     elif value == 6:
@@ -51,8 +51,8 @@ cdef inline SecurityType security_type_from_string(str value):
         return SecurityType.BOND
     elif value == 'EQUITY':
         return SecurityType.EQUITY
-    elif value == 'FUTURE':
-        return SecurityType.FUTURE
+    elif value == 'FUTURES':
+        return SecurityType.FUTURES
     elif value == 'CFD':
         return SecurityType.CFD
     elif value == 'OPTION':

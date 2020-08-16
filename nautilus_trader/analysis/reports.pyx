@@ -40,7 +40,7 @@ cdef class ReportProvider:
     cpdef object generate_orders_report(self, dict orders: {OrderId, Order}):
         """
         Return an orders report dataframe.
-        
+
         :param orders: The dictionary of order_ids and order objects.
         :return pd.DataFrame.
         """
@@ -56,7 +56,7 @@ cdef class ReportProvider:
     cpdef object generate_order_fills_report(self, dict orders: {OrderId, Order}):
         """
         Return an order fills report dataframe.
-        
+
         :param orders: The dictionary of order_ids and order objects.
         :return pd.DataFrame.
         """
@@ -74,7 +74,7 @@ cdef class ReportProvider:
     cpdef object generate_positions_report(self, dict positions: {PositionId, Position}):
         """
         Return a positions report dataframe.
-        
+
         :param positions: The dictionary of position_ids and objects.
         :return pd.DataFrame.
         """

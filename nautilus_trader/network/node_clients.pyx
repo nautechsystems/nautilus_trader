@@ -17,7 +17,6 @@ import zmq
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Message, MessageType
 from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
@@ -251,7 +250,7 @@ cdef class MessageClient(ClientNode):
     cpdef void send_request(self, Request request) except *:
         """
         Send the given request.
-        
+
         Parameters
         ----------
         request : Request
@@ -263,7 +262,7 @@ cdef class MessageClient(ClientNode):
         """
         Send the given string message. Note that a reply will not be awaited as
         there is no correlation identifier.
-        
+
         Parameters
         ----------
         message : str
@@ -470,7 +469,7 @@ cdef class MessageSubscriber(ClientNode):
     cpdef void subscribe(self, str topic) except *:
         """
         Subscribe the client to the given topic.
-        
+
         :param topic: The topic to subscribe to.
         """
         Condition.valid_string(topic, 'topic')
@@ -480,7 +479,7 @@ cdef class MessageSubscriber(ClientNode):
     cpdef void unsubscribe(self, str topic) except *:
         """
         Unsubscribe the client from the given topic.
-        
+
         :param topic: The topic to unsubscribe from.
         """
         Condition.valid_string(topic, 'topic')

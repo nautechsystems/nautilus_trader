@@ -18,7 +18,6 @@ import setuptools
 from setuptools import setup
 from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
-import subprocess
 
 from nautilus_trader import __author__, __version__
 from tools.packaging import parse_requirements, make_extensions
@@ -69,17 +68,9 @@ compiler_directives = {
 # -------------------------------------
 
 
-# Run flake8  # TODO: Find a better way to run flake8 here
-print('Running flake8 over codebase...')
-if subprocess.run('flake8').returncode != 0:
-    raise RuntimeError("flake8 failed build")
-
-
 # Create package description
 with open('README.md', encoding='utf-8') as f:
     LONG_DESCRIPTION = f.read()
-
-subprocess.call('echo Compiling C code with cython (this may take several minutes)...'.split())
 
 
 setup(

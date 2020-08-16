@@ -39,5 +39,5 @@ cdef class Decimal:
     cpdef bint le(self, Decimal other)
     cpdef bint gt(self, Decimal other)
     cpdef bint ge(self, Decimal other)
-    cpdef Decimal add_decimal(self, Decimal other, bint keep_precision=*)
-    cpdef Decimal subtract_decimal(self, Decimal other, bint keep_precision=*)
+    cpdef Decimal add_as_decimal(self, Decimal other, bint keep_precision=*)
+    cpdef Decimal sub_as_decimal(self, Decimal other, bint keep_precision=*)

@@ -119,7 +119,7 @@ def find_files(extension: str, directories: list) -> list:
 
 def make_extensions(directories: list) -> list:
     """
-    Return a list of c extensions.
+    Return a list of C extensions.
 
     directories : list of str
         The directories to search for extensions.

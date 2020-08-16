@@ -18,7 +18,8 @@ import unittest
 from datetime import datetime
 
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Price, Volume, Tick
+from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.data import DataClient
@@ -40,14 +41,15 @@ class DataClientTests(unittest.TestCase):
 
     def test_get_exchange_rate_returns_correct_rate(self):
         # Arrange
-        tick = Tick(USDJPY_FXCM,
-                    Price(110.80000, 5),
-                    Price(110.80010, 5),
-                    Volume(1),
-                    Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+        tick = QuoteTick(
+            USDJPY_FXCM,
+            Price(110.80000, 5),
+            Price(110.80010, 5),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.client._handle_tick(tick)
+        self.client._handle_quote_tick(tick)
 
         # Act
         result = self.client.get_exchange_rate(Currency.JPY, Currency.USD)
@@ -57,14 +59,15 @@ class DataClientTests(unittest.TestCase):
 
     def test_can_get_exchange_rate_with_no_conversion(self):
         # Arrange
-        tick = Tick(AUDUSD_FXCM,
-                    Price(0.80000, 5),
-                    Price(0.80010, 5),
-                    Volume(1),
-                    Volume(1),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+        tick = QuoteTick(
+            AUDUSD_FXCM,
+            Price(0.80000, 5),
+            Price(0.80010, 5),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.client._handle_tick(tick)
+        self.client._handle_quote_tick(tick)
 
         # Act
         result = self.client.get_exchange_rate(Currency.AUD, Currency.USD)

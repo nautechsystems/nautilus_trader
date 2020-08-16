@@ -79,8 +79,8 @@ class DecimalTests(unittest.TestCase):
         # Act
         result0 = Decimal(1.00001, 5) + 0.00001
         result1 = Decimal(1.00001, 5) + Decimal(0.00001, 5)
-        result3 = Decimal(1.00001, 5).add_decimal(Decimal(0.00001, 5))
-        result4 = Decimal(1.00001, 5).add_decimal(Decimal(0.5, 1))
+        result3 = Decimal(1.00001, 5).add_as_decimal(Decimal(0.00001, 5))
+        result4 = Decimal(1.00001, 5).add_as_decimal(Decimal(0.5, 1))
 
         # Assert
         self.assertEqual(float, type(result0))
@@ -97,8 +97,8 @@ class DecimalTests(unittest.TestCase):
         # Act
         result0 = Decimal(1.00001, 5) - 0.00001
         result1 = Decimal(1.00001, 5) - Decimal(0.00001, 5)
-        result3 = Decimal(1.00001, 5).subtract_decimal(Decimal(0.00001, 5))
-        result4 = Decimal(1.00001, 5).subtract_decimal(Decimal(0.5, 1))
+        result3 = Decimal(1.00001, 5).sub_as_decimal(Decimal(0.00001, 5))
+        result4 = Decimal(1.00001, 5).sub_as_decimal(Decimal(0.5, 1))
 
         # Assert
         self.assertEqual(float, type(result0))

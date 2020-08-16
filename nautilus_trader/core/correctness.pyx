@@ -62,7 +62,7 @@ cdef class Condition:
     cdef void false(bint predicate, str description, ex_type=None) except *:
         """
         Check the condition predicate is False.
-        
+
         Parameters
         ----------
         predicate : bool
@@ -91,7 +91,7 @@ cdef class Condition:
     cdef void none(object argument, str param, ex_type=None) except *:
         """
         Check the argument is None.
-        
+
         Parameters
         ----------
         argument : object
@@ -120,7 +120,7 @@ cdef class Condition:
     cdef void not_none(object argument, str param, ex_type=None) except *:
         """
         Check the argument is not None.
-        
+
         Parameters
         ----------
         argument : object
@@ -153,7 +153,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the argument is of the specified type.
-        
+
         Parameters
         ----------
         argument : object
@@ -189,7 +189,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the argument is of the specified type, or is None.
-        
+
         Parameters
         ----------
         argument : object
@@ -216,7 +216,7 @@ cdef class Condition:
     cdef void callable(object argument, str param, ex_type=None) except *:
         """
         Check the object is callable.
-        
+
         Parameters
         ----------
         argument : object
@@ -245,7 +245,7 @@ cdef class Condition:
     cdef void callable_or_none(object argument, str param, ex_type=None) except *:
         """
         Check the object is callable or None.
-        
+
         Parameters
         ----------
         argument : object
@@ -275,7 +275,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the objects are equal.
-        
+
         Parameters
         ----------
         argument1 : object
@@ -315,7 +315,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the objects are not equal.
-        
+
         Parameters
         ----------
         object1 : object
@@ -392,7 +392,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
-        
+
         Parameters
         ----------
         argument : dict
@@ -426,7 +426,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the element is contained within the specified collection.
-        
+
         Parameters
         ----------
         element : object
@@ -467,7 +467,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the element is not contained within the specified collection.
-        
+
         Parameters
         ----------
         element : object
@@ -503,7 +503,7 @@ cdef class Condition:
     cdef void not_empty(object collection, str param, ex_type=None) except *:
         """
         Check the collection is not empty.
-        
+
         Parameters
         ----------
         collection : iterable
@@ -534,7 +534,7 @@ cdef class Condition:
     cdef void empty(object collection, str param, ex_type=None) except *:
         """
         Check the collection is empty.
-        
+
         Parameters
         ----------
         collection : iterable
@@ -565,7 +565,7 @@ cdef class Condition:
     cdef void positive(double value, str param, ex_type=None) except *:
         """
         Check the real number value is positive (> 0).
-        
+
         Parameters
         ----------
         value : scalar
@@ -594,7 +594,7 @@ cdef class Condition:
     cdef void positive_int(int value, str param, ex_type=None) except *:
         """
         Check the integer value is a positive integer (> 0).
-        
+
         Parameters
         ----------
         value : int
@@ -623,7 +623,7 @@ cdef class Condition:
     cdef void not_negative(double value, str param, ex_type=None) except *:
         """
         Check the real number value is not negative (< 0).
-        
+
         Parameters
         ----------
         value : scalar
@@ -652,7 +652,7 @@ cdef class Condition:
     cdef void not_negative_int(int value, str param, ex_type=None) except *:
         """
         Check the integer value is not negative (< 0).
-        
+
         Parameters
         ----------
         value : int
@@ -686,7 +686,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the real number value is within the specified range (inclusive).
-        
+
         Parameters
         ----------
         value : scalar
@@ -725,7 +725,7 @@ cdef class Condition:
             ex_type=None) except *:
         """
         Check the integer value is within the specified range (inclusive).
-        
+
         Parameters
         ----------
         value : int
@@ -759,7 +759,7 @@ cdef class Condition:
     cdef void valid_string(str argument, str param, ex_type=None) except *:
         """
         Check the string argument is valid (not None, empty or whitespace).
-        
+
         Parameters
         ----------
         argument : str
@@ -791,7 +791,7 @@ cdef class Condition:
     cdef void valid_port(int value, str param, ex_type=None) except *:
         """
         Check the port value is valid in range [49152, 65535].
-        
+
         Parameters
         ----------
         value : int

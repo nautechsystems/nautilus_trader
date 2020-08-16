@@ -49,18 +49,6 @@ cdef set PRICED_ORDER_TYPES = {
 cdef class Order:
     """
     Represents an order for a financial market instrument.
-
-    Attributes
-    ----------
-    order_id : OrderId
-        The unique user identifier for the order.
-    id_broker : OrderIdBroker
-        The unique broker identifier for the order.
-    account_id : AccountId
-        The account identifier associated with the order.
-    execution_id : ExecutionId
-        The last execution identifier for the order.
-
     """
 
     def __init__(self,
@@ -192,7 +180,7 @@ cdef class Order:
     cdef Order create(OrderInitialized event):
         """
         Return an order from the given initialized event.
-        
+
         :param event: The event to initialize with.
         :return Order.
         """
@@ -284,7 +272,7 @@ cdef class Order:
     cpdef str state_as_string(self):
         """
         Return the order state as a string.
-        
+
         :return str.
         """
         return order_state_to_string(self.state)
@@ -292,7 +280,7 @@ cdef class Order:
     cpdef list get_execution_ids(self):
         """
         Return a sorted list of execution identifiers.
-        
+
         :return List[ExecutionId].
         """
         return sorted(self._execution_ids)
@@ -300,7 +288,7 @@ cdef class Order:
     cpdef list get_events(self):
         """
         Return a list or order events.
-        
+
         :return List[OrderEvent].
         """
         return self._events.copy()
@@ -308,7 +296,7 @@ cdef class Order:
     cpdef datetime last_event_time(self):
         """
         Return the last event time for the order.
-        
+
         :return datetime.
         """
         return self._events[-1].timestamp

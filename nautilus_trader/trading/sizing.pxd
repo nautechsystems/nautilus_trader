@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport Quantity, Price, Money, Instrument
+from nautilus_trader.model.objects cimport Quantity, Price, Money
+from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class PositionSizer:

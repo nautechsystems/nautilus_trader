@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Instrument
+from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class CSVTickDataLoader:

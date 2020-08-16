@@ -89,7 +89,7 @@ cdef class LiveClock(Clock):
     cpdef datetime time_now(self):
         """
         Return the current datetime of the clock (UTC).
-        
+
         :return datetime.
         """
         # From the pytz docs https://pythonhosted.org/pytz/

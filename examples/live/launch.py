@@ -16,7 +16,7 @@
 
 from nautilus_trader.model.enums import BarStructure, PriceType
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import BarSpecification
+from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.live.node import TradingNode
 
 from examples.strategies.ema_cross_filtered import EMACrossFiltered

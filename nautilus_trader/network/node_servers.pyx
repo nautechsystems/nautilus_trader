@@ -16,7 +16,8 @@
 import zmq
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Message, MessageType, message_type_to_string, message_type_from_string
+from nautilus_trader.core.message cimport Message, MessageType
+from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -175,12 +176,12 @@ cdef class MessageServer(ServerNode):
         """
         Register a request handler which will receive Request messages other
         than Connect and Disconnect.
-        
+
         Parameters
         ----------
         handler : callable
             The handler to register.
-            
+
         """
         Condition.callable(handler, 'handler')
 
@@ -196,7 +197,7 @@ cdef class MessageServer(ServerNode):
             The message type to register.
         handler : callable
             The handler to register.
-            
+
         """
         Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
         Condition.callable(handler, 'handler')
@@ -210,7 +211,7 @@ cdef class MessageServer(ServerNode):
     cpdef void send_rejected(self, str rejected_message, UUID correlation_id, ClientId receiver) except *:
         """
         Send a MessageRejected response.
-        
+
         Parameters
         ----------
         rejected_message : str
@@ -219,7 +220,7 @@ cdef class MessageServer(ServerNode):
             The identifier of the rejected message.
         receiver : ClientId
             The client to send the response to.
-            
+
         """
         Condition.not_none(correlation_id, 'correlation_id')
 
@@ -234,14 +235,14 @@ cdef class MessageServer(ServerNode):
     cpdef void send_received(self, Message original, ClientId receiver) except *:
         """
         Send a MessageReceived response for the given original message.
-        
+
         Parameters
         ----------
         original : Request
             The original message received.
         receiver : ClientId
             The client to send the response to.
-            
+
         """
         cdef MessageReceived response = MessageReceived(
             original.__class__.__name__,
@@ -254,7 +255,7 @@ cdef class MessageServer(ServerNode):
     cpdef void send_response(self, Response response, ClientId receiver) except *:
         """
         Send the given response to the given receiver.
-        
+
         Parameters
         ----------
         response : Response
@@ -274,7 +275,7 @@ cdef class MessageServer(ServerNode):
     cpdef void send_string(self, str message, ClientId receiver) except *:
         """
         Send the given string message to the given receiver.
-        
+
         Parameters
         ----------
         message : str

@@ -112,7 +112,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -133,7 +133,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.limit(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -155,7 +155,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         bracket_order = strategy.order_factory.bracket_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -177,7 +177,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         bracket_order = strategy.order_factory.bracket_stop(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -200,7 +200,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -224,7 +224,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         bracket_order = strategy.order_factory.bracket_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -306,7 +306,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
