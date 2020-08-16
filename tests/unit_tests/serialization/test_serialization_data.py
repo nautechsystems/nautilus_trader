@@ -19,8 +19,8 @@ from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.serialization.data import BsonDataSerializer, DataMapper
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.data import TestDataProvider
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
@@ -54,7 +54,7 @@ class DataSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, result)
 
-    def test_can_serialize_and_deserialize_ticks(self):
+    def test_can_serialize_and_deserialize_quote_ticks(self):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,
@@ -64,7 +64,7 @@ class DataSerializerTests(unittest.TestCase):
             Quantity(1),
             UNIX_EPOCH)
 
-        data = self.mapper.map_ticks([tick])
+        data = self.mapper.map_quote_ticks([tick])
 
         # Act
         serialized = self.serializer.serialize(data)

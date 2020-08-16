@@ -49,7 +49,7 @@ class DataClientTests(unittest.TestCase):
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.client._handle_tick(tick.get_type(), tick)
+        self.client._handle_quote_tick(tick)
 
         # Act
         result = self.client.get_exchange_rate(Currency.JPY, Currency.USD)
@@ -67,7 +67,7 @@ class DataClientTests(unittest.TestCase):
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.client._handle_tick(tick.get_type(), tick)
+        self.client._handle_quote_tick(tick)
 
         # Act
         result = self.client.get_exchange_rate(Currency.AUD, Currency.USD)

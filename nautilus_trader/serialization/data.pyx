@@ -19,10 +19,9 @@ from bson.raw_bson import RawBSONDocument
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal, Quantity, Price
-from nautilus_trader.model.tick cimport Tick, QuoteTick, TradeTick
+from nautilus_trader.model.tick cimport QuoteTick, TradeTick
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.instrument cimport Instrument, ForexInstrument
-from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.security_type cimport security_type_to_string, security_type_from_string
@@ -31,17 +30,17 @@ from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.common cimport convert_datetime_to_string, convert_string_to_datetime
 
 
-cdef class Utf8TickSerializer:
+cdef class Utf8QuoteTickSerializer:
     """
-    Provides a tick serializer for the UTF-8 specification.
+    Provides a quote tick serializer for the UTF-8 specification.
     """
 
     @staticmethod
-    cdef bytes serialize(Tick tick):
+    cdef bytes serialize(QuoteTick tick):
         """
-        Serialize the given tick to UTF-8 specification bytes.
+        Serialize the given quote tick to UTF-8 specification bytes.
 
-        :param tick: The tick to serialize.
+        :param tick: The quote tick to serialize.
         :return bytes.
         """
         Condition.not_none(tick, 'tick')
@@ -51,69 +50,134 @@ cdef class Utf8TickSerializer:
     @staticmethod
     cdef list serialize_ticks_list(list ticks):
         """
-        Serialize the given tick to UTF-8 specification bytes.
+        Serialize the given quote ticks to a list of UTF-8 specification bytes.
 
-        :param ticks: The ticks to serialize.
+        :param ticks: The quote ticks to serialize.
         :return bytes.
         """
         Condition.not_none(ticks, 'ticks')
 
-        cdef Tick tick
+        cdef QuoteTick tick
         return [tick.to_serializable_string().encode(UTF8) for tick in ticks]
 
     @staticmethod
-    cdef Tick deserialize(TickType tick_type, bytes tick_bytes):
+    cdef QuoteTick deserialize(Symbol symbol, bytes tick_bytes):
         """
-        Deserialize the given tick bytes to a tick.
+        Deserialize the given quote tick bytes to a tick.
 
-        :param tick_type: The type of tick.
-        :param tick_bytes: The tick bytes to deserialize.
-        :return Tick.
+        :param symbol: The quote tick symbol.
+        :param tick_bytes: The quote tick bytes to deserialize.
+        :return QuoteTick.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.not_none(tick_bytes, 'tick_bytes')
 
-        if tick_type.spec == TickSpecification.QUOTE:
-            return QuoteTick.from_serializable_string(tick_type.symbol, tick_bytes.decode(UTF8))
-        if tick_type.spec == TickSpecification.TRADE:
-            return TradeTick.from_serializable_string(tick_type.symbol, tick_bytes.decode(UTF8))
-
-        raise ValueError(f"Cannot deserialize tick (the tick_type was invalid '{tick_type.spec_string()}').")
+        return QuoteTick.from_serializable_string(symbol, tick_bytes.decode(UTF8))
 
     @staticmethod
-    cdef list deserialize_bytes_list(TickType tick_type, list tick_values):
+    cdef list deserialize_bytes_list(Symbol symbol, list tick_values):
         """
-        Deserialize the given bar bytes to a bar.
+        Deserialize the given inputs to a list of quote ticks.
 
-        :param tick_type: The type of tick.
-        :param tick_values: The tick values to deserialize.
-        :return Bar.
+        :param symbol: The quote tick symbol.
+        :param tick_values: The quote tick values to deserialize.
+        :return List[QuoteTick].
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.not_none(tick_values, 'tick_values')
 
-        if tick_type.spec == TickSpecification.QUOTE:
-            return [QuoteTick.from_serializable_string(tick_type.symbol, values.decode(UTF8)) for values in tick_values]
-        if tick_type.spec == TickSpecification.TRADE:
-            return [TradeTick.from_serializable_string(tick_type.symbol, values.decode(UTF8)) for values in tick_values]
-
-        raise ValueError(f"Cannot deserialize bytes list (the tick_type was invalid '{tick_type.spec_string()}').")
+        return [QuoteTick.from_serializable_string(symbol, values.decode(UTF8)) for values in tick_values]
 
     @staticmethod
-    def py_serialize(Tick tick) -> bytes:
-        return Utf8TickSerializer.serialize(tick)
+    def py_serialize(QuoteTick tick) -> bytes:
+        return Utf8QuoteTickSerializer.serialize(tick)
 
     @staticmethod
     def py_serialize_ticks_list(list ticks) -> [bytes]:
-        return Utf8TickSerializer.serialize_ticks_list(ticks)
+        return Utf8QuoteTickSerializer.serialize_ticks_list(ticks)
 
     @staticmethod
-    def py_deserialize(TickType tick_type, bytes values_bytes) -> Tick:
-        return Utf8TickSerializer.deserialize(tick_type, values_bytes)
+    def py_deserialize(Symbol symbol, bytes values_bytes) -> QuoteTick:
+        return Utf8QuoteTickSerializer.deserialize(symbol, values_bytes)
 
     @staticmethod
-    def py_deserialize_bytes_list(TickType tick_type, list tick_values) -> [Tick]:
-        return Utf8TickSerializer.deserialize_bytes_list(tick_type, tick_values)
+    def py_deserialize_bytes_list(Symbol symbol, list tick_values) -> [QuoteTick]:
+        return Utf8QuoteTickSerializer.deserialize_bytes_list(symbol, tick_values)
+
+
+cdef class Utf8TradeTickSerializer:
+    """
+    Provides a trade tick serializer for the UTF-8 specification.
+    """
+
+    @staticmethod
+    cdef bytes serialize(TradeTick tick):
+        """
+        Serialize the given trade tick to UTF-8 specification bytes.
+
+        :param tick: The trade tick to serialize.
+        :return bytes.
+        """
+        Condition.not_none(tick, 'tick')
+
+        return tick.to_serializable_string().encode(UTF8)
+
+    @staticmethod
+    cdef list serialize_ticks_list(list ticks):
+        """
+        Serialize the given trade ticks to a list of UTF-8 specification bytes.
+
+        :param ticks: The trade ticks to serialize.
+        :return bytes.
+        """
+        Condition.not_none(ticks, 'ticks')
+
+        cdef TradeTick tick
+        return [tick.to_serializable_string().encode(UTF8) for tick in ticks]
+
+    @staticmethod
+    cdef TradeTick deserialize(Symbol symbol, bytes tick_bytes):
+        """
+        Deserialize the given trade tick bytes to a tick.
+
+        :param symbol: The trade tick symbol.
+        :param tick_bytes: The trade tick bytes to deserialize.
+        :return TradeTick.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(tick_bytes, 'tick_bytes')
+
+        return TradeTick.from_serializable_string(symbol, tick_bytes.decode(UTF8))
+
+    @staticmethod
+    cdef list deserialize_bytes_list(Symbol symbol, list tick_values):
+        """
+        Deserialize the given inputs to a list of trade ticks.
+
+        :param symbol: The trade tick symbol.
+        :param tick_values: The trade tick values to deserialize.
+        :return List[TradeTick].
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(tick_values, 'tick_values')
+
+        return [TradeTick.from_serializable_string(symbol, values.decode(UTF8)) for values in tick_values]
+
+    @staticmethod
+    def py_serialize(TradeTick tick) -> bytes:
+        return Utf8TradeTickSerializer.serialize(tick)
+
+    @staticmethod
+    def py_serialize_ticks_list(list ticks) -> [bytes]:
+        return Utf8TradeTickSerializer.serialize_ticks_list(ticks)
+
+    @staticmethod
+    def py_deserialize(Symbol symbol, bytes values_bytes) -> QuoteTick:
+        return Utf8TradeTickSerializer.deserialize(symbol, values_bytes)
+
+    @staticmethod
+    def py_deserialize_bytes_list(Symbol symbol, list tick_values) -> [QuoteTick]:
+        return Utf8TradeTickSerializer.deserialize_bytes_list(symbol, tick_values)
 
 
 cdef class Utf8BarSerializer:
@@ -340,15 +404,26 @@ cdef class DataMapper:
         """
         self.instrument_serializer = BsonInstrumentSerializer()
 
-    cpdef dict map_ticks(self, list ticks):
+    cpdef dict map_quote_ticks(self, list ticks):
         Condition.not_empty(ticks, 'ticks')
-        Condition.type(ticks[0], Tick, 'ticks')
+        Condition.type(ticks[0], QuoteTick, 'ticks')
 
         return {
-            DATA: Utf8TickSerializer.serialize_ticks_list(ticks),
-            DATA_TYPE: TICK_ARRAY,
-            METADATA: {SYMBOL: ticks[0].symbol.value,
-                       SPECIFICATION: ticks[0].spec_string()},
+            DATA: Utf8QuoteTickSerializer.serialize_ticks_list(ticks),
+            DATA_TYPE: QUOTE_TICK_ARRAY,
+            METADATA: {SYMBOL: ticks[0].symbol.value},
+        }
+
+    cpdef dict map_trade_ticks(self, list ticks):
+        Condition.not_empty(ticks, 'ticks')
+        Condition.type(ticks[0], TradeTick, 'ticks')
+
+        return {
+            DATA: Utf8TradeTickSerializer.serialize_ticks_list(ticks),
+            DATA_TYPE: TRADE_TICK_ARRAY,
+            METADATA: {
+                SYMBOL: ticks[0].symbol.value
+            },
         }
 
     cpdef dict map_bars(self, list bars, BarType bar_type):
@@ -359,8 +434,10 @@ cdef class DataMapper:
         return {
             DATA: Utf8BarSerializer.serialize_bars_list(bars),
             DATA_TYPE: BAR_ARRAY,
-            METADATA: {SYMBOL: bar_type.symbol.value,
-                       SPECIFICATION: bar_type.spec.to_string()},
+            METADATA: {
+                SYMBOL: bar_type.symbol.value,
+                SPECIFICATION: bar_type.spec.to_string()
+            },
         }
 
     cpdef dict map_instruments(self, list instruments):

@@ -82,7 +82,7 @@ class TickTests(unittest.TestCase):
         tick = TradeTick(
             AUDUSD_FXCM,
             Price(1.00000, 5),
-            Quantity(10000),
+            Quantity(50000),
             Maker.BUYER,
             MatchId('123456789'),
             UNIX_EPOCH)
@@ -92,6 +92,6 @@ class TickTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual('AUD/USD.FXCM,1.00000,10000,BUYER,123456789,1970-01-01T00:00:00.000Z', result0)
-        self.assertTrue(result1.startswith('<TradeTick(AUD/USD.FXCM,1.00000,10000,BUYER,123456789,1970-01-01T00:00:00.000Z) object at'))
+        self.assertEqual('AUD/USD.FXCM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z', result0)
+        self.assertTrue(result1.startswith('<TradeTick(AUD/USD.FXCM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z) object at'))
         self.assertTrue(result1.endswith('>'))

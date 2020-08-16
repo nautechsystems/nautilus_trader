@@ -21,7 +21,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.model.c_enums.tick_spec cimport TickSpecification
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -113,7 +112,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
 
-        self._market = {}               # type: {Symbol, Tick}
+        self._market = {}               # type: {Symbol, QuoteTick}
         self._working_orders = {}       # type: {OrderId, Order}
         self._child_orders = {}         # type: {OrderId, [Order]}
         self._oco_orders = {}           # type: {OrderId, OrderId}
@@ -190,7 +189,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
 
-        self._market = {}               # type: {Symbol, Tick}
+        self._market = {}               # type: {Symbol, QuoteTick}
         self._working_orders = {}       # type: {OrderId, Order}
         self._child_orders = {}  # type: {OrderId, [Order]}
         self._oco_orders = {}           # type: {OrderId, OrderId}

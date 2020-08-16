@@ -28,7 +28,7 @@ from nautilus_trader.core.functions cimport get_size_of, format_bytes
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.objects cimport Price, Quantity
-from nautilus_trader.model.tick cimport TickType, QuoteTick
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.identifiers cimport Symbol, Venue
@@ -330,7 +330,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(tick, 'tick')
 
-        self._handle_tick(tick.get_type(), tick)
+        self._handle_quote_tick(tick)
 
         if self._clock.timer_count == 0 or tick.timestamp < self._clock.next_event_time:
             return  # No events to handle yet
@@ -339,9 +339,9 @@ cdef class BacktestDataClient(DataClient):
         for event_handler in self._clock.advance_time(tick.timestamp):
             event_handler.handle()
 
-    cpdef void request_ticks(
+    cpdef void request_quote_ticks(
             self,
-            TickType tick_type,
+            Symbol symbol,
             datetime from_datetime,
             datetime to_datetime,
             int limit,
@@ -349,7 +349,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Request the historical bars for the given parameters from the data service.
 
-        :param tick_type: The tick type for the ticks to download.
+        :param symbol: The symbol for the ticks to download.
         :param from_datetime: The from datetime for the request.
         :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
@@ -357,11 +357,11 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type callable.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
-        self._log.info(f"Simulated request ticks for {tick_type} from {from_datetime} to {to_datetime}.")
+        self._log.info(f"Simulated request ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
     cpdef void request_bars(
             self,
@@ -416,19 +416,19 @@ cdef class BacktestDataClient(DataClient):
 
         callback(self.get_instruments())
 
-    cpdef void subscribe_ticks(self, TickType tick_type, handler: callable) except *:
+    cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Subscribe to tick data for the given symbol.
 
-        :param tick_type: The tick type to subscribe to.
+        :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription.
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.callable(handler, 'handler')
 
-        self._add_tick_handler(tick_type, handler)
+        self._add_quote_tick_handler(symbol, handler)
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
@@ -459,19 +459,19 @@ cdef class BacktestDataClient(DataClient):
             self._log.info(f"Simulated subscribe to {symbol} instrument updates "
                            f"(a backtest data client wont update an instrument).")
 
-    cpdef void unsubscribe_ticks(self, TickType tick_type, handler: callable) except *:
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
         Unsubscribes from tick data for the given symbol.
 
-        :param tick_type: The tick type to unsubscribe from.
+        :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable or None.
         """
-        Condition.not_none(tick_type, 'tick_type')
+        Condition.not_none(symbol, 'symbol')
         Condition.callable_or_none(handler, 'handler')
 
-        self._remove_tick_handler(tick_type, handler)
+        self._remove_quote_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
