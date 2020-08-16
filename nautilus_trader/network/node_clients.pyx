@@ -17,7 +17,6 @@ import zmq
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Message, MessageType
 from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string

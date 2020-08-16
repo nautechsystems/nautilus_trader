@@ -44,7 +44,7 @@ cdef class TrailingStopAlgorithm:
 
     def __init__(self, Order order):
         """
-        Initializes a new instance of the TickTrailingStopAlgorithm class.
+        Initializes a new instance of the TrailingStopAlgorithm class.
 
         :param order: The order for the trailing stop.
         """
@@ -181,7 +181,7 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
                  Order order,
                  BarType bar_type):
         """
-        Initializes a new instance of the BarTrailingStopAlgorithm class.
+        Initializes a new instance of the BarsBackTrail class.
 
         :param order: The order for the trailing stop.
         """

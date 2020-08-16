@@ -357,7 +357,7 @@ cdef class FuzzyCandlesticks(Indicator):
         cdef double x
 
         # Determine CandleBodySize fuzzy membership
-        # -------------------------------------
+        # -----------------------------------------
         # CandleBodySize.SMALL
         x = mean_body_percent - (sd_body_percents * self._threshold1)
         if body_percent <= x:
@@ -394,7 +394,7 @@ cdef class FuzzyCandlesticks(Indicator):
         cdef double x
 
         # Determine CandleWickSize fuzzy membership
-        # -------------------------------------
+        # -----------------------------------------
         # CandleWickSize.SMALL
         x = mean_wick_percent - (sd_wick_percents * self._threshold1)
         if wick_percent <= x:

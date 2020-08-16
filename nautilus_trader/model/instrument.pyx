@@ -160,7 +160,7 @@ cdef class ForexInstrument(Instrument):
                  Decimal rollover_interest_sell not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the Instrument class.
+        Initializes a new instance of the ForexInstrument class.
 
         :param symbol: The symbol.
         :param price_precision: The price decimal precision.

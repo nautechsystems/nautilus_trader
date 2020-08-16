@@ -327,10 +327,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order: The order to add.
         :param strategy_id: The strategy_id to index for the order.
         :param position_id: The position_id to index for the order.
-        :raises ValueError: If the order_id is already contained in the cached_orders.
-        :raises ValueError: If the order_id is already contained in the index_orders.
-        :raises ValueError: If the order_id is already contained in the index_order_strategy.
-        :raises ValueError: If the order_id is already contained in the index_order_position.
+        :raises ValueError: If order.id is already contained in the cached_orders.
+        :raises ValueError: If order.id is already contained in the index_orders.
+        :raises ValueError: If order.id is already contained in the index_order_strategy.
+        :raises ValueError: If order.id is already contained in the index_order_position.
         """
         Condition.not_none(order, 'order')
         Condition.not_none(strategy_id, 'strategy_id')
