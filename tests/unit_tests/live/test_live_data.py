@@ -139,7 +139,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_ticks())
+        self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_quote_ticks())
 
     def test_can_unsubscribe_from_quote_tick_data(self):
         # Arrange
@@ -150,7 +150,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.unsubscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_ticks())
+        self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_quote_ticks())
 
     def test_can_receive_published_quote_tick_data(self):
         # Arrange
@@ -196,7 +196,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.unsubscribe_bars(bar_type, handler=data_receiver.store_2)
 
         # Assert
-        self.assertNotIn(bar_type, self.data_client.subscribed_ticks())
+        self.assertNotIn(bar_type, self.data_client.subscribed_quote_ticks())
 
     def test_can_subscribe_to_instrument_data(self):
         # Arrange

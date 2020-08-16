@@ -145,7 +145,7 @@ class EMACrossFiltered(TradingStrategy):
         # Subscribe to live data
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
-        self.subscribe_ticks(self.symbol)
+        self.subscribe_quote_ticks(self.symbol)
 
     def on_quote_tick(self, tick: QuoteTick):
         """

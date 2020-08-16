@@ -59,6 +59,13 @@ cdef class DataClient:
         datetime to_datetime,
         int limit,
         callback) except *
+    cpdef void request_trade_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
@@ -69,16 +76,19 @@ cdef class DataClient:
     cpdef void request_instrument(self, Symbol symbol, callback) except *
     cpdef void request_instruments(self, Venue venue, callback) except *
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler) except *
+    cpdef void subscribe_trade_ticks(self, Symbol symbol, handler) except *
     cpdef void subscribe_bars(self, BarType bar_type, handler) except *
     cpdef void subscribe_instrument(self, Symbol symbol, handler) except *
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler) except *
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler) except *
     cpdef void unsubscribe_bars(self, BarType bar_type, handler) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler) except *
     cpdef void update_instruments(self, Venue venue) except *
 # ------------------------------------------------------------------------------------------------ #
 
     cpdef datetime time_now(self)
-    cpdef list subscribed_ticks(self)
+    cpdef list subscribed_quote_ticks(self)
+    cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instruments(self)
     cpdef list instrument_symbols(self)
@@ -86,6 +96,7 @@ cdef class DataClient:
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef bint has_quote_ticks(self, Symbol symbol)
+    cpdef bint has_trade_ticks(self, Symbol symbol)
     cpdef double spread(self, Symbol symbol)
     cpdef double spread_average(self, Symbol symbol)
     cpdef double get_exchange_rate(
@@ -97,9 +108,11 @@ cdef class DataClient:
     cdef void _start_generating_bars(self, BarType bar_type, handler) except *
     cdef void _stop_generating_bars(self, BarType bar_type, handler) except *
     cdef void _add_quote_tick_handler(self, Symbol symbol, handler) except *
+    cdef void _add_trade_tick_handler(self, Symbol symbol, handler) except *
     cdef void _add_bar_handler(self, BarType bar_type, handler) except *
     cdef void _add_instrument_handler(self, Symbol symbol, handler) except *
     cdef void _remove_quote_tick_handler(self, Symbol symbol, handler) except *
+    cdef void _remove_trade_tick_handler(self, Symbol symbol, handler) except *
     cdef void _remove_bar_handler(self, BarType bar_type, handler) except *
     cdef void _remove_instrument_handler(self, Symbol symbol, handler) except *
     cpdef void _bulk_build_tick_bars(

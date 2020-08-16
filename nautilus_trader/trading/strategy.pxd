@@ -110,6 +110,12 @@ cdef class TradingStrategy:
         datetime from_datetime=*,
         datetime to_datetime=*,
         int limit=*) except *
+    cpdef void get_trade_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
+        int limit=*) except *
     cpdef void get_bars(
         self,
         BarType bar_type,

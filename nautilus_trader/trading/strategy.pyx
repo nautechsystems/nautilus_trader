@@ -346,13 +346,14 @@ cdef class TradingStrategy:
         """
         Condition.not_none(tick, 'tick')
 
-        # Update ticks and spreads
+        # Update ticks
         ticks = self._quote_ticks.get(tick.symbol)
         if ticks is None:
             # Symbol was not registered
             ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[tick.symbol] = ticks
-            self.log.warning(f"Received {tick.symbol} quote tick when symbol not registered. Handling is now setup.")
+            self.log.warning(f"Received {tick.symbol} <QuoteTick> when symbol not registered. "
+                             f"Handling is now setup.")
 
         ticks.appendleft(tick)
 
@@ -384,9 +385,9 @@ cdef class TradingStrategy:
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
         if length > 0:
-            self.log.info(f"Received quote tick data for {symbol} of {length} ticks.")
+            self.log.info(f"Received <QuoteTick[{length}]> data for {symbol}.")
         else:
-            self.log.warning("Received quote tick data with no ticks.")
+            self.log.warning("Received <QuoteTick[]> data with no ticks.")
 
         cdef int i
         for i in range(length):
@@ -408,7 +409,8 @@ cdef class TradingStrategy:
             # Symbol was not registered
             ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[tick.symbol] = ticks
-            self.log.warning(f"Received {tick.symbol} trade tick when symbol not registered. Handling is now setup.")
+            self.log.warning(f"Received {tick.symbol} <TradeTick> when symbol not registered. "
+                             f"Handling is now setup.")
 
         ticks.appendleft(tick)
 
@@ -433,9 +435,9 @@ cdef class TradingStrategy:
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
         if length > 0:
-            self.log.info(f"Received trade tick data for {symbol} of {length} ticks.")
+            self.log.info(f"Received <TradeTick[{length}]> data for {symbol}.")
         else:
-            self.log.warning("Received trade tick data with no ticks.")
+            self.log.warning("Received <TradeTick[]> data with no ticks.")
 
         cdef int i
         for i in range(length):
@@ -491,13 +493,15 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_none(bars, 'bars')  # Can be empty
 
-        self.log.info(f"Received bar data for {bar_type} of {len(bars)} bars.")
+        cdef int length = len(bars)
 
-        if len(bars) > 0 and bars[0].timestamp > bars[len(bars) - 1].timestamp:
-            raise RuntimeError("Cannot handle bar data (incorrectly sorted).")
+        self.log.info(f"Received Bar[{length}] data for {bar_type}.")
+
+        if length > 0 and bars[0].timestamp > bars[length - 1].timestamp:
+            raise RuntimeError("Cannot handle Bar[] data (incorrectly sorted).")
 
         cdef int i
-        for i in range(len(bars)):
+        for i in range(length):
             self.handle_bar(bar_type, bars[i], is_historical=True)
 
     cpdef void handle_data(self, object data) except *:
@@ -568,7 +572,7 @@ cdef class TradingStrategy:
             datetime to_datetime=None,
             int limit=0) except *:
         """
-        Request the historical ticks for the given parameters from the data service.
+        Request the historical quote ticks for the given parameters from the data service.
         Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
         :param symbol: The tick symbol for the request.
@@ -582,16 +586,11 @@ cdef class TradingStrategy:
             limit = self.tick_capacity
         Condition.not_none(symbol, 'symbol')
         Condition.not_negative_int(limit, 'limit')
-
-        if self._data_client is None:
-            self.log.error("Cannot request ticks (data client not registered).")
-            return
-
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, 'from_datetime < to_datetime')
 
         if self._data_client is None:
-            self.log.error("Cannot download historical bars (data client not registered).")
+            self.log.error("Cannot request quote ticks (data client not registered).")
             return
 
         if symbol not in self._quote_ticks:
@@ -603,6 +602,44 @@ cdef class TradingStrategy:
             to_datetime,
             limit,
             self.handle_quote_ticks)
+
+    cpdef void get_trade_ticks(
+            self,
+            Symbol symbol,
+            datetime from_datetime=None,
+            datetime to_datetime=None,
+            int limit=0) except *:
+        """
+        Request the historical trade ticks for the given parameters from the data service.
+        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
+
+        :param symbol: The tick symbol for the request.
+        :param from_datetime: The from datetime for the request.
+        :param to_datetime: The to datetime for the request.
+        :param limit: The limit for the number of ticks in the response (default = tick capacity).
+        :raises ValueError: If the limit is negative (< 0).
+        :raises ValueError: If the from_datetime is not less than the to_datetime.
+        """
+        if limit == 0:
+            limit = self.tick_capacity
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_negative_int(limit, 'limit')
+        if from_datetime is not None and to_datetime is not None:
+            Condition.true(from_datetime < to_datetime, 'from_datetime < to_datetime')
+
+        if self._data_client is None:
+            self.log.error("Cannot request trade ticks (data client not registered).")
+            return
+
+        if symbol not in self._trade_ticks:
+            self._trade_ticks[symbol] = deque(maxlen=self.tick_capacity)
+
+        self._data_client.request_trade_ticks(
+            symbol,
+            from_datetime,
+            to_datetime,
+            limit,
+            self.handle_trade_ticks)
 
     cpdef void get_bars(
             self,
@@ -625,20 +662,15 @@ cdef class TradingStrategy:
             limit = self.bar_capacity
         Condition.not_none(bar_type, 'bar_type')
         Condition.not_negative_int(limit, 'limit')
+        if from_datetime is not None and to_datetime is not None:
+            Condition.true(from_datetime < to_datetime, 'from_datetime < to_datetime')
 
         if self._data_client is None:
             self.log.error("Cannot request bars (data client not registered).")
             return
 
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, 'from_datetime < to_datetime')
-
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self.bar_capacity)
-
-        if self._data_client is None:
-            self.log.error("Cannot download historical bars (data client not registered).")
-            return
 
         self._data_client.request_bars(
             bar_type,
@@ -684,7 +716,6 @@ cdef class TradingStrategy:
         if self._data_client is None:
             self.log.error("Cannot subscribe to ticks (data client not registered).")
             return
-
 
         self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)
 
@@ -773,25 +804,25 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether the strategy has quote ticks for the given symbol.
 
-        :param symbol: The tick symbol for the ticks.
+        :param symbol: The symbol for the ticks.
         :return bool.
         """
         Condition.not_none(symbol, 'symbol')
 
         return (self._data_client.has_quote_ticks(symbol) and  # noqa (W504 - easier to read)
-                len(self._quote_ticks[symbol]) > 0)         # noqa (W504 - easier to read)
+                len(self._quote_ticks[symbol]) > 0)            # noqa (W504 - easier to read)
 
     cpdef bint has_trade_ticks(self, Symbol symbol):
         """
         Return a value indicating whether the strategy has trade ticks for the given symbol.
 
-        :param symbol: The tick symbol for the ticks.
+        :param symbol: The symbol for the ticks.
         :return bool.
         """
         Condition.not_none(symbol, 'symbol')
 
         return (self._data_client.has_trade_ticks(symbol) and  # noqa (W504 - easier to read)
-                len(self._trade_ticks[symbol]) > 0)         # noqa (W504 - easier to read)
+                len(self._trade_ticks[symbol]) > 0)            # noqa (W504 - easier to read)
 
     cpdef bint has_bars(self, BarType bar_type):
         """
@@ -842,7 +873,7 @@ cdef class TradingStrategy:
         Return the quote ticks for the given symbol (returns a copy of the internal deque).
 
         :param symbol: The symbol for the ticks to get.
-        :return List[Tick].
+        :return List[QuoteTick].
         """
         Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._quote_ticks, 'symbol', 'ticks')
@@ -854,7 +885,7 @@ cdef class TradingStrategy:
         Return the trade ticks for the given symbol (returns a copy of the internal deque).
 
         :param symbol: The symbol for the ticks to get.
-        :return List[Tick].
+        :return List[TradeTick].
         """
         Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._trade_ticks, 'symbol', 'ticks')
