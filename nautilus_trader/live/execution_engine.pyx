@@ -68,7 +68,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  Logger logger not None,
                  bint load_caches=True):
         """
-        Initializes a new instance of the RedisExecutionEngine class.
+        Initializes a new instance of the RedisExecutionDatabase class.
 
         :param trader_id: The trader_id.
         :param host: The redis host for the database connection.
@@ -1025,7 +1025,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                  UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the RedisExecutionEngine class.
+        Initializes a new instance of the LiveExecutionEngine class.
 
         :param trader_id: The trader_id for the engine.
         :param account_id: The account_id for the engine.

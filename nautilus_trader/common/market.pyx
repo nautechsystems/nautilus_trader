@@ -44,7 +44,7 @@ cdef class TickDataWrangler:
                  dict data_bars_bid=None,
                  dict data_bars_ask=None):
         """
-        Initializes a new instance of the TickBuilder class.
+        Initializes a new instance of the TickDataWrangler class.
 
         :param instrument: The instrument for the data wrangler.
         :param data_ticks: The optional pd.DataFrame containing the tick data.
@@ -217,7 +217,7 @@ cdef class BarDataWrangler:
                  int volume_multiple=1,
                  data: pd.DataFrame=None):
         """
-        Initializes a new instance of the BarBuilder class.
+        Initializes a new instance of the BarDataWrangler class.
 
         :param precision: The decimal precision for bar prices (>= 0).
         :param data: The the bars market data.
@@ -675,7 +675,7 @@ cdef class TimeBarAggregator(BarAggregator):
                  Clock clock not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the TickBarBuilder class.
+        Initializes a new instance of the TimeBarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.

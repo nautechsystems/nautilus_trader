@@ -42,6 +42,7 @@ cdef class TickType:
             The tick specification.
         symbol : Symbol
             The ticker symbol.
+
         """
         Condition.not_equal(tick_spec, TickSpecification.UNDEFINED, 'tick_spec', 'UNDEFINED')
 

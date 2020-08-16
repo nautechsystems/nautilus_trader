@@ -24,7 +24,7 @@ cdef class Handler:
     """
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the TickHandler class.
+        Initializes a new instance of the Handler class.
 
         :param handler: The callable handler.
         :raises TypeError: If the handler is not of type Callable.
@@ -67,7 +67,7 @@ cdef class TickHandler(Handler):
 
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the BarHandler class.
+        Initializes a new instance of the TickHandler class.
 
         :param handler: The callable handler.
         """

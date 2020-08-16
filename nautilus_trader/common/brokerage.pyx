@@ -36,6 +36,7 @@ cdef class CommissionCalculator:
                  Money minimum=Money(2.00, Currency.USD)):
         """
         Initializes a new instance of the CommissionCalculator class.
+
         Note: Commission rates are expressed as basis points of notional transaction value.
 
         :param rates: The dictionary of commission rates Dict[Symbol, double].

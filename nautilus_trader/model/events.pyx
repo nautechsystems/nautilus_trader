@@ -49,7 +49,7 @@ cdef class AccountStateEvent(Event):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the AccountEvent class.
+        Initializes a new instance of the AccountStateEvent class.
 
         :param account_id: The account_id.
         :param currency: The currency for the account.
