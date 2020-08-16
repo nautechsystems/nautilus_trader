@@ -29,7 +29,8 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
-from nautilus_trader.common.handlers cimport QuoteTickHandler, BarHandler, InstrumentHandler
+from nautilus_trader.common.handlers cimport QuoteTickHandler, TradeTickHandler
+from nautilus_trader.common.handlers cimport BarHandler, InstrumentHandler
 from nautilus_trader.common.market cimport BarAggregator, TickBarAggregator, TimeBarAggregator
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -110,6 +111,16 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef void request_trade_ticks(
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable) except *:  # noqa (E125)
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef void request_bars(
         self,
         BarType bar_type,
@@ -132,6 +143,10 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef void subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -141,6 +156,10 @@ cdef class DataClient:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -165,13 +184,21 @@ cdef class DataClient:
         """
         return self._clock.time_now()
 
-    cpdef list subscribed_ticks(self):
+    cpdef list subscribed_quote_ticks(self):
         """
-        Return the list of tick symbols subscribed to.
+        Return the list of quote tick symbols subscribed to.
 
         :return List[Symbol].
         """
         return list(self._quote_tick_handlers.keys())
+
+    cpdef list subscribed_trade_ticks(self):
+        """
+        Return the list of trade tick symbols subscribed to.
+
+        :return List[Symbol].
+        """
+        return list(self._trade_tick_handlers.keys())
 
     cpdef list subscribed_bars(self):
         """
@@ -231,7 +258,7 @@ cdef class DataClient:
 
     cpdef bint has_quote_ticks(self, Symbol symbol):
         """
-        Return a value indicating whether the data client has ticks for the given symbol.
+        Return a value indicating whether the data client has quote ticks for the given symbol.
 
         :param symbol: The symbol for the ticks.
         :return bool.
@@ -239,6 +266,17 @@ cdef class DataClient:
         Condition.not_none(symbol, 'symbol')
 
         return symbol in self._quote_ticks and len(self._quote_ticks[symbol]) > 0
+
+    cpdef bint has_trade_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the data client has trade ticks for the given symbol.
+
+        :param symbol: The symbol for the ticks.
+        :return bool.
+        """
+        Condition.not_none(symbol, 'symbol')
+
+        return symbol in self._trade_ticks and len(self._trade_ticks[symbol]) > 0
 
     cpdef double spread(self, Symbol symbol):
         """
@@ -322,7 +360,10 @@ cdef class DataClient:
                     limit=0,  # No limit
                     callback=bulk_updater.receive)
 
+            # Add aggregator and subscribe to QuoteTick updates
             self._bar_aggregators[bar_type] = aggregator
+            self._log.debug(f"Added {aggregator} for {bar_type} bars.")
+
             self.subscribe_quote_ticks(bar_type.symbol, aggregator.update)
 
         self._add_bar_handler(bar_type, handler)  # Add handler last
@@ -341,20 +382,37 @@ cdef class DataClient:
 
     cdef void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *:
         """
-        Subscribe to tick data for the given symbol and handler.
+        Subscribe to QuoteTick data for the given symbol and handler.
         """
         if symbol not in self._quote_tick_handlers:
             self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)
             self._quote_tick_handlers[symbol] = []  # type: [QuoteTickHandler]
             self._spreads[symbol] = deque(maxlen=self.tick_capacity)
-            self._log.info(f"Subscribed to {symbol} quote tick data.")
+            self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
-        tick_handler = QuoteTickHandler(handler)
+        cdef QuoteTickHandler tick_handler = QuoteTickHandler(handler)
         if tick_handler not in self._quote_tick_handlers[symbol]:
             self._quote_tick_handlers[symbol].append(tick_handler)
-            self._log.debug(f"Added {tick_handler} for {symbol} quote tick data.")
+            self._log.debug(f"Added {tick_handler} for {symbol} <QuoteTick> data.")
         else:
-            self._log.error(f"Cannot add {tick_handler} for {symbol} quote tick data"
+            self._log.error(f"Cannot add {tick_handler} for {symbol} <QuoteTick> data"
+                            f"(duplicate handler found).")
+
+    cdef void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *:
+        """
+        Subscribe to <TradeTick> data for the given symbol and handler.
+        """
+        if symbol not in self._trade_tick_handlers:
+            self._trade_ticks[symbol] = deque(maxlen=self.tick_capacity)
+            self._trade_tick_handlers[symbol] = []  # type: [TradeTickHandler]
+            self._log.info(f"Subscribed to {symbol} <TradeTick> data.")
+
+        cdef TradeTickHandler tick_handler = TradeTickHandler(handler)
+        if tick_handler not in self._trade_tick_handlers[symbol]:
+            self._trade_tick_handlers[symbol].append(tick_handler)
+            self._log.debug(f"Added {tick_handler} for {symbol} <TradeTick> data.")
+        else:
+            self._log.error(f"Cannot add {tick_handler} for {symbol} <TradeTick> data"
                             f"(duplicate handler found).")
 
     cdef void _add_bar_handler(self, BarType bar_type, handler: callable) except *:
@@ -363,14 +421,14 @@ cdef class DataClient:
         """
         if bar_type not in self._bar_handlers:
             self._bar_handlers[bar_type] = []  # type: [BarHandler]
-            self._log.info(f"Subscribed to {bar_type} bar data.")
+            self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
-        bar_handler = BarHandler(handler)
+        cdef BarHandler bar_handler = BarHandler(handler)
         if bar_handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(bar_handler)
-            self._log.debug(f"Added {bar_handler} for {bar_type} bar data.")
+            self._log.debug(f"Added {bar_handler} for {bar_type} <Bar> data.")
         else:
-            self._log.error(f"Cannot add {bar_handler} for {bar_type} bar data "
+            self._log.error(f"Cannot add {bar_handler} for {bar_type} <Bar> data "
                             f"(duplicate handler found).")
 
     cdef void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
@@ -397,7 +455,7 @@ cdef class DataClient:
             self._log.debug(f"Cannot remove handler (no handlers for {symbol}).")
             return
 
-        tick_handler = QuoteTickHandler(handler)
+        cdef QuoteTickHandler tick_handler = QuoteTickHandler(handler)
         if tick_handler in self._quote_tick_handlers[symbol]:
             self._quote_tick_handlers[symbol].remove(tick_handler)
             self._log.debug(f"Removed handler {tick_handler} for {symbol}.")
@@ -406,7 +464,26 @@ cdef class DataClient:
 
         if not self._quote_tick_handlers[symbol]:
             del self._quote_tick_handlers[symbol]
-            self._log.info(f"Unsubscribed from {symbol} tick data.")
+            self._log.info(f"Unsubscribed from {symbol} quote tick data.")
+
+    cdef void _remove_trade_tick_handler(self, Symbol symbol, handler: callable) except *:
+        """
+        Unsubscribe from tick data for the given symbol and handler.
+        """
+        if symbol not in self._trade_tick_handlers:
+            self._log.debug(f"Cannot remove handler (no handlers for {symbol}).")
+            return
+
+        cdef TradeTickHandler tick_handler = TradeTickHandler(handler)
+        if tick_handler in self._trade_tick_handlers[symbol]:
+            self._trade_tick_handlers[symbol].remove(tick_handler)
+            self._log.debug(f"Removed handler {tick_handler} for {symbol}.")
+        else:
+            self._log.error(f"Cannot remove {tick_handler} (no matching handler found).")
+
+        if not self._trade_tick_handlers[symbol]:
+            del self._trade_tick_handlers[symbol]
+            self._log.info(f"Unsubscribed from {symbol} trade tick data.")
 
     cdef void _remove_bar_handler(self, BarType bar_type, handler: callable) except *:
         """
@@ -477,7 +554,7 @@ cdef class DataClient:
         spreads = self._spreads.get(symbol)
 
         if ticks is None:
-            # TickType was not registered
+            # The symbol was not registered
             ticks = deque(maxlen=self.tick_capacity)
             spreads = deque(maxlen=self.tick_capacity)
             self._quote_ticks[symbol] = ticks
@@ -509,7 +586,26 @@ cdef class DataClient:
                 handler.handle(tick)
 
     cpdef void _handle_trade_tick(self, TradeTick tick) except *:
-        pass  # TODO
+        cdef Symbol symbol = tick.symbol
+
+        # Update ticks
+        ticks = self._trade_ticks.get(symbol)
+
+        if ticks is None:
+            # The symbol was not registered
+            ticks = deque(maxlen=self.tick_capacity)
+            spreads = deque(maxlen=self.tick_capacity)
+            self._trade_ticks[symbol] = ticks
+            self._log.warning(f"Received {symbol} tick when not registered. Handling is now setup.")
+
+        ticks.appendleft(tick)
+
+        # Send to all registered tick handlers for that symbol
+        cdef list tick_handlers = self._trade_tick_handlers.get(symbol)
+        cdef TradeTickHandler handler
+        if tick_handlers is not None:
+            for handler in tick_handlers:
+                handler.handle(tick)
 
     cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
         # Handle the given bar by sending it to all bar handlers for that bar type

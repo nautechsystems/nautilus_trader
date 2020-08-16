@@ -31,7 +31,7 @@ cdef class BacktestDataContainer:
     cdef readonly dict bars_ask
 
     cpdef void add_instrument(self, Instrument instrument) except *
-    cpdef void add_ticks(self, Symbol symbol, data) except *
+    cpdef void add_quote_ticks(self, Symbol symbol, data) except *
     cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data) except *
     cpdef void check_integrity(self) except *
     cpdef long total_data_size(self)

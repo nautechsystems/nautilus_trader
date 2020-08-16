@@ -209,7 +209,7 @@ cdef class LiveDataClient(DataClient):
             int limit,
             callback: callable) except *:
         """
-        Request ticks for the given symbol and query parameters.
+        Request quote ticks for the given symbol and query parameters.
 
         :param symbol: The tick symbol for the request.
         :param from_datetime: The from datetime for the request (optional can be None).
@@ -225,6 +225,46 @@ cdef class LiveDataClient(DataClient):
 
         cdef dict query = {
             DATA_TYPE: QUOTE_TICK_ARRAY,
+            SYMBOL: symbol.value,
+            FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
+            TO_DATETIME: format_iso8601(to_datetime) if to_datetime is not None else str(None),
+            LIMIT: str(limit)
+        }
+
+        cdef str limit_string = 'None' if limit == 0 else f'(limit={limit})'
+        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} {limit_string}...")
+
+        cdef UUID request_id = self._uuid_factory.generate()
+        self._set_callback(request_id, callback)
+
+        cdef DataRequest request = DataRequest(query, request_id, self.time_now())
+        self._data_client.send_request(request)
+        self.last_request_id = request_id  # For testing only
+
+    cpdef void request_trade_ticks(
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable) except *:
+        """
+        Request trade ticks for the given symbol and query parameters.
+
+        :param symbol: The tick symbol for the request.
+        :param from_datetime: The from datetime for the request (optional can be None).
+        :param to_datetime: The to datetime for the request (optional can be None).
+        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
+        :param callback: The callback for the response.
+        :raises ValueError: If the limit is negative (< 0).
+        :raises ValueError: If the callback is not of type callable.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_negative_int(limit, 'limit')
+        Condition.callable(callback, 'callback')
+
+        cdef dict query = {
+            DATA_TYPE: TRADE_TICK_ARRAY,
             SYMBOL: symbol.value,
             FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
             TO_DATETIME: format_iso8601(to_datetime) if to_datetime is not None else str(None),
@@ -349,7 +389,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
-        Subscribe to live tick data for the given symbol and handler.
+        Subscribe to quote tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -360,6 +400,20 @@ cdef class LiveDataClient(DataClient):
 
         self._add_quote_tick_handler(symbol, handler)
         self._tick_subscriber.subscribe(f"{QUOTE}:{symbol.to_string()}")
+
+    cpdef void subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        """
+        Subscribe to trade tick data for the given symbol and handler.
+
+        :param symbol: The tick symbol to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        :raises ValueError: If the handler is not of type callable.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.callable(handler, 'handler')
+
+        self._add_trade_tick_handler(symbol, handler)
+        self._tick_subscriber.subscribe(f"{TRADE}:{symbol.to_string()}")
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
@@ -390,7 +444,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
-        Unsubscribe from live tick data for the given symbol and handler.
+        Unsubscribe from quote tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
@@ -401,6 +455,20 @@ cdef class LiveDataClient(DataClient):
 
         self._tick_subscriber.unsubscribe(f"{QUOTE}:{symbol.to_string()}")
         self._remove_quote_tick_handler(symbol, handler)
+
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        """
+        Unsubscribe from trade tick data for the given symbol and handler.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the handler is not of type Callable.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.callable(handler, 'handler')
+
+        self._tick_subscriber.unsubscribe(f"{TRADE}:{symbol.to_string()}")
+        self._remove_trade_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         """

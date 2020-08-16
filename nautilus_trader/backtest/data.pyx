@@ -65,7 +65,7 @@ cdef class BacktestDataContainer:
         self.instruments[instrument.symbol] = instrument
         self.instruments = dict(sorted(self.instruments.items()))
 
-    cpdef void add_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
+    cpdef void add_quote_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
         """
         Add the tick data to the container.
 
@@ -347,7 +347,7 @@ cdef class BacktestDataClient(DataClient):
             int limit,
             callback: callable) except *:
         """
-        Request the historical bars for the given parameters from the data service.
+        Request the historical quote ticks for the given parameters from the data service.
 
         :param symbol: The symbol for the ticks to download.
         :param from_datetime: The from datetime for the request.
@@ -361,7 +361,31 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_negative_int(limit, 'limit')
         Condition.callable(callback, 'callback')
 
-        self._log.info(f"Simulated request ticks for {symbol} from {from_datetime} to {to_datetime}.")
+        self._log.info(f"Simulated request quote ticks for {symbol} from {from_datetime} to {to_datetime}.")
+
+    cpdef void request_trade_ticks(
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable) except *:
+        """
+        Request the historical trade ticks for the given parameters from the data service.
+
+        :param symbol: The symbol for the ticks to download.
+        :param from_datetime: The from datetime for the request.
+        :param to_datetime: The to datetime for the request.
+        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
+        :param callback: The callback for the response.
+        :raises ValueError: If the limit is negative (< 0).
+        :raises TypeError: If the callback is not of type callable.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.not_negative_int(limit, 'limit')
+        Condition.callable(callback, 'callback')
+
+        self._log.info(f"Simulated request trade ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
     cpdef void request_bars(
             self,
@@ -418,7 +442,7 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
-        Subscribe to tick data for the given symbol.
+        Subscribe to quote tick data for the given symbol.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription.
@@ -429,6 +453,20 @@ cdef class BacktestDataClient(DataClient):
         Condition.callable(handler, 'handler')
 
         self._add_quote_tick_handler(symbol, handler)
+
+    cpdef void subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        """
+        Subscribe to trade tick data for the given symbol.
+
+        :param symbol: The tick symbol to subscribe to.
+        :param handler: The callable handler for subscription.
+        :raises ValueError: If the symbol is not a key in data_providers.
+        :raises TypeError: If the handler is not of type callable.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.callable(handler, 'handler')
+
+        self._add_trade_tick_handler(symbol, handler)
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
@@ -461,7 +499,7 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
-        Unsubscribes from tick data for the given symbol.
+        Unsubscribes from quote tick data for the given symbol.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
@@ -472,6 +510,20 @@ cdef class BacktestDataClient(DataClient):
         Condition.callable_or_none(handler, 'handler')
 
         self._remove_quote_tick_handler(symbol, handler)
+
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        """
+        Unsubscribes from trade tick data for the given symbol.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the symbol is not a key in data_providers.
+        :raises TypeError: If the handler is not of type callable or None.
+        """
+        Condition.not_none(symbol, 'symbol')
+        Condition.callable_or_none(handler, 'handler')
+
+        self._remove_trade_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         """
