@@ -69,7 +69,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        trader_id = TraderId('TESTER', '000')
+        trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
         self.exec_db = InMemoryExecutionDatabase(
@@ -96,7 +96,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
     def test_can_account_collateral_inquiry(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
 
         # Act

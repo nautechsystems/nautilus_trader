@@ -34,7 +34,7 @@ try:
     def _wrap_function(f):
         @wraps(f)
         def wrapped(*args, **kwargs):
-            out = kwargs.pop('out', None)
+            out = kwargs.pop("out", None)
             data = f(*args, **kwargs)
             if out is None:
                 out = data
@@ -88,8 +88,8 @@ def roll(*args, **kwargs):
         A Series or ndarray of the results of the stat across the rolling
         window.
     """
-    func = kwargs.pop('function')
-    window = kwargs.pop('window')
+    func = kwargs.pop("function")
+    window = kwargs.pop("window")
     if len(args) > 2:
         raise ValueError("Cannot pass more than 2 return sets")
 
@@ -120,7 +120,7 @@ def up(returns, factor_returns, **kwargs):
     -------
     Same as the return of the function
     """
-    func = kwargs.pop('function')
+    func = kwargs.pop("function")
     returns = returns[factor_returns > 0]
     factor_returns = factor_returns[factor_returns > 0]
     return func(returns, factor_returns, **kwargs)
@@ -144,7 +144,7 @@ def down(returns, factor_returns, **kwargs):
     -------
     Same as the return of the 'function'
     """
-    func = kwargs.pop('function')
+    func = kwargs.pop("function")
     returns = returns[factor_returns < 0]
     factor_returns = factor_returns[factor_returns < 0]
     return func(returns, factor_returns, **kwargs)
@@ -172,15 +172,15 @@ def _roll_pandas(func, window, *args, **kwargs):
 # @deprecated(msg=DATAREADER_DEPRECATION_WARNING)
 # def cache_dir(environ=environ):
 #     try:
-#         return environ['EMPYRICAL_CACHE_DIR']
+#         return environ["EMPYRICAL_CACHE_DIR"]
 #     except KeyError:
 #         return join(
 #
 #             environ.get(
-#                 'XDG_CACHE_HOME',
-#                 expanduser('~/.cache/'),
+#                 "XDG_CACHE_HOME",
+#                 expanduser("~/.cache/"),
 #             ),
-#             'empyrical',
+#             "empyrical",
 #         )
 #
 #
@@ -218,9 +218,9 @@ def get_utc_timestamp(dt):
 
     dt = pd.to_datetime(dt)
     try:
-        dt = dt.tz_localize('UTC')
+        dt = dt.tz_localize("UTC")
     except TypeError:
-        dt = dt.tz_convert('UTC')
+        dt = dt.tz_convert("UTC")
     return dt
 
 
@@ -241,8 +241,8 @@ def _1_bday_ago():
 #         Percent change of Fama-French factors
 #     """
 #
-#     start = '1/1/1970'
-#     research_factors = web.DataReader('F-F_Research_Data_Factors_daily',
+#     start = "1/1/1970"
+#     research_factors = web.DataReader("F-F_Research_Data_Factors_daily',
 #                                       'famafrench', start=start)[0]
 #     momentum_factor = web.DataReader('F-F_Momentum_Factor_daily',
 #                                      'famafrench', start=start)[0]

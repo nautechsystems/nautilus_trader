@@ -45,7 +45,7 @@ cdef class MovingAverage(Indicator):
         :param period: The rolling window period for the indicator (> 0).
         :param params: The initialization parameters for the indicator.
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         super().__init__(params)
 
         self.period = period

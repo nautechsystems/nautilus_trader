@@ -32,8 +32,8 @@ class IdentifierTests(unittest.TestCase):
 
     def test_identifier_equality(self):
         # Arrange
-        id1 = Identifier('some-id-1')
-        id2 = Identifier('some-id-2')
+        id1 = Identifier("some-id-1")
+        id2 = Identifier("some-id-2")
 
         # Act
         result1 = id1 == id1
@@ -49,28 +49,28 @@ class IdentifierTests(unittest.TestCase):
 
     def test_identifier_to_string(self):
         # Arrange
-        identifier = Identifier('some-id')
+        identifier = Identifier("some-id")
 
         # Act
         result = str(identifier)
 
         # Assert
-        self.assertEqual('some-id', result)
+        self.assertEqual("some-id", result)
 
     def test_identifier_repr(self):
         # Arrange
-        identifier = Identifier('some-id')
+        identifier = Identifier("some-id")
 
         # Act
         result = repr(identifier)
 
         # Assert
-        self.assertTrue(result.startswith('<Identifier(some-id) object at'))
+        self.assertTrue(result.startswith("<Identifier(some-id) object at"))
 
     def test_mixed_identifier_equality(self):
         # Arrange
-        id1 = OrderId('O-123456')
-        id2 = PositionId('P-123456')
+        id1 = OrderId("O-123456")
+        id2 = PositionId("P-123456")
 
         # Act
         # Assert
@@ -100,7 +100,7 @@ class IdentifierTests(unittest.TestCase):
 
     def test_can_parse_symbol_from_string(self):
         # Arrange
-        symbol = Symbol('AUD/USD', Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue("FXCM"))
 
         # Act
         result = Symbol.py_from_string(symbol.value)
@@ -111,38 +111,38 @@ class IdentifierTests(unittest.TestCase):
     def test_trader_identifier(self):
         # Arrange
         # Act
-        trader_id1 = TraderId('TESTER', '000')
-        trader_id2 = TraderId('TESTER', '001')
+        trader_id1 = TraderId("TESTER", "000")
+        trader_id2 = TraderId("TESTER", "001")
 
         # Assert
         self.assertEqual(trader_id1, trader_id1)
         self.assertNotEqual(trader_id1, trader_id2)
-        self.assertEqual('TESTER-000', trader_id1.value)
-        self.assertEqual('TESTER', trader_id1.name)
-        self.assertEqual(trader_id1, TraderId.py_from_string('TESTER-000'))
+        self.assertEqual("TESTER-000", trader_id1.value)
+        self.assertEqual("TESTER", trader_id1.name)
+        self.assertEqual(trader_id1, TraderId.py_from_string("TESTER-000"))
 
     def test_strategy_identifier(self):
         # Arrange
         # Act
-        strategy_id1 = StrategyId('SCALPER', '00')
-        strategy_id2 = StrategyId('SCALPER', '01')
+        strategy_id1 = StrategyId("SCALPER", "00")
+        strategy_id2 = StrategyId("SCALPER", "01")
 
         # Assert
         self.assertEqual(strategy_id1, strategy_id1)
         self.assertNotEqual(strategy_id1, strategy_id2)
-        self.assertEqual('SCALPER-00', strategy_id1.value)
-        self.assertEqual('SCALPER', strategy_id1.name)
+        self.assertEqual("SCALPER-00", strategy_id1.value)
+        self.assertEqual("SCALPER", strategy_id1.name)
         self.assertEqual(strategy_id1, StrategyId.py_from_string('SCALPER-00'))
 
     def test_account_identifier(self):
         # Arrange
         # Act
-        account_id1 = AccountId('FXCM', '02851908', AccountType.DEMO)
-        account_id2 = AccountId('FXCM', '09999999', AccountType.DEMO)
+        account_id1 = AccountId("FXCM", "02851908", AccountType.DEMO)
+        account_id2 = AccountId("FXCM", "09999999", AccountType.DEMO)
 
         # Assert
         self.assertEqual(account_id1, account_id1)
         self.assertNotEqual(account_id1, account_id2)
-        self.assertEqual('FXCM-02851908-DEMO', account_id1.value)
-        self.assertEqual(Brokerage('FXCM'), account_id1.broker)
-        self.assertEqual(account_id1, AccountId.py_from_string('FXCM-02851908-DEMO'))
+        self.assertEqual("FXCM-02851908-DEMO", account_id1.value)
+        self.assertEqual(Brokerage("FXCM"), account_id1.broker)
+        self.assertEqual(account_id1, AccountId.py_from_string("FXCM-02851908-DEMO"))

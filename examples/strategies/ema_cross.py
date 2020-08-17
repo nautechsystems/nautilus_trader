@@ -41,7 +41,7 @@ class EMACross(TradingStrategy):
                  slow_ema: int=20,
                  atr_period: int=20,
                  sl_atr_multiple: float=2.0,
-                 extra_id_tag: str=''):
+                 extra_id_tag: str=""):
         """
         Initialize a new instance of the EMACrossPy class.
 
@@ -54,7 +54,7 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace("/", "") + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -303,7 +303,7 @@ class EMACross(TradingStrategy):
 
         Create and return a state dictionary of values to be saved.
 
-        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        Note: "OrderIdCount' and 'PositionIdCount' are reserved keys for
         the returned state dictionary.
         """
         return {}

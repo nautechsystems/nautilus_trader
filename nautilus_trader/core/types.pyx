@@ -27,7 +27,7 @@ cdef class ValidString:
 
         :param value: The value of the string.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         self.value = value
 
@@ -38,7 +38,7 @@ cdef class ValidString:
         :return: str.
         """
         if with_class:
-            return f'{self.__class__.__name__}({self.value})'
+            return f"{self.__class__.__name__}({self.value})"
         else:
             return self.value
 

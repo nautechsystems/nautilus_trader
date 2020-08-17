@@ -50,10 +50,10 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         clock = TestClock()
         logger = TestLogger()
 
-        self.trader_id = TraderId('TESTER', '000')
+        self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
 
-        self.strategy = TradingStrategy(order_id_tag='001')
+        self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(TraderId("TESTER", "000"))
         self.strategy.change_clock(clock)
         self.strategy.change_logger(logger)
@@ -185,7 +185,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def test_can_add_account(self):
         # Arrange
         event = AccountStateEvent(
-            AccountId.py_from_string('SIMULATED-123456-SIMULATED'),
+            AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
             Currency.USD,
             Money(1000000, Currency.USD),
             Money(1000000, Currency.USD),
@@ -193,7 +193,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal(0),
-            ValidString('N'),
+            ValidString("N"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -208,7 +208,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def test_can_update_account(self):
         # Arrange
         event = AccountStateEvent(
-            AccountId.py_from_string('SIMULATED-123456-SIMULATED'),
+            AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
             Currency.USD,
             Money(1000000, Currency.USD),
             Money(1000000, Currency.USD),
@@ -216,7 +216,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal(0),
-            ValidString('N'),
+            ValidString("N"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -356,29 +356,29 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.position_exists(PositionId('P-123456')))
+        self.assertFalse(self.database.position_exists(PositionId("P-123456")))
 
     def test_order_exists_when_no_order_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.order_exists(OrderId('O-123456')))
+        self.assertFalse(self.database.order_exists(OrderId("O-123456")))
 
     def test_position_for_order_when_not_found_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.database.get_position_for_order(OrderId('O-123456')))
+        self.assertIsNone(self.database.get_position_for_order(OrderId("O-123456")))
 
     def test_position_indexed_for_order_when_no_indexing_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.position_indexed_for_order(OrderId('O-123456')))
+        self.assertFalse(self.database.position_indexed_for_order(OrderId("O-123456")))
 
     def test_get_order_when_no_order_returns_none(self):
         # Arrange
-        position_id = PositionId('P-123456')
+        position_id = PositionId("P-123456")
 
         # Act
         result = self.database.get_position(position_id)
@@ -388,7 +388,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_get_position_when_no_position_returns_none(self):
         # Arrange
-        order_id = OrderId('O-201908080101-000-001')
+        order_id = OrderId("O-201908080101-000-001")
 
         # Act
         result = self.database.get_order(order_id)
@@ -405,12 +405,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         logger = TestLogger()
 
-        self.trader_id = TraderId('TESTER', '000')
+        self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             id_tag_trader=self.trader_id.order_id_tag,
-            id_tag_strategy=IdTag('001'),
+            id_tag_strategy=IdTag("001"),
             clock=self.clock)
 
         self.portfolio = Portfolio(
@@ -437,7 +437,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_register_strategy(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -447,7 +447,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_deregister_strategy(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -458,7 +458,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_is_flat_when_strategy_registered_returns_true(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -474,7 +474,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_engine.is_flat())
 
     def test_can_reset_execution_engine(self):
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
 
         self.exec_engine.register_strategy(strategy)  # Also registers with portfolio
 
@@ -486,7 +486,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_submit_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -515,7 +515,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_handle_order_fill_event(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -561,7 +561,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_add_to_existing_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -620,7 +620,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_close_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -687,8 +687,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
-        strategy1 = TradingStrategy(order_id_tag='001')
-        strategy2 = TradingStrategy(order_id_tag='002')
+        strategy1 = TradingStrategy(order_id_tag="001")
+        strategy2 = TradingStrategy(order_id_tag="002")
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
         position1_id = strategy1.position_id_generator.generate()
@@ -768,8 +768,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
-        strategy1 = TradingStrategy(order_id_tag='001')
-        strategy2 = TradingStrategy(order_id_tag='002')
+        strategy1 = TradingStrategy(order_id_tag="001")
+        strategy2 = TradingStrategy(order_id_tag="002")
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
         position_id1 = strategy1.position_id_generator.generate()
@@ -826,8 +826,8 @@ class ExecutionEngineTests(unittest.TestCase):
         order3_filled = OrderFilled(
             self.account_id,
             order3.id,
-            ExecutionId('E3'),
-            PositionIdBroker('T3'),
+            ExecutionId("E3"),
+            PositionIdBroker("T3"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

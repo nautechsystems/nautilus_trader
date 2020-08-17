@@ -42,13 +42,13 @@ class NetworkIdentifiersTests(unittest.TestCase):
 
     def test_can_generate_new_session_id(self):
         # Arrange
-        client_id = ClientId('Trader-001')
+        client_id = ClientId("Trader-001")
 
         # Act
-        session_id = SessionId.py_create(client_id, UNIX_EPOCH, 'None')
+        session_id = SessionId.py_create(client_id, UNIX_EPOCH, "None")
 
         # Assert
-        self.assertEqual('e5db3dad8222a27e5d2991d11ad65f0f74668a4cfb629e97aa6920a73a012f87', session_id.value)
+        self.assertEqual("e5db3dad8222a27e5d2991d11ad65f0f74668a4cfb629e97aa6920a73a012f87", session_id.value)
 
 
 class MessageClientTests(unittest.TestCase):
@@ -73,7 +73,7 @@ class MessageClientTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             uuid_factory,
-            LoggerAdapter('MessageServer', logger))
+            LoggerAdapter("MessageServer", logger))
 
         # Register test handlers
         self.server.register_handler(MessageType.STRING, self.server_sink.append)
@@ -94,7 +94,7 @@ class MessageClientTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             uuid_factory,
-            LoggerAdapter('MessageClient', logger))
+            LoggerAdapter("MessageClient", logger))
 
         self.client.register_handler(self.client_sink.append)
 
@@ -125,7 +125,7 @@ class MessageClientTests(unittest.TestCase):
         self.client.connect()
 
         # Act
-        self.client.send_string('hello')
+        self.client.send_string("hello")
 
         time.sleep(0.1)
 
@@ -136,17 +136,17 @@ class MessageClientTests(unittest.TestCase):
         self.assertEqual(2, self.server.recv_count)
         self.assertEqual(1, len(self.client_sink))
         self.assertEqual(1, len(self.server_sink))
-        self.assertEqual('hello', self.server_sink[0])
-        self.assertEqual('OK', self.client_sink[0])
+        self.assertEqual("hello", self.server_sink[0])
+        self.assertEqual("OK", self.client_sink[0])
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
         self.client.connect()
 
         # Act
-        self.client.send_string('hello1')
-        self.client.send_string('hello2')
-        self.client.send_string('hello3')
+        self.client.send_string("hello1")
+        self.client.send_string("hello2")
+        self.client.send_string("hello3")
 
         time.sleep(0.1)
 
@@ -157,12 +157,12 @@ class MessageClientTests(unittest.TestCase):
         self.assertEqual(4, self.server.recv_count)
         self.assertEqual(3, len(self.client_sink))
         self.assertEqual(3, len(self.server_sink))
-        self.assertEqual('hello1', self.server_sink[0])
-        self.assertEqual('hello2', self.server_sink[1])
-        self.assertEqual('hello3', self.server_sink[2])
-        self.assertEqual('OK', self.client_sink[0])
-        self.assertEqual('OK', self.client_sink[1])
-        self.assertEqual('OK', self.client_sink[2])
+        self.assertEqual("hello1", self.server_sink[0])
+        self.assertEqual("hello2", self.server_sink[1])
+        self.assertEqual("hello3", self.server_sink[2])
+        self.assertEqual("OK", self.client_sink[0])
+        self.assertEqual("OK", self.client_sink[1])
+        self.assertEqual("OK", self.client_sink[2])
 
 
 TEST_PUB_PORT = 55559
@@ -186,7 +186,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             uuid_factory,
-            LoggerAdapter('MessageSubscriber', logger))
+            LoggerAdapter("MessageSubscriber", logger))
 
         self.publisher = MessagePublisher(
             ServerId("Publisher-001"),
@@ -195,7 +195,7 @@ class SubscriberWorkerTests(unittest.TestCase):
             EncryptionSettings(),
             clock,
             uuid_factory,
-            LoggerAdapter('MessagePublisher', logger))
+            LoggerAdapter("MessagePublisher", logger))
 
         self.publisher.start()
 
@@ -210,11 +210,11 @@ class SubscriberWorkerTests(unittest.TestCase):
     def test_can_subscribe_to_topic_with_no_registered_handler(self):
         # Arrange
         self.subscriber.connect()
-        self.subscriber.subscribe('test_topic')
+        self.subscriber.subscribe("test_topic")
 
         time.sleep(0.1)
         # Act
-        self.publisher.publish('test_topic', b'hello subscribers')
+        self.publisher.publish("test_topic", b"hello subscribers")
 
         time.sleep(0.1)
         # Assert
@@ -225,34 +225,34 @@ class SubscriberWorkerTests(unittest.TestCase):
         # Arrange
         self.subscriber.register_handler(self.response_handler.store_2)
         self.subscriber.connect()
-        self.subscriber.subscribe('test_topic')
+        self.subscriber.subscribe("test_topic")
 
         time.sleep(0.1)
         # Act
-        self.publisher.publish('test_topic', b'hello subscribers')
+        self.publisher.publish("test_topic", b"hello subscribers")
 
         time.sleep(0.1)
         # Assert
         self.assertEqual(1, self.publisher.sent_count)
         self.assertEqual(1, self.subscriber.recv_count)
-        self.assertEqual(('test_topic', b'hello subscribers'), self.response_handler.get_store()[0])
+        self.assertEqual(("test_topic", b"hello subscribers"), self.response_handler.get_store()[0])
 
     def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange
         self.subscriber.register_handler(self.response_handler.store_2)
         self.subscriber.connect()
-        self.subscriber.subscribe('test_topic')
+        self.subscriber.subscribe("test_topic")
 
         time.sleep(0.1)
         # Act
-        self.publisher.publish('test_topic', b'hello1')
-        self.publisher.publish('test_topic', b'hello2')
-        self.publisher.publish('test_topic', b'hello3')
+        self.publisher.publish("test_topic", b'hello1')
+        self.publisher.publish("test_topic", b'hello2')
+        self.publisher.publish("test_topic", b'hello3')
 
         time.sleep(0.1)
         # Assert
         self.assertEqual(3, self.publisher.sent_count)
         self.assertEqual(3, self.subscriber.recv_count)
-        self.assertEqual(('test_topic', b'hello1'), self.response_handler.get_store()[0])
-        self.assertEqual(('test_topic', b'hello2'), self.response_handler.get_store()[1])
-        self.assertEqual(('test_topic', b'hello3'), self.response_handler.get_store()[2])
+        self.assertEqual(("test_topic", b'hello1'), self.response_handler.get_store()[0])
+        self.assertEqual(("test_topic", b'hello2'), self.response_handler.get_store()[1])
+        self.assertEqual(("test_topic", b'hello3'), self.response_handler.get_store()[2])

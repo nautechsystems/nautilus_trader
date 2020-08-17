@@ -30,19 +30,19 @@ class KeltnerPositionTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('KeltnerPosition', self.kp.name)
+        self.assertEqual("KeltnerPosition", self.kp.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)', str(self.kp))
+        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertTrue(repr(self.kp).startswith(
-            '<KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0) object at'))
-        self.assertTrue(repr(self.kp).endswith('>'))
+            "<KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0) object at"))
+        self.assertTrue(repr(self.kp).endswith(">"))
 
     def test_initialized_without_inputs_returns_false(self):
         # Act

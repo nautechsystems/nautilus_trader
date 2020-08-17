@@ -83,7 +83,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param logger: The logger for the component.
         :raises ValueError: If the instruments list contains a type other than Instrument.
         """
-        Condition.dict_types(instruments, Symbol, Instrument, 'instruments')
+        Condition.dict_types(instruments, Symbol, Instrument, "instruments")
         super().__init__(exec_engine, logger)
 
         self._clock = clock
@@ -104,7 +104,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._account = Account(self.reset_account_event())
         self.exec_db = exec_engine.database
         self.exchange_calculator = ExchangeRateCalculator()
-        self.tz_us_est = pytz.timezone('US/Eastern')
+        self.tz_us_est = pytz.timezone("US/Eastern")
         self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0  # Bank + Broker spread markup
@@ -215,7 +215,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money(0, self.account_currency),
             Money(0, self.account_currency),
             Decimal.zero(),
-            ValidString('N'),
+            ValidString("N"),
             self._uuid_factory.generate(),
             self._clock.time_now())
 
@@ -247,7 +247,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         :param fill_model: The fill model to set.
         """
-        Condition.not_none(fill_model, 'fill_model')
+        Condition.not_none(fill_model, "fill_model")
 
         self.fill_model = fill_model
 
@@ -258,7 +258,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         :param tick: The tick data to process with.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
 
         self._clock.set_time(tick.timestamp)
         self._market[tick.symbol] = tick
@@ -337,8 +337,8 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._expire_order(order)
 
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
-        Condition.not_none(event, 'event')
-        Condition.not_none(position, 'position')
+        Condition.not_none(event, "event")
+        Condition.not_none(position, "position")
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
@@ -355,7 +355,7 @@ cdef class BacktestExecClient(ExecutionClient):
         elif position.entry_direction == OrderSide.SELL:
             direction = MarketPosition.SHORT
         else:
-            raise RuntimeError(f'Invalid entry direction')
+            raise RuntimeError(f"Invalid entry direction")
 
         cdef Money pnl = self.calculate_pnl(
             direction=direction,
@@ -388,7 +388,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal.zero(),
-                margin_call_status=ValidString('N'),
+                margin_call_status=ValidString("N"),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
@@ -401,7 +401,7 @@ cdef class BacktestExecClient(ExecutionClient):
             double close_price,
             Quantity quantity,
             double exchange_rate):
-        Condition.not_none(quantity, 'quantity')
+        Condition.not_none(quantity, "quantity")
 
         cdef double difference
         if direction == MarketPosition.LONG:
@@ -409,13 +409,13 @@ cdef class BacktestExecClient(ExecutionClient):
         elif direction == MarketPosition.SHORT:
             difference = open_price - close_price
         else:
-            raise ValueError(f'Cannot calculate the pnl of a '
-                             f'{market_position_to_string(direction)} direction.')
+            raise ValueError(f"Cannot calculate the pnl of a "
+                             f"{market_position_to_string(direction)} direction.")
 
         return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        Condition.not_none(timestamp, 'timestamp')
+        Condition.not_none(timestamp, "timestamp")
 
         # Apply rollover interest for all open positions
         if self.exec_db is None:
@@ -476,7 +476,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal.zero(),
-                margin_call_status=ValidString('N'),
+                margin_call_status=ValidString("N"),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
@@ -486,7 +486,7 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
     cpdef void account_inquiry(self, AccountInquiry command) except *:
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         # Generate event
         cdef AccountStateEvent event = AccountStateEvent(
@@ -505,7 +505,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exec_engine.handle_event(event)
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
@@ -519,7 +519,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._process_order(command.order)
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
         if command.bracket_order.has_take_profit:
@@ -542,10 +542,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self.submit_order(submit_order)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         if command.order_id not in self._working_orders:
-            self._cancel_reject_order(command.order_id, 'cancel order', 'order not found')
+            self._cancel_reject_order(command.order_id, "cancel order", "order not found")
             return  # Rejected the cancel order command
 
         cdef Order order = self._working_orders[command.order_id]
@@ -565,10 +565,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self._check_oco_order(command.order_id)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         if command.order_id not in self._working_orders:
-            self._cancel_reject_order(command.order_id, 'modify order', 'order not found')
+            self._cancel_reject_order(command.order_id, "modify order", "order not found")
             return  # Rejected the modify order command
 
         cdef Order order = self._working_orders[command.order_id]
@@ -577,8 +577,8 @@ cdef class BacktestExecClient(ExecutionClient):
         if command.modified_quantity.as_double() == 0.0:
             self._cancel_reject_order(
                 order,
-                'modify order',
-                f'modified quantity {command.modified_quantity} invalid')
+                "modify order",
+                f"modified quantity {command.modified_quantity} invalid")
             return  # Cannot modify order
 
         if not self._check_valid_price(order, self._market[order.symbol], reject=True):
@@ -606,27 +606,27 @@ cdef class BacktestExecClient(ExecutionClient):
             if order.type in STOP_ORDER_TYPES:
                 if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
                     if reject:
-                        self._reject_order(order, f'BUY STOP order price of {order.price} is too '
-                                                  f'far from the market, ask={current_market.ask}')
+                        self._reject_order(order, f"BUY STOP order price of {order.price} is too "
+                                                  f"far from the market, ask={current_market.ask}")
                     return False  # Invalid price
             elif order.type == OrderType.LIMIT:
                 if order.price.gt(current_market.ask.sub(self._min_limits[order.symbol])):
                     if reject:
-                        self._reject_order(order, f'BUY LIMIT order price of {order.price} is too '
-                                                  f'far from the market, ask={current_market.ask}')
+                        self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
+                                                  f"far from the market, ask={current_market.ask}")
                     return False  # Invalid price
         elif order.side == OrderSide.SELL:
             if order.type in STOP_ORDER_TYPES:
                 if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
                     if reject:
-                        self._reject_order(order, f'SELL STOP order price of {order.price} is too '
-                                                  f'far from the market, bid={current_market.bid}')
+                        self._reject_order(order, f"SELL STOP order price of {order.price} is too "
+                                                  f"far from the market, bid={current_market.bid}")
                     return False  # Invalid price
             elif order.type == OrderType.LIMIT:
                 if order.price.lt(current_market.bid.add(self._min_limits[order.symbol])):
                     if reject:
-                        self._reject_order(order, f'SELL LIMIT order price of {order.price} is too '
-                                                  f'far from the market, bid={current_market.bid}')
+                        self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
+                                                  f"far from the market, bid={current_market.bid}")
                     return False  # Invalid price
 
         return True  # Valid price
@@ -648,7 +648,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderAccepted accepted = OrderAccepted(
             self._account.id,
             order.id,
-            OrderIdBroker('B' + order.id.value),
+            OrderIdBroker("B" + order.id.value),
             order.label,
             self._clock.time_now(),
             self._uuid_factory.generate(),
@@ -715,25 +715,25 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Work the given order.
         """
-        Condition.not_in(order.id, self._working_orders, 'order.id', 'working_orders')
+        Condition.not_in(order.id, self._working_orders, "order.id", "working_orders")
 
         cdef Instrument instrument = self.instruments[order.symbol]
 
         # Check order size is valid or reject
         if order.quantity > instrument.max_trade_size:
-            self._reject_order(order, f'order quantity of {order.quantity} exceeds '
-                                      f'the maximum trade size of {instrument.max_trade_size}')
+            self._reject_order(order, f"order quantity of {order.quantity} exceeds "
+                                      f"the maximum trade size of {instrument.max_trade_size}")
             return  # Cannot accept order
         if order.quantity < instrument.min_trade_size:
-            self._reject_order(order, f'order quantity of {order.quantity} is less than '
-                                      f'the minimum trade size of {instrument.min_trade_size}')
+            self._reject_order(order, f"order quantity of {order.quantity} is less than "
+                                      f"the minimum trade size of {instrument.min_trade_size}")
             return  # Cannot accept order
 
         cdef QuoteTick current_market = self._market.get(order.symbol)
 
         # Check market exists
         if current_market is None:  # Market not initialized
-            self._reject_order(order, f'no market for {order.symbol}')
+            self._reject_order(order, f"no market for {order.symbol}")
             return  # Cannot accept order
 
         # Check order price is valid or reject
@@ -772,7 +772,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderWorking working = OrderWorking(
             self._account.id,
             order.id,
-            OrderIdBroker('B' + order.id.value),
+            OrderIdBroker("B" + order.id.value),
             order.symbol,
             order.label,
             order.side,
@@ -792,8 +792,8 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderFilled filled = OrderFilled(
             self._account.id,
             order.id,
-            ExecutionId('E-' + order.id.value),
-            PositionIdBroker('ET-' + order.id.value),
+            ExecutionId("E-" + order.id.value),
+            PositionIdBroker("ET-" + order.id.value),
             order.symbol,
             order.side,
             order.quantity,

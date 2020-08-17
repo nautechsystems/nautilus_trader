@@ -42,9 +42,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
         data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-        strategies = [EmptyStrategy('001')]
+        strategies = [EmptyStrategy("001")]
 
-        config = BacktestConfig(exec_db_type='in-memory')
+        config = BacktestConfig(exec_db_type="in-memory")
         engine = BacktestEngine(
             data=data,
             strategies=strategies,
@@ -54,8 +54,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        stats_file = 'perf_stats_backtest_run_empty.prof'
-        cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
+        stats_file = "perf_stats_backtest_run_empty.prof"
+        cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
@@ -95,7 +95,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             sl_atr_multiple=2.0)]
 
         config = BacktestConfig(
-            exec_db_type='in-memory',
+            exec_db_type="in-memory",
             bypass_logging=True,
             console_prints=False)
 
@@ -108,8 +108,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        stats_file = 'perf_stats_tick_processing.prof'
-        cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
+        stats_file = "perf_stats_tick_processing.prof"
+        cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
@@ -134,7 +134,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             sl_atr_multiple=2.0)]
 
         config = BacktestConfig(
-            exec_db_type='in-memory',
+            exec_db_type="in-memory",
             bypass_logging=True,
             console_prints=False)
 
@@ -147,8 +147,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        stats_file = 'perf_stats_backtest_run_ema.prof'
-        cProfile.runctx('engine.run(start, stop)', globals(), locals(), stats_file)
+        stats_file = "perf_stats_backtest_run_ema.prof"
+        cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 

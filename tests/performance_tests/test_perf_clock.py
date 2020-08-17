@@ -37,7 +37,7 @@ class TestClockPerformanceTests(unittest.TestCase):
 
     def test_advance_time(self):
         store = []
-        clock.set_timer('test', timedelta(seconds=1), handler=store.append)
+        clock.set_timer("test", timedelta(seconds=1), handler=store.append)
 
         iterations = 1
         result = PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)

@@ -40,7 +40,7 @@ class BacktestEngineTests(unittest.TestCase):
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[EmptyStrategy('000')],
+            strategies=[EmptyStrategy("000")],
             fill_model=FillModel(),
             config=BacktestConfig())
 
@@ -76,8 +76,8 @@ class BacktestEngineTests(unittest.TestCase):
         engine.run(start, stop)
 
         # Assert
-        self.assertEqual(Timestamp('2013-01-01 21:59:59.900000+0000'), engine.data_client.min_timestamp)
-        self.assertEqual(Timestamp('2013-01-02 09:19:00+0000'), engine.data_client.max_timestamp)
+        self.assertEqual(Timestamp("2013-01-01 21:59:59.900000+0000"), engine.data_client.min_timestamp)
+        self.assertEqual(Timestamp("2013-01-02 09:19:00+0000"), engine.data_client.max_timestamp)
         self.assertEqual([x.timestamp for x in tick_tock.store], sorted([x.timestamp for x in tick_tock.store]))  # Events in order
 
     def test_timer_alert_sequencing_with_tick_execution(self):
@@ -105,6 +105,6 @@ class BacktestEngineTests(unittest.TestCase):
         engine.run(start, stop)
 
         # Assert
-        self.assertEqual(Timestamp('2013-01-01 21:59:59.900000+0000'), engine.data_client.min_timestamp)
-        self.assertEqual(Timestamp('2013-01-02 09:19:00+0000'), engine.data_client.max_timestamp)
+        self.assertEqual(Timestamp("2013-01-01 21:59:59.900000+0000"), engine.data_client.min_timestamp)
+        self.assertEqual(Timestamp("2013-01-02 09:19:00+0000"), engine.data_client.max_timestamp)
         self.assertEqual([x.timestamp for x in tick_tock.store], sorted([x.timestamp for x in tick_tock.store]))  # Events in order

@@ -39,8 +39,8 @@ cdef class PositionSizer:
         :param instrument: The instrument for update.
         :raises ValueError: If the instruments symbol does not equal the held instrument symbol.
         """
-        Condition.not_none(instrument, 'instrument')
-        Condition.equal(self.instrument.symbol, instrument.symbol, 'instrument.symbol', 'instrument.symbol')
+        Condition.not_none(instrument, "instrument")
+        Condition.equal(self.instrument.symbol, instrument.symbol, "instrument.symbol", "instrument.symbol")
 
         self.instrument = instrument
 
@@ -150,14 +150,14 @@ cdef class FixedRiskSizer(PositionSizer):
 
         :return Quantity.
         """
-        Condition.not_none(equity, 'equity')
-        Condition.not_none(entry, 'price_entry')
-        Condition.not_none(stop_loss, 'price_stop_loss')
-        Condition.positive(risk_bp, 'risk_bp')
-        Condition.not_negative(exchange_rate, 'exchange_rate')
-        Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
-        Condition.positive_int(units, 'units')
-        Condition.not_negative_int(unit_batch_size, 'unit_batch_size')
+        Condition.not_none(equity, "equity")
+        Condition.not_none(entry, "price_entry")
+        Condition.not_none(stop_loss, "price_stop_loss")
+        Condition.positive(risk_bp, "risk_bp")
+        Condition.not_negative(exchange_rate, "exchange_rate")
+        Condition.not_negative(commission_rate_bp, "commission_rate_bp")
+        Condition.positive_int(units, "units")
+        Condition.not_negative_int(unit_batch_size, "unit_batch_size")
 
         if exchange_rate <= 0.0:
             return Quantity(precision=self.instrument.size_precision)

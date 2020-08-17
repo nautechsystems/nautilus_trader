@@ -26,8 +26,8 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.analysis.reports import ReportProvider
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
-AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBP/USD', Venue('FXCM'))
+AUDUSD_FXCM = Symbol("AUD/USD", Venue("FXCM"))
+GBPUSD_FXCM = Symbol("GBP/USD", Venue("FXCM"))
 
 
 class ReportProviderTests(unittest.TestCase):
@@ -36,8 +36,8 @@ class ReportProviderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=TestClock())
 
     def test_generate_orders_report(self):
@@ -58,8 +58,8 @@ class ReportProviderTests(unittest.TestCase):
         event = OrderFilled(
             self.account_id,
             order1.id,
-            ExecutionId('SOME_EXEC_ID_1'),
-            PositionIdBroker('SOME_EXEC_TICKET_1'),
+            ExecutionId("SOME_EXEC_ID_1"),
+            PositionIdBroker("SOME_EXEC_TICKET_1"),
             order1.symbol,
             order1.side,
             order1.quantity,
@@ -78,15 +78,15 @@ class ReportProviderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, len(report))
-        self.assertEqual('order_id', report.index.name)
+        self.assertEqual("order_id", report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
-        self.assertEqual('AUD/USD', report.iloc[0]['symbol'])
-        self.assertEqual('BUY', report.iloc[0]['side'])
-        self.assertEqual('LIMIT', report.iloc[0]['type'])
-        self.assertEqual(1500000, report.iloc[0]['quantity'])
-        self.assertEqual(0.80011, report.iloc[0]['avg_price'])
-        self.assertEqual(0.00001, report.iloc[0]['slippage'])
-        self.assertEqual('None', report.iloc[1]['avg_price'])
+        self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
+        self.assertEqual("BUY", report.iloc[0]["side"])
+        self.assertEqual("LIMIT", report.iloc[0]["type"])
+        self.assertEqual(1500000, report.iloc[0]["quantity"])
+        self.assertEqual(0.80011, report.iloc[0]["avg_price"])
+        self.assertEqual(0.00001, report.iloc[0]["slippage"])
+        self.assertEqual("None", report.iloc[1]["avg_price"])
 
     def test_generate_order_fills_report(self):
         # Arrange
@@ -106,8 +106,8 @@ class ReportProviderTests(unittest.TestCase):
         event = OrderFilled(
             self.account_id,
             order1.id,
-            ExecutionId('SOME_EXEC_ID_1'),
-            PositionIdBroker('SOME_EXEC_TICKET_1'),
+            ExecutionId("SOME_EXEC_ID_1"),
+            PositionIdBroker("SOME_EXEC_TICKET_1"),
             order1.symbol,
             order1.side,
             order1.quantity,
@@ -127,14 +127,14 @@ class ReportProviderTests(unittest.TestCase):
         # Assert
         # print(report.iloc[0])
         self.assertEqual(1, len(report))
-        self.assertEqual('order_id', report.index.name)
+        self.assertEqual("order_id", report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
-        self.assertEqual('AUD/USD', report.iloc[0]['symbol'])
-        self.assertEqual('BUY', report.iloc[0]['side'])
-        self.assertEqual('LIMIT', report.iloc[0]['type'])
-        self.assertEqual(1500000, report.iloc[0]['quantity'])
-        self.assertAlmostEqual(0.80011, report.iloc[0]['avg_price'])
-        self.assertEqual(0.00001, report.iloc[0]['slippage'])
+        self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
+        self.assertEqual("BUY", report.iloc[0]["side"])
+        self.assertEqual("LIMIT", report.iloc[0]["type"])
+        self.assertEqual(1500000, report.iloc[0]["quantity"])
+        self.assertAlmostEqual(0.80011, report.iloc[0]["avg_price"])
+        self.assertEqual(0.00001, report.iloc[0]["slippage"])
 
     def test_generate_trades_report(self):
         # Arrange
@@ -152,14 +152,14 @@ class ReportProviderTests(unittest.TestCase):
         # Assert
         # print(report.iloc[0])
         self.assertEqual(2, len(report))
-        self.assertEqual('position_id', report.index.name)
+        self.assertEqual("position_id", report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
-        self.assertEqual('AUD/USD', report.iloc[0]['symbol'])
-        self.assertEqual('BUY', report.iloc[0]['direction'])
-        self.assertEqual(100000, report.iloc[0]['peak_quantity'])
-        self.assertEqual(1.00000, report.iloc[0]['avg_open_price'])
-        self.assertEqual(1.0001, report.iloc[0]['avg_close_price'])
-        self.assertEqual(UNIX_EPOCH, report.iloc[0]['opened_time'])
-        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]['closed_time'])
-        self.assertEqual(9.999999999998899e-05, report.iloc[0]['realized_points'])
-        self.assertEqual(9.999999999998899e-05, report.iloc[0]['realized_return'])
+        self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
+        self.assertEqual("BUY", report.iloc[0]["direction"])
+        self.assertEqual(100000, report.iloc[0]["peak_quantity"])
+        self.assertEqual(1.00000, report.iloc[0]["avg_open_price"])
+        self.assertEqual(1.0001, report.iloc[0]["avg_close_price"])
+        self.assertEqual(UNIX_EPOCH, report.iloc[0]["opened_time"])
+        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]["closed_time"])
+        self.assertEqual(9.999999999998899e-05, report.iloc[0]["realized_points"])
+        self.assertEqual(9.999999999998899e-05, report.iloc[0]["realized_return"])

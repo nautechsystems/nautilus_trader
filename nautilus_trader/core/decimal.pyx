@@ -34,7 +34,7 @@ cdef class Decimal:
         :param precision: The precision of the decimal (>= 0).
         :raises ValueError: If the precision is negative (< 0).
         """
-        Condition.not_negative(precision, 'precision')
+        Condition.not_negative(precision, "precision")
 
         self._value = fast_round(value, precision)  # Rounding to nearest
         self.precision = precision
@@ -58,7 +58,7 @@ cdef class Decimal:
         :param value: The string value to parse.
         :return: Decimal.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return Decimal(float(value), precision=Decimal.precision_from_string(value))
 
@@ -71,9 +71,9 @@ cdef class Decimal:
         :param value: The string value to parse.
         :return: int.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
-        return len(value.partition('.')[2])  # If does not contain '.' then partition will be ''
+        return len(value.partition('.')[2])  # If does not contain "." then partition will be ""
 
     cpdef int as_int(self):
         """
@@ -97,7 +97,7 @@ cdef class Decimal:
 
         :return decimal.Decimal.
         """
-        return decimal.Decimal(f'{self._value:.{self.precision}f}')
+        return decimal.Decimal(f"{self._value:.{self.precision}f}")
 
     cpdef bint equals(self, Decimal other):
         """
@@ -119,14 +119,14 @@ cdef class Decimal:
         """
         if format_commas:
             if self.precision == 0:
-                return f'{int(self._value):,}'
+                return f"{int(self._value):,}"
             else:
-                return f'{self._value:,.{self.precision}f}'
+                return f"{self._value:,.{self.precision}f}"
         else:
             if self.precision == 0:
-                return f'{int(self._value)}'
+                return f"{int(self._value)}"
             else:
-                return f'{self._value:.{self.precision}f}'
+                return f"{self._value:.{self.precision}f}"
 
     cpdef bint eq(self, Decimal other):
         """

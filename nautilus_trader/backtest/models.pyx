@@ -46,11 +46,11 @@ cdef class FillModel:
         :raises ValueError: If any probability argument is not within range [0, 1].
         :raises TypeError: If the random_seed is not None and not of type int.
         """
-        Condition.in_range(prob_fill_at_limit, 0.0, 1.0, 'prob_fill_at_limit')
-        Condition.in_range(prob_fill_at_stop, 0.0, 1.0, 'prob_fill_at_stop')
-        Condition.in_range(prob_slippage, 0.0, 1.0, 'prob_slippage')
+        Condition.in_range(prob_fill_at_limit, 0.0, 1.0, "prob_fill_at_limit")
+        Condition.in_range(prob_fill_at_stop, 0.0, 1.0, "prob_fill_at_stop")
+        Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
         if random_seed is not None:
-            Condition.type(random_seed, int, 'random_seed')
+            Condition.type(random_seed, int, "random_seed")
         else:
             random_seed = 42
 

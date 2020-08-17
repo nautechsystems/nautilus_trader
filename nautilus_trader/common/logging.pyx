@@ -35,20 +35,20 @@ from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.live.clock cimport LiveClock
 
 # Private constants
-cdef str _HEADER = '\033[95m'
-cdef str _OK_BLUE = '\033[94m'
-cdef str _OK_GREEN = '\033[92m'
-cdef str _WARN = '\033[1;33m'
-cdef str _FAIL = '\033[01;31m'
-cdef str _ENDC = '\033[0m'
-cdef str _BOLD = '\033[1m'
-cdef str _UNDERLINE = '\033[4m'
+cdef str _HEADER = "\033[95m"
+cdef str _OK_BLUE = "\033[94m"
+cdef str _OK_GREEN = "\033[92m"
+cdef str _WARN = "\033[1;33m"
+cdef str _FAIL = "\033[01;31m"
+cdef str _ENDC = "\033[0m"
+cdef str _BOLD = "\033[1m"
+cdef str _UNDERLINE = "\033[4m"
 
 # Public constants
-RECV = '<--'
-SENT = '-->'
-CMD = '[CMD]'
-EVT = '[EVT]'
+RECV = "<--"
+SENT = "-->"
+CMD = "[CMD]"
+EVT = "[EVT]"
 
 
 cdef class LogMessage:
@@ -104,7 +104,7 @@ cdef class Logger:
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path not None='log/',
+                 str log_file_path not None="log/",
                  Clock clock not None=LiveClock()):
         """
         Initialize a new instance of the Logger class.
@@ -122,11 +122,11 @@ cdef class Logger:
         :raises ValueError: If the log_file_path is not a valid string.
         """
         if name is not None:
-            Condition.valid_string(name, 'name')
+            Condition.valid_string(name, "name")
         else:
-            name = 'tmp'
+            name = "tmp"
 
-        Condition.valid_string(log_file_path, 'log_file_path')
+        Condition.valid_string(log_file_path, "log_file_path")
 
         self.name = name
         self.bypass_logging = bypass_logging
@@ -138,7 +138,7 @@ cdef class Logger:
         self._log_thread = log_thread
         self._log_to_file = log_to_file
         self._log_file_path = log_file_path
-        self._log_file = f'{self._log_file_path}{self.name}-{self.clock.time_now().date().isoformat()}.log'
+        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.time_now().date().isoformat()}.log"
         self._log_store = []
         self._logger = logging.getLogger(name)
         self._logger.setLevel(logging.DEBUG)
@@ -157,9 +157,9 @@ cdef class Logger:
 
         :param name: The new name of the log file.
         """
-        Condition.valid_string(name, 'name')
+        Condition.valid_string(name, "name")
 
-        self._log_file = f'{self._log_file_path}{name}.log'
+        self._log_file = f"{self._log_file_path}{name}.log"
         self._logger.removeHandler(self._log_file_handler)
         self._log_file_handler = logging.FileHandler(self._log_file)
         self._logger.addHandler(self._log_file_handler)
@@ -201,17 +201,17 @@ cdef class Logger:
     cdef str _format_output(self, LogMessage message):
         # Return the formatted log message from the given arguments
         cdef str time = format_iso8601(message.timestamp)
-        cdef str thread = '' if self._log_thread is False else f'[{message.thread_id}]'
+        cdef str thread = "" if self._log_thread is False else f"[{message.thread_id}]"
         cdef str formatted_text
 
         if message.level == LogLevel.WARNING:
-            formatted_text = f'{_WARN}[{message.level_string()}] {message.text}{_ENDC}'
+            formatted_text = f"{_WARN}[{message.level_string()}] {message.text}{_ENDC}"
         elif message.level == LogLevel.ERROR:
-            formatted_text = f'{_FAIL}[{message.level_string()}] {message.text}{_ENDC}'
+            formatted_text = f"{_FAIL}[{message.level_string()}] {message.text}{_ENDC}"
         elif message.level == LogLevel.CRITICAL:
-            formatted_text = f'{_FAIL}[{message.level_string()}] {message.text}{_ENDC}'
+            formatted_text = f"{_FAIL}[{message.level_string()}] {message.text}{_ENDC}"
         else:
-            formatted_text = f'[{message.level_string()}] {message.text}'
+            formatted_text = f"[{message.level_string()}] {message.text}"
 
         return f"{_BOLD}{time}{_ENDC} {thread}{formatted_text}"
 
@@ -242,7 +242,7 @@ cdef class TestLogger(Logger):
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path not None='log/',
+                 str log_file_path not None="log/",
                  Clock clock not None=TestClock()):
         """
         Initialize a new instance of the TestLogger class.
@@ -276,7 +276,7 @@ cdef class TestLogger(Logger):
 
         :param message: The log message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._log(message)
 
@@ -296,9 +296,9 @@ cdef class LoggerAdapter:
         :param component_name: The name of the component.
         """
         if component_name is None:
-            component_name = ''
+            component_name = ""
         else:
-            Condition.valid_string(component_name, 'component_name')
+            Condition.valid_string(component_name, "component_name")
 
         if logger is None:
             logger = TestLogger()
@@ -322,7 +322,7 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._send_to_logger(LogLevel.VERBOSE, message)
 
@@ -332,7 +332,7 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._send_to_logger(LogLevel.DEBUG, message)
 
@@ -342,7 +342,7 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._send_to_logger(LogLevel.INFO, message)
 
@@ -352,7 +352,7 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._send_to_logger(LogLevel.WARNING, message)
 
@@ -362,7 +362,7 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._send_to_logger(LogLevel.ERROR, message)
 
@@ -372,7 +372,7 @@ cdef class LoggerAdapter:
 
         :param message: The message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._send_to_logger(LogLevel.CRITICAL, message)
 
@@ -382,13 +382,13 @@ cdef class LoggerAdapter:
 
         :param ex: The exception to log.
         """
-        Condition.not_none(ex, 'ex')
+        Condition.not_none(ex, "ex")
 
-        cdef str ex_string = f'{type(ex).__name__}({ex})\n'
+        cdef str ex_string = f"{type(ex).__name__}({ex})\n"
         exc_type, exc_value, exc_traceback = sys.exc_info()
         stack_trace = traceback.format_exception(exc_type, exc_value, exc_traceback)
 
-        cdef str stack_trace_lines = ''
+        cdef str stack_trace_lines = ""
         cdef str line
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
@@ -409,8 +409,8 @@ cdef class LoggerAdapter:
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:
-    Condition.not_none(logger, 'logger')
-    print('')  # New line to begin
+    Condition.not_none(logger, "logger")
+    print("")  # New line to begin
     logger.info("=================================================================")
     logger.info(f" NAUTILUS TRADER - Algorithmic Trading Platform")
     logger.info(f" by Nautech Systems Pty Ltd.")
@@ -438,7 +438,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(" SYSTEM SPECIFICATION")
     logger.info("=================================================================")
     logger.info(f"CPU architecture: {platform.processor()}")
-    cpu_freq_str = '' if psutil.cpu_freq() is None else f'@ {int(psutil.cpu_freq()[2])} MHz'
+    cpu_freq_str = "" if psutil.cpu_freq() is None else f"@ {int(psutil.cpu_freq()[2])} MHz"
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
     ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)

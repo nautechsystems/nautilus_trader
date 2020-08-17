@@ -37,7 +37,7 @@ class PyStrategy(TradingStrategy):
 
     def __init__(self, bar_type: BarType):
         """Initialize a new instance of the PyStrategy class."""
-        super().__init__(order_id_tag='001')
+        super().__init__(order_id_tag="001")
 
         self.bar_type = bar_type
         self.object_storer = ObjectStorer()
@@ -120,7 +120,7 @@ class TickTock(TradingStrategy):
 
     def __init__(self, instrument, bar_type):
         """Initialize a new instance of the TickTock class."""
-        super().__init__(order_id_tag='000')
+        super().__init__(order_id_tag="000")
 
         self.instrument = instrument
         self.bar_type = bar_type
@@ -133,21 +133,21 @@ class TickTock(TradingStrategy):
         self.subscribe_ticks(self.bar_type.symbol)
 
     def on_quote_tick(self, tick):
-        self.log.info(f'Received Tick({tick})')
+        self.log.info(f"Received Tick({tick})")
         self.store.append(tick)
 
     def on_bar(self, bar_type, bar):
-        self.log.info(f'Received {bar_type} Bar({bar})')
+        self.log.info(f"Received {bar_type} Bar({bar})")
         self.store.append(bar)
         if not self.timer_running:
-            timer_name = 'Test-Timer'
+            timer_name = "Test-Timer"
             self.clock.set_timer(name=timer_name, interval=timedelta(seconds=10))
             self.timer_running = True
             self.log.info(f"Started timer {timer_name}.")
 
         self.time_alert_counter += 1
 
-        time_alert_name = f'Test-Alert-{self.time_alert_counter}'
+        time_alert_name = f"Test-Alert-{self.time_alert_counter}"
         alert_time = bar.timestamp + timedelta(seconds=30)
 
         self.clock.set_time_alert(name=time_alert_name, alert_time=alert_time)
@@ -182,7 +182,7 @@ class TestStrategy1(TradingStrategy):
 
     def __init__(self,
                  bar_type,
-                 id_tag_strategy='001',
+                 id_tag_strategy="001",
                  clock=TestClock()):
         """Initialize a new instance of the TestStrategy1 class."""
         super().__init__(order_id_tag=id_tag_strategy, clock=clock)
@@ -199,7 +199,7 @@ class TestStrategy1(TradingStrategy):
         self.position_id = None
 
     def on_start(self):
-        self.object_storer.store('custom start logic')
+        self.object_storer.store("custom start logic")
         self.account_inquiry()
 
     def on_quote_tick(self, tick):
@@ -212,7 +212,7 @@ class TestStrategy1(TradingStrategy):
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    Label('TestStrategy1_E'),
+                    Label("TestStrategy1_E"),
                     OrderSide.BUY,
                     100000)
 
@@ -222,7 +222,7 @@ class TestStrategy1(TradingStrategy):
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    Label('TestStrategy1_E'),
+                    Label("TestStrategy1_E"),
                     OrderSide.SELL,
                     100000)
 
@@ -236,20 +236,20 @@ class TestStrategy1(TradingStrategy):
         self.object_storer.store(event)
 
     def on_stop(self):
-        self.object_storer.store('custom stop logic')
+        self.object_storer.store("custom stop logic")
 
     def on_reset(self):
-        self.object_storer.store('custom reset logic')
+        self.object_storer.store("custom reset logic")
 
     def on_save(self):
-        self.object_storer.store('custom save logic')
+        self.object_storer.store("custom save logic")
         return {}
 
     def on_load(self, state):
-        self.object_storer.store('custom load logic')
+        self.object_storer.store("custom load logic")
 
     def on_dispose(self):
-        self.object_storer.store('custom dispose logic')
+        self.object_storer.store("custom dispose logic")
 
 
 class EMACross(TradingStrategy):
@@ -267,7 +267,7 @@ class EMACross(TradingStrategy):
                  slow_ema: int=20,
                  atr_period: int=20,
                  sl_atr_multiple: float=2.0,
-                 extra_id_tag: str=''):
+                 extra_id_tag: str=""):
         """
         Initialize a new instance of the EMACrossPy class.
 
@@ -280,7 +280,7 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace("/", "") + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -529,7 +529,7 @@ class EMACross(TradingStrategy):
 
         Create and return a state dictionary of values to be saved.
 
-        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        Note: "OrderIdCount" and "PositionIdCount" are reserved keys for
         the returned state dictionary.
         """
         return {}

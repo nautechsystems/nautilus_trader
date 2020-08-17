@@ -31,18 +31,18 @@ class KeltnerChannelTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('KeltnerChannel', self.kc.name)
+        self.assertEqual("KeltnerChannel", self.kc.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)', str(self.kc))
+        self.assertEqual("KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kc))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertTrue(repr(self.kc).startswith(
-            '<KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0) object at'))
+            "<KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0) object at"))
         self.assertTrue(repr(self.kc).endswith('>'))
 
     def test_period_returns_expected_value(self):

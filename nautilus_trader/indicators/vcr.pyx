@@ -44,10 +44,10 @@ cdef class VolatilityCompressionRatio(Indicator):
         :param value_floor: The floor (minimum) output value for the indicator (>= 0).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(fast_period, 'fast_period')
-        Condition.positive_int(slow_period, 'slow_period')
-        Condition.true(slow_period > fast_period, 'slow_period > fast_period')
-        Condition.not_negative(value_floor, 'value_floor')
+        Condition.positive_int(fast_period, "fast_period")
+        Condition.positive_int(slow_period, "slow_period")
+        Condition.true(slow_period > fast_period, "slow_period > fast_period")
+        Condition.not_negative(value_floor, "value_floor")
         super().__init__(params=[fast_period,
                                  slow_period,
                                  ma_type.name,
@@ -75,12 +75,12 @@ cdef class VolatilityCompressionRatio(Indicator):
         :param close: The close price.
         """
         if self.check_inputs:
-            Condition.positive(high, 'high')
-            Condition.positive(low, 'low')
-            Condition.positive(close, 'close')
-            Condition.true(high >= low, 'high >= low')
-            Condition.true(high >= close, 'high >= close')
-            Condition.true(low <= close, 'low <= close')
+            Condition.positive(high, "high")
+            Condition.positive(low, "low")
+            Condition.positive(close, "close")
+            Condition.true(high >= low, "high >= low")
+            Condition.true(high >= close, "high >= close")
+            Condition.true(low <= close, "low <= close")
 
         self._atr_fast.update(high, low, close)
         self._atr_slow.update(high, low, close)
@@ -98,7 +98,7 @@ cdef class VolatilityCompressionRatio(Indicator):
         :param close: The close price.
         """
         if self.check_inputs:
-            Condition.positive(close, 'close')
+            Condition.positive(close, "close")
 
         self._atr_fast.update_mid(close)
         self._atr_slow.update_mid(close)

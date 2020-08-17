@@ -22,12 +22,12 @@ from Cython.Compiler import Options
 from nautilus_trader import __author__, __version__
 from tools.packaging import parse_requirements, make_extensions
 
-PACKAGE_NAME = 'nautilus_trader'
+PACKAGE_NAME = "nautilus_trader"
 MAINTAINER = __author__
-MAINTAINER_EMAIL = 'info@nautechsystems.io'
-DESCRIPTION = 'An algorithmic trading platform and event-driven backtester'
-URL = 'https://github.com/nautechsystems/nautilus_trader'
-PYTHON_REQUIRES = '>=3.6.8'
+MAINTAINER_EMAIL = "info@nautechsystems.io"
+DESCRIPTION = "An algorithmic trading platform and event-driven backtester"
+URL = "https://github.com/nautechsystems/nautilus_trader"
+PYTHON_REQUIRES = ">=3.6.8"
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
 
 
@@ -58,18 +58,18 @@ LINE_TRACING = False
 
 # Cython compiler directives
 compiler_directives = {
-    'language_level': 3,         # If Python 3
-    'cdivision': True,           # If division is as per C with no check for zero (35% speed up)
-    'embedsignature': True,      # If docstrings should be embedded into C signatures
-    'emit_code_comments': True,  # If comments should be emitted to generated C code
-    'profile': PROFILE_HOOKS,    # See above
-    'linetrace': LINE_TRACING    # See above
+    "language_level": 3,         # If Python 3
+    "cdivision": True,           # If division is as per C with no check for zero (35% speed up)
+    "embedsignature": True,      # If docstrings should be embedded into C signatures
+    "emit_code_comments": True,  # If comments should be emitted to generated C code
+    "profile": PROFILE_HOOKS,    # See above
+    "linetrace": LINE_TRACING    # See above
 }
 # -------------------------------------
 
 
 # Create package description
-with open('README.md', encoding='utf-8') as f:
+with open("README.md", encoding="utf-8") as f:
     LONG_DESCRIPTION = f.read()
 
 
@@ -81,26 +81,26 @@ setup(
     maintainer_email=MAINTAINER_EMAIL,
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
-    long_description_content_type='text/markdown',
+    long_description_content_type="text/markdown",
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
-        'License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
+        "Development Status :: 5 - Production/Stable",
+        "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
     ],
     url=URL,
     python_requires=PYTHON_REQUIRES,
-    requires=parse_requirements('requirements.txt', strip=True),
-    install_requires=parse_requirements('requirements.txt'),
-    tests_require=parse_requirements('requirements.txt'),
+    requires=parse_requirements("requirements.txt", strip=True),
+    install_requires=parse_requirements("requirements.txt"),
+    tests_require=parse_requirements("requirements.txt"),
     packages=[module for module in setuptools.find_packages()],
     include_package_data=True,
     ext_modules=cythonize(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives,
-        build_dir='build'),
-    cmdclass={'build_ext': build_ext},
-    options={'build_ext': {'inplace': True, 'force': False}},
+        build_dir="build"),
+    cmdclass={"build_ext": build_ext},
+    options={"build_ext": {"inplace": True, "force": False}},
     zip_safe=False  # Allows cimport of pxd files
 )

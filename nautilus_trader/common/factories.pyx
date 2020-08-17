@@ -49,7 +49,7 @@ cdef class OrderFactory:
         :param clock: The clock for the component.
         :raises ValueError: If the initial count is negative (< 0).
         """
-        Condition.not_negative_int(initial_count, 'initial_count')
+        Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
@@ -359,7 +359,7 @@ cdef class OrderFactory:
         """
         cdef Label entry_label = None
         if label is not None:
-            entry_label = Label(label.value + '_E')
+            entry_label = Label(label.value + "_E")
 
         cdef Order entry_order = self.market(
             symbol,
@@ -404,7 +404,7 @@ cdef class OrderFactory:
         """
         cdef Label entry_label = None
         if label is not None:
-            entry_label = Label(label.value + '_E')
+            entry_label = Label(label.value + "_E")
 
         cdef Order entry_order = self.limit(
             symbol,
@@ -451,7 +451,7 @@ cdef class OrderFactory:
         """
         cdef Label entry_label = None
         if label is not None:
-            entry_label = Label(label.value + '_E')
+            entry_label = Label(label.value + "_E")
 
         cdef Order entry_order = self.stop(
             symbol,

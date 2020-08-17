@@ -62,7 +62,7 @@ cdef class DataClient:
         :param logger: The logger for the component.
         :raises ValueError: If the tick_capacity is not positive (> 0).
         """
-        Condition.positive_int(tick_capacity, 'tick_capacity')
+        Condition.positive_int(tick_capacity, "tick_capacity")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
@@ -230,7 +230,7 @@ cdef class DataClient:
 
         :param strategy: The strategy to register.
         """
-        Condition.not_none(strategy, 'strategy')
+        Condition.not_none(strategy, "strategy")
 
         strategy.register_data_client(self)
 
@@ -252,7 +252,7 @@ cdef class DataClient:
         :raises ValueError: If the instrument is not found.
         :return Instrument.
         """
-        Condition.is_in(symbol, self._instruments, 'symbol', 'instruments')
+        Condition.is_in(symbol, self._instruments, "symbol", "instruments")
 
         return self._instruments[symbol]
 
@@ -263,7 +263,7 @@ cdef class DataClient:
         :param symbol: The symbol for the ticks.
         :return bool.
         """
-        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(symbol, "symbol")
 
         return symbol in self._quote_ticks and len(self._quote_ticks[symbol]) > 0
 
@@ -274,7 +274,7 @@ cdef class DataClient:
         :param symbol: The symbol for the ticks.
         :return bool.
         """
-        Condition.not_none(symbol, 'symbol')
+        Condition.not_none(symbol, "symbol")
 
         return symbol in self._trade_ticks and len(self._trade_ticks[symbol]) > 0
 
@@ -286,8 +286,8 @@ cdef class DataClient:
         :return float.
         :raises ValueError: If the data clients ticks does not contain the symbol.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._spreads, 'symbol', 'spreads')
+        Condition.not_none(symbol, "symbol")
+        Condition.is_in(symbol, self._spreads, "symbol", "spreads")
 
         return self._spreads[symbol][0]
 
@@ -299,8 +299,8 @@ cdef class DataClient:
         :return float.
         :raises ValueError: If the data clients ticks does not contain the symbol.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.is_in(symbol, self._spreads_average, 'symbol', 'spreads_average')
+        Condition.not_none(symbol, "symbol")
+        Condition.is_in(symbol, self._spreads_average, "symbol", "spreads_average")
 
         return self._spreads_average.get(symbol)
 
@@ -667,7 +667,7 @@ cdef class BulkTickBarBuilder:
         :param callback: The callback to send the built bars to.
         :raises ValueError: If the callback is not type callable.
         """
-        Condition.callable(callback, 'callback')
+        Condition.callable(callback, "callback")
 
         self.bars = []
         self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)

@@ -70,7 +70,7 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual("1111111", Quantity(1111111).to_string_formatted())
         self.assertEqual("2.523M", Quantity(2523000).to_string_formatted())
         self.assertEqual("100M", Quantity(100000000).to_string_formatted())
-        self.assertEqual('1,000.0', Quantity(1000, 1).to_string(format_commas=True))
+        self.assertEqual("1,000.0", Quantity(1000, 1).to_string(format_commas=True))
 
     def test_quantity_comparisons(self):
         # Arrange
@@ -141,7 +141,7 @@ class ObjectTests(unittest.TestCase):
         result = str(price)
 
         # Assert
-        self.assertEqual('1.00000', result)
+        self.assertEqual("1.00000", result)
 
     def test_price_repr(self):
         # Arrange
@@ -151,7 +151,7 @@ class ObjectTests(unittest.TestCase):
         result = repr(price)
 
         # Assert
-        self.assertTrue(result.startswith('<Price(1.00000, precision=5) object at'))
+        self.assertTrue(result.startswith("<Price(1.00000, precision=5) object at"))
 
     def test_price_equality(self):
         # Arrange
@@ -237,7 +237,7 @@ class ObjectTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1.00, money.as_double())
-        self.assertEqual('1.00', str(money))
+        self.assertEqual("1.00", str(money))
 
     def test_money_initialized_with_valid_inputs(self):
         # Arrange
@@ -258,8 +258,8 @@ class ObjectTests(unittest.TestCase):
         result2 = Money(5005.556666, Currency.USD)
 
         # Assert
-        self.assertEqual('1,000.33', result1.to_string(format_commas=True))
-        self.assertEqual('5,005.56', result2.to_string(format_commas=True))
+        self.assertEqual("1,000.33", result1.to_string(format_commas=True))
+        self.assertEqual("5,005.56", result2.to_string(format_commas=True))
 
     def test_money_str(self):
         # Arrange
@@ -269,12 +269,12 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual('0.00', str(money0))
-        self.assertEqual('1.00', str(money1))
-        self.assertEqual('1.00', money1.to_string())
-        self.assertEqual('1000000.00', str(money2))
-        self.assertEqual('1,000,000.00', money2.to_string(format_commas=True))
-        self.assertEqual('1,000,000.00 USD', money2.to_string_formatted())
+        self.assertEqual("0.00", str(money0))
+        self.assertEqual("1.00", str(money1))
+        self.assertEqual("1.00", money1.to_string())
+        self.assertEqual("1000000.00", str(money2))
+        self.assertEqual("1,000,000.00", money2.to_string(format_commas=True))
+        self.assertEqual("1,000,000.00 USD", money2.to_string_formatted())
 
     def test_money_repr(self):
         # Arrange
@@ -284,7 +284,7 @@ class ObjectTests(unittest.TestCase):
         result = repr(money)
 
         # Assert
-        self.assertTrue(result.startswith('<Money(1.00, currency=USD) object at'))
+        self.assertTrue(result.startswith("<Money(1.00, currency=USD) object at"))
 
     def test_money_equality(self):
         # Arrange

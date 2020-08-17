@@ -25,7 +25,7 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-_AUDUSD = Symbol('AUDUSD', Venue('IDEALPRO'))
+_AUDUSD = Symbol("AUDUSD", Venue("IDEALPRO"))
 _TEST_LIST = [0.0, 1.1, 2.2, 3.3, 4.4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 _MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
 
@@ -38,11 +38,11 @@ class Experiments:
 
     @staticmethod
     def class_name():
-        x = '123'.__class__.__name__  # noqa
+        x = "123".__class__.__name__  # noqa
 
     @staticmethod
     def str_assignment():
-        x = '123'  # noqa
+        x = "123"  # noqa
 
     @staticmethod
     def np_mean():

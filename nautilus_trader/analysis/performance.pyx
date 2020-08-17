@@ -46,8 +46,8 @@ cdef class PerformanceAnalyzer:
         self._account_capital = None
         self._account_currency = Currency.UNDEFINED
         self._returns = pd.Series(dtype=float64)
-        self._positions = pd.DataFrame(columns=['cash'])
-        self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
+        self._positions = pd.DataFrame(columns=["cash"])
+        self._transactions = pd.DataFrame(columns=["capital", "pnl"])
 
     cpdef void calculate_statistics(self, Account account, dict positions) except *:
         """
@@ -56,8 +56,8 @@ cdef class PerformanceAnalyzer:
         :param account: The account for the calculations.
         :param positions: The positions for the calculations.
         """
-        Condition.not_none(account, 'account')
-        Condition.not_none(positions, 'positions')
+        Condition.not_none(account, "account")
+        Condition.not_none(positions, "positions")
 
         cdef AccountStateEvent event
         for event in account.get_events():
@@ -74,7 +74,7 @@ cdef class PerformanceAnalyzer:
 
         :param event: The event to handle.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         if self._account_capital is None:
             # Initialize account data
@@ -94,8 +94,8 @@ cdef class PerformanceAnalyzer:
         if event.timestamp not in self._transactions:
             self._transactions.loc[event.timestamp] = 0
 
-        self._transactions.loc[event.timestamp]['capital'] = self._account_capital.as_double()
-        self._transactions.loc[event.timestamp]['pnl'] = pnl.as_double()
+        self._transactions.loc[event.timestamp]["capital"] = self._account_capital.as_double()
+        self._transactions.loc[event.timestamp]["pnl"] = pnl.as_double()
 
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """
@@ -104,7 +104,7 @@ cdef class PerformanceAnalyzer:
         :param timestamp: The timestamp for the returns entry.
         :param value: The return value to add.
         """
-        Condition.not_none(timestamp, 'time')
+        Condition.not_none(timestamp, "time")
 
         cdef date index_date = timestamp.date()
         if index_date not in self._returns:
@@ -124,9 +124,9 @@ cdef class PerformanceAnalyzer:
         :param positions: The end of day positions.
         :param cash_balance: The end of day cash balance of the account.
         """
-        Condition.not_none(timestamp, 'time')
-        Condition.not_none(positions, 'positions')
-        Condition.not_none(cash_balance, 'cash_balance')
+        Condition.not_none(timestamp, "time")
+        Condition.not_none(positions, "positions")
+        Condition.not_none(cash_balance, "cash_balance")
 
         cdef date index_date = timestamp.date()
         if index_date not in self._positions:
@@ -151,8 +151,8 @@ cdef class PerformanceAnalyzer:
         self._account_capital = None
         self._account_currency = Currency.UNDEFINED
         self._returns = pd.Series(dtype=float64)
-        self._positions = pd.DataFrame(columns=['cash'])
-        self._transactions = pd.DataFrame(columns=['capital', 'pnl'])
+        self._positions = pd.DataFrame(columns=["cash"])
+        self._transactions = pd.DataFrame(columns=["capital", "pnl"])
 
     cpdef object get_returns(self):
         """
@@ -184,7 +184,7 @@ cdef class PerformanceAnalyzer:
 
         :return Pandas.DataFrame.
         """
-        return self._transactions['capital']
+        return self._transactions["capital"]
 
     cpdef double total_pnl(self):
         """
@@ -214,7 +214,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        return self._transactions['pnl'].max()
+        return self._transactions["pnl"].max()
 
     cpdef double max_loser(self):
         """
@@ -222,7 +222,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        return self._transactions['pnl'].min()
+        return self._transactions["pnl"].min()
 
     cpdef double min_winner(self):
         """
@@ -230,7 +230,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        return self._transactions['pnl'][self._transactions['pnl'] > 0].min()
+        return self._transactions["pnl"][self._transactions["pnl"] > 0].min()
 
     cpdef double min_loser(self):
         """
@@ -238,7 +238,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        return self._transactions['pnl'][self._transactions['pnl'] <= 0].max()
+        return self._transactions["pnl"][self._transactions["pnl"] <= 0].max()
 
     cpdef double avg_winner(self):
         """
@@ -246,7 +246,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        return self._transactions['pnl'][self._transactions['pnl'] > 0].mean()
+        return self._transactions["pnl"][self._transactions["pnl"] > 0].mean()
 
     cpdef double avg_loser(self):
         """
@@ -254,7 +254,7 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        return self._transactions['pnl'][self._transactions['pnl'] <= 0].mean()
+        return self._transactions["pnl"][self._transactions["pnl"] <= 0].mean()
 
     cpdef double win_rate(self):
         """
@@ -262,8 +262,8 @@ cdef class PerformanceAnalyzer:
 
         :return double.
         """
-        cdef list winners = list(self._transactions['pnl'][self._transactions['pnl'] > 0])
-        cdef list losers = list(self._transactions['pnl'][self._transactions['pnl'] <= 0])
+        cdef list winners = list(self._transactions["pnl"][self._transactions["pnl"] > 0])
+        cdef list losers = list(self._transactions["pnl"][self._transactions["pnl"] <= 0])
 
         return len(winners) / max(1.0, (len(winners) + len(losers)))
 
@@ -444,32 +444,32 @@ cdef class PerformanceAnalyzer:
         :return Dict[str, double].
         """
         return {
-            'PNL': self.total_pnl(),
-            'PNL%': self.total_pnl_percentage(),
-            'MaxWinner': self.max_winner(),
-            'AvgWinner': self.avg_winner(),
-            'MinWinner': self.min_winner(),
-            'MinLoser': self.min_loser(),
-            'AvgLoser': self.avg_loser(),
-            'MaxLoser': self.max_loser(),
-            'WinRate': self.win_rate(),
-            'Expectancy': self.expectancy(),
-            'AnnualReturn': self.annual_return(),
-            'CumReturn': self.cum_return(),
-            'MaxDrawdown': self.max_drawdown_return(),
-            'AnnualVol': self.annual_volatility(),
-            'SharpeRatio': self.sharpe_ratio(),
-            'CalmarRatio': self.calmar_ratio(),
-            'SortinoRatio': self.sortino_ratio(),
-            'OmegaRatio': self.omega_ratio(),
-            'Stability': self.stability_of_timeseries(),
-            'ReturnsMean': self.returns_mean(),
-            'ReturnsVariance': self.returns_variance(),
-            'ReturnsSkew': self.returns_skew(),
-            'ReturnsKurtosis': self.returns_kurtosis(),
-            'TailRatio': self.returns_tail_ratio(),
-            'Alpha': self.alpha(),
-            'Beta': self.beta()
+            "PNL": self.total_pnl(),
+            "PNL%": self.total_pnl_percentage(),
+            "MaxWinner": self.max_winner(),
+            "AvgWinner": self.avg_winner(),
+            "MinWinner": self.min_winner(),
+            "MinLoser": self.min_loser(),
+            "AvgLoser": self.avg_loser(),
+            "MaxLoser": self.max_loser(),
+            "WinRate": self.win_rate(),
+            "Expectancy": self.expectancy(),
+            "AnnualReturn": self.annual_return(),
+            "CumReturn": self.cum_return(),
+            "MaxDrawdown": self.max_drawdown_return(),
+            "AnnualVol": self.annual_volatility(),
+            "SharpeRatio": self.sharpe_ratio(),
+            "CalmarRatio": self.calmar_ratio(),
+            "SortinoRatio": self.sortino_ratio(),
+            "OmegaRatio": self.omega_ratio(),
+            "Stability": self.stability_of_timeseries(),
+            "ReturnsMean": self.returns_mean(),
+            "ReturnsVariance": self.returns_variance(),
+            "ReturnsSkew": self.returns_skew(),
+            "ReturnsKurtosis": self.returns_kurtosis(),
+            "TailRatio": self.returns_tail_ratio(),
+            "Alpha": self.alpha(),
+            "Beta": self.beta()
         }
 
     cdef list get_performance_stats_formatted(self, Currency account_currency):

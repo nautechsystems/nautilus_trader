@@ -47,5 +47,5 @@ class BacktestDataClientTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(Timestamp('2013-01-01 21:59:59.900000+0000', tz='UTC'), client.min_timestamp)
-        self.assertEqual(Timestamp('2013-01-02 09:19:00+0000', tz='UTC'), client.max_timestamp)
+        self.assertEqual(Timestamp("2013-01-01 21:59:59.900000+0000", tz="UTC"), client.min_timestamp)
+        self.assertEqual(Timestamp("2013-01-02 09:19:00+0000", tz="UTC"), client.max_timestamp)

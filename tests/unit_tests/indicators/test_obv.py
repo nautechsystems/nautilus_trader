@@ -30,18 +30,18 @@ class OnBalanceVolumeTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('OnBalanceVolume', self.obv.name)
+        self.assertEqual("OnBalanceVolume", self.obv.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('OnBalanceVolume(100)', str(self.obv))
+        self.assertEqual("OnBalanceVolume(100)", str(self.obv))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.obv).startswith('<OnBalanceVolume(100) object at'))
-        self.assertTrue(repr(self.obv).endswith('>'))
+        self.assertTrue(repr(self.obv).startswith("<OnBalanceVolume(100) object at"))
+        self.assertTrue(repr(self.obv).endswith(">"))
 
     def test_period_returns_expected_value(self):
         # Act

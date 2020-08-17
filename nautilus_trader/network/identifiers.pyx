@@ -62,7 +62,7 @@ cdef class SessionId(Identifier):
 
     @staticmethod
     cdef SessionId create(ClientId client_id, datetime now, str secret):
-        cdef bytes hashable = f'{client_id}-{format_iso8601(now)}-{secret}'.encode('utf-8')
+        cdef bytes hashable = f"{client_id}-{format_iso8601(now)}-{secret}".encode("utf-8")
         return SessionId(hashlib.sha256(hashable).hexdigest())
 
     @staticmethod

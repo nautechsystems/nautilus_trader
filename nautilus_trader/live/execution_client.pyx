@@ -36,8 +36,8 @@ from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 
 
-cdef str _UTF8 = 'utf-8'
-cdef str _EVENT = 'Event'
+cdef str _UTF8 = "utf-8"
+cdef str _EVENT = "Event"
 
 cdef class LiveExecClient(ExecutionClient):
     """
@@ -85,10 +85,10 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the commands_rep_port is not in range [49152, 65535].
         :raises ValueError: If the events_port is not in range [49152, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.in_range_int(command_req_port, 0, 65535, 'command_req_port')
-        Condition.in_range_int(command_res_port, 0, 65535, 'command_res_port')
-        Condition.in_range_int(event_pub_port, 0, 65535, 'event_pub_port')
+        Condition.valid_string(host, "host")
+        Condition.in_range_int(command_req_port, 0, 65535, "command_req_port")
+        Condition.in_range_int(command_res_port, 0, 65535, "command_res_port")
+        Condition.in_range_int(event_pub_port, 0, 65535, "event_pub_port")
         super().__init__(exec_engine, logger)
 
         self._command_serializer = command_serializer

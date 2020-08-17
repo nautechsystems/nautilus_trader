@@ -215,11 +215,11 @@ cdef class Timer:
         :param start_time: The start datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
-        Condition.valid_string(name, 'name')
-        Condition.callable(callback, 'function')
-        Condition.positive(interval.total_seconds(), 'interval')
+        Condition.valid_string(name, "name")
+        Condition.callable(callback, "function")
+        Condition.positive(interval.total_seconds(), "interval")
         if stop_time:
-            Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
+            Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
 
         self.name = name
         self.callback = callback
@@ -235,7 +235,7 @@ cdef class Timer:
 
         :param event_id: The identifier for the time event.
         """
-        Condition.not_none(event_id, 'event_id')
+        Condition.not_none(event_id, "event_id")
 
         return TimeEvent(self.name, event_id, self.next_time)
 
@@ -245,7 +245,7 @@ cdef class Timer:
 
         :param now: The datetime now (UTC).
         """
-        Condition.not_none(now, 'now')
+        Condition.not_none(now, "now")
 
         self.next_time += self.interval
         if self.stop_time and now >= self.stop_time:
@@ -309,7 +309,7 @@ cdef class TestTimer(Timer):
         :param start_time: The stop datetime for the timer (UTC).
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         """
-        Condition.valid_string(name, 'name')
+        Condition.valid_string(name, "name")
         super().__init__(name, callback, interval, start_time, stop_time)
 
         self._uuid_factory = TestUUIDFactory()
@@ -323,7 +323,7 @@ cdef class TestTimer(Timer):
         :param to_time: The time to advance the test timer to.
         :return List[TimeEvent].
         """
-        Condition.not_none(to_time, 'to_time')
+        Condition.not_none(to_time, "to_time")
 
         cdef list events = []  # type: [TimeEvent]
         while not self.expired and to_time >= self.next_time:
@@ -389,7 +389,7 @@ cdef class Clock:
 
         :return timedelta.
         """
-        Condition.not_none(time, 'time')
+        Condition.not_none(time, "time")
 
         return self.time_now() - time
 
@@ -397,7 +397,7 @@ cdef class Clock:
         """
         Return the datetime for the given timer name (if found).
         """
-        Condition.valid_string(name, 'name')
+        Condition.valid_string(name, "name")
 
         return self._timers[name]
 
@@ -437,15 +437,15 @@ cdef class Clock:
         :raises TypeError: If the handler is not of type Callable or None.
         :raises ValueError: If the handler is None and no default handler is registered.
         """
-        Condition.not_none(name, 'name')
-        Condition.not_none(alert_time, 'alert_time')
+        Condition.not_none(name, "name")
+        Condition.not_none(alert_time, "alert_time")
         if handler is None:
             handler = self._default_handler
-        Condition.not_in(name, self._timers, 'name', 'timers')
-        Condition.not_in(name, self._handlers, 'name', 'timers')
+        Condition.not_in(name, self._timers, "name", "timers")
+        Condition.not_in(name, self._handlers, "name", "timers")
         cdef datetime now = self.time_now()
-        Condition.true(alert_time >= now, 'alert_time >= time_now()')
-        Condition.callable(handler, 'handler')
+        Condition.true(alert_time >= now, "alert_time >= time_now()")
+        Condition.callable(handler, "handler")
 
         cdef Timer timer = self._get_timer(
             name=name,
@@ -480,21 +480,21 @@ cdef class Clock:
         :raises TypeError: If the handler is not of type Callable or None.
         :raises ValueError: If the handler is None and no default handler is registered.
         """
-        Condition.valid_string(name, 'name')
-        Condition.not_none(interval, 'interval')
+        Condition.valid_string(name, "name")
+        Condition.not_none(interval, "interval")
         if handler is None:
             handler = self._default_handler
-        Condition.not_in(name, self._timers, 'name', 'timers')
-        Condition.not_in(name, self._handlers, 'name', 'timers')
-        Condition.true(interval.total_seconds() > 0, 'interval positive')
-        Condition.callable(handler, 'handler')
+        Condition.not_in(name, self._timers, "name", "timers")
+        Condition.not_in(name, self._handlers, "name", "timers")
+        Condition.true(interval.total_seconds() > 0, "interval positive")
+        Condition.callable(handler, "handler")
 
         cdef datetime now = self.time_now()
         if start_time is None:
             start_time = now
         if stop_time is not None:
-            Condition.true(stop_time > now, 'stop_time > now')
-            Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
+            Condition.true(stop_time > now, "stop_time > now")
+            Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
 
         cdef Timer timer = self._get_timer(
             name=name,
@@ -512,7 +512,7 @@ cdef class Clock:
         :param name: The name for the timer to cancel.
         :raises RuntimeError: If no timer with the given name is found.
         """
-        Condition.valid_string(name, 'name')
+        Condition.valid_string(name, "name")
 
         cdef Timer timer = self._timers.pop(name, None)
         if timer is None:
@@ -612,7 +612,7 @@ cdef class TestClock(Clock):
 
         :param to_time: The time to set to.
         """
-        Condition.not_none(to_time, 'to_time')
+        Condition.not_none(to_time, "to_time")
 
         self._time = to_time
 
@@ -622,7 +622,7 @@ cdef class TestClock(Clock):
 
         :param to_time: The datetime to iterate the test clock to.
         """
-        Condition.not_none(to_time, 'to_time')
+        Condition.not_none(to_time, "to_time")
 
         cdef list events = []
 

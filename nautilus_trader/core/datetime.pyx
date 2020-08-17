@@ -39,7 +39,7 @@ cpdef bint is_datetime_utc(datetime timestamp):
         True if argument timezone aware UTC, else False.
 
     """
-    Condition.not_none(timestamp, 'timestamp')
+    Condition.not_none(timestamp, "timestamp")
 
     return timestamp.tzinfo == pytz.utc
 
@@ -64,7 +64,7 @@ cpdef bint is_tz_aware(time_object):
     elif isinstance(time_object, pd.Timestamp):
         return time_object.tz is not None
     elif isinstance(time_object, pd.DataFrame):
-        return hasattr(time_object.index, 'tz') or time_object.index.tz is not None
+        return hasattr(time_object.index, "tz") or time_object.index.tz is not None
     else:
         raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object.")
 
@@ -101,7 +101,7 @@ cpdef datetime as_utc_timestamp(datetime timestamp):
     pd.Timestamp
 
     """
-    Condition.not_none(datetime, 'datetime')
+    Condition.not_none(datetime, "datetime")
 
     if not isinstance(timestamp, pd.Timestamp):
         timestamp = pd.Timestamp(timestamp)
@@ -131,7 +131,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
     if data is None:
         return data
 
-    if not hasattr(data.index, 'tz') or data.index.tz is None:  # tz-naive
+    if not hasattr(data.index, "tz") or data.index.tz is None:  # tz-naive
         return data.tz_localize(pytz.utc)
     elif data.index.tz != pytz.utc:
         return data.tz_convert(pytz.utc)
@@ -141,7 +141,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
 
 cpdef str format_iso8601(datetime dt):
     """
-    Format the given string to the ISO 8601 specification with 'Z' zulu.
+    Format the given string to the ISO 8601 specification with "Z" zulu.
 
     Parameters
     ----------
@@ -158,12 +158,12 @@ cpdef str format_iso8601(datetime dt):
         The formatted string.
 
     """
-    Condition.not_none(datetime, 'datetime')
+    Condition.not_none(datetime, "datetime")
 
     cdef str tz_stripped = str(dt).replace(' ', 'T').rpartition('+')[0]
 
     if not PyUnicode_Contains(tz_stripped, '.'):
-        return f'{tz_stripped}.000Z'
+        return f"{tz_stripped}.000Z"
 
     cdef tuple dt_partitioned = tz_stripped.rpartition('.')
-    return f'{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z'
+    return f"{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z"

@@ -31,7 +31,7 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.constants cimport UTF8
 
 cdef bytes _STRING = message_type_to_string(MessageType.STRING).title().encode(UTF8)
-cdef str _TYPE_UTF8 = 'UTF8'
+cdef str _TYPE_UTF8 = "UTF8"
 
 
 cdef class ServerNode:
@@ -110,8 +110,8 @@ cdef class MessageServer(ServerNode):
         :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
         """
-        Condition.valid_port(send_port, 'send_port')
-        Condition.valid_port(recv_port, 'recv_port')
+        Condition.valid_port(send_port, "send_port")
+        Condition.valid_port(recv_port, "recv_port")
         super().__init__(
             server_id,
             compressor,
@@ -183,7 +183,7 @@ cdef class MessageServer(ServerNode):
             The handler to register.
 
         """
-        Condition.callable(handler, 'handler')
+        Condition.callable(handler, "handler")
 
         self._handlers[MessageType.REQUEST] = handler
 
@@ -199,8 +199,8 @@ cdef class MessageServer(ServerNode):
             The handler to register.
 
         """
-        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
-        Condition.callable(handler, 'handler')
+        Condition.not_equal(message_type, MessageType.UNDEFINED, "message_type", "UNDEFINED")
+        Condition.callable(handler, "handler")
 
         if message_type in self._handlers:
             self._log.error(f"A handler for {message_type_to_string(message_type)} was already registered.")
@@ -222,7 +222,7 @@ cdef class MessageServer(ServerNode):
             The client to send the response to.
 
         """
-        Condition.not_none(correlation_id, 'correlation_id')
+        Condition.not_none(correlation_id, "correlation_id")
 
         cdef MessageRejected response = MessageRejected(
             rejected_message,
@@ -263,7 +263,7 @@ cdef class MessageServer(ServerNode):
         receiver : ClientId
             The response receiver.
         """
-        Condition.not_none(response, 'response')
+        Condition.not_none(response, "response")
 
         cdef dict header = {
             MESSAGE_TYPE: message_type_to_string(response.message_type).title(),
@@ -291,8 +291,8 @@ cdef class MessageServer(ServerNode):
         self._send(receiver, header, message.encode(UTF8))
 
     cdef void _send(self, ClientId receiver, dict header, bytes body) except *:
-        Condition.not_none(receiver, 'receiver')
-        Condition.not_none(header, 'header')
+        Condition.not_none(receiver, "receiver")
+        Condition.not_none(header, "header")
 
         # Encode and compress frames
         cdef bytes frame_receiver = receiver.value.encode(UTF8)
@@ -323,7 +323,7 @@ cdef class MessageServer(ServerNode):
             if handler is not None:
                 handler(message)
                 self._log.verbose(f"<--[{self.recv_count}] '{message}'")
-                self.send_string('OK', client_id)
+                self.send_string("OK", client_id)
             else:
                 self._log.error(f"<--[{self.recv_count}] {message}, with no string handler.")
         elif message_type == MessageType.REQUEST:
@@ -463,7 +463,7 @@ cdef class MessagePublisher(ServerNode):
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
-        Condition.valid_string(topic, 'topic')
+        Condition.valid_string(topic, "topic")
 
         cdef bytes body = self._compressor.compress(message)
 

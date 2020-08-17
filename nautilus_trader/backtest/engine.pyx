@@ -67,10 +67,10 @@ cdef class BacktestEngine:
             config = BacktestConfig()
         if fill_model is None:
             fill_model = FillModel()
-        Condition.list_type(strategies, TradingStrategy, 'strategies')
+        Condition.list_type(strategies, TradingStrategy, "strategies")
 
-        self.trader_id = TraderId('BACKTESTER', '000')
-        self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
+        self.trader_id = TraderId("BACKTESTER", "000")
+        self.account_id = AccountId.from_string("NAUTILUS-001-SIMULATED")
         self.config = config
         self.clock = LiveClock()
         self.created_time = self.clock.time_now()
@@ -109,21 +109,21 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Building engine...")
 
-        if config.exec_db_type == 'in-memory':
+        if config.exec_db_type == "in-memory":
             self.exec_db = InMemoryExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self.test_logger)
-        elif config.exec_db_type == 'redis':
+        elif config.exec_db_type == "redis":
             self.exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
-                host='localhost',
+                host="localhost",
                 port=6379,
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 logger=self.test_logger)
         else:
-            raise ValueError(f'The exec_db_type in the backtest configuration is unrecognized '
-                             f'(can be either \'in-memory\' or \'redis\').')
+            raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
+                             f"(can be either \"in-memory\" or \"redis\").")
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
@@ -178,7 +178,7 @@ cdef class BacktestEngine:
         self.iteration = 0
 
         self.time_to_initialize = self.clock.get_delta(self.created_time)
-        self.log.info(f'Initialized in {self.time_to_initialize}.')
+        self.log.info(f"Initialized in {self.time_to_initialize}.")
         self._backtest_memory()
 
     cpdef void run(
@@ -214,22 +214,22 @@ cdef class BacktestEngine:
         else:
             stop = min(as_utc_timestamp(stop), self.data_client.max_timestamp)
 
-        Condition.equal(start.tz, pytz.utc, 'start.tz', 'UTC')
-        Condition.equal(stop.tz, pytz.utc, 'stop.tz', 'UTC')
-        Condition.true(start >= self.data_client.min_timestamp, 'start >= data_client.min_timestamp')
-        Condition.true(start <= self.data_client.max_timestamp, 'stop <= data_client.max_timestamp')
-        Condition.true(start < stop, 'start < stop')
-        Condition.type_or_none(fill_model, FillModel, 'fill_model')
+        Condition.equal(start.tz, pytz.utc, "start.tz", "UTC")
+        Condition.equal(stop.tz, pytz.utc, "stop.tz", "UTC")
+        Condition.true(start >= self.data_client.min_timestamp, "start >= data_client.min_timestamp")
+        Condition.true(start <= self.data_client.max_timestamp, "stop <= data_client.max_timestamp")
+        Condition.true(start < stop, "start < stop")
+        Condition.type_or_none(fill_model, FillModel, "fill_model")
         if strategies:
-            Condition.not_empty(strategies, 'strategies')
-            Condition.list_type(strategies, TradingStrategy, 'strategies')
+            Condition.not_empty(strategies, "strategies")
+            Condition.list_type(strategies, TradingStrategy, "strategies")
 
         cdef datetime run_started = self.clock.time_now()
 
         # Setup logging
         self.test_logger.clear_log_store()
         if self.config.log_to_file:
-            backtest_log_name = self.logger.name + '-' + format_iso8601(run_started)
+            backtest_log_name = f"{self.logger.name}-{format_iso8601(run_started)}"
             self.logger.change_log_file_name(backtest_log_name)
             self.test_logger.change_log_file_name(backtest_log_name)
 

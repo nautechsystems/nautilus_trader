@@ -55,8 +55,8 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         :param timestamp: The timestamp.
         """
         if self.check_inputs:
-            Condition.positive(price, 'price')
-            Condition.not_negative(volume, 'volume')
+            Condition.positive(price, "price")
+            Condition.not_negative(volume, "volume")
 
         # On a new day reset the indicator
         if timestamp.day != self._day:

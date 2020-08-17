@@ -60,7 +60,7 @@ cdef class BacktestDataContainer:
 
         :param instrument: The instrument to add.
         """
-        Condition.not_none(instrument, 'instrument')
+        Condition.not_none(instrument, "instrument")
 
         self.instruments[instrument.symbol] = instrument
         self.instruments = dict(sorted(self.instruments.items()))
@@ -73,9 +73,9 @@ cdef class BacktestDataContainer:
         :param data: The tick data to add.
         :raises TypeError: If the data is a type other than DataFrame.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(data, 'data')
-        Condition.type(data, pd.DataFrame, 'data')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(data, "data")
+        Condition.type(data, pd.DataFrame, "data")
 
         self.symbols.add(symbol)
         self.ticks[symbol] = data
@@ -91,9 +91,9 @@ cdef class BacktestDataContainer:
         :param data: The bar data to add.
         :raises TypeError: If the data is a type other than DataFrame.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(data, 'data')
-        Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(data, "data")
+        Condition.true(price_type != PriceType.LAST, "price_type != PriceType.LAST")
 
         self.symbols.add(symbol)
 
@@ -119,7 +119,7 @@ cdef class BacktestDataContainer:
         """
         # Check there is the needed instrument for each data symbol
         for symbol in self.symbols:
-            assert(symbol in self.instruments, f'The needed instrument {symbol} was not provided.')
+            assert(symbol in self.instruments, f"The needed instrument {symbol} was not provided.")
 
         # Check that all bar DataFrames for each symbol are of the same shape and index
         cdef dict shapes = {}  # type: {BarStructure, tuple}
@@ -130,12 +130,12 @@ cdef class BacktestDataContainer:
                     shapes[structure] = dataframe.shape
                 if structure not in indexs:
                     indexs[structure] = dataframe.index
-                assert(dataframe.shape == shapes[structure], f'{dataframe} shape is not equal.')
-                assert(dataframe.index == indexs[structure], f'{dataframe} index is not equal.')
+                assert(dataframe.shape == shapes[structure], f"{dataframe} shape is not equal.")
+                assert(dataframe.index == indexs[structure], f"{dataframe} index is not equal.")
         for symbol, data in self.bars_ask.items():
             for structure, dataframe in data.items():
-                assert(dataframe.shape == shapes[structure], f'{dataframe} shape is not equal.')
-                assert(dataframe.index == indexs[structure], f'{dataframe} index is not equal.')
+                assert(dataframe.shape == shapes[structure], f"{dataframe} shape is not equal.")
+                assert(dataframe.index == indexs[structure], f"{dataframe} index is not equal.")
 
     cpdef long total_data_size(self):
         cdef long size = 0
@@ -164,7 +164,7 @@ cdef class BacktestDataClient(DataClient):
         :param logger: The logger for the component.
         :raises ValueError: If the tick_capacity is not positive (> 0).
         """
-        Condition.positive_int(tick_capacity, 'tick_capacity')
+        Condition.positive_int(tick_capacity, "tick_capacity")
         super().__init__(tick_capacity, clock, TestUUIDFactory(), logger)
 
         # Check data integrity
@@ -205,7 +205,7 @@ cdef class BacktestDataClient(DataClient):
             tick_frames.append(wrangler.tick_data)
             counter += 1
 
-            self.execution_resolutions.append(f'{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}')
+            self.execution_resolutions.append(f"{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}")
             self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
                            f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 
@@ -215,7 +215,7 @@ cdef class BacktestDataClient(DataClient):
         # Merge and sort all ticks
         self._log.info(f"Merging tick data stream...")
         self._tick_data = pd.concat(tick_frames)
-        self._tick_data.sort_index(axis=0, kind='mergesort', inplace=True)
+        self._tick_data.sort_index(axis=0, kind="mergesort", inplace=True)
 
         # Set min and max timestamps
         self.min_timestamp = self._tick_data.index.min()
@@ -240,8 +240,8 @@ cdef class BacktestDataClient(DataClient):
         :param start: The start datetime (UTC) for the run.
         :param stop: The stop datetime (UTC) for the run.
         """
-        Condition.not_none(start, 'start')
-        Condition.not_none(stop, 'stop')
+        Condition.not_none(start, "start")
+        Condition.not_none(stop, "stop")
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
@@ -249,8 +249,8 @@ cdef class BacktestDataClient(DataClient):
 
         # Build tick data stream
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
-        self._symbols = data_slice['symbol'].to_numpy(dtype=np.ushort)
-        self._price_volume = data_slice[['bid', 'ask', 'bid_size', 'ask_size']].to_numpy(dtype=np.double)
+        self._symbols = data_slice["symbol"].to_numpy(dtype=np.ushort)
+        self._price_volume = data_slice[["bid", "ask", "bid_size", "ask_size"]].to_numpy(dtype=np.double)
         self._timestamps = np.asarray([<datetime>dt for dt in data_slice.index])
 
         self._index = 0
@@ -328,7 +328,7 @@ cdef class BacktestDataClient(DataClient):
 
         :param tick: The tick to process.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
 
         self._handle_quote_tick(tick)
 
@@ -357,9 +357,9 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_negative_int(limit, 'limit')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
         self._log.info(f"Simulated request quote ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
@@ -381,9 +381,9 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_negative_int(limit, 'limit')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
         self._log.info(f"Simulated request trade ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
@@ -405,9 +405,9 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises TypeError: If the callback is not of type callable.
         """
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.not_negative_int(limit, 'limit')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
         self._log.info(f"Simulated request bars for {bar_type} from {from_datetime} to {to_datetime}.")
 
@@ -419,8 +419,8 @@ cdef class BacktestDataClient(DataClient):
         :param callback: The callback for the response.
         :raises TypeError: If the callback is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(callback, "callback")
 
         self._log.info(f"Requesting instrument for {symbol}...")
 
@@ -434,7 +434,7 @@ cdef class BacktestDataClient(DataClient):
         :param callback: The callback for the response.
         :raises TypeError: If the callback is not of type callable.
         """
-        Condition.callable(callback, 'callback')
+        Condition.callable(callback, "callback")
 
         self._log.info(f"Requesting all instruments for the {venue} ...")
 
@@ -449,8 +449,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
         self._add_quote_tick_handler(symbol, handler)
 
@@ -463,8 +463,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
         self._add_trade_tick_handler(symbol, handler)
 
@@ -477,8 +477,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable or None.
         """
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.callable_or_none(handler, 'handler')
+        Condition.not_none(bar_type, "bar_type")
+        Condition.callable_or_none(handler, "handler")
 
         self._start_generating_bars(bar_type, handler)
 
@@ -490,8 +490,8 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises TypeError: If the handler is not of type callable or None.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable_or_none(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable_or_none(handler, "handler")
 
         if symbol not in self._instrument_handlers:
             self._log.info(f"Simulated subscribe to {symbol} instrument updates "
@@ -506,8 +506,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable or None.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable_or_none(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable_or_none(handler, "handler")
 
         self._remove_quote_tick_handler(symbol, handler)
 
@@ -520,8 +520,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable or None.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable_or_none(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable_or_none(handler, "handler")
 
         self._remove_trade_tick_handler(symbol, handler)
 
@@ -534,8 +534,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises TypeError: If the handler is not of type callable or None.
         """
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.callable_or_none(handler, 'handler')
+        Condition.not_none(bar_type, "bar_type")
+        Condition.callable_or_none(handler, "handler")
 
         self._stop_generating_bars(bar_type, handler)
 
@@ -547,8 +547,8 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises TypeError: If the handler is not of type Callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable_or_none(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable_or_none(handler, "handler")
 
         self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "
                        f"(a backtest data client will not update an instrument).")

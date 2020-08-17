@@ -63,7 +63,7 @@ cdef class MsgPackSerializer:
 
         :return bytes.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         return msgpack.packb(message, use_bin_type=False)
 
@@ -76,7 +76,7 @@ cdef class MsgPackSerializer:
         :param raw_values: If the values should be deserialized as raw bytes.
         :return Dict.
         """
-        Condition.not_none(message_bytes, 'message_bytes')
+        Condition.not_none(message_bytes, "message_bytes")
 
         cdef dict raw_unpacked = msgpack.unpackb(message_bytes, raw=True)
 
@@ -104,7 +104,7 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         :param dictionary: The dictionary to serialize.
         :return bytes.
         """
-        Condition.not_none(dictionary, 'dictionary')
+        Condition.not_none(dictionary, "dictionary")
 
         return MsgPackSerializer.serialize(dictionary)
 
@@ -115,7 +115,7 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         :param dictionary_bytes: The dictionary bytes to deserialize.
         :return Dict.
         """
-        Condition.not_none(dictionary_bytes, 'dictionary_bytes')
+        Condition.not_none(dictionary_bytes, "dictionary_bytes")
 
         return MsgPackSerializer.deserialize(dictionary_bytes, raw_values=False)
 
@@ -166,7 +166,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         :return Order.
         :raises ValueError: If the event_bytes is empty.
         """
-        Condition.not_empty(order_bytes, 'order_bytes')
+        Condition.not_empty(order_bytes, "order_bytes")
 
         cdef dict unpacked = MsgPackSerializer.deserialize(order_bytes)
 
@@ -209,7 +209,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :return bytes.
         :raises: RuntimeError: If the command cannot be serialized.
         """
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         cdef dict package = {
             TYPE: command.__class__.__name__,
@@ -259,7 +259,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :raises ValueError: If the command_bytes is empty.
         :raises RuntimeError: If the command cannot be deserialized.
         """
-        Condition.not_empty(command_bytes, 'command_bytes')
+        Condition.not_empty(command_bytes, "command_bytes")
 
         cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: {str, bytes}
 
@@ -335,7 +335,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :return bytes.
         :raises: RuntimeError: If the event cannot be serialized.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         cdef dict package = {
             TYPE: event.__class__.__name__,
@@ -456,7 +456,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :raises ValueError: If the event_bytes is empty.
         :raises RuntimeError: If the event cannot be deserialized.
         """
-        Condition.not_empty(event_bytes, 'event_bytes')
+        Condition.not_empty(event_bytes, "event_bytes")
 
         cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: {str, bytes}
 
@@ -632,7 +632,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         :return bytes.
         :raises RuntimeError: If the request cannot be serialized.
         """
-        Condition.not_none(request, 'request')
+        Condition.not_none(request, "request")
 
         cdef dict package = {
             TYPE: request.__class__.__name__,
@@ -661,7 +661,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         :return Request.
         :raises RuntimeError: If the request cannot be deserialized.
         """
-        Condition.not_empty(request_bytes, 'request_bytes')
+        Condition.not_empty(request_bytes, "request_bytes")
 
         cdef dict unpacked = MsgPackSerializer.deserialize(request_bytes)  # type: {str, bytes}
 
@@ -709,7 +709,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         :return bytes.
         :raises RuntimeError: If the response cannot be serialized.
         """
-        Condition.not_none(response, 'response')
+        Condition.not_none(response, "response")
 
         cdef dict package = {
             TYPE: response.__class__.__name__,
@@ -747,7 +747,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         :return Response.
         :raises RuntimeError: If the response cannot be deserialized.
         """
-        Condition.not_empty(response_bytes, 'response_bytes')
+        Condition.not_empty(response_bytes, "response_bytes")
 
         cdef dict unpacked = MsgPackSerializer.deserialize(response_bytes)  # type: {str, bytes}
 
@@ -820,7 +820,7 @@ cdef class MsgPackLogSerializer(LogSerializer):
         :param message: The message to serialize.
         :return bytes.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         cdef dict package = {
             TIMESTAMP: convert_datetime_to_string(message.timestamp),
@@ -838,7 +838,7 @@ cdef class MsgPackLogSerializer(LogSerializer):
         :param message_bytes: The bytes to deserialize.
         :return LogMessage.
         """
-        Condition.not_empty(message_bytes, 'message_bytes')
+        Condition.not_empty(message_bytes, "message_bytes")
 
         cdef dict unpacked = MsgPackSerializer.deserialize(message_bytes)
 

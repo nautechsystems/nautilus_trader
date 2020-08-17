@@ -44,7 +44,7 @@ from tests.test_kit.strategies import TestStrategy1
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
-UTF8 = 'utf8'
+UTF8 = "utf8"
 LOCALHOST = "127.0.0.1"
 TEST_COMMANDS_REQ_PORT = 57555
 TEST_COMMANDS_REP_PORT = 57556
@@ -55,7 +55,7 @@ class LiveExecutionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        trader_id = TraderId('TESTER', '000')
+        trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
         clock = LiveClock()
@@ -73,7 +73,7 @@ class LiveExecutionTests(unittest.TestCase):
             encryption=EncryptionSettings(),
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=LoggerAdapter('CommandServer', logger))
+            logger=LoggerAdapter("CommandServer", logger))
 
         self.command_serializer = MsgPackCommandSerializer()
 
@@ -128,7 +128,7 @@ class LiveExecutionTests(unittest.TestCase):
         time.sleep(0.1)
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
-        self.strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
+        self.strategy = TestStrategy1(self.bar_type, id_tag_strategy="001")
         self.strategy.register_trader(TraderId("TESTER", "000"))
         self.strategy.change_logger(logger)
         self.exec_engine.register_strategy(self.strategy)
@@ -190,7 +190,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
-        self.strategy.cancel_order(order, 'SIGNAL_GONE')
+        self.strategy.cancel_order(order, "SIGNAL_GONE")
 
         time.sleep(0.3)
         # Assert

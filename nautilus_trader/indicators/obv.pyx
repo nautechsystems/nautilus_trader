@@ -32,7 +32,7 @@ cdef class OnBalanceVolume(Indicator):
         :param period: The period for the indicator, zero indicates no window (>= 0).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.not_negative(period, 'period')
+        Condition.not_negative(period, "period")
         super().__init__(params=[period], check_inputs=check_inputs)
 
         self.period = period
@@ -53,9 +53,9 @@ cdef class OnBalanceVolume(Indicator):
         :param volume: The volume (>= 0).
         """
         if self.check_inputs:
-            Condition.positive(open_price, 'open_price')
-            Condition.positive(close_price, 'close_price')
-            Condition.not_negative(volume, 'volume')
+            Condition.positive(open_price, "open_price")
+            Condition.positive(close_price, "close_price")
+            Condition.not_negative(volume, "volume")
 
         if close_price > open_price:
             self._obv.append(volume)

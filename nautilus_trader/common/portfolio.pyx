@@ -65,7 +65,7 @@ cdef class Portfolio:
 
         :param event: The event to update with.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         if event.timestamp.date() != self.date_now:
             self.date_now = event.timestamp.date()

@@ -38,8 +38,8 @@ class PortfolioTests(unittest.TestCase):
         uuid_factor = TestUUIDFactory()
         logger = TestLogger()
         self.order_factory = OrderFactory(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=TestClock())
         self.portfolio = Portfolio(self.clock, uuid_factor, logger)
 
@@ -64,7 +64,7 @@ class PortfolioTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         order_filled = TestStubs.event_order_filled(order, Price(1.00000, 5))
-        position = Position(PositionId('P-123456'), order_filled)
+        position = Position(PositionId("P-123456"), order_filled)
         position_opened = TestStubs.event_position_opened(position)
 
         # Act
@@ -87,7 +87,7 @@ class PortfolioTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         order_filled = TestStubs.event_order_filled(order, Price(1.00000, 5))
-        position = Position(PositionId('P-123456'), order_filled)
+        position = Position(PositionId("P-123456"), order_filled)
         position_opened = TestStubs.event_position_opened(position)
 
         self.portfolio.update(position_opened)
@@ -119,8 +119,8 @@ class PortfolioTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(order1, Price(1.00000, 5))
         order2_filled = TestStubs.event_order_filled(order2, Price(1.00000, 5))
 
-        position1 = Position(PositionId('P-1'), order1_filled)
-        position2 = Position(PositionId('P-2'), order2_filled)
+        position1 = Position(PositionId("P-1"), order1_filled)
+        position2 = Position(PositionId("P-2"), order2_filled)
         position_opened1 = TestStubs.event_position_opened(position1)
         position_opened2 = TestStubs.event_position_opened(position2)
 
@@ -145,7 +145,7 @@ class PortfolioTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         order1_filled = TestStubs.event_order_filled(order1, Price(1.00000, 5))
-        position = Position(PositionId('P-123456'), order1_filled)
+        position = Position(PositionId("P-123456"), order1_filled)
         position_opened = TestStubs.event_position_opened(position)
 
         order2 = self.order_factory.market(
@@ -177,7 +177,7 @@ class PortfolioTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         order1_filled = TestStubs.event_order_filled(order1, Price(1.00000, 5))
-        position = Position(PositionId('P-123456'), order1_filled)
+        position = Position(PositionId("P-123456"), order1_filled)
         position_opened = TestStubs.event_position_opened(position)
 
         order2 = self.order_factory.market(
@@ -225,9 +225,9 @@ class PortfolioTests(unittest.TestCase):
         order3_filled = TestStubs.event_order_filled(order3, Price(1.00000, 5))
         order4_filled = TestStubs.event_order_filled(order4, Price(1.00100, 5))
 
-        position1 = Position(PositionId('P-1'), order1_filled)
-        position2 = Position(PositionId('P-2'), order2_filled)
-        position3 = Position(PositionId('P-3'), order3_filled)
+        position1 = Position(PositionId("P-1"), order1_filled)
+        position2 = Position(PositionId("P-2"), order2_filled)
+        position3 = Position(PositionId("P-3"), order3_filled)
         position_opened1 = TestStubs.event_position_opened(position1)
         position_opened2 = TestStubs.event_position_opened(position2)
         position_opened3 = TestStubs.event_position_opened(position3)
