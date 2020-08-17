@@ -261,11 +261,12 @@ class BacktestExecClientTests(unittest.TestCase):
     #
     #     self.exec_engine.register_client(exec_client)
     #     strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+    #     strategy.register_trader(TraderId("TESTER", "000"))
     #     self.data_client.register_strategy(strategy)
     #     self.exec_engine.register_strategy(strategy)
     #     strategy.start()
     #
-    #     self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+    #     self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
     #     order = strategy.order_factory.market(
     #         USDJPY_FXCM,
     #         OrderSide.BUY,

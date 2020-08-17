@@ -162,8 +162,6 @@ cdef class BacktestEngine:
 
         self.exec_engine.register_client(self.exec_client)
 
-        self._change_clocks_and_loggers(strategies)
-        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.trader = Trader(
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -173,6 +171,9 @@ cdef class BacktestEngine:
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
             logger=self.test_logger)
+
+        self._change_clocks_and_loggers(strategies)
+        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
 
         self.iteration = 0
 
@@ -252,8 +253,8 @@ cdef class BacktestEngine:
 
         # Setup new strategies
         if strategies is not None:
-            self._change_clocks_and_loggers(strategies)
             self.trader.initialize_strategies(strategies)
+            self._change_clocks_and_loggers(strategies)
 
         # Run the backtest
         self.log.info(f"Running backtest...")

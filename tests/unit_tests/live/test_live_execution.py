@@ -129,6 +129,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
         self.strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
+        self.strategy.register_trader(TraderId("TESTER", "000"))
         self.strategy.change_logger(logger)
         self.exec_engine.register_strategy(self.strategy)
 

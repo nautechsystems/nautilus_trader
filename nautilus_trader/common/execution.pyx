@@ -1069,6 +1069,7 @@ cdef class ExecutionEngine:
         Condition.not_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')
 
         self._registered_strategies[strategy.id] = strategy
+        strategy.register_trader(self.trader_id)
         strategy.register_execution_engine(self)
         self._log.info(f"Registered strategy {strategy}.")
 

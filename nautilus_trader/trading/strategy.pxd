@@ -65,8 +65,8 @@ cdef class TradingStrategy:
     cdef list _indicators
     cdef dict _indicator_updaters
 
-    cdef DataClient _data_client
-    cdef ExecutionEngine _exec_engine
+    cdef DataClient _data
+    cdef ExecutionEngine _exec
 
     cdef readonly bint is_running
 
@@ -102,7 +102,6 @@ cdef class TradingStrategy:
     cpdef void handle_event(self, Event event) except *
 
 # -- DATA METHODS ---------------------------------------------------------------------------------#
-    cpdef datetime time_now(self)
     cpdef list instrument_symbols(self)
     cpdef void get_quote_ticks(
         self,

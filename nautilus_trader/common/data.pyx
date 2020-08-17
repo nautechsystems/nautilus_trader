@@ -67,17 +67,17 @@ cdef class DataClient:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._quote_ticks = {}                # type: {Symbol, [QuoteTick]}
-        self._trade_ticks = {}                # type: {Symbol, [TradeTick]}
-        self._quote_tick_handlers = {}        # type: {Symbol, [QuoteTickHandler]}
-        self._trade_tick_handlers = {}        # type: {Symbol, [QuoteTickHandler]}
+        self._exchange_calculator = ExchangeRateCalculator()
+        self._quote_ticks = {}          # type: {Symbol, [QuoteTick]}
+        self._trade_ticks = {}          # type: {Symbol, [TradeTick]}
+        self._quote_tick_handlers = {}  # type: {Symbol, [QuoteTickHandler]}
+        self._trade_tick_handlers = {}  # type: {Symbol, [TradeTickHandler]}
         self._spreads = {}              # type: {Symbol, [float]}
         self._spreads_average = {}      # type: {Symbol, float}
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
         self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
         self._instruments = {}          # type: {Symbol, Instrument}
-        self._exchange_calculator = ExchangeRateCalculator()
 
         self.tick_capacity = tick_capacity
         self.use_previous_close = True
@@ -302,7 +302,7 @@ cdef class DataClient:
         Condition.not_none(symbol, 'symbol')
         Condition.is_in(symbol, self._spreads_average, 'symbol', 'spreads_average')
 
-        return self._spreads_average.get(symbol, 0.0)
+        return self._spreads_average.get(symbol)
 
     cpdef double get_exchange_rate(
             self,
