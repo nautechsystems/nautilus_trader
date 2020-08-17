@@ -31,7 +31,7 @@ cdef class Symbol(Identifier):
                  str code,
                  Venue venue not None):
         """
-        Initializes a new instance of the Symbol class.
+        Initialize a new instance of the Symbol class.
 
         :param code: The symbols code identifier value.
         :param venue: The symbols venue.
@@ -84,7 +84,7 @@ cdef class Venue(Identifier):
 
     def __init__(self, str name):
         """
-        Initializes a new instance of the Venue class.
+        Initialize a new instance of the Venue class.
 
         :param name: The venue name identifier value.
         :raises ValueError: If the name is not a valid string.
@@ -100,7 +100,7 @@ cdef class Exchange(Venue):
 
     def __init__(self, str name):
         """
-        Initializes a new instance of the Exchange class.
+        Initialize a new instance of the Exchange class.
 
         :param name: The exchange name identifier value.
         :raises ValueError: If the name is not a valid string.
@@ -116,7 +116,7 @@ cdef class Brokerage(Identifier):
 
     def __init__(self, str name):
         """
-        Initializes a new instance of the Brokerage class.
+        Initialize a new instance of the Brokerage class.
 
         :param name: The brokerage name identifier value.
         :raises ValueError: If the name is not a valid string.
@@ -131,7 +131,7 @@ cdef class IdTag(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the IdTag class.
+        Initialize a new instance of the IdTag class.
 
         :param value: The identifier tag value.
         :raises ValueError: If the value is not a valid string.
@@ -147,7 +147,7 @@ cdef class TraderId(Identifier):
 
     def __init__(self, str name, str order_id_tag):
         """
-        Initializes a new instance of the TraderId class.
+        Initialize a new instance of the TraderId class.
 
         :param name: The trader name identifier value.
         :param order_id_tag: The trader order_id tag value.
@@ -210,7 +210,7 @@ cdef class StrategyId(Identifier):
 
     def __init__(self, str name, str order_id_tag):
         """
-        Initializes a new instance of the StrategyId class.
+        Initialize a new instance of the StrategyId class.
 
         :param name: The strategy name identifier value.
         :param order_id_tag: The strategy order_id tag value.
@@ -275,7 +275,7 @@ cdef class AccountId(Identifier):
                  str account_number,
                  AccountType account_type):
         """
-        Initializes a new instance of the AccountId class.
+        Initialize a new instance of the AccountId class.
 
         :param broker: The broker identifier value.
         :param account_number: The account number identifier value.
@@ -335,7 +335,7 @@ cdef class AccountNumber(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the AccountNumber class.
+        Initialize a new instance of the AccountNumber class.
 
         :param value: The value of the account number.
         """
@@ -350,7 +350,7 @@ cdef class BracketOrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the OrderId class.
+        Initialize a new instance of the OrderId class.
 
         :param value: The value of the order_id (should be unique).
         """
@@ -366,7 +366,7 @@ cdef class OrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the OrderId class.
+        Initialize a new instance of the OrderId class.
 
         :param value: The value of the order_id (should be unique).
         """
@@ -381,7 +381,7 @@ cdef class OrderIdBroker(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the OrderId class.
+        Initialize a new instance of the OrderId class.
 
         :param value: The broker order identifier value.
         """
@@ -396,7 +396,7 @@ cdef class PositionId(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the PositionId class.
+        Initialize a new instance of the PositionId class.
 
         :param value: The position identifier value.
         """
@@ -411,7 +411,7 @@ cdef class ExecutionId(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the ExecutionId class.
+        Initialize a new instance of the ExecutionId class.
 
         :param value: The execution identifier value.
         """
@@ -425,7 +425,7 @@ cdef class MatchId(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the MatchId class.
+        Initialize a new instance of the MatchId class.
 
         :param value: The execution identifier value.
         """
@@ -439,7 +439,7 @@ cdef class PositionIdBroker(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the PositionIdBroker class.
+        Initialize a new instance of the PositionIdBroker class.
 
         :param value: The broker position identifier value.
         """
@@ -454,7 +454,7 @@ cdef class InstrumentId(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the InstrumentId class.
+        Initialize a new instance of the InstrumentId class.
 
         :param value: The instrument identifier value.
         """

@@ -41,7 +41,7 @@ cdef class Socket:
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the Socket class.
+        Initialize a new instance of the Socket class.
 
         :param socket_id: The socket identifier.
         :param host: The socket host address.
@@ -151,7 +151,7 @@ cdef class ClientSocket(Socket):
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the ClientSocket class.
+        Initialize a new instance of the ClientSocket class.
 
         :param client_id: The client identifier.
         :param host: The socket host address.
@@ -204,7 +204,7 @@ cdef class SubscriberSocket(ClientSocket):
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the SubscriberSocket class.
+        Initialize a new instance of the SubscriberSocket class.
 
         :param client_id: The client identifier.
         :param host: The socket host address.
@@ -260,7 +260,7 @@ cdef class ServerSocket(Socket):
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the ServerSocket class.
+        Initialize a new instance of the ServerSocket class.
 
         :param server_id: The server identifier.
         :param port: The socket port.

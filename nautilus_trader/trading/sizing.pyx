@@ -26,7 +26,7 @@ cdef class PositionSizer:
 
     def __init__(self, Instrument instrument not None):
         """
-        Initializes a new instance of the PositionSizer class.
+        Initialize a new instance of the PositionSizer class.
 
         :param instrument: The instrument for position sizing.
         """
@@ -112,7 +112,7 @@ cdef class FixedRiskSizer(PositionSizer):
 
     def __init__(self, Instrument instrument not None):
         """
-        Initializes a new instance of the FixedRiskSizer class.
+        Initialize a new instance of the FixedRiskSizer class.
 
         :param instrument: The instrument for position sizing.
         """

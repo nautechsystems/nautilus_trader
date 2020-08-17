@@ -30,7 +30,7 @@ cdef class HullMovingAverage(MovingAverage):
 
     def __init__(self, int period):
         """
-        Initializes a new instance of the HullMovingAverage class.
+        Initialize a new instance of the HullMovingAverage class.
 
         :param period: The rolling window period for the indicator (> 0).
         """

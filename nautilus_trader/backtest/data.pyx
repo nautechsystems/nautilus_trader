@@ -46,7 +46,7 @@ cdef class BacktestDataContainer:
 
     def __init__(self):
         """
-        Initializes a new instance of the BacktestDataContainer class.
+        Initialize a new instance of the BacktestDataContainer class.
         """
         self.symbols = set()   # type: {Instrument}
         self.instruments = {}  # type: {Symbol, Instrument}
@@ -156,7 +156,7 @@ cdef class BacktestDataClient(DataClient):
                  TestClock clock not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the BacktestDataClient class.
+        Initialize a new instance of the BacktestDataClient class.
 
         :param data: The data needed for the backtest data client.
         :param tick_capacity: The length of the internal tick deques (also determines average spread).

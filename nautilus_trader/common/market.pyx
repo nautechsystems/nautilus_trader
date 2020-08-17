@@ -44,7 +44,7 @@ cdef class TickDataWrangler:
                  dict data_bars_bid=None,
                  dict data_bars_ask=None):
         """
-        Initializes a new instance of the TickDataWrangler class.
+        Initialize a new instance of the TickDataWrangler class.
 
         :param instrument: The instrument for the data wrangler.
         :param data_ticks: The optional pd.DataFrame containing the tick data.
@@ -217,7 +217,7 @@ cdef class BarDataWrangler:
                  int volume_multiple=1,
                  data: pd.DataFrame=None):
         """
-        Initializes a new instance of the BarDataWrangler class.
+        Initialize a new instance of the BarDataWrangler class.
 
         :param precision: The decimal precision for bar prices (>= 0).
         :param data: The the bars market data.
@@ -326,7 +326,7 @@ cdef class IndicatorUpdater:
                  input_method: callable=None,
                  list outputs: [str]=None):
         """
-        Initializes a new instance of the IndicatorUpdater class.
+        Initialize a new instance of the IndicatorUpdater class.
 
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
@@ -456,7 +456,7 @@ cdef class BarBuilder:
 
     def __init__(self, BarSpecification bar_spec not None, bint use_previous_close=False):
         """
-        Initializes a new instance of the BarBuilder class.
+        Initialize a new instance of the BarBuilder class.
 
         :param bar_spec: The bar specification for the builder.
         :param use_previous_close: The flag indicating whether the previous close
@@ -597,7 +597,7 @@ cdef class BarAggregator:
                  Logger logger not None,
                  bint use_previous_close):
         """
-        Initializes a new instance of the BarAggregator class.
+        Initialize a new instance of the BarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.
@@ -629,7 +629,7 @@ cdef class TickBarAggregator(BarAggregator):
                  handler not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the TickBarBuilder class.
+        Initialize a new instance of the TickBarBuilder class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.
@@ -675,7 +675,7 @@ cdef class TimeBarAggregator(BarAggregator):
                  Clock clock not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the TimeBarAggregator class.
+        Initialize a new instance of the TimeBarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.

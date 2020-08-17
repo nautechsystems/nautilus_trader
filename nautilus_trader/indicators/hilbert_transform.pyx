@@ -31,7 +31,7 @@ cdef class HilbertTransform(Indicator):
 
     def __init__(self, int period=7, bint check_inputs=False):
         """
-        Initializes a new instance of the HilbertTransform class.
+        Initialize a new instance of the HilbertTransform class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param check: The flag indicating whether the input values should be checked.

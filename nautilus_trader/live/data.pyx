@@ -69,7 +69,7 @@ cdef class LiveDataClient(DataClient):
                  LiveUUIDFactory uuid_factory not None=LiveUUIDFactory(),
                  LiveLogger logger not None=LiveLogger()):
         """
-        Initializes a new instance of the LiveDataClient class.
+        Initialize a new instance of the LiveDataClient class.
 
         :param trader_id: The trader identifier for the client.
         :param host: The server host.

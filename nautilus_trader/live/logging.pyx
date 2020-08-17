@@ -33,7 +33,7 @@ cdef class LogStore:
                  TraderId trader_id not None,
                  LogSerializer serializer not None=MsgPackLogSerializer()):
         """
-        Initializes a new instance of the LogStore class.
+        Initialize a new instance of the LogStore class.
 
         :param trader_id: The trader_id.
         :raises ValueError: If the redis_host is not a valid string.
@@ -77,7 +77,7 @@ cdef class LiveLogger(Logger):
                  LiveClock clock not None=LiveClock(),
                  LogStore store=None):
         """
-        Initializes a new instance of the LiveLogger class.
+        Initialize a new instance of the LiveLogger class.
 
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.

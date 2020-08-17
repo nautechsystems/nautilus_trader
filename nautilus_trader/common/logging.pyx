@@ -61,7 +61,7 @@ cdef class LogMessage:
                  str text not None,
                  long thread_id=0):
         """
-        Initializes a new instance of the LogMessage class.
+        Initialize a new instance of the LogMessage class.
 
         :param timestamp: The log message timestamp.
         :param level: The log message level.
@@ -107,7 +107,7 @@ cdef class Logger:
                  str log_file_path not None='log/',
                  Clock clock not None=LiveClock()):
         """
-        Initializes a new instance of the Logger class.
+        Initialize a new instance of the Logger class.
 
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
@@ -245,7 +245,7 @@ cdef class TestLogger(Logger):
                  str log_file_path not None='log/',
                  Clock clock not None=TestClock()):
         """
-        Initializes a new instance of the TestLogger class.
+        Initialize a new instance of the TestLogger class.
 
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
@@ -290,7 +290,7 @@ cdef class LoggerAdapter:
                  str component_name=None,
                  Logger logger=None):
         """
-        Initializes a new instance of the LoggerAdapter class.
+        Initialize a new instance of the LoggerAdapter class.
 
         :param logger: The logger for the component.
         :param component_name: The name of the component.

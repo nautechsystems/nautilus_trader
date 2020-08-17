@@ -39,7 +39,7 @@ cdef class ExecutionDatabase:
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initializes a new instance of the ExecutionDatabase class.
+        Initialize a new instance of the ExecutionDatabase class.
 
         :param trader_id: The trader_id for the component.
         :param logger: The logger for the component.
@@ -279,7 +279,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initializes a new instance of the InMemoryExecutionDatabase class.
+        Initialize a new instance of the InMemoryExecutionDatabase class.
 
         :param trader_id: The trader_id for the component.
         :param logger: The logger for the component.
@@ -1015,7 +1015,7 @@ cdef class ExecutionEngine:
                  UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the ExecutionEngine class.
+        Initialize a new instance of the ExecutionEngine class.
 
         :param trader_id: The trader identifier for the engine.
         :param account_id: The account identifier for the engine.
@@ -1336,7 +1336,7 @@ cdef class ExecutionClient:
 
     def __init__(self, ExecutionEngine exec_engine not None, Logger logger not None):
         """
-        Initializes a new instance of the ExecutionClient class.
+        Initialize a new instance of the ExecutionClient class.
 
         :param exec_engine: The execution engine to connect to the client.
         :param logger: The logger for the component.

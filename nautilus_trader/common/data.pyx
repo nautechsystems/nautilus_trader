@@ -54,7 +54,7 @@ cdef class DataClient:
                  UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the DataClient class.
+        Initialize a new instance of the DataClient class.
 
         :param tick_capacity: The length for the internal bars deque (> 0).
         :param clock: The clock for the component.
@@ -660,7 +660,7 @@ cdef class BulkTickBarBuilder:
                  Logger logger not None,
                  callback not None):
         """
-        Initializes a new instance of the BulkTickBarBuilder class.
+        Initialize a new instance of the BulkTickBarBuilder class.
 
         :param bar_type: The bar_type to build.
         :param logger: The logger for the bar aggregator.
@@ -699,7 +699,7 @@ cdef class BulkTimeBarUpdater:
 
     def __init__(self, TimeBarAggregator aggregator not None):
         """
-        Initializes a new instance of the BulkTimeBarUpdater class.
+        Initialize a new instance of the BulkTimeBarUpdater class.
 
         :param aggregator: The time bar aggregator to update.
         """

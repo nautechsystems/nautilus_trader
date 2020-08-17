@@ -40,7 +40,7 @@ cdef class PerformanceAnalyzer:
 
     def __init__(self):
         """
-        Initializes a new instance of the PerformanceAnalyzer class.
+        Initialize a new instance of the PerformanceAnalyzer class.
         """
         self._account_starting_capital = None
         self._account_capital = None

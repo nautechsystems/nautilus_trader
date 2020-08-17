@@ -21,7 +21,7 @@ cdef class Indicator:
 
     def __init__(self, list params not None, bint check_inputs=False):
         """
-        Initializes a new instance of the abstract Indicator class.
+        Initialize a new instance of the abstract Indicator class.
 
         :param params: The initialization parameters for the indicator.
         :param params: A boolean flag indicating whether method preconditions should be used.

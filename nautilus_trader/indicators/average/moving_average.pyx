@@ -40,7 +40,7 @@ cdef class MovingAverage(Indicator):
                  int period,
                  list params=None):
         """
-        Initializes a new instance of the abstract MovingAverage class.
+        Initialize a new instance of the abstract MovingAverage class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param params: The initialization parameters for the indicator.

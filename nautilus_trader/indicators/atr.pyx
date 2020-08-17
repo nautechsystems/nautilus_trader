@@ -33,7 +33,7 @@ cdef class AverageTrueRange(Indicator):
                  double value_floor=0.0,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the AverageTrueRange class.
+        Initialize a new instance of the AverageTrueRange class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param ma_type: The moving average type for the indicator (cannot be None).

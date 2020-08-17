@@ -63,7 +63,7 @@ cdef class LiveExecClient(ExecutionClient):
             UUIDFactory uuid_factory not None=LiveUUIDFactory(),
             Logger logger not None=LiveLogger()):
         """
-        Initializes a new instance of the LiveExecClient class.
+        Initialize a new instance of the LiveExecClient class.
 
         :param exec_engine: The execution engine for the component.
         :param host: The execution service host IP address.

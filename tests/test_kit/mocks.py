@@ -17,19 +17,15 @@ from nautilus_trader.common.execution import ExecutionClient
 
 
 class ObjectStorer:
-    """"
-    A test class which stores the given objects.
-    """
+    """A test class which stores the given objects."""
 
     def __init__(self):
-        """
-        Initializes a new instance of the ObjectStorer class.
-        """
+        """Initialize a new instance of the ObjectStorer class."""
         self.count = 0
         self._store = []
 
     def get_store(self) -> list:
-        """"
+        """
         Return the list or stored objects.
 
         return: List[Object].
@@ -37,15 +33,20 @@ class ObjectStorer:
         return self._store
 
     def store(self, obj):
-        """"
+        """
         Store the given object.
+
+        param obj: The object to store.
         """
         self.count += 1
         self._store.append(obj)
 
     def store_2(self, obj1, obj2):
-        """"
+        """
         Store the given objects as a tuple.
+
+        param obj1: The first object to store.
+        param obj2: The second object to store.
         """
         self.store((obj1, obj2))
 
@@ -58,7 +59,7 @@ class MockExecutionClient(ExecutionClient):
 
     def __init__(self, exec_engine, logger):
         """
-        Initializes a new instance of the MockExecutionClient class.
+        Initialize a new instance of the MockExecutionClient class.
 
         :param exec_engine: The execution engine for the component.
         :param logger: The logger for the component.

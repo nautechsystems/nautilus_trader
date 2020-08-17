@@ -40,7 +40,7 @@ cdef class BacktestConfig:
                  bint log_to_file=False,
                  str log_file_path not None='backtests/'):
         """
-        Initializes a new instance of the BacktestConfig class.
+        Initialize a new instance of the BacktestConfig class.
 
         :param exec_db_type: The type for the execution database (can be the default 'in-memory' or redis).
         :param exec_db_flush: If the execution database should be flushed on each run.

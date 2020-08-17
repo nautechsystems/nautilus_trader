@@ -27,6 +27,15 @@ extensions_to_clean = ('.c', '.so', '.o', '.pyd', '.pyc', '.dll', '.html')
 
 
 def remove_dir_if_exists(dir_name: str):
+    """
+    Remove the directory with the given name if it exists.
+
+    Parameters
+    ----------
+    dir_name : str
+        The directory name.
+
+    """
     if os.path.exists(dir_name):
         shutil.rmtree(dir_name)
 

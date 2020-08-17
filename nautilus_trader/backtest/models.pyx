@@ -37,7 +37,7 @@ cdef class FillModel:
                  double prob_slippage=0.0,
                  random_seed=None):
         """
-        Initializes a new instance of the FillModel class.
+        Initialize a new instance of the FillModel class.
 
         :param prob_fill_at_limit: The probability of limit order filling if the market rests on their price.
         :param prob_fill_at_stop: The probability of stop orders filling if the market rests on their price.

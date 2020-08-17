@@ -24,7 +24,7 @@ cdef class Handler:
     """
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the Handler class.
+        Initialize a new instance of the Handler class.
 
         :param handler: The callable handler.
         :raises TypeError: If the handler is not of type Callable.
@@ -67,7 +67,7 @@ cdef class QuoteTickHandler(Handler):
 
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the QuoteTickHandler class.
+        Initialize a new instance of the QuoteTickHandler class.
 
         :param handler: The callable handler.
         """
@@ -81,7 +81,7 @@ cdef class TradeTickHandler(Handler):
 
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the TradeTickHandler class.
+        Initialize a new instance of the TradeTickHandler class.
 
         :param handler: The callable handler.
         """
@@ -95,7 +95,7 @@ cdef class BarHandler(Handler):
 
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the BarHandler class.
+        Initialize a new instance of the BarHandler class.
 
         :param handler: The callable handler.
         """
@@ -109,7 +109,7 @@ cdef class InstrumentHandler(Handler):
 
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the InstrumentHandler class.
+        Initialize a new instance of the InstrumentHandler class.
 
         :param handler: The callable handler.
         """
@@ -123,7 +123,7 @@ cdef class EventHandler(Handler):
 
     def __init__(self, handler not None: callable):
         """
-        Initializes a new instance of the EventHandler class.
+        Initialize a new instance of the EventHandler class.
 
         :param handler: The callable handler.
         """

@@ -23,7 +23,7 @@ cdef class EncryptionSettings:
 
     def __init__(self, str algorithm not None='none', str keys_dir not None=''):
         """
-        Initializes a new instance of the EncryptionSettings class.
+        Initialize a new instance of the EncryptionSettings class.
 
         :param algorithm: The cryptographic algorithm type to be used.
         :param keys_dir: The path to the key certificates directory.

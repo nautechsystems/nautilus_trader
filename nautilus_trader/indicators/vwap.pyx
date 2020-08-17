@@ -27,7 +27,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
     def __init__(self, bint check_inputs=False):
         """
-        Initializes a new instance of the VolumeWeightedAveragePrice class.
+        Initialize a new instance of the VolumeWeightedAveragePrice class.
 
         :param check_inputs: The flag indicating whether the input values should be checked.
         """

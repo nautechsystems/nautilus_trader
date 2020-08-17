@@ -32,7 +32,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
                  double amplitude_floor=0.001,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the HilbertSignalNoiseRatio class.
+        Initialize a new instance of the HilbertSignalNoiseRatio class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param range_floor: The floor value for range calculations.

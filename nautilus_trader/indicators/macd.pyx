@@ -33,7 +33,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
                  ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the MovingAverageConvergenceDivergence class.
+        Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
         :param fast_period: The period for the fast moving average (> 0).
         :param slow_period: The period for the slow moving average (> 0 & > fast_sma).

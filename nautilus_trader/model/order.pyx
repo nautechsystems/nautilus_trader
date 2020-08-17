@@ -65,7 +65,7 @@ cdef class Order:
                  TimeInForce time_in_force=TimeInForce.DAY,
                  datetime expire_time=None):
         """
-        Initializes a new instance of the Order class.
+        Initialize a new instance of the Order class.
 
         Parameters
         ----------
@@ -398,7 +398,7 @@ cdef class BracketOrder:
                  Order stop_loss not None,
                  Order take_profit=None):
         """
-        Initializes a new instance of the BracketOrder class.
+        Initialize a new instance of the BracketOrder class.
 
         :param entry: The entry 'parent' order.
         :param stop_loss: The stop-loss (SL) 'child' order.

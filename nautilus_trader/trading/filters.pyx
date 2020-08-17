@@ -364,7 +364,7 @@ cdef class EconomicNewsEventFilter:
             list impacts not None,
             str news_csv_path not None='default'):
         """
-        Initializes a new instance of the EconomicNewsEventFilter class.
+        Initialize a new instance of the EconomicNewsEventFilter class.
 
         Parameters
         ----------

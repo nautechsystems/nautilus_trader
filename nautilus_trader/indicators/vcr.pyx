@@ -35,7 +35,7 @@ cdef class VolatilityCompressionRatio(Indicator):
                  double value_floor=0.0,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the MovingAverageConvergenceDivergence class.
+        Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
         :param fast_period: The period for the fast ATR (> 0).
         :param slow_period: The period for the slow ATR (> 0 & > fast_period).

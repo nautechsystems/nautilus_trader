@@ -25,7 +25,7 @@ cdef class Account:
 
     def __init__(self, AccountStateEvent event):
         """
-        Initializes a new instance of the Account class.
+        Initialize a new instance of the Account class.
 
         :param: event: The initial account state event.
         """

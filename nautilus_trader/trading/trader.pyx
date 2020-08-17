@@ -38,7 +38,7 @@ cdef class Trader:
                  UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the Trader class.
+        Initialize a new instance of the Trader class.
 
         :param trader_id: The trader_id for the trader.
         :param trader_id: The account_id for the trader.
@@ -171,15 +171,17 @@ cdef class Trader:
 
     cpdef void load(self) except *:
         """
-        Save all strategy states to the execution database.
+        Load all strategy states from the execution database.
         """
         for strategy in self.strategies:
             self._exec_engine.database.load_strategy(strategy)
 
     cpdef void reset(self) except *:
         """
-        Reset the trader by returning all stateful values of the portfolio,
-        and every strategy to their initial value.
+        Reset the trader.
+
+        All stateful values of the portfolio, and every strategy are reset.
+
         Note: The trader cannot be running otherwise an error is logged.
         """
         if self.is_running:
@@ -200,6 +202,8 @@ cdef class Trader:
     cpdef void dispose(self) except *:
         """
         Dispose of the trader.
+
+        Disposes all internally held strategies.
         """
         self._log.debug("Disposing...")
         for strategy in self.strategies:

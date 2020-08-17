@@ -33,7 +33,7 @@ cdef class Portfolio:
                  UUIDFactory uuid_factory not None,
                  Logger logger=None):
         """
-        Initializes a new instance of the Portfolio class.
+        Initialize a new instance of the Portfolio class.
 
         :param clock: The clock for the component.
         :param uuid_factory: The uuid factory for the component.

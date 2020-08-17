@@ -35,7 +35,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
                  int period_alpha_fast,
                  int period_alpha_slow):
         """
-        Initializes a new instance of the AdaptiveMovingAverage class.
+        Initialize a new instance of the AdaptiveMovingAverage class.
 
         :param period_er: The period for the internal Efficiency Ratio (> 0).
         :param period_alpha_fast: The period for the fast smoothing constant (> 0).
