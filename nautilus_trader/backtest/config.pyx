@@ -24,12 +24,12 @@ cdef class BacktestConfig:
     Provides a configuration for a BacktestEngine.
     """
     def __init__(self,
-                 str exec_db_type not None='in-memory',
+                 str exec_db_type not None="in-memory",
                  bint exec_db_flush=True,
                  bint frozen_account=False,
                  int starting_capital=1000000,
                  Currency account_currency=Currency.USD,
-                 str short_term_interest_csv_path not None='default',
+                 str short_term_interest_csv_path not None="default",
                  double commission_rate_bp=0.20,
                  bint bypass_logging=False,
                  int level_console=LogLevel.INFO,
@@ -38,7 +38,7 @@ cdef class BacktestConfig:
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path not None='backtests/'):
+                 str log_file_path not None="backtests/"):
         """
         Initialize a new instance of the BacktestConfig class.
 
@@ -60,10 +60,10 @@ cdef class BacktestConfig:
         :raises ValueError: If the starting capital is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
         """
-        Condition.valid_string(exec_db_type, 'exec_db_type')
-        Condition.positive_int(starting_capital, 'starting_capital')
-        Condition.valid_string(short_term_interest_csv_path, 'short_term_interest_csv_path')
-        Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
+        Condition.valid_string(exec_db_type, "exec_db_type")
+        Condition.positive_int(starting_capital, "starting_capital")
+        Condition.valid_string(short_term_interest_csv_path, "short_term_interest_csv_path")
+        Condition.not_negative(commission_rate_bp, "commission_rate_bp")
 
         self.exec_db_type = exec_db_type
         self.exec_db_flush = exec_db_flush

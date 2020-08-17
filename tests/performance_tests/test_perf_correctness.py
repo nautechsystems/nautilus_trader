@@ -26,15 +26,15 @@ class CorrectnessTests:
 
     @staticmethod
     def none():
-        PyCondition.none(None, 'param')
+        PyCondition.none(None, "param")
 
     @staticmethod
     def true():
-        PyCondition.true(True, 'this should be true')
+        PyCondition.true(True, "this should be true")
 
     @staticmethod
     def valid_string():
-        PyCondition.valid_string('abc123', 'string_param')
+        PyCondition.valid_string("abc123", "string_param")
 
 
 class CorrectnessConditionPerformanceTests(unittest.TestCase):

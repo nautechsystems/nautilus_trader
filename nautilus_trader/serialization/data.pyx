@@ -43,7 +43,7 @@ cdef class Utf8QuoteTickSerializer:
         :param tick: The quote tick to serialize.
         :return bytes.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
 
         return tick.to_serializable_string().encode(UTF8)
 
@@ -55,7 +55,7 @@ cdef class Utf8QuoteTickSerializer:
         :param ticks: The quote ticks to serialize.
         :return bytes.
         """
-        Condition.not_none(ticks, 'ticks')
+        Condition.not_none(ticks, "ticks")
 
         cdef QuoteTick tick
         return [tick.to_serializable_string().encode(UTF8) for tick in ticks]
@@ -69,8 +69,8 @@ cdef class Utf8QuoteTickSerializer:
         :param tick_bytes: The quote tick bytes to deserialize.
         :return QuoteTick.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(tick_bytes, 'tick_bytes')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(tick_bytes, "tick_bytes")
 
         return QuoteTick.from_serializable_string(symbol, tick_bytes.decode(UTF8))
 
@@ -83,8 +83,8 @@ cdef class Utf8QuoteTickSerializer:
         :param tick_values: The quote tick values to deserialize.
         :return List[QuoteTick].
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(tick_values, 'tick_values')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(tick_values, "tick_values")
 
         return [QuoteTick.from_serializable_string(symbol, values.decode(UTF8)) for values in tick_values]
 
@@ -118,7 +118,7 @@ cdef class Utf8TradeTickSerializer:
         :param tick: The trade tick to serialize.
         :return bytes.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
 
         return tick.to_serializable_string().encode(UTF8)
 
@@ -130,7 +130,7 @@ cdef class Utf8TradeTickSerializer:
         :param ticks: The trade ticks to serialize.
         :return bytes.
         """
-        Condition.not_none(ticks, 'ticks')
+        Condition.not_none(ticks, "ticks")
 
         cdef TradeTick tick
         return [tick.to_serializable_string().encode(UTF8) for tick in ticks]
@@ -144,8 +144,8 @@ cdef class Utf8TradeTickSerializer:
         :param tick_bytes: The trade tick bytes to deserialize.
         :return TradeTick.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(tick_bytes, 'tick_bytes')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(tick_bytes, "tick_bytes")
 
         return TradeTick.from_serializable_string(symbol, tick_bytes.decode(UTF8))
 
@@ -158,8 +158,8 @@ cdef class Utf8TradeTickSerializer:
         :param tick_values: The trade tick values to deserialize.
         :return List[TradeTick].
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(tick_values, 'tick_values')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(tick_values, "tick_values")
 
         return [TradeTick.from_serializable_string(symbol, values.decode(UTF8)) for values in tick_values]
 
@@ -192,7 +192,7 @@ cdef class Utf8BarSerializer:
         :param bar: The bar to serialize.
         :return bytes.
         """
-        Condition.not_none(bar, 'bar')
+        Condition.not_none(bar, "bar")
 
         return bar.to_serializable_string().encode(UTF8)
 
@@ -204,7 +204,7 @@ cdef class Utf8BarSerializer:
         :param bars: The bars to serialize.
         :return bytes.
         """
-        Condition.not_none(bars, 'bars')
+        Condition.not_none(bars, "bars")
 
         cdef Bar bar
         return [bar.to_serializable_string().encode(UTF8) for bar in bars]
@@ -217,7 +217,7 @@ cdef class Utf8BarSerializer:
         :param bar_bytes: The bar bytes to deserialize.
         :return Bar.
         """
-        Condition.not_none(bar_bytes, 'bar_bytes')
+        Condition.not_none(bar_bytes, "bar_bytes")
 
         return Bar.from_serializable_string(bar_bytes.decode(UTF8))
 
@@ -229,7 +229,7 @@ cdef class Utf8BarSerializer:
         :param bar_values: The bar values to deserialize.
         :return Bar.
         """
-        Condition.not_none(bar_values, 'bar_values')
+        Condition.not_none(bar_values, "bar_values")
 
         return [Bar.from_serializable_string(values.decode(UTF8)) for values in bar_values]
 
@@ -262,7 +262,7 @@ cdef class BsonSerializer:
         :param data: The data to serialize.
         :return bytes.
         """
-        Condition.not_none(data, 'data')
+        Condition.not_none(data, "data")
 
         return bytes(RawBSONDocument(BSON.encode(data)).raw)
 
@@ -274,7 +274,7 @@ cdef class BsonSerializer:
         :param data_bytes: The data bytes to deserialize.
         :return Dict.
         """
-        Condition.not_none(data_bytes, 'data_bytes')
+        Condition.not_none(data_bytes, "data_bytes")
 
         return BSON.decode(data_bytes)
 
@@ -291,7 +291,7 @@ cdef class BsonDataSerializer(DataSerializer):
         :param data: The data to serialize.
         :return bytes.
         """
-        Condition.not_none(data, 'data')
+        Condition.not_none(data, "data")
 
         return BsonSerializer.serialize(data)
 
@@ -302,7 +302,7 @@ cdef class BsonDataSerializer(DataSerializer):
         :param data_bytes: The data bytes to deserialize.
         :return Dict.
         """
-        Condition.not_none(data_bytes, 'data_bytes')
+        Condition.not_none(data_bytes, "data_bytes")
 
         return BsonSerializer.deserialize(data_bytes)
 
@@ -319,7 +319,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         :param instrument: The instrument to serialize.
         :return bytes.
         """
-        Condition.not_none(instrument, 'instrument')
+        Condition.not_none(instrument, "instrument")
 
         cdef dict bson_map = {
             SYMBOL: instrument.symbol.value,
@@ -352,7 +352,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         :param instrument_bytes: The bytes to deserialize.
         :return Instrument.
         """
-        Condition.not_none(instrument_bytes, 'instrument_bytes')
+        Condition.not_none(instrument_bytes, "instrument_bytes")
 
         cdef dict deserialized = BsonSerializer.deserialize(instrument_bytes)
 
@@ -405,8 +405,8 @@ cdef class DataMapper:
         self.instrument_serializer = BsonInstrumentSerializer()
 
     cpdef dict map_quote_ticks(self, list ticks):
-        Condition.not_empty(ticks, 'ticks')
-        Condition.type(ticks[0], QuoteTick, 'ticks')
+        Condition.not_empty(ticks, "ticks")
+        Condition.type(ticks[0], QuoteTick, "ticks")
 
         return {
             DATA: Utf8QuoteTickSerializer.serialize_ticks_list(ticks),
@@ -415,8 +415,8 @@ cdef class DataMapper:
         }
 
     cpdef dict map_trade_ticks(self, list ticks):
-        Condition.not_empty(ticks, 'ticks')
-        Condition.type(ticks[0], TradeTick, 'ticks')
+        Condition.not_empty(ticks, "ticks")
+        Condition.type(ticks[0], TradeTick, "ticks")
 
         return {
             DATA: Utf8TradeTickSerializer.serialize_ticks_list(ticks),
@@ -427,9 +427,9 @@ cdef class DataMapper:
         }
 
     cpdef dict map_bars(self, list bars, BarType bar_type):
-        Condition.not_empty(bars, 'bars')
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.type(bars[0], Bar, 'bars')
+        Condition.not_empty(bars, "bars")
+        Condition.not_none(bar_type, "bar_type")
+        Condition.type(bars[0], Bar, "bars")
 
         return {
             DATA: Utf8BarSerializer.serialize_bars_list(bars),
@@ -441,8 +441,8 @@ cdef class DataMapper:
         }
 
     cpdef dict map_instruments(self, list instruments):
-        Condition.not_empty(instruments, 'instruments')
-        Condition.type(instruments[0], Instrument, 'instruments')
+        Condition.not_empty(instruments, "instruments")
+        Condition.type(instruments[0], Instrument, "instruments")
 
         return {
             DATA: [self.instrument_serializer.serialize(instrument) for instrument in instruments],

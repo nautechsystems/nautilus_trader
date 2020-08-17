@@ -31,18 +31,18 @@ class PressureTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('Pressure', self.pressure.name)
+        self.assertEqual("Pressure", self.pressure.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('Pressure(10, EXPONENTIAL, 0.0)', str(self.pressure))
+        self.assertEqual("Pressure(10, EXPONENTIAL, 0.0)", str(self.pressure))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.pressure).startswith('<Pressure(10, EXPONENTIAL, 0.0) object at'))
-        self.assertTrue(repr(self.pressure).endswith('>'))
+        self.assertTrue(repr(self.pressure).startswith("<Pressure(10, EXPONENTIAL, 0.0) object at"))
+        self.assertTrue(repr(self.pressure).endswith(">"))
 
     def test_period_returns_expected_value(self):
         # Act

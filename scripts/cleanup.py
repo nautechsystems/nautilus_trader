@@ -23,7 +23,7 @@ import os
 import shutil
 
 
-extensions_to_clean = ('.c', '.so', '.o', '.pyd', '.pyc', '.dll', '.html')
+extensions_to_clean = (".c", ".so", ".o", ".pyd", ".pyc", ".dll", ".html")
 
 
 def remove_dir_if_exists(dir_name: str):
@@ -40,11 +40,11 @@ def remove_dir_if_exists(dir_name: str):
         shutil.rmtree(dir_name)
 
 
-if __name__ == '__main__':
-    remove_dir_if_exists('../.pytest_cache')
-    remove_dir_if_exists('../__pycache__')
-    remove_dir_if_exists('../build')
-    for directory in ['../nautilus_trader']:
+if __name__ == "__main__":
+    remove_dir_if_exists("../.pytest_cache")
+    remove_dir_if_exists("../__pycache__")
+    remove_dir_if_exists("../build")
+    for directory in ["../nautilus_trader"]:
         for root, dirs, files in os.walk(directory):
             for name in files:
                 path = os.path.join(root, name)

@@ -45,7 +45,7 @@ cdef class LiveTimer(Timer):
         :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
         :raises TypeError: If the callback is not of type callable.
         """
-        Condition.valid_string(name, 'name')
+        Condition.valid_string(name, "name")
         super().__init__(name, callback, interval, start_time, stop_time)
 
         self._internal = self._start_timer(now)
@@ -54,7 +54,7 @@ cdef class LiveTimer(Timer):
         """
         Continue the timer.
         """
-        Condition.not_none(now, 'now')
+        Condition.not_none(now, "now")
 
         self._internal = self._start_timer(now)
 

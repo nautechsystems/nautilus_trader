@@ -19,7 +19,7 @@ from pathlib import Path
 
 if __name__ == "__main__":
 
-    keys_dir = 'path/to/your/keys'
+    keys_dir = "path/to/your/keys"
     Path(keys_dir).mkdir(parents=True, exist_ok=True)
 
     zmq.auth.create_certificates(keys_dir, "client")

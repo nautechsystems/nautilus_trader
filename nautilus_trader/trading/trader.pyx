@@ -54,14 +54,14 @@ cdef class Trader:
         :raises ValueError: If the trader_id is not equal to the exec_engine.trader_id.
         :raises ValueError: If the account_id is not equal to the exec_engine.account_id.
         """
-        Condition.equal(trader_id, exec_engine.trader_id, 'trader_id', 'exec_engine.trader_id')
-        Condition.equal(account_id, exec_engine.account_id, 'account_id', 'exec_engine.account_id')
+        Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
+        Condition.equal(account_id, exec_engine.account_id, "account_id", "exec_engine.account_id")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
         self.id = trader_id
         self.account_id = account_id
-        self._log = LoggerAdapter(f'Trader-{self.id.value}', logger)
+        self._log = LoggerAdapter(f"Trader-{self.id.value}", logger)
         self._data_client = data_client
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
@@ -82,11 +82,11 @@ cdef class Trader:
         :raises ValueError: If the strategies list is empty.
         :raises TypeError: If the strategies list contains a type other than TradingStrategy.
         """
-        Condition.not_empty(strategies, 'strategies')
-        Condition.list_type(strategies, TradingStrategy, 'strategies')
+        Condition.not_empty(strategies, "strategies")
+        Condition.list_type(strategies, TradingStrategy, "strategies")
 
         if self.is_running:
-            self._log.error('Cannot re-initialize the strategies of a running trader.')
+            self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
         for strategy in self.strategies:
@@ -99,8 +99,8 @@ cdef class Trader:
             if strategy.id not in strategy_ids:
                 strategy_ids.add(strategy.id)
             else:
-                raise ValueError(f'The strategy_id {strategy.id} was not unique '
-                                 f'(duplicate strategy_ids).')
+                raise ValueError(f"The strategy_id {strategy.id} was not unique "
+                                 f"(duplicate strategy_ids).")
 
         # Dispose of current strategies
         for strategy in self.strategies:

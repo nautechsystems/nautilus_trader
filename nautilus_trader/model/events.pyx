@@ -63,8 +63,8 @@ cdef class AccountStateEvent(Event):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        Condition.not_equal(currency, Currency.UNDEFINED, 'currency', 'UNDEFINED')
-        Condition.not_negative(margin_ratio.as_double(), 'margin_ratio')
+        Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
+        Condition.not_negative(margin_ratio.as_double(), "margin_ratio")
         super().__init__(event_id, event_timestamp)
 
         self.account_id = account_id
@@ -469,9 +469,9 @@ cdef class OrderWorking(OrderEvent):
         :param event_timestamp: The event timestamp.
         :param expire_time: The optional event order expire time (for GTD orders).
         """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'UNDEFINED')
-        Condition.not_equal(order_type, OrderType.UNDEFINED, 'order_type', 'UNDEFINED')
-        Condition.type_or_none(expire_time, datetime, 'expire_time')
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
+        Condition.type_or_none(expire_time, datetime, "expire_time")
 
         super().__init__(order_id,
                          event_id,
@@ -495,7 +495,7 @@ cdef class OrderWorking(OrderEvent):
 
         :return str.
         """
-        cdef str expire_time = '' if self.expire_time is None else f' {format_iso8601(self.expire_time)}'
+        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
@@ -777,7 +777,7 @@ cdef class OrderFilled(OrderFillEvent):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'UNDEFINED')
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
 
         super().__init__(account_id,
                          order_id,
@@ -903,7 +903,7 @@ cdef class PositionModified(PositionEvent):
         :param event_timestamp: The event timestamp.
         :raises: ValueError: If the position is not open.
         """
-        Condition.true(position.is_open, 'position.is_open')
+        Condition.true(position.is_open, "position.is_open")
         super().__init__(position,
                          strategy_id,
                          order_fill,
@@ -949,7 +949,7 @@ cdef class PositionClosed(PositionEvent):
         :param event_timestamp: The event timestamp.
         :raises: ValueError: If the position is not closed.
         """
-        Condition.true(position.is_closed, 'position.is_closed')
+        Condition.true(position.is_closed, "position.is_closed")
         super().__init__(position,
                          strategy_id,
                          order_fill,

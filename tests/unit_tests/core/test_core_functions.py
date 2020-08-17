@@ -138,7 +138,7 @@ class TestFunctionsTests(unittest.TestCase):
     def test_max_in_dict_with_various_dictionaries_returns_expected_key(self):
         # Arrange
         dict1 = {1: 10, 2: 20, 3: 30}
-        dict2 = {'a': 10.1, 'c': 30.1, 'b': 20.1, }
+        dict2 = {"a": 10.1, "c": 30.1, "b": 20.1, }
 
         # Act
         result1 = max_in_dict(dict1)
@@ -146,4 +146,4 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(3, result1)
-        self.assertEqual('c', result2)
+        self.assertEqual("c", result2)

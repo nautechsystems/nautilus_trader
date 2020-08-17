@@ -37,7 +37,7 @@ cdef class Serializer:
     cdef str convert_snake_to_camel(self, str value):
         cdef list components = value.split('_')
         cdef str x
-        return ''.join(x.title() for x in components)
+        return "".join(x.title() for x in components)
 
     cpdef str py_convert_camel_to_snake(self, str value):
         return self.convert_camel_to_snake(value)

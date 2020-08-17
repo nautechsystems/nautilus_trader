@@ -22,23 +22,23 @@ class ValidStringTests(unittest.TestCase):
 
     def test_equality(self):
         # Arrange
-        string1 = ValidString('abc123')
-        string2 = ValidString('abc123')
-        string3 = ValidString('def456')
+        string1 = ValidString("abc123")
+        string2 = ValidString("abc123")
+        string3 = ValidString("def456")
 
         # Act
         # Assert
-        self.assertTrue('abc123', string1.value)
+        self.assertTrue("abc123", string1.value)
         self.assertTrue(string1 == string1)
         self.assertTrue(string1 == string2)
         self.assertTrue(string1 != string3)
 
     def test_comparison(self):
         # Arrange
-        string1 = ValidString('123')
-        string2 = ValidString('456')
-        string3 = ValidString('abc')
-        string4 = ValidString('def')
+        string1 = ValidString("123")
+        string2 = ValidString("456")
+        string3 = ValidString("abc")
+        string4 = ValidString("def")
 
         # Act
         # Assert

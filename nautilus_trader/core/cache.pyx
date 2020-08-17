@@ -39,7 +39,7 @@ cdef class ObjectCache:
 
         :return object.
         """
-        Condition.valid_string(key, 'key')
+        Condition.valid_string(key, "key")
 
         parsed = self._cache.get(key)
         if parsed is None:

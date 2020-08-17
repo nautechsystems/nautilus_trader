@@ -45,7 +45,7 @@ cdef class CommissionCalculator:
         """
         if rates is None:
             rates = {}
-        Condition.dict_types(rates, Symbol, Decimal, 'rates')
+        Condition.dict_types(rates, Symbol, Decimal, "rates")
 
         self.rates = rates
         self.default_rate_bp = default_rate_bp
@@ -68,10 +68,10 @@ cdef class CommissionCalculator:
         :param currency: The currency for the calculation.
         :return Money.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(filled_quantity, 'filled_quantity')
-        Condition.not_none(filled_price, 'filled_price')
-        Condition.positive(exchange_rate, 'exchange_rate')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(filled_quantity, "filled_quantity")
+        Condition.not_none(filled_price, "filled_price")
+        Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
@@ -86,8 +86,8 @@ cdef class CommissionCalculator:
         :param notional_value: The notional value for the transaction.
         :return Money.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(notional_value, 'notional_value')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(notional_value, "notional_value")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
         cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
@@ -107,32 +107,32 @@ cdef class RolloverInterestCalculator:
     will default to the included short-term interest rate data csv (data since 1956).
     """
 
-    def __init__(self, str short_term_interest_csv_path not None='default'):
+    def __init__(self, str short_term_interest_csv_path not None="default"):
         """
         Initialize a new instance of the RolloverInterestCalculator class.
 
         :param short_term_interest_csv_path: The path to the short term interest rate data csv.
         """
-        if short_term_interest_csv_path == 'default':
-            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + '/_data/rates/', 'short-term-interest.csv')
+        if short_term_interest_csv_path == "default":
+            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + "/_data/rates/", "short-term-interest.csv")
         self._exchange_calculator = ExchangeRateCalculator()
 
         csv_rate_data = pd.read_csv(short_term_interest_csv_path)
         self._rate_data = {
-            Currency.AUD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'AUS'],
-            Currency.CAD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CAN'],
-            Currency.CHF: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHE'],
-            Currency.EUR: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'EA19'],
-            Currency.USD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'USA'],
-            Currency.JPY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'JPN'],
-            Currency.NZD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NZL'],
-            Currency.GBP: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'GBR'],
-            Currency.RUB: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'RUS'],
-            Currency.NOK: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NOR'],
-            Currency.CNY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
-            Currency.CNH: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
-            Currency.MXN: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'MEX'],
-            Currency.ZAR: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'ZAF'],
+            Currency.AUD: csv_rate_data.loc[csv_rate_data["LOCATION"] == "AUS"],
+            Currency.CAD: csv_rate_data.loc[csv_rate_data["LOCATION"] == "CAN"],
+            Currency.CHF: csv_rate_data.loc[csv_rate_data["LOCATION"] == "CHE"],
+            Currency.EUR: csv_rate_data.loc[csv_rate_data["LOCATION"] == "EA19"],
+            Currency.USD: csv_rate_data.loc[csv_rate_data["LOCATION"] == "USA"],
+            Currency.JPY: csv_rate_data.loc[csv_rate_data["LOCATION"] == "JPN"],
+            Currency.NZD: csv_rate_data.loc[csv_rate_data["LOCATION"] == "NZL"],
+            Currency.GBP: csv_rate_data.loc[csv_rate_data["LOCATION"] == "GBR"],
+            Currency.RUB: csv_rate_data.loc[csv_rate_data["LOCATION"] == "RUS"],
+            Currency.NOK: csv_rate_data.loc[csv_rate_data["LOCATION"] == "NOR"],
+            Currency.CNY: csv_rate_data.loc[csv_rate_data["LOCATION"] == "CHN"],
+            Currency.CNH: csv_rate_data.loc[csv_rate_data["LOCATION"] == "CHN"],
+            Currency.MXN: csv_rate_data.loc[csv_rate_data["LOCATION"] == "MEX"],
+            Currency.ZAR: csv_rate_data.loc[csv_rate_data["LOCATION"] == "ZAF"],
         }
 
     cpdef object get_rate_data(self):
@@ -153,28 +153,28 @@ cdef class RolloverInterestCalculator:
         :return: double.
         :raises ValueError: If the symbol.code length is not in range [6, 7].
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_none(date, 'timestamp')
-        Condition.in_range_int(len(symbol.code), 6, 7, 'len(symbol)')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(date, "timestamp")
+        Condition.in_range_int(len(symbol.code), 6, 7, "len(symbol)")
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
         cdef Currency quote_currency = currency_from_string(symbol.code[-3:])
 
-        cdef str time_monthly = f'{date.year}-{str(date.month).zfill(2)}'
-        cdef str time_quarter = f'{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}'
+        cdef str time_monthly = f"{date.year}-{str(date.month).zfill(2)}"
+        cdef str time_quarter = f"{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}"
 
-        base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_monthly]
+        base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]["TIME"] == time_monthly]
         if base_data.empty:
-            base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_quarter]
+            base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]["TIME"] == time_quarter]
 
-        quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_monthly]
+        quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]["TIME"] == time_monthly]
         if quote_data.empty:
-            quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_quarter]
+            quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]["TIME"] == time_quarter]
 
         if base_data.empty and quote_data.empty:
-            raise RuntimeError(f'Cannot find rollover interest rate for {symbol} on {date}.')
+            raise RuntimeError(f"Cannot find rollover interest rate for {symbol} on {date}.")
 
-        cdef double base_interest = base_data['Value']
-        cdef double quote_interest = quote_data['Value']
+        cdef double base_interest = base_data["Value"]
+        cdef double quote_interest = quote_data["Value"]
 
         return ((base_interest - quote_interest) / 365) / 100

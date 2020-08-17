@@ -29,7 +29,7 @@ class DecimalTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, result)
         self.assertEqual(0, result.precision)
-        self.assertEqual(decimal.Decimal('0'), result.as_decimal())
+        self.assertEqual(decimal.Decimal("0"), result.as_decimal())
         self.assertEqual(0, result.as_double())
 
     def test_initialized_with_valid_inputs(self):
@@ -42,19 +42,19 @@ class DecimalTests(unittest.TestCase):
         result4 = Decimal(100)
 
         # Assert
-        self.assertEqual(decimal.Decimal('1'), result0.as_decimal())
-        self.assertEqual(decimal.Decimal('1.00'), result1.as_decimal())
-        self.assertEqual(decimal.Decimal('-1.001'), result2.as_decimal())
-        self.assertEqual(decimal.Decimal('1.001'), result3.as_decimal())  # Rounds up
+        self.assertEqual(decimal.Decimal("1"), result0.as_decimal())
+        self.assertEqual(decimal.Decimal("1.00"), result1.as_decimal())
+        self.assertEqual(decimal.Decimal("-1.001"), result2.as_decimal())
+        self.assertEqual(decimal.Decimal("1.001"), result3.as_decimal())  # Rounds up
         self.assertEqual(100, result4)
         self.assertEqual(1, result0.as_double())
         self.assertEqual(1, result0.as_double())
         self.assertEqual(-1.001, result2.as_double())
         self.assertEqual(1.001, result3.as_double())
-        self.assertEqual('1.0', result0.to_string())
-        self.assertEqual('1.00', result1.to_string())
-        self.assertEqual('-1.001', result2.to_string())
-        self.assertEqual('1.001', result3.to_string())
+        self.assertEqual("1.0", result0.to_string())
+        self.assertEqual("1.00", result1.to_string())
+        self.assertEqual("-1.001", result2.to_string())
+        self.assertEqual("1.001", result3.to_string())
 
     def test_initialized_with_many_scientific_notation_returns_zero(self):
         # Arrange
@@ -65,8 +65,8 @@ class DecimalTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.0, result1.as_double())
         self.assertEqual(0.0, result2.as_double())
-        self.assertEqual(decimal.Decimal('0'), result1.as_decimal())
-        self.assertEqual(decimal.Decimal('0'), result2.as_decimal())
+        self.assertEqual(decimal.Decimal("0"), result1.as_decimal())
+        self.assertEqual(decimal.Decimal("0"), result2.as_decimal())
 
     def test_decimal_initialized_with_negative_precision_raises_exception(self):
         # Arrange

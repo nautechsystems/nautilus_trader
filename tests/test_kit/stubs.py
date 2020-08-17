@@ -41,20 +41,20 @@ class TestStubs:
 
     @staticmethod
     def symbol_audusd_fxcm() -> Symbol:
-        return Symbol('AUD/USD', Venue('FXCM'))
+        return Symbol("AUD/USD", Venue("FXCM"))
 
     @staticmethod
     def symbol_gbpusd_fxcm() -> Symbol:
-        return Symbol('GBP/USD', Venue('FXCM'))
+        return Symbol("GBP/USD", Venue("FXCM"))
 
     @staticmethod
     def symbol_usdjpy_fxcm() -> Symbol:
-        return Symbol('USD/JPY', Venue('FXCM'))
+        return Symbol("USD/JPY", Venue("FXCM"))
 
     @staticmethod
     def instrument_gbpusd() -> ForexInstrument:
         return ForexInstrument(
-            Symbol('GBP/USD', Venue('FXCM')),
+            Symbol("GBP/USD", Venue("FXCM")),
             price_precision=5,
             size_precision=0,
             min_stop_distance_entry=0,
@@ -72,7 +72,7 @@ class TestStubs:
     @staticmethod
     def instrument_usdjpy() -> ForexInstrument:
         return ForexInstrument(
-            Symbol('USD/JPY', Venue('FXCM')),
+            Symbol("USD/JPY", Venue("FXCM")),
             price_precision=3,
             size_precision=0,
             min_stop_distance_entry=0,
@@ -161,11 +161,11 @@ class TestStubs:
 
     @staticmethod
     def trader_id() -> TraderId:
-        return TraderId('TESTER', '000')
+        return TraderId("TESTER", "000")
 
     @staticmethod
     def account_id() -> AccountId:
-        return AccountId('NAUTILUS', '000', AccountType.SIMULATED)
+        return AccountId("NAUTILUS", "000", AccountType.SIMULATED)
 
     @staticmethod
     def account_event(account_id=None) -> AccountStateEvent:
@@ -180,7 +180,7 @@ class TestStubs:
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal(0),
-            ValidString('N'),
+            ValidString("N"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -189,8 +189,8 @@ class TestStubs:
         return OrderFilled(
             TestStubs.account_id(),
             order.id,
-            ExecutionId('E-' + order.id.value),
-            PositionIdBroker('T-' + order.id.value),
+            ExecutionId("E-" + order.id.value),
+            PositionIdBroker("T-" + order.id.value),
             order.symbol,
             order.side,
             order.quantity,
@@ -205,7 +205,7 @@ class TestStubs:
         return OrderWorking(
             TestStubs.account_id(),
             order.id,
-            OrderIdBroker('B-' + order.id.value),
+            OrderIdBroker("B-" + order.id.value),
             order.symbol,
             order.label,
             order.side,
@@ -222,7 +222,7 @@ class TestStubs:
     def event_position_opened(position) -> PositionOpened:
         return PositionOpened(
             position,
-            StrategyId('SCALPER', '001'),
+            StrategyId("SCALPER", "001"),
             position.last_event,
             uuid4(),
             UNIX_EPOCH)
@@ -231,7 +231,7 @@ class TestStubs:
     def event_position_modified(position) -> PositionModified:
         return PositionModified(
             position,
-            StrategyId('SCALPER', '001'),
+            StrategyId("SCALPER", "001"),
             position.last_event,
             uuid4(),
             UNIX_EPOCH)
@@ -240,7 +240,7 @@ class TestStubs:
     def event_position_closed(position) -> PositionClosed:
         return PositionClosed(
             position,
-            StrategyId('SCALPER', '001'),
+            StrategyId("SCALPER", "001"),
             position.last_event,
             uuid4(),
             UNIX_EPOCH)
@@ -250,16 +250,16 @@ class TestStubs:
         clock = TestClock()
 
         generator = PositionIdGenerator(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=clock)
 
         for i in range(number - 1):
             generator.generate()
 
         order_factory = OrderFactory(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=clock)
 
         order = order_factory.market(
@@ -281,8 +281,8 @@ class TestStubs:
         position = TestStubs.position(number=number)
 
         order_factory = OrderFactory(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=clock)
 
         order = order_factory.market(
@@ -293,8 +293,8 @@ class TestStubs:
         order_filled = OrderFilled(
             TestStubs.account_id(),
             order.id,
-            ExecutionId('E-' + order.id.value),
-            PositionIdBroker('T-' + position.id.value),
+            ExecutionId("E-" + order.id.value),
+            PositionIdBroker("T-" + position.id.value),
             order.symbol,
             order.side,
             order.quantity,

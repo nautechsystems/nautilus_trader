@@ -37,8 +37,8 @@ cdef class Symbol(Identifier):
         :param venue: The symbols venue.
         :raises ValueError: If the code is not a valid string.
         """
-        Condition.valid_string(code, 'code')
-        super().__init__(f'{code}.{venue.value}')
+        Condition.valid_string(code, "code")
+        super().__init__(f"{code}.{venue.value}")
 
         self.code = code
         self.venue = venue
@@ -49,12 +49,12 @@ cdef class Symbol(Identifier):
         Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period '.'.
 
-        Example: 'AUD/USD.FXCM'.
+        Example: "AUD/USD.FXCM".
 
         :param value: The symbol string value to parse.
         :return Symbol.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         cdef tuple partitioned = value.partition('.')
         return Symbol(partitioned[0], Venue(partitioned[2]))
@@ -67,7 +67,7 @@ cdef class Symbol(Identifier):
         Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period '.'.
 
-        Example: 'AUD/USD.FXCM'.
+        Example: "AUD/USD.FXCM".
 
         :param value: The symbol string value to parse.
 
@@ -154,9 +154,9 @@ cdef class TraderId(Identifier):
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
         """
-        Condition.valid_string(name, 'name')
-        Condition.valid_string(order_id_tag, 'order_id_tag')
-        super().__init__(f'{name}-{order_id_tag}')
+        Condition.valid_string(name, "name")
+        Condition.valid_string(order_id_tag, "order_id_tag")
+        super().__init__(f"{name}-{order_id_tag}")
 
         self.name = name
         self.order_id_tag = IdTag(order_id_tag)
@@ -170,13 +170,13 @@ cdef class TraderId(Identifier):
         Its is expected a trader_id is the abbreviated name of the trader with
         an order_id tag number separated by a hyphen '-'.
 
-        Example: 'TESTER-001'.
+        Example: "TESTER-001".
 
         :param value: The value for the strategy_id.
 
         :return TraderId.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         cdef tuple partitioned = value.partition('-')
 
@@ -193,7 +193,7 @@ cdef class TraderId(Identifier):
         Its is expected a trader_id is the abbreviated name of the trader with
         an order_id tag number separated by a hyphen '-'.
 
-        Example: 'TESTER-001'.
+        Example: "TESTER-001".
 
         :param value: The value for the trader_id.
 
@@ -217,9 +217,9 @@ cdef class StrategyId(Identifier):
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
         """
-        Condition.valid_string(name, 'name')
-        Condition.valid_string(order_id_tag, 'order_id_tag')
-        super().__init__(f'{name}-{order_id_tag}')
+        Condition.valid_string(name, "name")
+        Condition.valid_string(order_id_tag, "order_id_tag")
+        super().__init__(f"{name}-{order_id_tag}")
 
         self.name = name
         self.order_id_tag = IdTag(order_id_tag)
@@ -233,13 +233,13 @@ cdef class StrategyId(Identifier):
         Is is expected a strategy_id is the class name of the strategy with
         an order_id tag number separated by a hyphen '-'.
 
-        Example: 'EMACross-001'.
+        Example: "EMACross-001".
 
         :param value: The value for the strategy_id.
 
         :return StrategyId.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         cdef tuple partitioned = value.partition('-')
         return StrategyId(name=partitioned[0], order_id_tag=partitioned[2])
@@ -255,7 +255,7 @@ cdef class StrategyId(Identifier):
         Is is expected a strategy_id is the class name of the strategy with
         an order_id tag number separated by a hyphen '-'.
 
-        Example: 'EMACross-001'.
+        Example: "EMACross-001".
 
         :param value: The value for the strategy_id.
 
@@ -283,9 +283,9 @@ cdef class AccountId(Identifier):
         :raises ValueError: If the broker is not a valid string.
         :raises ValueError: If the account_number is not a valid string.
         """
-        Condition.valid_string(broker, 'broker')
-        Condition.valid_string(account_number, 'account_number')
-        super().__init__(f'{broker}-{account_number}-{account_type_to_string(account_type)}')
+        Condition.valid_string(broker, "broker")
+        Condition.valid_string(account_number, "account_number")
+        super().__init__(f"{broker}-{account_number}-{account_type_to_string(account_type)}")
 
         self.broker = Brokerage(broker)
         self.account_number = AccountNumber(account_number)
@@ -297,13 +297,13 @@ cdef class AccountId(Identifier):
         Return an account_id from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
 
-        Example: 'FXCM-02851908-DEMO'.
+        Example: "FXCM-02851908-DEMO".
 
         :param value: The value for the account_id.
 
         :return AccountId.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         cdef list split = value.split('-', maxsplit=2)
         return AccountId(
@@ -319,7 +319,7 @@ cdef class AccountId(Identifier):
         Return an account_id from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
 
-        Example: 'FXCM-02851908-DEMO'.
+        Example: "FXCM-02851908-DEMO".
 
         :param value: The value for the account_id.
 
@@ -354,7 +354,7 @@ cdef class BracketOrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
-        Condition.true(value.startswith('BO-'), f'value must begin with \'BO-\', was {value}.')
+        Condition.true(value.startswith("BO-"), f"value must begin with \"BO-\", was {value}.")
         super().__init__(value)
 
 
@@ -370,7 +370,7 @@ cdef class OrderId(Identifier):
 
         :param value: The value of the order_id (should be unique).
         """
-        Condition.true(value.startswith('O-'), f'value must begin with \'O-\', was {value}.')
+        Condition.true(value.startswith("O-"), f"value must begin with \"O-\", was {value}.")
         super().__init__(value)
 
 
@@ -400,7 +400,7 @@ cdef class PositionId(Identifier):
 
         :param value: The position identifier value.
         """
-        Condition.true(value.startswith('P-'), f' value must begin with \'P-\', was {value}.')
+        Condition.true(value.startswith("P-"), f" value must begin with \"P-\", was {value}.")
         super().__init__(value)
 
 

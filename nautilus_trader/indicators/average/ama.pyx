@@ -41,10 +41,10 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         :param period_alpha_fast: The period for the fast smoothing constant (> 0).
         :param period_alpha_slow: The period for the slow smoothing constant (> 0 < alpha_fast).
         """
-        Condition.positive_int(period_er, 'period_er')
-        Condition.positive_int(period_alpha_fast, 'period_alpha_fast')
-        Condition.positive_int(period_alpha_slow, 'period_alpha_slow')
-        Condition.true(period_alpha_slow > period_alpha_fast, 'period_alpha_slow > period_alpha_fast')
+        Condition.positive_int(period_er, "period_er")
+        Condition.positive_int(period_alpha_fast, "period_alpha_fast")
+        Condition.positive_int(period_alpha_slow, "period_alpha_slow")
+        Condition.true(period_alpha_slow > period_alpha_fast, "period_alpha_slow > period_alpha_fast")
         super().__init__(period_er, params=[period_er,
                                             period_alpha_fast,
                                             period_alpha_slow])

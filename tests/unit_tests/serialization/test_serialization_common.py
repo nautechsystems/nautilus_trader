@@ -31,7 +31,7 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_price_to_string(None)
 
         # Assert
-        self.assertEqual('None', result)
+        self.assertEqual("None", result)
 
     def test_can_convert_price_to_string_from_decimal(self):
         # Arrange
@@ -39,12 +39,12 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_price_to_string(Price(1.00000, 5))
 
         # Assert
-        self.assertEqual('1.00000', result)
+        self.assertEqual("1.00000", result)
 
     def test_can_convert_string_to_price_from_none(self):
         # Arrange
         # Act
-        result = convert_string_to_price('None')
+        result = convert_string_to_price("None")
 
         # Assert
         self.assertEqual(None, result)
@@ -52,7 +52,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_can_convert_string_to_price_from_decimal(self):
         # Arrange
         # Act
-        result = convert_string_to_price('1.00000')
+        result = convert_string_to_price("1.00000")
 
         # Assert
         self.assertEqual(Price(1.00000, 5), result)
@@ -63,7 +63,7 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_datetime_to_string(None)
 
         # Assert
-        self.assertEqual('None', result)
+        self.assertEqual("None", result)
 
     def test_can_convert_datetime_to_string(self):
         # Arrange
@@ -71,12 +71,12 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_datetime_to_string(UNIX_EPOCH)
 
         # Assert
-        self.assertEqual('1970-01-01T00:00:00.000Z', result)
+        self.assertEqual("1970-01-01T00:00:00.000Z", result)
 
     def test_can_convert_string_to_time_from_datetime(self):
         # Arrange
         # Act
-        result = convert_string_to_datetime('1970-01-01T00:00:00.000Z')
+        result = convert_string_to_datetime("1970-01-01T00:00:00.000Z")
 
         # Assert
         self.assertEqual(UNIX_EPOCH, result)
@@ -84,7 +84,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_can_convert_string_to_time_from_none(self):
         # Arrange
         # Act
-        result = convert_string_to_datetime('None')
+        result = convert_string_to_datetime("None")
 
         # Assert
         self.assertEqual(None, result)

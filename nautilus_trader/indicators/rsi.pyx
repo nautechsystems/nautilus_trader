@@ -35,7 +35,7 @@ cdef class RelativeStrengthIndex(Indicator):
         :param ma_type: The moving average type for average gain/loss.
         :param period: The rolling window period for the indicator (> 0).
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         super().__init__(params=[period, ma_type.name])
 
         self.period = period

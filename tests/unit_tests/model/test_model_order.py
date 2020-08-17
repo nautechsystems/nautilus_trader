@@ -44,8 +44,8 @@ class OrderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=TestClock(),
             uuid_factory=TestUUIDFactory())
 
@@ -55,7 +55,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.MARKET,
@@ -71,7 +71,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.LIMIT,
@@ -88,7 +88,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.MARKET,
@@ -103,7 +103,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP,
@@ -117,7 +117,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP,
@@ -143,7 +143,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), order2.id)
+        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), order2.id)
 
     def test_limit_order_can_create_expected_decimal_price(self):
         # Arrange
@@ -226,8 +226,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         # Assert
-        self.assertEqual('Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)', str(order))  # noqa
-        self.assertTrue(repr(order).startswith('<Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at'))  # noqa
+        self.assertEqual("Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
+        self.assertTrue(repr(order).startswith("<Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at"))  # noqa
 
     def test_can_initialize_limit_order(self):
         # Arrange
@@ -252,7 +252,7 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5),
-            Label('U1_TP'),
+            Label("U1_TP"),
             OrderPurpose.NONE,
             TimeInForce.GTD,
             UNIX_EPOCH)
@@ -349,8 +349,8 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertFalse(bracket_order.has_take_profit)
-        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), bracket_order.entry.id)
-        self.assertEqual(OrderId('O-19700101-000000-001-001-2'), bracket_order.stop_loss.id)
+        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), bracket_order.entry.id)
+        self.assertEqual(OrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(Quantity(100000), bracket_order.entry.quantity)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
@@ -360,7 +360,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.GTC, bracket_order.stop_loss.time_in_force)
         self.assertEqual(None, bracket_order.entry.expire_time)
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
-        self.assertEqual(BracketOrderId('BO-19700101-000000-001-001-1'), bracket_order.id)
+        self.assertEqual(BracketOrderId("BO-19700101-000000-001-001-1"), bracket_order.id)
         self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
 
     def test_can_initialize_bracket_order_market_with_take_profit_and_label(self):
@@ -372,30 +372,30 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price(0.99990, 5),
             Price(1.00010, 5),
-            Label('U1'))
+            Label("U1"))
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertTrue(bracket_order.has_take_profit)
         self.assertEqual(AUDUSD_FXCM, bracket_order.take_profit.symbol)
-        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), bracket_order.entry.id)
-        self.assertEqual(OrderId('O-19700101-000000-001-001-2'), bracket_order.stop_loss.id)
-        self.assertEqual(OrderId('O-19700101-000000-001-001-3'), bracket_order.take_profit.id)
+        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), bracket_order.entry.id)
+        self.assertEqual(OrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.id)
+        self.assertEqual(OrderId("O-19700101-000000-001-001-3"), bracket_order.take_profit.id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(OrderSide.SELL, bracket_order.take_profit.side)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
         self.assertEqual(Quantity(100000), bracket_order.take_profit.quantity)
         self.assertEqual(Price(0.99990, 5), bracket_order.stop_loss.price)
         self.assertEqual(Price(1.00010, 5), bracket_order.take_profit.price)
-        self.assertEqual(Label('U1_E'), bracket_order.entry.label)
-        self.assertEqual(Label('U1_SL'), bracket_order.stop_loss.label)
-        self.assertEqual(Label('U1_TP'), bracket_order.take_profit.label)
+        self.assertEqual(Label("U1_E"), bracket_order.entry.label)
+        self.assertEqual(Label("U1_SL"), bracket_order.stop_loss.label)
+        self.assertEqual(Label("U1_TP"), bracket_order.take_profit.label)
         self.assertEqual(TimeInForce.GTC, bracket_order.stop_loss.time_in_force)
         self.assertEqual(TimeInForce.GTC, bracket_order.take_profit.time_in_force)
         self.assertEqual(None, bracket_order.entry.expire_time)
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
         self.assertEqual(None, bracket_order.take_profit.expire_time)
-        self.assertEqual(BracketOrderId('BO-19700101-000000-001-001-1'), bracket_order.id)
+        self.assertEqual(BracketOrderId("BO-19700101-000000-001-001-1"), bracket_order.id)
         self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
 
     def test_bracket_order_str_and_repr(self):
@@ -407,12 +407,12 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price(0.99990, 5),
             Price(1.00010, 5),
-            Label('U1'))
+            Label("U1"))
 
         # Assert
-        self.assertEqual('BracketOrder(id=BO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)', str(bracket_order))  # noqa
-        self.assertTrue(repr(bracket_order).startswith('<BracketOrder(id=BO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at'))  # noqa
-        self.assertTrue(repr(bracket_order).endswith('>'))
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
+        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
+        self.assertTrue(repr(bracket_order).endswith(">"))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange
@@ -447,8 +447,8 @@ class OrderTests(unittest.TestCase):
         event = OrderAccepted(
             self.account_id,
             order.id,
-            OrderIdBroker('B' + order.id.value),
-            Label('E'),
+            OrderIdBroker("B" + order.id.value),
+            Label("E"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -471,7 +471,7 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             UNIX_EPOCH,
-            ValidString('ORDER ID INVALID'),
+            ValidString("ORDER ID INVALID"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -492,7 +492,7 @@ class OrderTests(unittest.TestCase):
         event = OrderWorking(
             self.account_id,
             order.id,
-            OrderIdBroker('SOME_BROKER_ID'),
+            OrderIdBroker("SOME_BROKER_ID"),
             order.symbol,
             order.label,
             order.side,
@@ -511,7 +511,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         # print(order)
         self.assertEqual(OrderState.WORKING, order.state)
-        self.assertEqual(OrderIdBroker('SOME_BROKER_ID'), order.id_broker)
+        self.assertEqual(OrderIdBroker("SOME_BROKER_ID"), order.id_broker)
         self.assertFalse(order.is_completed)
         self.assertTrue(order.is_working)
         self.assertEqual(None, order.filled_timestamp)
@@ -569,8 +569,8 @@ class OrderTests(unittest.TestCase):
             self.account_id,
             order.id,
             UNIX_EPOCH,
-            ValidString('REJECT_RESPONSE'),
-            ValidString('ORDER DOES NOT EXIST'),
+            ValidString("REJECT_RESPONSE"),
+            ValidString("ORDER DOES NOT EXIST"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -590,7 +590,7 @@ class OrderTests(unittest.TestCase):
         order_working = OrderWorking(
             self.account_id,
             order.id,
-            OrderIdBroker('SOME_BROKER_ID_1'),
+            OrderIdBroker("SOME_BROKER_ID_1"),
             order.symbol,
             order.label,
             order.side,
@@ -606,7 +606,7 @@ class OrderTests(unittest.TestCase):
         order_modified = OrderModified(
             self.account_id,
             order.id,
-            OrderIdBroker('SOME_BROKER_ID_2'),
+            OrderIdBroker("SOME_BROKER_ID_2"),
             Quantity(120000),
             Price(1.00001, 5),
             UNIX_EPOCH,
@@ -620,7 +620,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.WORKING, order.state)
-        self.assertEqual(OrderIdBroker('SOME_BROKER_ID_2'), order.id_broker)
+        self.assertEqual(OrderIdBroker("SOME_BROKER_ID_2"), order.id_broker)
         self.assertEqual(Quantity(120000), order.quantity)
         self.assertEqual(Price(1.00001, 5), order.price)
         self.assertTrue(order.is_working)
@@ -637,8 +637,8 @@ class OrderTests(unittest.TestCase):
         event = OrderFilled(
             self.account_id,
             order.id,
-            ExecutionId('SOME_EXEC_ID_1'),
-            PositionIdBroker('SOME_EXEC_TICKET_1'),
+            ExecutionId("SOME_EXEC_ID_1"),
+            PositionIdBroker("SOME_EXEC_TICKET_1"),
             order.symbol,
             order.side,
             order.quantity,
@@ -669,8 +669,8 @@ class OrderTests(unittest.TestCase):
         event = OrderFilled(
             self.account_id,
             order.id,
-            ExecutionId('SOME_EXEC_ID_1'),
-            PositionIdBroker('SOME_EXEC_TICKET_1'),
+            ExecutionId("SOME_EXEC_ID_1"),
+            PositionIdBroker("SOME_EXEC_TICKET_1"),
             order.symbol,
             order.side,
             order.quantity,
@@ -703,8 +703,8 @@ class OrderTests(unittest.TestCase):
         event = OrderPartiallyFilled(
             self.account_id,
             order.id,
-            ExecutionId('SOME_EXEC_ID_1'),
-            PositionIdBroker('SOME_EXEC_TICKET_1'),
+            ExecutionId("SOME_EXEC_ID_1"),
+            PositionIdBroker("SOME_EXEC_TICKET_1"),
             order.symbol,
             order.side,
             Quantity(50000),
@@ -738,8 +738,8 @@ class OrderTests(unittest.TestCase):
         event = OrderFilled(
             self.account_id,
             order.id,
-            ExecutionId('SOME_EXEC_ID_1'),
-            PositionIdBroker('SOME_EXEC_TICKET_1'),
+            ExecutionId("SOME_EXEC_ID_1"),
+            PositionIdBroker("SOME_EXEC_TICKET_1"),
             order.symbol,
             order.side,
             Quantity(150000),

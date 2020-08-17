@@ -37,7 +37,7 @@ cdef class Message:
         :param timestamp: The message timestamp.
         :raises ValueError: If the message_type is UNDEFINED.
         """
-        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
+        Condition.not_equal(message_type, MessageType.UNDEFINED, "message_type", "UNDEFINED")
 
         self.message_type = message_type
         self.id = identifier

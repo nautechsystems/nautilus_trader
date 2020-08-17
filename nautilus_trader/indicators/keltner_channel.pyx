@@ -49,9 +49,9 @@ cdef class KeltnerChannel(Indicator):
         :param atr_floor: The ATR floor (minimum) output value for the indicator (>= 0).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(period, 'period')
-        Condition.positive(k_multiplier, 'k_multiplier')
-        Condition.not_negative(atr_floor, 'atr_floor')
+        Condition.positive_int(period, "period")
+        Condition.positive(k_multiplier, "k_multiplier")
+        Condition.not_negative(atr_floor, "atr_floor")
         super().__init__(params=[period,
                                  k_multiplier,
                                  ma_type.name,
@@ -81,12 +81,12 @@ cdef class KeltnerChannel(Indicator):
         :param close: The close price (> 0).
         """
         if self.check_inputs:
-            Condition.positive(high, 'high')
-            Condition.positive(low, 'low')
-            Condition.positive(close, 'close')
-            Condition.true(high >= low, 'high >= low')
-            Condition.true(high >= close, 'high >= close')
-            Condition.true(low <= close, 'low <= close')
+            Condition.positive(high, "high")
+            Condition.positive(low, "low")
+            Condition.positive(close, "close")
+            Condition.true(high >= low, "high >= low")
+            Condition.true(high >= close, "high >= close")
+            Condition.true(low <= close, "low <= close")
 
         cdef double typical_price = (high + low + close) / 3.0
 

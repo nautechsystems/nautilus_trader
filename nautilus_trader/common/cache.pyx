@@ -38,7 +38,7 @@ cdef class IdentifierCache:
         :return: TraderId or None.
         :raises: ValueError: If the string is invalid.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return self._cached_trader_ids.get(value)
 
@@ -50,7 +50,7 @@ cdef class IdentifierCache:
         :return: AccountId or None.
         :raises: ValueError: If the string is invalid.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return self._cached_account_ids.get(value)
 
@@ -62,7 +62,7 @@ cdef class IdentifierCache:
         :return: StrategyId or None.
         :raises: ValueError: If the string is invalid.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return self._cached_strategy_ids.get(value)
 
@@ -74,6 +74,6 @@ cdef class IdentifierCache:
         :return: Symbol or None.
         :raises: ValueError: If the string is invalid.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return self._cached_symbols.get(value)

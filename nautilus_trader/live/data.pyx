@@ -94,12 +94,12 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the data_server_pub_port is not in range [0, 65535].
         :raises ValueError: If the tick_server_pub_port is not in range [0, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(data_req_port, 'data_req_port')
-        Condition.valid_port(data_res_port, 'data_rep_port')
-        Condition.valid_port(data_pub_port, 'data_pub_port')
-        Condition.valid_port(tick_pub_port, 'tick_pub_port')
-        Condition.positive_int(tick_capacity, 'tick_capacity')
+        Condition.valid_string(host, "host")
+        Condition.valid_port(data_req_port, "data_req_port")
+        Condition.valid_port(data_res_port, "data_rep_port")
+        Condition.valid_port(data_pub_port, "data_pub_port")
+        Condition.valid_port(tick_pub_port, "tick_pub_port")
+        Condition.positive_int(tick_capacity, "tick_capacity")
         super().__init__(tick_capacity, clock, uuid_factory, logger)
 
         self._correlation_index = {}  # type: {UUID, callable}
@@ -195,7 +195,7 @@ cdef class LiveDataClient(DataClient):
 
         :param strategy: The strategy to register.
         """
-        Condition.not_none(strategy, 'strategy')
+        Condition.not_none(strategy, "strategy")
 
         strategy.register_data_client(self)
 
@@ -219,9 +219,9 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_negative_int(limit, 'limit')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
         cdef dict query = {
             DATA_TYPE: QUOTE_TICK_ARRAY,
@@ -231,7 +231,7 @@ cdef class LiveDataClient(DataClient):
             LIMIT: str(limit)
         }
 
-        cdef str limit_string = 'None' if limit == 0 else f'(limit={limit})'
+        cdef str limit_string = "None" if limit == 0 else f"(limit={limit})"
         self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
@@ -259,9 +259,9 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.not_negative_int(limit, 'limit')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(symbol, "symbol")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
         cdef dict query = {
             DATA_TYPE: TRADE_TICK_ARRAY,
@@ -271,7 +271,7 @@ cdef class LiveDataClient(DataClient):
             LIMIT: str(limit)
         }
 
-        cdef str limit_string = 'None' if limit == 0 else f'(limit={limit})'
+        cdef str limit_string = "None" if limit == 0 else f"(limit={limit})"
         self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
@@ -299,9 +299,9 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the limit is negative (< 0).
         :raises ValueError: If the callback is not of type Callable.
         """
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.not_negative_int(limit, 'limit')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
         if bar_type.spec.structure == BarStructure.TICK:
             self._bulk_build_tick_bars(bar_type, from_datetime, to_datetime, limit, callback)
@@ -316,7 +316,7 @@ cdef class LiveDataClient(DataClient):
             LIMIT: str(limit),
         }
 
-        cdef str limit_string = 'None' if limit == 0 else f'(limit={limit})'
+        cdef str limit_string = "None" if limit == 0 else f"(limit={limit})"
         self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime} {limit_string}...")
 
         cdef UUID request_id = self._uuid_factory.generate()
@@ -334,8 +334,8 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ValueError: If the callback is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(callback, 'callback')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(callback, "callback")
 
         cdef dict query = {
             DATA_TYPE: INSTRUMENT_ARRAY,
@@ -359,7 +359,7 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         :raises ValueError: If the callback is not of type callable.
         """
-        Condition.callable(callback, 'callback')
+        Condition.callable(callback, "callback")
 
         cdef dict query = {
             DATA_TYPE: INSTRUMENT_ARRAY,
@@ -395,8 +395,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription (if None will just call print).
         :raises ValueError: If the handler is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
         self._add_quote_tick_handler(symbol, handler)
         self._tick_subscriber.subscribe(f"{QUOTE}:{symbol.to_string()}")
@@ -409,8 +409,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription (if None will just call print).
         :raises ValueError: If the handler is not of type callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
         self._add_trade_tick_handler(symbol, handler)
         self._tick_subscriber.subscribe(f"{TRADE}:{symbol.to_string()}")
@@ -423,8 +423,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(bar_type, "bar_type")
+        Condition.callable(handler, "handler")
 
         self._start_generating_bars(bar_type, handler)
 
@@ -436,11 +436,11 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
         self._add_instrument_handler(symbol, handler)
-        self._data_subscriber.subscribe(f'{INSTRUMENT}:{symbol.value}')
+        self._data_subscriber.subscribe(f"{INSTRUMENT}:{symbol.value}")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
@@ -450,8 +450,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
         self._tick_subscriber.unsubscribe(f"{QUOTE}:{symbol.to_string()}")
         self._remove_quote_tick_handler(symbol, handler)
@@ -464,8 +464,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
         self._tick_subscriber.unsubscribe(f"{TRADE}:{symbol.to_string()}")
         self._remove_trade_tick_handler(symbol, handler)
@@ -478,8 +478,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Condition.not_none(bar_type, 'bar_type')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(bar_type, "bar_type")
+        Condition.callable(handler, "handler")
 
         self._stop_generating_bars(bar_type, handler)
 
@@ -491,10 +491,10 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.callable(handler, 'handler')
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(handler, "handler")
 
-        self._data_subscriber.unsubscribe(f'{INSTRUMENT}:{symbol.value}')
+        self._data_subscriber.unsubscribe(f"{INSTRUMENT}:{symbol.value}")
         self._remove_instrument_handler(symbol, handler)
 
     cpdef void _set_callback(self, UUID request_id, handler: callable) except *:
@@ -540,7 +540,7 @@ cdef class LiveDataClient(DataClient):
             handler(data)
         elif data_type == BAR_ARRAY:
             metadata = data_package[METADATA]
-            bar_type = self._cached_bar_types.get(metadata[SYMBOL] + '-' + metadata[SPECIFICATION])
+            bar_type = self._cached_bar_types.get(metadata[SYMBOL] + "-" + metadata[SPECIFICATION])
             data = Utf8BarSerializer.deserialize_bytes_list(data_package[DATA])
             handler(bar_type, data)
         elif data_type == INSTRUMENT_ARRAY:
@@ -560,8 +560,8 @@ cdef class LiveDataClient(DataClient):
         elif tick_type == TRADE:
             self._handle_trade_tick(Utf8TradeTickSerializer.deserialize(symbol, body))
         else:
-            self._log.error(f'Cannot handle published tick, '
-                            f'tick type \'{tick_type}\' not recognized.')
+            self._log.error(f"Cannot handle published tick, "
+                            f"tick type \"{tick_type}\" not recognized.")
 
     cpdef void _handle_sub_msg(self, str topic, bytes body) except *:
         # Handle the given subscription message published for the given topic
@@ -574,5 +574,5 @@ cdef class LiveDataClient(DataClient):
         elif data_type == INSTRUMENT:
             self._handle_instrument(self._instrument_serializer.deserialize(body))
         else:
-            self._log.error(f'Cannot handle published messaged, '
-                            f'data type \'{data_type}\' not recognized.')
+            self._log.error(f"Cannot handle published messaged, "
+                            f"data type \"{data_type}\" not recognized.")

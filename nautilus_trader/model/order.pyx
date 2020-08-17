@@ -111,22 +111,22 @@ cdef class Order:
             If the order_type should have a price and the price is None.
             If the time_in_force is GTD and the expire_time is None.
         """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, 'order_side', 'UNDEFINED')
-        Condition.not_equal(order_type, OrderType.UNDEFINED, 'order_type', 'UNDEFINED')
-        Condition.not_equal(order_purpose, OrderPurpose.UNDEFINED, 'order_purpose', 'UNDEFINED')
-        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, 'time_in_force', 'UNDEFINED')
-        Condition.positive(quantity.as_double(), 'quantity')
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
+        Condition.not_equal(order_purpose, OrderPurpose.UNDEFINED, "order_purpose", "UNDEFINED")
+        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
+        Condition.positive(quantity.as_double(), "quantity")
 
         # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:
-            Condition.not_none(price, 'price')
+            Condition.not_none(price, "price")
         # For orders which require no price
         else:
-            Condition.none(price, 'price')
+            Condition.none(price, "price")
 
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.not_none(expire_time, 'expire_time')
+            Condition.not_none(expire_time, "expire_time")
 
         self._execution_ids = set()         # type: {ExecutionId}
         self._events = []                   # type: [OrderEvent]
@@ -184,7 +184,7 @@ cdef class Order:
         :param event: The event to initialize with.
         :return Order.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         return Order(
             order_id=event.order_id,
@@ -241,7 +241,7 @@ cdef class Order:
 
         :return str.
         """
-        cdef str label = '' if self.label is None else f'label={self.label}, '
+        cdef str label = "" if self.label is None else f"label={self.label}, "
         return (f"Order("
                 f"id={self.id.value}, "
                 f"state={order_state_to_string(self.state)}, "
@@ -263,8 +263,8 @@ cdef class Order:
 
         :return str.
         """
-        cdef str price = '' if self.price is None else f'@ {self.price} '
-        cdef str expire_time = '' if self.expire_time is None else f' {format_iso8601(self.expire_time)}'
+        cdef str price = "" if self.price is None else f"@ {self.price} "
+        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
                 f"{order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
@@ -309,10 +309,10 @@ cdef class Order:
         :raises ValueError: If the order_events order_id is not equal to the event.order_id.
         :raises ValueError: If the order account_id is not None and is not equal to the event.account_id.
         """
-        Condition.not_none(event, 'event')
-        Condition.equal(self.id, event.order_id, 'id', 'event.order_id')
+        Condition.not_none(event, "event")
+        Condition.equal(self.id, event.order_id, "id", "event.order_id")
         if self.account_id is not None:
-            Condition.equal(self.account_id, event.account_id, 'account_id', 'event.account_id')
+            Condition.equal(self.account_id, event.account_id, "account_id", "event.account_id")
 
         # Update events
         self._events.append(event)
@@ -404,7 +404,7 @@ cdef class BracketOrder:
         :param stop_loss: The stop-loss (SL) 'child' order.
         :param take_profit: The optional take-profit (TP) 'child' order.
         """
-        self.id = BracketOrderId('B' + entry.id.value)
+        self.id = BracketOrderId("B" + entry.id.value)
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit
@@ -452,7 +452,7 @@ cdef class BracketOrder:
 
         :return str.
         """
-        cdef str take_profit_price = 'NONE' if self.take_profit is None or self.take_profit.price is None else self.take_profit.price.to_string()
+        cdef str take_profit_price = "NONE" if self.take_profit is None or self.take_profit.price is None else self.take_profit.price.to_string()
         return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
 
     def __repr__(self) -> str:

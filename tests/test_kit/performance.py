@@ -41,9 +41,9 @@ class PerformanceHarness:
         if print_output:
             result_milliseconds = math.floor(minimum * _MILLISECONDS_IN_SECOND)
             result_microseconds = math.floor(minimum * _MICROSECONDS_IN_SECOND)
-            print(f'\nPerformance test: {str(inspect.getmembers(function)[4][1])} ')
-            print(f'# ~{result_milliseconds}ms ({result_microseconds}μs) minimum '
-                  f'of {runs} runs @ {iterations:,} iterations each run.')
+            print(f"\nPerformance test: {str(inspect.getmembers(function)[4][1])} ")
+            print(f"# ~{result_milliseconds}ms ({result_microseconds}μs) minimum "
+                  f"of {runs} runs @ {iterations:,} iterations each run.")
 
         return minimum
 
@@ -59,6 +59,6 @@ class PerformanceHarness:
     #     size = get_size_of(x)
     #
     #     if print_output:
-    #         print(f'\n# Object size test: {type(x)} is {size} bytes.')
+    #         print(f"\n# Object size test: {type(x)} is {size} bytes.")
     #
     #     return size

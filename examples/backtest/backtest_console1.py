@@ -57,12 +57,12 @@ if __name__ == "__main__":
         sl_atr_multiple=2.0)]
 
     config = BacktestConfig(
-        exec_db_type='in-memory',
+        exec_db_type="in-memory",
         exec_db_flush=False,
         frozen_account=False,
         starting_capital=1000000,
         account_currency=Currency.USD,
-        short_term_interest_csv_path='default',
+        short_term_interest_csv_path="default",
         commission_rate_bp=0.20,
         bypass_logging=False,
         level_console=LogLevel.INFO,
@@ -91,11 +91,11 @@ if __name__ == "__main__":
     engine.run(start, stop)
 
     with pd.option_context(
-            'display.max_rows',
+            "display.max_rows",
             100,
-            'display.max_columns',
+            "display.max_columns",
             None,
-            'display.width', 300):
+            "display.width", 300):
         pass
         print(engine.trader.generate_account_report())
         print(engine.trader.generate_order_fills_report())

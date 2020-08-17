@@ -36,9 +36,9 @@ cdef class WeightedMovingAverage(MovingAverage):
         :param weights: The weights for the moving average calculation
         (if not None then = period).
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         if weights is not None:
-            Condition.equal(len(weights), period, 'len(weights)', 'period')
+            Condition.equal(len(weights), period, "len(weights)", "period")
         super().__init__(period, params=[period, weights])
 
         self._inputs = deque(maxlen=self.period)

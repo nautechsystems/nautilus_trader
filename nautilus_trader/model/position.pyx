@@ -139,7 +139,7 @@ cdef class Position:
 
         :return str.
         """
-        cdef str quantity = ' ' if self._relative_quantity == 0 else f' {self.quantity.to_string_formatted()} '
+        cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string_formatted()} "
         return f"{market_position_to_string(self.market_position)}{quantity}{self.symbol}"
 
     cpdef list get_order_ids(self):
@@ -172,7 +172,7 @@ cdef class Position:
 
         :param event: The order fill event to apply.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         # Update events
         self._events.append(event)
@@ -203,8 +203,8 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Decimal.
         """
-        Condition.not_none(last, 'last')
-        Condition.equal(self.symbol, last.symbol, 'symbol', 'last.symbol')
+        Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         if self.market_position == MarketPosition.LONG:
             return self._calculate_points(self.average_open_price, last.bid.as_double())
@@ -220,8 +220,8 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Decimal.
         """
-        Condition.not_none(last, 'last')
-        Condition.equal(self.symbol, last.symbol, 'symbol', 'last.symbol')
+        Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         return self.realized_points + self.unrealized_points(last)
 
@@ -232,8 +232,8 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return double.
         """
-        Condition.not_none(last, 'last')
-        Condition.equal(self.symbol, last.symbol, 'symbol', 'last.symbol')
+        Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         if self.market_position == MarketPosition.LONG:
             return self._calculate_return(self.average_open_price, last.bid.as_double())
@@ -249,8 +249,8 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return double.
         """
-        Condition.not_none(last, 'last')
-        Condition.equal(self.symbol, last.symbol, 'symbol', 'last.symbol')
+        Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         return self.realized_return + self.unrealized_return(last)
 
@@ -261,8 +261,8 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Money.
         """
-        Condition.not_none(last, 'last')
-        Condition.equal(self.symbol, last.symbol, 'symbol', 'last.symbol')
+        Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         if self.market_position == MarketPosition.LONG:
             return self._calculate_pnl(self.average_open_price, last.bid.as_double(), self.quantity)
@@ -278,8 +278,8 @@ cdef class Position:
         :param last: The position symbols last tick.
         :return Money.
         """
-        Condition.not_none(last, 'last')
-        Condition.equal(self.symbol, last.symbol, 'symbol', 'last.symbol')
+        Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         return self.realized_pnl.add(self.unrealized_pnl(last))
 

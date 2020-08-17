@@ -145,7 +145,7 @@ cdef class MessageReceived(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
-        Condition.valid_string(received_type, 'received_type')
+        Condition.valid_string(received_type, "received_type")
         super().__init__(correlation_id, response_id, response_timestamp)
 
         self.received_type = received_type
@@ -191,7 +191,7 @@ cdef class MessageRejected(Response):
         :return str.
         """
         return (f"{self.__class__.__name__}("
-                f"message='{self.message}, '"
+                f"message='{self.message}', "
                 f"id={self.id.value}, "
                 f"correlation_id={self.id.value})")
 
@@ -272,8 +272,8 @@ cdef class DataResponse(Response):
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
-        Condition.valid_string(data_type, 'data_type')
-        Condition.valid_string(data_encoding, 'data_encoding')
+        Condition.valid_string(data_type, "data_type")
+        Condition.valid_string(data_encoding, "data_encoding")
         super().__init__(correlation_id, response_id, response_timestamp)
 
         self.data = data

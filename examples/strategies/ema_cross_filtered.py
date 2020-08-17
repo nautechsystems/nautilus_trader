@@ -30,10 +30,10 @@ from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-UPDATE_SESSIONS = 'UPDATE-SESSIONS'
-UPDATE_NEWS = 'UPDATE-NEWS'
-NEWS_FLATTEN = 'NEWS-FLATTEN'
-DONE_FOR_DAY = 'DONE-FOR-DAY'
+UPDATE_SESSIONS = "UPDATE-SESSIONS"
+UPDATE_NEWS = "UPDATE-NEWS"
+NEWS_FLATTEN = "NEWS-FLATTEN"
+DONE_FOR_DAY = "DONE-FOR-DAY"
 
 
 class EMACrossFiltered(TradingStrategy):
@@ -53,7 +53,7 @@ class EMACrossFiltered(TradingStrategy):
                  sl_atr_multiple: float=2.0,
                  news_currencies: list=[],
                  news_impacts: list=[],
-                 extra_id_tag: str=''):
+                 extra_id_tag: str=""):
         """
         Initialize a new instance of the EMACrossPy class.
 
@@ -66,7 +66,7 @@ class EMACrossFiltered(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace("/", "") + extra_id_tag)
 
         # Custom strategy variables (all optional)
         self.symbol = symbol
@@ -435,7 +435,7 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set trading end to {self.trading_end}")
 
         # Set session update event
-        alert_label = f'-{time_now.date()}'
+        alert_label = f"-{time_now.date()}"
         self.clock.set_time_alert(DONE_FOR_DAY + alert_label, self.trading_end)
         self.clock.set_time_alert(UPDATE_SESSIONS + alert_label, self.session_next_end + timedelta(seconds=1))
 
@@ -450,10 +450,10 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set next news event
         self.news_event_next = self.news_filter.next_event(time_now)
-        if self.news_event_next.impact == 'HIGH':
+        if self.news_event_next.impact == "HIGH":
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
-        elif self.news_event_next.impact == 'MEDIUM':
+        elif self.news_event_next.impact == "MEDIUM":
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
 
@@ -466,8 +466,8 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set news update event
         news_time = self.news_event_next.timestamp
-        news_name = self.news_event_next.name.replace(' ', '')
-        alert_label = f'-{news_time.date()}-{news_time.hour:02d}{news_time.minute:02d}-{news_name}'
+        news_name = self.news_event_next.name.replace(" ", "")
+        alert_label = f"-{news_time.date()}-{news_time.hour:02d}{news_time.minute:02d}-{news_name}"
         self.clock.set_time_alert(UPDATE_NEWS + alert_label, self.trading_pause_end)
         self.clock.set_time_alert(NEWS_FLATTEN + alert_label, self.trading_pause_start + timedelta(seconds=1))
 

@@ -29,7 +29,7 @@ cdef class Handler:
         :param handler: The callable handler.
         :raises TypeError: If the handler is not of type Callable.
         """
-        Condition.callable(handler, 'handler')
+        Condition.callable(handler, "handler")
 
         self.handle = handler
 

@@ -27,7 +27,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 class OrderPerformanceTests(unittest.TestCase):
 
     def setUp(self):
-        self.generator = OrderIdGenerator(IdTag('001'), IdTag('001'))
+        self.generator = OrderIdGenerator(IdTag("001"), IdTag("001"))
 
     def test_order_id_generator(self):
         result = PerformanceHarness.profile_function(self.generator.generate, 3, 10000)

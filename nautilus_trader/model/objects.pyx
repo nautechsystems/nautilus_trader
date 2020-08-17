@@ -43,7 +43,7 @@ cdef class Quantity(Decimal):
         :raises ValueError: If the value is negative (< 0).
         :raises ValueError: If the precision is negative (< 0).
         """
-        Condition.not_negative(value, 'value')
+        Condition.not_negative(value, "value")
         super().__init__(value, precision)
 
     @staticmethod
@@ -73,7 +73,7 @@ cdef class Quantity(Decimal):
         :param value: The string value to parse.
         :return: Quantity.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return Quantity(float(value), precision=Decimal.precision_from_string(value))
 
@@ -101,16 +101,16 @@ cdef class Quantity(Decimal):
         Return the formatted string representation of this object.
         """
         if self.precision > 0:
-            return f'{self._value:.{self.precision}f}'
+            return f"{self._value:.{self.precision}f}"
 
         if self._value < 1000 or self._value % 1000 != 0:
-            return f'{self._value:.{self.precision}f}'
+            return f"{self._value:.{self.precision}f}"
 
         if self._value < 1000000:
-            return f'{self._value / 1000:.{0}f}K'
+            return f"{self._value / 1000:.{0}f}K"
 
-        cdef str millions = f'{self._value / 1000000:.{3}f}'.rstrip('0').rstrip('.')
-        return f'{millions}M'
+        cdef str millions = f"{self._value / 1000000:.{3}f}".rstrip("0").rstrip(".")
+        return f"{millions}M"
 
 
 cdef class Price(Decimal):
@@ -127,7 +127,7 @@ cdef class Price(Decimal):
         :raises ValueError: If the value is negative (< 0).
         :raises ValueError: If the precision is negative (< 0).
         """
-        Condition.not_negative(value, 'value')
+        Condition.not_negative(value, "value")
         super().__init__(value, precision)
 
     @staticmethod
@@ -139,7 +139,7 @@ cdef class Price(Decimal):
         :param value: The string value to parse.
         :return: Price.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return Price(float(value), precision=Decimal.precision_from_string(value))
 
@@ -151,7 +151,7 @@ cdef class Price(Decimal):
         :raises ValueError: If the precision of the other decimal is not <= this precision.
         :return Price.
         """
-        Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
+        Condition.true(self.precision >= other.precision, "self.precision >= price.precision")
 
         return Price(self._value + other._value, self.precision)
 
@@ -164,7 +164,7 @@ cdef class Price(Decimal):
         :raises ValueError: If value of the other decimal is greater than this price.
         :return Price.
         """
-        Condition.true(self.precision >= other.precision, 'self.precision >= price.precision')
+        Condition.true(self.precision >= other.precision, "self.precision >= price.precision")
 
         return Price(self._value - other._value, self.precision)
 
@@ -182,7 +182,7 @@ cdef class Money(Decimal):
         :param value: The value of the money.
         :param currency: The currency of the money.
         """
-        Condition.not_equal(currency, Currency.UNDEFINED, 'currency', 'UNDEFINED')
+        Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
         super().__init__(value, precision=2)
 
         self.currency = currency
@@ -196,7 +196,7 @@ cdef class Money(Decimal):
         :param currency: The currency for the money.
         :return Money.
         """
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
         return Money(float(value), currency)
 
@@ -209,7 +209,7 @@ cdef class Money(Decimal):
         :raises ValueError: If the other currency is not equal to this money.
         """
         # TODO: Fix handling of multiple currencies
-        # Condition.equal(self.currency, other.currency, 'self.currency', 'other.currency')
+        # Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
 
         return Money(self._value + other._value, self.currency)
 
@@ -222,7 +222,7 @@ cdef class Money(Decimal):
         :raises ValueError: If the other currency is not equal to this money.
         """
         # TODO: Fix handling of multiple currencies
-        # Condition.equal(self.currency, other.currency, 'self.currency', 'other.currency')
+        # Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
 
         return Money(self._value - other._value, self.currency)
 
@@ -234,7 +234,7 @@ cdef class Money(Decimal):
         :return bool.
         :raises ValueError: If the other is not of type Money.
         """
-        Condition.type(other, Money, 'other')
+        Condition.type(other, Money, "other")
 
         # noinspection PyProtectedMember
         # direct access to protected member ok here
@@ -244,7 +244,7 @@ cdef class Money(Decimal):
         """
         Return the formatted string representation of this object.
         """
-        return f'{self.to_string(format_commas=True)} {currency_to_string(self.currency)}'
+        return f"{self.to_string(format_commas=True)} {currency_to_string(self.currency)}"
 
     def __repr__(self) -> str:
         """

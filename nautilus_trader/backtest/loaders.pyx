@@ -41,7 +41,7 @@ cdef class CSVTickDataLoader:
         :param file_path: The absolute path to the CSV file.
         :return: pd.DataFrame.
         """
-        Condition.not_none(file_path, 'file_path')
+        Condition.not_none(file_path, "file_path")
 
         return pd.read_csv(file_path,
                            usecols=[1, 2, 3],
@@ -63,10 +63,10 @@ cdef class CSVBarDataLoader:
         :param file_path: The absolute path to the CSV file.
         :return: pd.DataFrame.
         """
-        Condition.not_none(file_path, 'file_path')
+        Condition.not_none(file_path, "file_path")
 
         return pd.read_csv(file_path,
-                           index_col='Time (UTC)',
+                           index_col="Time (UTC)",
                            parse_dates=True)
 
 
@@ -82,8 +82,8 @@ cdef class InstrumentLoader:
         :param symbol: The currency pair symbol.
         :raises ValueError: If the symbol.code length is not in range [6, 7].
         """
-        Condition.not_none(symbol, 'symbol')
-        Condition.in_range_int(len(symbol.code), 6, 7, 'len(symbol)')
+        Condition.not_none(symbol, "symbol")
+        Condition.in_range_int(len(symbol.code), 6, 7, "len(symbol)")
 
         cdef Currency base_currency = currency_from_string(symbol.code[:3])
         cdef Currency quote_currency = currency_from_string(symbol.code[-3:])

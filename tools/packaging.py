@@ -37,7 +37,7 @@ def parse_requirements(requirements_txt_path: str, strip: bool=False) -> [str]:
     with open(requirements_txt_path) as fp:
         requirements = fp.read().splitlines()
         if strip:
-            requirements = [''.join([i for i in requirement if i.isalpha()]) for requirement in requirements]
+            requirements = ["".join([i for i in requirement if i.isalpha()]) for requirement in requirements]
         return requirements
 
 
@@ -130,10 +130,10 @@ def make_extensions(directories: list) -> list:
 
     """
     extensions = []
-    for file in find_files('.pyx', directories):
+    for file in find_files(".pyx", directories):
         extensions.append(Extension(
             name=file.replace(os.path.sep, ".")[:-4],
             sources=[file],
-            include_dirs=['.']))
+            include_dirs=["."]))
 
     return extensions

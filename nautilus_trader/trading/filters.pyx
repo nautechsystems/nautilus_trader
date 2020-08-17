@@ -39,10 +39,10 @@ cdef class ForexSessionFilter:
     """
 
     def __init__(self):
-        self.tz_sydney = pytz.timezone('Australia/Sydney')
-        self.tz_tokyo = pytz.timezone('Asia/Tokyo')
-        self.tz_london = pytz.timezone('Europe/London')
-        self.tz_new_york = pytz.timezone('America/New_York')
+        self.tz_sydney = pytz.timezone("Australia/Sydney")
+        self.tz_tokyo = pytz.timezone("Asia/Tokyo")
+        self.tz_london = pytz.timezone("Europe/London")
+        self.tz_new_york = pytz.timezone("America/New_York")
 
     cpdef datetime local_from_utc(self, session: ForexSession, datetime time_now):
         """
@@ -66,8 +66,8 @@ cdef class ForexSessionFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, 'session')
-        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+        Condition.type(session, ForexSession, "session")
+        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         if session == ForexSession.SYDNEY:
             return time_now.astimezone(self.tz_sydney)
@@ -112,8 +112,8 @@ cdef class ForexSessionFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, 'session')
-        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+        Condition.type(session, ForexSession, "session")
+        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime next_start
@@ -170,8 +170,8 @@ cdef class ForexSessionFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, 'session')
-        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+        Condition.type(session, ForexSession, "session")
+        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime prev_start
@@ -228,8 +228,8 @@ cdef class ForexSessionFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, 'session')
-        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+        Condition.type(session, ForexSession, "session")
+        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime next_end
@@ -286,8 +286,8 @@ cdef class ForexSessionFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, 'session')
-        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+        Condition.type(session, ForexSession, "session")
+        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime prev_end
@@ -362,7 +362,7 @@ cdef class EconomicNewsEventFilter:
             self,
             list currencies not None,
             list impacts not None,
-            str news_csv_path not None='default'):
+            str news_csv_path not None="default"):
         """
         Initialize a new instance of the EconomicNewsEventFilter class.
 
@@ -376,8 +376,8 @@ cdef class EconomicNewsEventFilter:
             The path to the news data csv.
 
         """
-        if news_csv_path == 'default':
-            news_csv_path = os.path.join(PACKAGE_ROOT + '/_data/news/', 'news_events.csv')
+        if news_csv_path == "default":
+            news_csv_path = os.path.join(PACKAGE_ROOT + "/_data/news/", "news_events.csv")
 
         self.currencies = currencies
         self.impacts = impacts
@@ -386,8 +386,8 @@ cdef class EconomicNewsEventFilter:
         self.unfiltered_data_start = news_data.index[0]
         self.unfiltered_data_end = news_data.index[-1]
 
-        self._news_data = news_data[(news_data['Currency'].isin(currencies))
-                                   & news_data['Impact'].isin(impacts)]  # noqa (W504) easier to read
+        self._news_data = news_data[(news_data["Currency"].isin(currencies))
+                                   & news_data["Impact"].isin(impacts)]  # noqa (W504) easier to read
 
     cpdef NewsEvent next_event(self, datetime time_now):
         """
@@ -413,7 +413,7 @@ cdef class EconomicNewsEventFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         if time_now < self.unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
@@ -430,7 +430,7 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = 0
         row = events.iloc[index]
-        return NewsEvent(events.index[index], row['Impact'], row['Name'], row['Currency'])
+        return NewsEvent(events.index[index], row["Impact"], row["Name"], row["Currency"])
 
     cpdef NewsEvent prev_event(self, datetime time_now):
         """
@@ -456,7 +456,7 @@ cdef class EconomicNewsEventFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.true(is_datetime_utc(time_now), 'time_now is tz aware UTC')
+        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         if time_now < self.unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
@@ -472,4 +472,4 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = -1
         row = events.iloc[index]
-        return NewsEvent(events.index[index], row['Impact'], row['Name'], row['Currency'])
+        return NewsEvent(events.index[index], row["Impact"], row["Name"], row["Currency"])

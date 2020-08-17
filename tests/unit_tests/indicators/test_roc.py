@@ -29,18 +29,18 @@ class RateOfChangeTests(unittest.TestCase):
     def test_name(self):
         # Act
         # Assert
-        self.assertEqual('RateOfChange', self.roc.name)
+        self.assertEqual("RateOfChange", self.roc.name)
 
     def test_str(self):
         # Act
         # Assert
-        self.assertEqual('RateOfChange(3)', str(self.roc))
+        self.assertEqual("RateOfChange(3)", str(self.roc))
 
     def test_repr(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.roc).startswith('<RateOfChange(3) object at'))
-        self.assertTrue(repr(self.roc).endswith('>'))
+        self.assertTrue(repr(self.roc).startswith("<RateOfChange(3) object at"))
+        self.assertTrue(repr(self.roc).endswith(">"))
 
     def test_period(self):
         # Act

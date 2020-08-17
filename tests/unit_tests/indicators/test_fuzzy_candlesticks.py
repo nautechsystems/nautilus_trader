@@ -99,25 +99,25 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual('(1, 3, 2, 1, 1)', str(fuzzy_candle))
-        self.assertTrue(repr(fuzzy_candle).startswith('<FuzzyCandle(1, 3, 2, 1, 1) object at'))
+        self.assertEqual("(1, 3, 2, 1, 1)", str(fuzzy_candle))
+        self.assertTrue(repr(fuzzy_candle).startswith("<FuzzyCandle(1, 3, 2, 1, 1) object at"))
 
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('FuzzyCandlesticks', self.fc.name)
+        self.assertEqual("FuzzyCandlesticks", self.fc.name)
 
     def test_str_returns_expected_string(self):
         # Act
         result = str(self.fc)
         # Assert
-        self.assertEqual('FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)', result)
+        self.assertEqual("FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)", result)
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.fc).startswith('<FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0) object at'))
-        self.assertTrue(repr(self.fc).endswith('>'))
+        self.assertTrue(repr(self.fc).startswith("<FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0) object at"))
+        self.assertTrue(repr(self.fc).endswith(">"))
 
     def test_period_returns_expected_value(self):
         # Act

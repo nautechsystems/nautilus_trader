@@ -63,9 +63,9 @@ class SerializerBaseTests(unittest.TestCase):
 
     def test_can_convert_camel_case_to_snake_case(self):
         # Arrange
-        value0 = 'CamelCase'
-        value1 = 'camelCase'
-        value2 = 'camel'
+        value0 = "CamelCase"
+        value1 = "camelCase"
+        value2 = "camel"
 
         # Act
         result0 = self.serializer.py_convert_camel_to_snake(value0)
@@ -73,15 +73,15 @@ class SerializerBaseTests(unittest.TestCase):
         result2 = self.serializer.py_convert_camel_to_snake(value2)
 
         # Assert
-        self.assertEqual('CAMEL_CASE', result0)
-        self.assertEqual('CAMEL_CASE', result1)
-        self.assertEqual('CAMEL', result2)
+        self.assertEqual("CAMEL_CASE", result0)
+        self.assertEqual("CAMEL_CASE", result1)
+        self.assertEqual("CAMEL", result2)
 
     def test_can_convert_snake_case_to_camel_case(self):
         # Arrange
-        value0 = 'SNAKE_CASE'
-        value1 = 'snake_case'
-        value2 = 'snake'
+        value0 = "SNAKE_CASE"
+        value1 = "snake_case"
+        value2 = "snake"
 
         # Act
         result0 = self.serializer.py_convert_snake_to_camel(value0)
@@ -89,16 +89,16 @@ class SerializerBaseTests(unittest.TestCase):
         result2 = self.serializer.py_convert_snake_to_camel(value2)
 
         # Assert
-        self.assertEqual('SnakeCase', result0)
-        self.assertEqual('SnakeCase', result1)
-        self.assertEqual('Snake', result2)
+        self.assertEqual("SnakeCase", result0)
+        self.assertEqual("SnakeCase", result1)
+        self.assertEqual("Snake", result2)
 
 
 class MsgPackDictionarySerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_string_dictionaries(self):
         # Arrange
-        data = {'A': '1', 'B': '2', 'C': '3'}
+        data = {"A": "1", "B": "2", "C": "3"}
         serializer = MsgPackDictionarySerializer()
 
         # Act
@@ -115,10 +115,10 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=TestClock())
-        print('\n')
+        print("\n")
 
     def test_can_serialize_and_deserialize_market_orders(self):
         # Arrange
@@ -126,7 +126,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Label('U1_E'),)
+            Label("U1_E"),)
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -144,7 +144,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5),
-            Label('S1_SL'),
+            Label("S1_SL"),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -160,7 +160,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
         # Arrange
         order = Order(
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.LIMIT,
@@ -184,13 +184,13 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_stop_limit_orders(self):
         # Arrange
         order = Order(
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             Quantity(100000),
             price=Price(1.00000, 5),
-            label=Label('S1_SL'),
+            label=Label("S1_SL"),
             init_id=uuid4(),
             timestamp=UNIX_EPOCH)
 
@@ -206,7 +206,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
         # Arrange
         order = Order(
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
@@ -236,10 +236,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
             clock=TestClock())
-        print('\n')
+        print("\n")
 
     def test_can_serialize_and_deserialize_account_inquiry_command(self):
         # Arrange
@@ -260,10 +260,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_account_inquiry_command_from_csharp(self):
         # Arrange
-        base64 = 'haRUeXBlxA5BY2NvdW50SW5xdWlyeaJJZMQkNjcxODYxMzQtZTI0Yy00NWZ' \
-                 'iLTk0NGUtNzNmMDUxZDMxMmIzqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMD' \
-                 'owMDowMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqUFjY291bnRJZMQYR' \
-                 'lhDTS0wMjg5OTk5OTktU0lNVUxBVEVE'
+        base64 = "haRUeXBlxA5BY2NvdW50SW5xdWlyeaJJZMQkNjcxODYxMzQtZTI0Yy00NWZ" \
+                 "iLTk0NGUtNzNmMDUxZDMxMmIzqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMD" \
+                 "owMDowMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqUFjY291bnRJZMQYR" \
+                 "lhDTS0wMjg5OTk5OTktU0lNVUxBVEVE"
         body = b64decode(base64)
 
         # Act
@@ -282,8 +282,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitOrder(
             self.trader_id,
             self.account_id,
-            StrategyId('SCALPER', '01'),
-            PositionId('P-123456'),
+            StrategyId("SCALPER", "01"),
+            PositionId("P-123456"),
             order,
             uuid4(),
             UNIX_EPOCH)
@@ -302,17 +302,17 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_submit_order_commands_from_csharp(self):
         # Arrange
-        base64 = 'iKRUeXBlxAtTdWJtaXRPcmRlcqJJZMQkMjJhMDY3NmQtMjUxMC00ZDE1LWI' \
-                 'xYWEtMDI5ZmY2ZTI0YTBmqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMDowMD' \
-                 'owMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqlN0cmF0ZWd5SWTEDEVNQ' \
-                 'UNyb3NzLTAwMalBY2NvdW50SWTEGEZYQ00tMDI4OTk5OTk5LVNJTVVMQVRF' \
-                 'RKpQb3NpdGlvbklkxAhQLTEyMzQ1NqVPcmRlcsT4jKJJZMQITy0xMjM0NTa' \
-                 'mU3ltYm9sxAtBVURVU0QuRlhDTaVMYWJlbMQKVEVTVF9PUkRFUqlPcmRlcl' \
-                 'NpZGXEA0J1ealPcmRlclR5cGXEBk1hcmtldKxPcmRlclB1cnBvc2XEBE5vb' \
-                 'mWoUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQETm9uZatUaW1lSW5Gb3JjZcQD' \
-                 'REFZqkV4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDA' \
-                 'wOjAwOjAwLjAwMFqmSW5pdElkxCQzMjgwNWYyOS1kYmE5LTRlMWUtOTBmMC' \
-                 '04NDhjMzc2OGQzMWU='
+        base64 = "iKRUeXBlxAtTdWJtaXRPcmRlcqJJZMQkMjJhMDY3NmQtMjUxMC00ZDE1LWI" \
+                 "xYWEtMDI5ZmY2ZTI0YTBmqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMDowMD" \
+                 "owMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqlN0cmF0ZWd5SWTEDEVNQ" \
+                 "UNyb3NzLTAwMalBY2NvdW50SWTEGEZYQ00tMDI4OTk5OTk5LVNJTVVMQVRF" \
+                 "RKpQb3NpdGlvbklkxAhQLTEyMzQ1NqVPcmRlcsT4jKJJZMQITy0xMjM0NTa" \
+                 "mU3ltYm9sxAtBVURVU0QuRlhDTaVMYWJlbMQKVEVTVF9PUkRFUqlPcmRlcl" \
+                 "NpZGXEA0J1ealPcmRlclR5cGXEBk1hcmtldKxPcmRlclB1cnBvc2XEBE5vb" \
+                 "mWoUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQETm9uZatUaW1lSW5Gb3JjZcQD" \
+                 "REFZqkV4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDA" \
+                 "wOjAwOjAwLjAwMFqmSW5pdElkxCQzMjgwNWYyOS1kYmE5LTRlMWUtOTBmMC" \
+                 "04NDhjMzc2OGQzMWU="
 
         body = b64decode(base64)
 
@@ -333,8 +333,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitBracketOrder(
             self.trader_id,
             self.account_id,
-            StrategyId('SCALPER', '01'),
-            PositionId('P-123456'),
+            StrategyId("SCALPER", "01"),
+            PositionId("P-123456"),
             bracket_order,
             uuid4(),
             UNIX_EPOCH)
@@ -351,23 +351,23 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_submit_bracket_order_no_take_profit_from_csharp(self):
         # Arrange
-        base64 = 'iqRUeXBlxBJTdWJtaXRCcmFja2V0T3JkZXKiSWTEJGJkOGM5YTZhLTNlNmI' \
-                 'tNGUzYS05OGYzLWEzMzRjZDM3NDkzNqlUaW1lc3RhbXDEGDE5NzAtMDEtMD' \
-                 'FUMDA6MDA6MDAuMDAwWqhUcmFkZXJJZMQKVEVTVEVSLTAwMKpTdHJhdGVne' \
-                 'UlkxAxFTUFDcm9zcy0wMDGpQWNjb3VudElkxBhGWENNLTAyODk5OTk5OS1T' \
-                 'SU1VTEFURUSqUG9zaXRpb25JZMQIUC0xMjM0NTalRW50cnnE+IyiSWTECE8' \
-                 'tMTIzNDU2plN5bWJvbMQLQVVEVVNELkZYQ02lTGFiZWzEClRFU1RfT1JERV' \
-                 'KpT3JkZXJTaWRlxANCdXmpT3JkZXJUeXBlxAZNYXJrZXSsT3JkZXJQdXJwb' \
-                 '3NlxAROb25lqFF1YW50aXR5xAYxMDAwMDClUHJpY2XEBE5vbmWrVGltZUlu' \
-                 'Rm9yY2XEA0RBWapFeHBpcmVUaW1lxAROb25lqVRpbWVzdGFtcMQYMTk3MC0' \
-                 'wMS0wMVQwMDowMDowMC4wMDBapkluaXRJZMQkMmI4M2Y0YzYtOWQ0ZC00ZT' \
-                 'UxLTk3ODQtY2YwYjhjZjYwNDZlqFN0b3BMb3NzxPOMoklkxAhPLTEyMzQ1N' \
-                 'qZTeW1ib2zEC0FVRFVTRC5GWENNpUxhYmVsxApURVNUX09SREVSqU9yZGVy' \
-                 'U2lkZcQDQnV5qU9yZGVyVHlwZcQEU3RvcKxPcmRlclB1cnBvc2XEBE5vbmW' \
-                 'oUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQBMatUaW1lSW5Gb3JjZcQDREFZqk' \
-                 'V4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDAwOjAwO' \
-                 'jAwLjAwMFqmSW5pdElkxCQ1NTI3MGJhMC02Yjg2LTRlMTItYTc4ZS05YzY5' \
-                 'ZDE3ZTEwZWKqVGFrZVByb2ZpdMQBgA=='
+        base64 = "iqRUeXBlxBJTdWJtaXRCcmFja2V0T3JkZXKiSWTEJGJkOGM5YTZhLTNlNmI" \
+                 "tNGUzYS05OGYzLWEzMzRjZDM3NDkzNqlUaW1lc3RhbXDEGDE5NzAtMDEtMD" \
+                 "FUMDA6MDA6MDAuMDAwWqhUcmFkZXJJZMQKVEVTVEVSLTAwMKpTdHJhdGVne" \
+                 "UlkxAxFTUFDcm9zcy0wMDGpQWNjb3VudElkxBhGWENNLTAyODk5OTk5OS1T" \
+                 "SU1VTEFURUSqUG9zaXRpb25JZMQIUC0xMjM0NTalRW50cnnE+IyiSWTECE8" \
+                 "tMTIzNDU2plN5bWJvbMQLQVVEVVNELkZYQ02lTGFiZWzEClRFU1RfT1JERV" \
+                 "KpT3JkZXJTaWRlxANCdXmpT3JkZXJUeXBlxAZNYXJrZXSsT3JkZXJQdXJwb" \
+                 "3NlxAROb25lqFF1YW50aXR5xAYxMDAwMDClUHJpY2XEBE5vbmWrVGltZUlu" \
+                 "Rm9yY2XEA0RBWapFeHBpcmVUaW1lxAROb25lqVRpbWVzdGFtcMQYMTk3MC0" \
+                 "wMS0wMVQwMDowMDowMC4wMDBapkluaXRJZMQkMmI4M2Y0YzYtOWQ0ZC00ZT" \
+                 "UxLTk3ODQtY2YwYjhjZjYwNDZlqFN0b3BMb3NzxPOMoklkxAhPLTEyMzQ1N" \
+                 "qZTeW1ib2zEC0FVRFVTRC5GWENNpUxhYmVsxApURVNUX09SREVSqU9yZGVy" \
+                 "U2lkZcQDQnV5qU9yZGVyVHlwZcQEU3RvcKxPcmRlclB1cnBvc2XEBE5vbmW" \
+                 "oUXVhbnRpdHnEBjEwMDAwMKVQcmljZcQBMatUaW1lSW5Gb3JjZcQDREFZqk" \
+                 "V4cGlyZVRpbWXEBE5vbmWpVGltZXN0YW1wxBgxOTcwLTAxLTAxVDAwOjAwO" \
+                 "jAwLjAwMFqmSW5pdElkxCQ1NTI3MGJhMC02Yjg2LTRlMTItYTc4ZS05YzY5" \
+                 "ZDE3ZTEwZWKqVGFrZVByb2ZpdMQBgA=="
 
         body = b64decode(base64)
 
@@ -390,8 +390,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitBracketOrder(
             self.trader_id,
             self.account_id,
-            StrategyId('SCALPER', '01'),
-            PositionId('P-123456'),
+            StrategyId("SCALPER", "01"),
+            PositionId("P-123456"),
             bracket_order,
             uuid4(),
             UNIX_EPOCH)
@@ -411,7 +411,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = ModifyOrder(
             self.trader_id,
             self.account_id,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             Quantity(100000),
             Price(1.00001, 5),
             uuid4(),
@@ -431,8 +431,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = CancelOrder(
             self.trader_id,
             self.account_id,
-            OrderId('O-123456'),
-            ValidString('EXPIRED'),
+            OrderId("O-123456"),
+            ValidString("EXPIRED"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -456,7 +456,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_initialized_events(self):
         # Arrange
         event = OrderInitialized(
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             AUDUSD_FXCM,
             None,
             OrderSide.SELL,
@@ -480,7 +480,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderSubmitted(
             self.account_id,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -495,7 +495,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_invalid_events(self):
         # Arrange
         event = OrderInvalid(
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             "OrderId already exists",
             uuid4(),
             UNIX_EPOCH)
@@ -510,7 +510,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_order_denied_events(self):
         # Arrange
         event = OrderDenied(
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             "Exceeds risk for FX",
             uuid4(),
             UNIX_EPOCH)
@@ -526,9 +526,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderAccepted(
             self.account_id,
-            OrderId('O-123456'),
-            OrderIdBroker('B-123456'),
-            Label('E'),
+            OrderId("O-123456"),
+            OrderIdBroker("B-123456"),
+            Label("E"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -544,9 +544,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderRejected(
             self.account_id,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             UNIX_EPOCH,
-            ValidString('ORDER_ID_INVALID'),
+            ValidString("ORDER_ID_INVALID"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -561,10 +561,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderWorking(
             self.account_id,
-            OrderId('O-123456'),
-            OrderIdBroker('B-123456'),
+            OrderId("O-123456"),
+            OrderIdBroker("B-123456"),
             AUDUSD_FXCM,
-            Label('PT'),
+            Label("PT"),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
@@ -586,10 +586,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderWorking(
             self.account_id,
-            OrderId('O-123456'),
-            OrderIdBroker('BO-123456'),
+            OrderId("O-123456"),
+            OrderIdBroker("BO-123456"),
             AUDUSD_FXCM,
-            Label('PT'),
+            Label("PT"),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
@@ -611,7 +611,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderCancelled(
             self.account_id,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -627,10 +627,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderCancelReject(
             self.account_id,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             UNIX_EPOCH,
-            ValidString('RESPONSE'),
-            ValidString('ORDER_DOES_NOT_EXIST'),
+            ValidString("RESPONSE"),
+            ValidString("ORDER_DOES_NOT_EXIST"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -645,8 +645,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderModified(
             self.account_id,
-            OrderId('O-123456'),
-            OrderIdBroker('BO-123456'),
+            OrderId("O-123456"),
+            OrderIdBroker("BO-123456"),
             Quantity(100000),
             Price(0.80010, 5),
             UNIX_EPOCH,
@@ -664,7 +664,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderExpired(
             self.account_id,
-            OrderId('O-123456'),
+            OrderId("O-123456"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -680,9 +680,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderPartiallyFilled(
             self.account_id,
-            OrderId('O-123456'),
-            ExecutionId('E123456'),
-            PositionIdBroker('T123456'),
+            OrderId("O-123456"),
+            ExecutionId("E123456"),
+            PositionIdBroker("T123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(50000),
@@ -704,9 +704,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderFilled(
             self.account_id,
-            OrderId('O-123456'),
-            ExecutionId('E123456'),
-            PositionIdBroker('T123456'),
+            OrderId("O-123456"),
+            ExecutionId("E123456"),
+            PositionIdBroker("T123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
@@ -726,13 +726,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_account_state_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jKRUeXBlsUFjY291bnRTdGF0ZUV2ZW50oklk2SQyYTk4NjM5ZC1lMzJkLTQ' \
-                 'xMDctYmRmMC1hYTU2ODUwMjFiOGOpVGltZXN0YW1wuDE5NzAtMDEtMDFUMD' \
-                 'A6MDA6MDAuMDAwWqlBY2NvdW50SWS2RlhDTS1EMTIzNDU2LVNJTVVMQVRFR' \
-                 'KhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERh' \
-                 'eaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF' \
-                 '0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hML' \
-                 'BNYXJnaW5DYWxsU3RhdHVzoU4='
+        base64 = "jKRUeXBlsUFjY291bnRTdGF0ZUV2ZW50oklk2SQyYTk4NjM5ZC1lMzJkLTQ" \
+                 "xMDctYmRmMC1hYTU2ODUwMjFiOGOpVGltZXN0YW1wuDE5NzAtMDEtMDFUMD" \
+                 "A6MDA6MDAuMDAwWqlBY2NvdW50SWS2RlhDTS1EMTIzNDU2LVNJTVVMQVRFR" \
+                 "KhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERh" \
+                 "eaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF" \
+                 "0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hML" \
+                 "BNYXJnaW5DYWxsU3RhdHVzoU4="
 
         body = b64decode(base64)
 
@@ -747,10 +747,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_invalid_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'haRUeXBlrE9yZGVySW52YWxpZKJJZNkkNzE0N2UyOTktYjkxNC00ZTE0LTg' \
-                 'yYzItN2I0ZmU5MDMwZThiqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj' \
-                 'AwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1JbnZhbGlkUmVhc29ut09yZGVyS' \
-                 'WQgYWxyZWFkeSBleGlzdHMu'
+        base64 = "haRUeXBlrE9yZGVySW52YWxpZKJJZNkkNzE0N2UyOTktYjkxNC00ZTE0LTg" \
+                 "yYzItN2I0ZmU5MDMwZThiqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj" \
+                 "AwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1JbnZhbGlkUmVhc29ut09yZGVyS" \
+                 "WQgYWxyZWFkeSBleGlzdHMu"
 
         body = b64decode(base64)
 
@@ -759,18 +759,18 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderInvalid))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual('OrderId already exists.', result.invalid_reason)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual("OrderId already exists.", result.invalid_reason)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
     def test_can_deserialize_order_denied_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'haRUeXBlq09yZGVyRGVuaWVkoklk2SQ1ZTgyNzllNC02NGY1LTRhNTAtYjB' \
-                 'iYy1iYzI0NzAyMjlkMTGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MD' \
-                 'AuMDAwWqdPcmRlcklkqE8tMTIzNDU2rERlbmllZFJlYXNvbrRFeGNlZWRzI' \
-                 'HJpc2sgZm9yIEZYLg=='
+        base64 = "haRUeXBlq09yZGVyRGVuaWVkoklk2SQ1ZTgyNzllNC02NGY1LTRhNTAtYjB" \
+                 "iYy1iYzI0NzAyMjlkMTGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MD" \
+                 "AuMDAwWqdPcmRlcklkqE8tMTIzNDU2rERlbmllZFJlYXNvbrRFeGNlZWRzI" \
+                 "HJpc2sgZm9yIEZYLg=="
 
         body = b64decode(base64)
 
@@ -779,19 +779,19 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderDenied))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual('Exceeds risk for FX.', result.denied_reason)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual("Exceeds risk for FX.", result.denied_reason)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
     def test_can_deserialize_order_submitted_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlrk9yZGVyU3VibWl0dGVkoklk2SQxMThhZjIyZC1jMGQwLTQwNDE' \
-                 'tOWQzMS0xYjI4ZWJiYmEzMjCpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MD' \
-                 'A6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNLTAyO' \
-                 'DUxOTA4LURFTU+tU3VibWl0dGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAw' \
-                 'LjAwMFo='
+        base64 = "hqRUeXBlrk9yZGVyU3VibWl0dGVkoklk2SQxMThhZjIyZC1jMGQwLTQwNDE" \
+                 "tOWQzMS0xYjI4ZWJiYmEzMjCpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MD" \
+                 "A6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNLTAyO" \
+                 "DUxOTA4LURFTU+tU3VibWl0dGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAw" \
+                 "LjAwMFo="
 
         body = b64decode(base64)
 
@@ -800,8 +800,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderSubmitted))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.submitted_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -809,11 +809,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_accepted_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iKRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJDIzMWFiNjc2LWM4NzItNGJkNC0' \
-                 '4NmNkLTAwYWMzOGM1Zjc2MqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMD' \
-                 'owMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZ' \
-                 'KhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqVMYWJlbKpURVNU' \
-                 'X09SREVSrEFjY2VwdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = "iKRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJDIzMWFiNjc2LWM4NzItNGJkNC0" \
+                 "4NmNkLTAwYWMzOGM1Zjc2MqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMD" \
+                 "owMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZ" \
+                 "KhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqVMYWJlbKpURVNU" \
+                 "X09SREVSrEFjY2VwdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo="
 
         body = b64decode(base64)
 
@@ -822,10 +822,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
-        self.assertEqual(Label('TEST_ORDER'), result.label)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
+        self.assertEqual(Label("TEST_ORDER"), result.label)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.accepted_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -833,11 +833,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_rejected_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'h6RUeXBlrU9yZGVyUmVqZWN0ZWSiSWTZJDFkMWM2NTRmLTQ2MTQtNDFlZC1' \
-                 'iNDBlLWU0YzRlMzc3MmQ2NqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMD' \
-                 'owMC4wMDBap09yZGVySWSoTy0xMjM0NTapQWNjb3VudElkskZYQ00tMDI4N' \
-                 'TE5MDgtREVNT6xSZWplY3RlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4w' \
-                 'MDBarlJlamVjdGVkUmVhc29urUlOVkFMSURfT1JERVI='
+        base64 = "h6RUeXBlrU9yZGVyUmVqZWN0ZWSiSWTZJDFkMWM2NTRmLTQ2MTQtNDFlZC1" \
+                 "iNDBlLWU0YzRlMzc3MmQ2NqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMD" \
+                 "owMC4wMDBap09yZGVySWSoTy0xMjM0NTapQWNjb3VudElkskZYQ00tMDI4N" \
+                 "TE5MDgtREVNT6xSZWplY3RlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4w" \
+                 "MDBarlJlamVjdGVkUmVhc29urUlOVkFMSURfT1JERVI="
 
         body = b64decode(base64)
 
@@ -846,23 +846,23 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderRejected))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.rejected_time)
-        self.assertEqual('INVALID_ORDER', result.rejected_reason.value)
+        self.assertEqual("INVALID_ORDER", result.rejected_reason.value)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
     def test_can_deserialize_order_working_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkYzUxNzIzMGItMjM3MC00ZTE2LTg' \
-                 '5YTUtZjA2ZTg1YThmZmU1qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj' \
-                 'AwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkq' \
-                 'E8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURV' \
-                 'U0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlpFN0b3C' \
-                 'oUXVhbnRpdHmmMTAwMDAwpVByaWNloTGrVGltZUluRm9yY2WjREFZqkV4cG' \
-                 'lyZVRpbWWkTm9uZatXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwL' \
-                 'jAwMFo='
+        base64 = "j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkYzUxNzIzMGItMjM3MC00ZTE2LTg" \
+                 "5YTUtZjA2ZTg1YThmZmU1qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj" \
+                 "AwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkq" \
+                 "E8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURV" \
+                 "U0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlpFN0b3C" \
+                 "oUXVhbnRpdHmmMTAwMDAwpVByaWNloTGrVGltZUluRm9yY2WjREFZqkV4cG" \
+                 "lyZVRpbWWkTm9uZatXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwL" \
+                 "jAwMFo="
 
         body = b64decode(base64)
 
@@ -871,11 +871,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
-        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
-        self.assertEqual(Label('E'), result.label)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
+        self.assertEqual(Label("E"), result.label)
         self.assertEqual(OrderType.STOP, result.order_type)
         self.assertEqual(Quantity(100000), result.quantity)
         self.assertEqual(Price(1, 1), result.price)
@@ -888,14 +888,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkZGMyNjVmZjAtMWY1Ny00ZmUzLWJ' \
-                 'iY2UtMDZmN2M3YjQ2MjA4qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj' \
-                 'AwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkq' \
-                 'E8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURV' \
-                 'U0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlpFN0b3C' \
-                 'oUXVhbnRpdHmmMTAwMDAwpVByaWNloTGrVGltZUluRm9yY2WjR1REqkV4cG' \
-                 'lyZVRpbWW4MTk3MC0wMS0wMVQwMDowMTowMC4wMDBaq1dvcmtpbmdUaW1lu' \
-                 'DE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = "j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkZGMyNjVmZjAtMWY1Ny00ZmUzLWJ" \
+                 "iY2UtMDZmN2M3YjQ2MjA4qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj" \
+                 "AwLjAwMFqpQWNjb3VudElkskZYQ00tMDI4NTE5MDgtREVNT6dPcmRlcklkq" \
+                 "E8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURV" \
+                 "U0QuRlhDTaVMYWJlbKFFqU9yZGVyU2lkZaNCdXmpT3JkZXJUeXBlpFN0b3C" \
+                 "oUXVhbnRpdHmmMTAwMDAwpVByaWNloTGrVGltZUluRm9yY2WjR1REqkV4cG" \
+                 "lyZVRpbWW4MTk3MC0wMS0wMVQwMDowMTowMC4wMDBaq1dvcmtpbmdUaW1lu" \
+                 "DE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=="
 
         body = b64decode(base64)
 
@@ -904,11 +904,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
-        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
-        self.assertEqual(Label('E'), result.label)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
+        self.assertEqual(Label("E"), result.label)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(OrderType.STOP, result.order_type)
         self.assertEqual(Quantity(100000), result.quantity)
@@ -922,11 +922,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_cancelled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlrk9yZGVyQ2FuY2VsbGVkoklk2SQ0M2EwY2RiNC03YTUyLTRjYWQ' \
-                 'tYjEyMy04MGZiYmYxNDM3MDmpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MD' \
-                 'A6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNLTAyO' \
-                 'DUxOTA4LURFTU+tQ2FuY2VsbGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAw' \
-                 'LjAwMFo='
+        base64 = "hqRUeXBlrk9yZGVyQ2FuY2VsbGVkoklk2SQ0M2EwY2RiNC03YTUyLTRjYWQ" \
+                 "tYjEyMy04MGZiYmYxNDM3MDmpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MD" \
+                 "A6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNLTAyO" \
+                 "DUxOTA4LURFTU+tQ2FuY2VsbGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAw" \
+                 "LjAwMFo="
 
         body = b64decode(base64)
 
@@ -935,8 +935,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelled))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.cancelled_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -944,12 +944,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_cancel_reject_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iKRUeXBlsU9yZGVyQ2FuY2VsUmVqZWN0oklk2SQ5YTFlYzgyZi04NDZkLTQ' \
-                 '3YzctODJlOS1lYzIwNGQ4MzFmOWKpVGltZXN0YW1wuDE5NzAtMDEtMDFUMD' \
-                 'A6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNL' \
-                 'TAyODUxOTA4LURFTU+sUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6' \
-                 'MDAuMDAwWrJSZWplY3RlZFJlc3BvbnNlVG+wUkVKRUNUX1JFU1BPTlNFP65' \
-                 'SZWplY3RlZFJlYXNvbq9PUkRFUl9OT1RfRk9VTkQ='
+        base64 = "iKRUeXBlsU9yZGVyQ2FuY2VsUmVqZWN0oklk2SQ5YTFlYzgyZi04NDZkLTQ" \
+                 "3YzctODJlOS1lYzIwNGQ4MzFmOWKpVGltZXN0YW1wuDE5NzAtMDEtMDFUMD" \
+                 "A6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNL" \
+                 "TAyODUxOTA4LURFTU+sUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6" \
+                 "MDAuMDAwWrJSZWplY3RlZFJlc3BvbnNlVG+wUkVKRUNUX1JFU1BPTlNFP65" \
+                 "SZWplY3RlZFJlYXNvbq9PUkRFUl9OT1RfRk9VTkQ="
 
         body = b64decode(base64)
 
@@ -958,10 +958,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
-        self.assertEqual('REJECT_RESPONSE?', result.rejected_response_to.value)
-        self.assertEqual('ORDER_NOT_FOUND', result.rejected_reason.value)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual("REJECT_RESPONSE?", result.rejected_response_to.value)
+        self.assertEqual("ORDER_NOT_FOUND", result.rejected_reason.value)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.rejected_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -969,12 +969,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_modified_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iaRUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJDFkOGFlMDNkLWExMzYtNDM5ZC0' \
-                 '5ZmRlLTYwNDAzYTU1ZWMzOKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMD' \
-                 'owMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZ' \
-                 'KhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NrBNb2RpZmllZFF1' \
-                 'YW50aXR5pjEwMDAwMK1Nb2RpZmllZFByaWNloTKsTW9kaWZpZWRUaW1luDE' \
-                 '5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = "iaRUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJDFkOGFlMDNkLWExMzYtNDM5ZC0" \
+                 "5ZmRlLTYwNDAzYTU1ZWMzOKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMD" \
+                 "owMC4wMDBaqUFjY291bnRJZLJGWENNLTAyODUxOTA4LURFTU+nT3JkZXJJZ" \
+                 "KhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NrBNb2RpZmllZFF1" \
+                 "YW50aXR5pjEwMDAwMK1Nb2RpZmllZFByaWNloTKsTW9kaWZpZWRUaW1luDE" \
+                 "5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=="
 
         body = b64decode(base64)
 
@@ -983,9 +983,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderModified))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(Price(2, 1), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.modified_time)
         self.assertTrue(isinstance(result.id, UUID))
@@ -994,11 +994,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_expired_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlrE9yZGVyRXhwaXJlZKJJZNkkY2EwOTQ5YTEtNmM0MC00NzVmLWE' \
-                 'wNzQtM2JiYzUzYTI5Y2JkqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj' \
-                 'AwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqlBY2NvdW50SWSyRlhDTS0wMjg1M' \
-                 'TkwOC1ERU1Pq0V4cGlyZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAw' \
-                 'Wg=='
+        base64 = "hqRUeXBlrE9yZGVyRXhwaXJlZKJJZNkkY2EwOTQ5YTEtNmM0MC00NzVmLWE" \
+                 "wNzQtM2JiYzUzYTI5Y2JkqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOj" \
+                 "AwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqlBY2NvdW50SWSyRlhDTS0wMjg1M" \
+                 "TkwOC1ERU1Pq0V4cGlyZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAw" \
+                 "Wg=="
 
         body = b64decode(base64)
 
@@ -1007,8 +1007,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderExpired))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.expired_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -1016,14 +1016,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_partially_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQwOTk3Nzk1Ny0zMzE' \
-                 '3LTQ3ODgtOGYxOC1lMmEyY2I0ZDljYmSpVGltZXN0YW1wuDE5NzAtMDEtMD' \
-                 'FUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp' \
-                 '09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlv' \
-                 'bklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2l' \
-                 'kZaNCdXmuRmlsbGVkUXVhbnRpdHmlNTAwMDCuTGVhdmVzUXVhbnRpdHmlNT' \
-                 'AwMDCsQXZlcmFnZVByaWNlozIuMKhDdXJyZW5jeaNVU0StRXhlY3V0aW9uV' \
-                 'GltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = "jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQwOTk3Nzk1Ny0zMzE" \
+                 "3LTQ3ODgtOGYxOC1lMmEyY2I0ZDljYmSpVGltZXN0YW1wuDE5NzAtMDEtMD" \
+                 "FUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp" \
+                 "09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlv" \
+                 "bklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2l" \
+                 "kZaNCdXmuRmlsbGVkUXVhbnRpdHmlNTAwMDCuTGVhdmVzUXVhbnRpdHmlNT" \
+                 "AwMDCsQXZlcmFnZVByaWNlozIuMKhDdXJyZW5jeaNVU0StRXhlY3V0aW9uV" \
+                 "GltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo="
 
         body = b64decode(base64)
 
@@ -1032,11 +1032,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
-        self.assertEqual(ExecutionId('E123456'), result.execution_id)
-        self.assertEqual(PositionIdBroker('P123456'), result.position_id_broker)
-        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(ExecutionId("E123456"), result.execution_id)
+        self.assertEqual(PositionIdBroker("P123456"), result.position_id_broker)
+        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
         self.assertEqual(840, result.quote_currency)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(50000), result.filled_quantity)
@@ -1049,13 +1049,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_filled_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jaRUeXBlq09yZGVyRmlsbGVkoklk2SRjYTg4NWZhZi1hNjE3LTQ3ZjUtYTU' \
-                 'yZi0yNjljZGFlZmU4NDepVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MD' \
-                 'AuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoT' \
-                 'y0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vy' \
-                 'p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCdXmuRml' \
-                 'sbGVkUXVhbnRpdHmmMTAwMDAwrEF2ZXJhZ2VQcmljZaMyLjCoQ3VycmVuY3' \
-                 'mjVVNErUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = "jaRUeXBlq09yZGVyRmlsbGVkoklk2SRjYTg4NWZhZi1hNjE3LTQ3ZjUtYTU" \
+                 "yZi0yNjljZGFlZmU4NDepVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MD" \
+                 "AuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp09yZGVySWSoT" \
+                 "y0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlvbklkQnJva2Vy" \
+                 "p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCdXmuRml" \
+                 "sbGVkUXVhbnRpdHmmMTAwMDAwrEF2ZXJhZ2VQcmljZaMyLjCoQ3VycmVuY3" \
+                 "mjVVNErUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa"
 
         body = b64decode(base64)
 
@@ -1064,11 +1064,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderFilled))
-        self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(AccountId('FXCM', '02851908', AccountType.DEMO), result.account_id)
-        self.assertEqual(ExecutionId('E123456'), result.execution_id)
-        self.assertEqual(PositionIdBroker('P123456'), result.position_id_broker)
-        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(OrderId("O-123456"), result.order_id)
+        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(ExecutionId("E123456"), result.execution_id)
+        self.assertEqual(PositionIdBroker("P123456"), result.position_id_broker)
+        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
         self.assertEqual(840, result.quote_currency)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)
@@ -1084,7 +1084,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         serializer = BsonInstrumentSerializer()
 
         instrument = Instrument(
-            symbol=Symbol('AUDUSD', Venue('FXCM')),
+            symbol=Symbol("AUDUSD", Venue("FXCM")),
             quote_currency=Currency.USD,
             security_type=SecurityType.FOREX,
             price_precision=5,
@@ -1124,23 +1124,23 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         self.assertEqual(instrument.rollover_interest_buy, deserialized.rollover_interest_buy)
         self.assertEqual(instrument.rollover_interest_sell, deserialized.rollover_interest_sell)
         self.assertEqual(instrument.timestamp, deserialized.timestamp)
-        print('instrument')
+        print("instrument")
         print(b64encode(serialized))
 
     def test_can_deserialize_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'vgEAAAJTeW1ib2wADAAAAEFVRFVTRC5GWENNAAJCcm9rZXJTeW1ib2wACAA' \
-                 'AAEFVRC9VU0QAAlF1b3RlQ3VycmVuY3kABAAAAFVTRAACU2VjdXJpdHlUeX' \
-                 'BlAAYAAABGb3JleAAQUHJpY2VQcmVjaXNpb24ABQAAABBTaXplUHJlY2lza' \
-                 'W9uAAAAAAAQTWluU3RvcERpc3RhbmNlRW50cnkAAAAAABBNaW5TdG9wRGlz' \
-                 'dGFuY2UAAAAAABBNaW5MaW1pdERpc3RhbmNlRW50cnkAAAAAABBNaW5MaW1' \
-                 'pdERpc3RhbmNlAAAAAAACVGlja1NpemUACAAAADAuMDAwMDEAAlJvdW5kTG' \
-                 '90U2l6ZQAFAAAAMTAwMAACTWluVHJhZGVTaXplAAIAAAAxAAJNYXhUcmFkZ' \
-                 'VNpemUACQAAADUwMDAwMDAwAAJSb2xsb3ZlckludGVyZXN0QnV5AAIAAAAx' \
-                 'AAJSb2xsb3ZlckludGVyZXN0U2VsbAACAAAAMQACVGltZXN0YW1wABkAAAA' \
-                 'xOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFoAAkJhc2VDdXJyZW5jeQAEAAAAQV' \
-                 'VEAAA='
+        base64 = "vgEAAAJTeW1ib2wADAAAAEFVRFVTRC5GWENNAAJCcm9rZXJTeW1ib2wACAA" \
+                 "AAEFVRC9VU0QAAlF1b3RlQ3VycmVuY3kABAAAAFVTRAACU2VjdXJpdHlUeX" \
+                 "BlAAYAAABGb3JleAAQUHJpY2VQcmVjaXNpb24ABQAAABBTaXplUHJlY2lza" \
+                 "W9uAAAAAAAQTWluU3RvcERpc3RhbmNlRW50cnkAAAAAABBNaW5TdG9wRGlz" \
+                 "dGFuY2UAAAAAABBNaW5MaW1pdERpc3RhbmNlRW50cnkAAAAAABBNaW5MaW1" \
+                 "pdERpc3RhbmNlAAAAAAACVGlja1NpemUACAAAADAuMDAwMDEAAlJvdW5kTG" \
+                 "90U2l6ZQAFAAAAMTAwMAACTWluVHJhZGVTaXplAAIAAAAxAAJNYXhUcmFkZ" \
+                 "VNpemUACQAAADUwMDAwMDAwAAJSb2xsb3ZlckludGVyZXN0QnV5AAIAAAAx" \
+                 "AAJSb2xsb3ZlckludGVyZXN0U2VsbAACAAAAMQACVGltZXN0YW1wABkAAAA" \
+                 "xOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFoAAkJhc2VDdXJyZW5jeQAEAAAAQV" \
+                 "VEAAA="
 
         body = b64decode(base64)
 
@@ -1161,7 +1161,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         # Arrange
         client_id = ClientId("Trader-001")
         timestamp = UNIX_EPOCH
-        authentication = SessionId.py_create(client_id, timestamp, 'None')
+        authentication = SessionId.py_create(client_id, timestamp, "None")
 
         request = Connect(
             ClientId("Trader-001"),
@@ -1332,12 +1332,12 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_data_responses(self):
         # Arrange
         data = b'\x01 \x00'
-        data_type = 'NothingUseful'
-        data_encoding = 'BSON'
+        data_type = "NothingUseful"
+        data_encoding = "BSON"
 
         response = DataResponse(
             data=data,
-            data_type='NothingUseful',
+            data_type="NothingUseful",
             data_encoding=data_encoding,
             correlation_id=uuid4(),
             response_id=uuid4(),
