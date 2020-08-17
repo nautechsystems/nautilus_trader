@@ -74,7 +74,7 @@ cdef class TradingNode:
             str config_path='config.json',
             list strategies=None):
         """
-        Initializes a new instance of the TradingNode class.
+        Initialize a new instance of the TradingNode class.
 
         :param config_path: The path to the config file.
         :param strategies: The list of strategies for the internal Trader.

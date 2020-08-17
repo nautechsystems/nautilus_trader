@@ -36,7 +36,7 @@ cdef class TimeEvent(Event):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the TimeEvent class.
+        Initialize a new instance of the TimeEvent class.
 
         :param event_id: The event label.
         :param event_id: The event identifier.
@@ -207,7 +207,7 @@ cdef class Timer:
                  datetime start_time not None,
                  datetime stop_time=None):
         """
-        Initializes a new instance of the Timer class.
+        Initialize a new instance of the Timer class.
 
         :param name: The name for the timer.
         :param callback: The function to call at the next time.
@@ -302,7 +302,7 @@ cdef class TestTimer(Timer):
                  datetime start_time not None,
                  datetime stop_time=None):
         """
-        Initializes a new instance of the TestTimer class.
+        Initialize a new instance of the TestTimer class.
 
         :param name: The name for the timer.
         :param interval: The time interval for the timer (not negative).
@@ -358,7 +358,7 @@ cdef class Clock:
 
     def __init__(self, UUIDFactory uuid_factory not None):
         """
-        Initializes a new instance of the Clock class.
+        Initialize a new instance of the Clock class.
 
         :param uuid_factory: The uuid factory for the clocks time events.
         """
@@ -589,7 +589,7 @@ cdef class TestClock(Clock):
 
     def __init__(self, datetime initial_time not None=_UNIX_EPOCH):
         """
-        Initializes a new instance of the TestClock class.
+        Initialize a new instance of the TestClock class.
 
         :param initial_time: The initial time for the clock.
         """

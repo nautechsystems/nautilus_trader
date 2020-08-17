@@ -72,7 +72,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  TestUUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the BacktestExecClient class.
+        Initialize a new instance of the BacktestExecClient class.
 
         :param exec_engine: The execution engine for the backtest.
         :param instruments: The instruments needed for the backtest.

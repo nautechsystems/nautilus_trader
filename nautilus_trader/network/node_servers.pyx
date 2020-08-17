@@ -47,7 +47,7 @@ cdef class ServerNode:
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the ServerNode class.
+        Initialize a new instance of the ServerNode class.
 
         :param server_id: The server identifier.
         :param compressor: The message compressor.
@@ -96,7 +96,7 @@ cdef class MessageServer(ServerNode):
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the MessageServer class.
+        Initialize a new instance of the MessageServer class.
 
         :param server_id: The server identifier.
         :param recv_port: The server receive port.
@@ -411,7 +411,7 @@ cdef class MessagePublisher(ServerNode):
                  UUIDFactory uuid_factory not None,
                  LoggerAdapter logger not None):
         """
-        Initializes a new instance of the MessagePublisher class.
+        Initialize a new instance of the MessagePublisher class.
 
         :param server_id: The server identifier.
         :param port: The server port.

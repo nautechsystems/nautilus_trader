@@ -93,7 +93,7 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackDictionarySerializer class.
+        Initialize a new instance of the MsgPackDictionarySerializer class.
         """
         super().__init__()
 
@@ -127,7 +127,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackOrderSerializer class.
+        Initialize a new instance of the MsgPackOrderSerializer class.
         """
         super().__init__()
 
@@ -194,7 +194,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackCommandSerializer class.
+        Initialize a new instance of the MsgPackCommandSerializer class.
         """
         super().__init__()
 
@@ -321,7 +321,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackEventSerializer class.
+        Initialize a new instance of the MsgPackEventSerializer class.
         """
         super().__init__()
 
@@ -618,7 +618,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackRequestSerializer class.
+        Initialize a new instance of the MsgPackRequestSerializer class.
         """
         super().__init__()
 
@@ -697,7 +697,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackResponseSerializer class.
+        Initialize a new instance of the MsgPackResponseSerializer class.
         """
         super().__init__()
 
@@ -809,7 +809,7 @@ cdef class MsgPackLogSerializer(LogSerializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the MsgPackLogSerializer class.
+        Initialize a new instance of the MsgPackLogSerializer class.
         """
         super().__init__()
 

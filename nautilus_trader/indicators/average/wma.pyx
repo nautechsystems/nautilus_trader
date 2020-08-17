@@ -30,7 +30,7 @@ cdef class WeightedMovingAverage(MovingAverage):
                  int period,
                  weights=None):
         """
-        Initializes a new instance of the SimpleMovingAverage class.
+        Initialize a new instance of the SimpleMovingAverage class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param weights: The weights for the moving average calculation

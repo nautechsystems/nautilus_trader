@@ -32,7 +32,7 @@ cdef class Connect(Request):
                  UUID request_id not None,
                  datetime request_timestamp not None):
         """
-        Initializes a new instance of the Connect class.
+        Initialize a new instance of the Connect class.
 
         :param client_id: The client identifier.
         :param authentication: The client authentication.
@@ -58,7 +58,7 @@ cdef class Connected(Response):
                  UUID response_id not None,
                  datetime response_timestamp not None):
         """
-        Initializes a new instance of the Connected class.
+        Initialize a new instance of the Connected class.
 
         :param message: The connected message.
         :param server_id: The service name connected to.
@@ -85,7 +85,7 @@ cdef class Disconnect(Request):
                  UUID request_id not None,
                  datetime request_timestamp not None):
         """
-        Initializes a new instance of the Disconnect class.
+        Initialize a new instance of the Disconnect class.
 
         :param client_id: The client identifier.
         :param session_id: The session to disconnect from.
@@ -111,7 +111,7 @@ cdef class Disconnected(Response):
                  UUID response_id not None,
                  datetime response_timestamp not None):
         """
-        Initializes a new instance of the Disconnected class.
+        Initialize a new instance of the Disconnected class.
 
         :param message: The disconnected message.
         :param server_id: The server identifier to disconnected from.
@@ -138,7 +138,7 @@ cdef class MessageReceived(Response):
                  UUID response_id not None,
                  datetime response_timestamp not None):
         """
-        Initializes a new instance of the MessageReceived class.
+        Initialize a new instance of the MessageReceived class.
 
         :param received_type: The received type.
         :param correlation_id: The correlation identifier.
@@ -173,7 +173,7 @@ cdef class MessageRejected(Response):
                  UUID response_id not None,
                  datetime response_timestamp not None):
         """
-        Initializes a new instance of the MessageRejected class.
+        Initialize a new instance of the MessageRejected class.
 
         :param rejected_message: The rejected message.
         :param correlation_id: The correlation identifier.
@@ -207,7 +207,7 @@ cdef class QueryFailure(Response):
                  UUID response_id not None,
                  datetime response_timestamp not None):
         """
-        Initializes a new instance of the QueryFailure class.
+        Initialize a new instance of the QueryFailure class.
 
         :param failure_message: The failure message.
         :param correlation_id: The correlation identifier.
@@ -240,7 +240,7 @@ cdef class DataRequest(Request):
                  UUID request_id not None,
                  datetime request_timestamp not None):
         """
-        Initializes a new instance of the DataRequest class.
+        Initialize a new instance of the DataRequest class.
 
         :param query: The data query.
         :param request_id: The request identifier.
@@ -264,7 +264,7 @@ cdef class DataResponse(Response):
                  UUID response_id not None,
                  datetime response_timestamp not None):
         """
-        Initializes a new instance of the DataResponse class.
+        Initialize a new instance of the DataResponse class.
 
         :param data: The response data.
         :param data_encoding: The encoding for the data.

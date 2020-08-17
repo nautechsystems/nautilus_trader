@@ -30,7 +30,7 @@ cdef class RelativeStrengthIndex(Indicator):
                  int period,
                  ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL):
         """
-        Initializes a new instance of the RelativeStrengthIndex class.
+        Initialize a new instance of the RelativeStrengthIndex class.
 
         :param ma_type: The moving average type for average gain/loss.
         :param period: The rolling window period for the indicator (> 0).

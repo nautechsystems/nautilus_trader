@@ -28,7 +28,7 @@ cdef class Swings(Indicator):
 
     def __init__(self, int period, bint check_inputs=False):
         """
-        Initializes a new instance of the Swings class.
+        Initialize a new instance of the Swings class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param check_inputs: The flag indicating whether the input values should be checked.

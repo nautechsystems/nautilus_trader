@@ -42,7 +42,7 @@ cdef class OrderFactory:
                  UUIDFactory uuid_factory not None=LiveUUIDFactory(),
                  int initial_count=0):
         """
-        Initializes a new instance of the OrderFactory class.
+        Initialize a new instance of the OrderFactory class.
 
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.

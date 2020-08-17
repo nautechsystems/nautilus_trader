@@ -28,7 +28,7 @@ cdef class Decimal:
 
     def __init__(self, double value=0.0, int precision=0):
         """
-        Initializes a new instance of the Decimal class.
+        Initialize a new instance of the Decimal class.
 
         :param value: The value of the decimal.
         :param precision: The precision of the decimal (>= 0).

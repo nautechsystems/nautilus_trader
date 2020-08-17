@@ -29,7 +29,7 @@ cdef class Position:
 
     def __init__(self, PositionId position_id not None, OrderFillEvent event not None):
         """
-        Initializes a new instance of the Position class.
+        Initialize a new instance of the Position class.
 
         :param position_id: The positions identifier.
         :param event: The order fill event which opened the position.

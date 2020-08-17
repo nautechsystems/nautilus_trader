@@ -400,7 +400,7 @@ cdef class DataMapper:
 
     def __init__(self):
         """
-        Initializes a new instance of the DataMapper class.
+        Initialize a new instance of the DataMapper class.
         """
         self.instrument_serializer = BsonInstrumentSerializer()
 

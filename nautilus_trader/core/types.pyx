@@ -23,7 +23,7 @@ cdef class ValidString:
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the ValidString class.
+        Initialize a new instance of the ValidString class.
 
         :param value: The value of the string.
         """
@@ -131,7 +131,7 @@ cdef class Label(ValidString):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the Label class.
+        Initialize a new instance of the Label class.
 
         :param value: The label identifier value.
         :raises ValueError: If the value is not a valid string.
@@ -146,7 +146,7 @@ cdef class Identifier(ValidString):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the Identifier class.
+        Initialize a new instance of the Identifier class.
 
         :param value: The value of the identifier.
         """

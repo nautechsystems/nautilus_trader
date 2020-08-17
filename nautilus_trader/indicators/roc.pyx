@@ -32,7 +32,7 @@ cdef class RateOfChange(Indicator):
                  bint use_log=False,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the RateOfChange class.
+        Initialize a new instance of the RateOfChange class.
 
         :param period: The period for the indicator (> 1).
         :param use_log: Use log returns for value calculation.

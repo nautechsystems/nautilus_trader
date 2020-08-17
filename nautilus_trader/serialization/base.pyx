@@ -27,7 +27,7 @@ cdef class Serializer:
 
     def __init__(self):
         """
-        Initializes a new instance of the Serializer class.
+        Initialize a new instance of the Serializer class.
         """
         self._re_camel_to_snake = re.compile(r'(?<!^)(?=[A-Z])')
 
@@ -53,7 +53,7 @@ cdef class DictionarySerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the DictionarySerializer class.
+        Initialize a new instance of the DictionarySerializer class.
         """
         super().__init__()
 
@@ -85,7 +85,7 @@ cdef class DataSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the DataSerializer class.
+        Initialize a new instance of the DataSerializer class.
         """
         super().__init__()
 
@@ -117,7 +117,7 @@ cdef class InstrumentSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the InstrumentSerializer class.
+        Initialize a new instance of the InstrumentSerializer class.
         """
         super().__init__()
 
@@ -149,7 +149,7 @@ cdef class OrderSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the OrderSerializer class.
+        Initialize a new instance of the OrderSerializer class.
         """
         super().__init__()
 
@@ -181,7 +181,7 @@ cdef class CommandSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the CommandSerializer class.
+        Initialize a new instance of the CommandSerializer class.
         """
         super().__init__()
 
@@ -213,7 +213,7 @@ cdef class EventSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the EventSerializer class.
+        Initialize a new instance of the EventSerializer class.
         """
         super().__init__()
 
@@ -245,7 +245,7 @@ cdef class RequestSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the RequestSerializer class.
+        Initialize a new instance of the RequestSerializer class.
         """
         super().__init__()
 
@@ -277,7 +277,7 @@ cdef class ResponseSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the ResponseSerializer class.
+        Initialize a new instance of the ResponseSerializer class.
         """
         super().__init__()
 
@@ -309,7 +309,7 @@ cdef class LogSerializer(Serializer):
 
     def __init__(self):
         """
-        Initializes a new instance of the LogSerializer class.
+        Initialize a new instance of the LogSerializer class.
         """
         super().__init__()
 

@@ -49,7 +49,7 @@ cdef class AccountStateEvent(Event):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the AccountStateEvent class.
+        Initialize a new instance of the AccountStateEvent class.
 
         :param account_id: The account_id.
         :param currency: The currency for the account.
@@ -110,7 +110,7 @@ cdef class OrderEvent(Event):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderEvent base class.
+        Initialize a new instance of the OrderEvent base class.
 
         :param order_id: The event order_id.
         :param event_id: The event identifier.
@@ -157,7 +157,7 @@ cdef class OrderFillEvent(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderFillEvent class.
+        Initialize a new instance of the OrderFillEvent class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -206,7 +206,7 @@ cdef class OrderInitialized(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderInitialized class.
+        Initialize a new instance of the OrderInitialized class.
 
         :param order_id: The event order_id.
         :param symbol: The event order symbol.
@@ -248,7 +248,7 @@ cdef class OrderSubmitted(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderSubmitted class.
+        Initialize a new instance of the OrderSubmitted class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -285,7 +285,7 @@ cdef class OrderInvalid(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderInvalid class.
+        Initialize a new instance of the OrderInvalid class.
 
         :param order_id: The event order_id.
         :param invalid_reason: The event invalid reason.
@@ -320,7 +320,7 @@ cdef class OrderDenied(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderDenied class.
+        Initialize a new instance of the OrderDenied class.
 
         :param order_id: The event order_id.
         :param denied_reason: The event denied reason.
@@ -357,7 +357,7 @@ cdef class OrderRejected(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderRejected class.
+        Initialize a new instance of the OrderRejected class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -400,7 +400,7 @@ cdef class OrderAccepted(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderAccepted class.
+        Initialize a new instance of the OrderAccepted class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -452,7 +452,7 @@ cdef class OrderWorking(OrderEvent):
                  datetime event_timestamp not None,
                  datetime expire_time=None):
         """
-        Initializes a new instance of the OrderWorking class.
+        Initialize a new instance of the OrderWorking class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -519,7 +519,7 @@ cdef class OrderCancelReject(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderCancelReject class.
+        Initialize a new instance of the OrderCancelReject class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -563,7 +563,7 @@ cdef class OrderCancelled(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderCancelled class.
+        Initialize a new instance of the OrderCancelled class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -604,7 +604,7 @@ cdef class OrderModified(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderModified class.
+        Initialize a new instance of the OrderModified class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -650,7 +650,7 @@ cdef class OrderExpired(OrderEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderExpired class.
+        Initialize a new instance of the OrderExpired class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -696,7 +696,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderPartiallyFilled class.
+        Initialize a new instance of the OrderPartiallyFilled class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -762,7 +762,7 @@ cdef class OrderFilled(OrderFillEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the OrderFilled class.
+        Initialize a new instance of the OrderFilled class.
 
         :param account_id: The event account_id.
         :param order_id: The event order_id.
@@ -819,7 +819,7 @@ cdef class PositionEvent(Event):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the PositionEvent base class.
+        Initialize a new instance of the PositionEvent base class.
 
         :param position: The event position.
         :param strategy_id: The strategy_id associated with the position.
@@ -854,7 +854,7 @@ cdef class PositionOpened(PositionEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the PositionOpened class.
+        Initialize a new instance of the PositionOpened class.
 
         :param position: The event position.
         :param strategy_id: The strategy_id associated with the position.
@@ -894,7 +894,7 @@ cdef class PositionModified(PositionEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the PositionModified class.
+        Initialize a new instance of the PositionModified class.
 
         :param position: The event position.
         :param strategy_id: The strategy_id associated with the position.
@@ -940,7 +940,7 @@ cdef class PositionClosed(PositionEvent):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initializes a new instance of the PositionClosed class.
+        Initialize a new instance of the PositionClosed class.
 
         :param position: The event position.
         :param strategy_id: The strategy_id associated with the position.

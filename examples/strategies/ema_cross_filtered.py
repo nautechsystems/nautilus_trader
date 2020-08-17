@@ -37,7 +37,7 @@ DONE_FOR_DAY = 'DONE-FOR-DAY'
 
 
 class EMACrossFiltered(TradingStrategy):
-    """"
+    """
     A simple moving average cross example strategy. When the fast EMA crosses
     the slow EMA then a STOP entry bracket order is placed for that direction
     with a trailing stop and profit target at 1R risk.
@@ -55,7 +55,7 @@ class EMACrossFiltered(TradingStrategy):
                  news_impacts: list=[],
                  extra_id_tag: str=''):
         """
-        Initializes a new instance of the EMACrossPy class.
+        Initialize a new instance of the EMACrossPy class.
 
         :param symbol: The symbol for the strategy.
         :param bar_spec: The bar specification for the strategy.
@@ -107,7 +107,7 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_start(self):
         """
-        This method is called when self.start() is called, and after internal start logic.
+        Actions to be performed on strategy start.
         """
         # Put custom code to be run on strategy start here (or pass)
         instrument = self.get_instrument(self.symbol)
@@ -149,23 +149,19 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_quote_tick(self, tick: QuoteTick):
         """
-        This method is called whenever a Tick is received by the strategy, and
-        after the Tick has been processed by the base class.
-        The received Tick object is then passed into this method.
+        Actions to be performed when the strategy is running and receives a quote tick.
 
-        :param tick: The received tick.
+        :param tick: The quote tick received.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
-        This method is called whenever the strategy receives a Bar, and after the
-        Bar has been processed by the base class.
-        The received BarType and Bar objects are then passed into this method.
+        Actions to be performed when the strategy is running and receives a bar.
 
-        :param bar_type: The received bar type.
-        :param bar: The received bar.
+        :param bar_type: The bar type received.
+        :param bar: The bar received.
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging
 
@@ -222,20 +218,17 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_data(self, data):
         """
-        This method is called whenever the strategy receives a data update.
+        Actions to be performed when the strategy is running and receives a data object.
 
-        :param data: The received data.
+        :param data: The data object received.
         """
-        # Put custom code for data handling here (or pass)
         pass
 
     def on_event(self, event):
         """
-        This method is called whenever the strategy receives an Event object,
-        and after the event has been processed by the TradingStrategy base class.
-        These events could be AccountEvent, OrderEvent, PositionEvent, TimeEvent.
+        Actions to be performed when the strategy is running and receives an event.
 
-        :param event: The received event.
+        :param event: The event received.
         """
         if isinstance(event, TimeEvent):
             if event.name.startswith(DONE_FOR_DAY):
@@ -254,17 +247,14 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_stop(self):
         """
-        This method is called when self.stop() is called and after internal
-        stopping logic.
+        Actions to be performed when the strategy is stopped.
         """
         # Put custom code to be run on strategy stop here (or pass)
         pass
 
     def on_reset(self):
         """
-        This method is called when self.reset() is called, and after internal
-        reset logic such as clearing the internally held bars, ticks and resetting
-        all indicators.
+        Actions to be performed when the strategy is reset.
         """
         # Trading session times
         self.session_next_start = None
@@ -278,17 +268,29 @@ class EMACrossFiltered(TradingStrategy):
         self.trading_pause_end = None
 
     def on_save(self) -> {}:
-        # Put custom state to be saved here (or return empty dictionary)
+        """
+        Actions to be performed when the strategy is saved.
+
+        Create and return a state dictionary of values to be saved.
+
+        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        the returned state dictionary.
+        """
         return {}
 
     def on_load(self, state: {}):
-        # Put custom state to be loaded here (or pass)
+        """
+        Actions to be performed when the strategy is loaded.
+
+        Saved state values will be contained in the give state dictionary.
+        """
         pass
 
     def on_dispose(self):
         """
-        This method is called when self.dispose() is called. Dispose of any
-        resources that have been used by the strategy here.
+        Actions to be performed when the strategy is disposed.
+
+        Cleanup any resources used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)

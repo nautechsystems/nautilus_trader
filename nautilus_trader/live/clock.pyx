@@ -35,7 +35,7 @@ cdef class LiveTimer(Timer):
                  datetime start_time not None,
                  datetime stop_time=None):
         """
-        Initializes a new instance of the LiveTimer class.
+        Initialize a new instance of the LiveTimer class.
 
         :param name: The name for the timer.
         :param callback: The function to call at the next time.
@@ -82,7 +82,7 @@ cdef class LiveClock(Clock):
 
     def __init__(self):
         """
-        Initializes a new instance of the LiveClock class.
+        Initialize a new instance of the LiveClock class.
         """
         super().__init__(LiveUUIDFactory())
 

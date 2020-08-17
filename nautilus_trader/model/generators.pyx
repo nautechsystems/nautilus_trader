@@ -32,7 +32,7 @@ cdef class IdentifierGenerator:
                  Clock clock not None,
                  int initial_count=0):
         """
-        Initializes a new instance of the IdentifierGenerator class.
+        Initialize a new instance of the IdentifierGenerator class.
 
         :param prefix: The prefix for each generated identifier.
         :param id_tag_trader: The identifier tag for the trader.
@@ -107,7 +107,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
                  Clock clock not None=LiveClock(),
                  int initial_count=0):
         """
-        Initializes a new instance of the OrderIdGenerator class.
+        Initialize a new instance of the OrderIdGenerator class.
 
         :param id_tag_trader: The order_id tag for the trader.
         :param id_tag_strategy: The order_id tag for the strategy.
@@ -141,7 +141,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
                  Clock clock not None=LiveClock(),
                  int initial_count=0):
         """
-        Initializes a new instance of the PositionIdGenerator class.
+        Initialize a new instance of the PositionIdGenerator class.
 
         :param id_tag_trader: The position_id tag for the trader.
         :param id_tag_strategy: The position_id tag for the strategy.

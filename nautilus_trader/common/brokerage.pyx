@@ -35,7 +35,7 @@ cdef class CommissionCalculator:
                  double default_rate_bp=0.20,
                  Money minimum=Money(2.00, Currency.USD)):
         """
-        Initializes a new instance of the CommissionCalculator class.
+        Initialize a new instance of the CommissionCalculator class.
 
         Note: Commission rates are expressed as basis points of notional transaction value.
 
@@ -109,7 +109,7 @@ cdef class RolloverInterestCalculator:
 
     def __init__(self, str short_term_interest_csv_path not None='default'):
         """
-        Initializes a new instance of the RolloverInterestCalculator class.
+        Initialize a new instance of the RolloverInterestCalculator class.
 
         :param short_term_interest_csv_path: The path to the short term interest rate data csv.
         """

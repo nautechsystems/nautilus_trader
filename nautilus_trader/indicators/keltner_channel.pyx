@@ -39,7 +39,7 @@ cdef class KeltnerChannel(Indicator):
                  double atr_floor=0.0,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the KeltnerChannel class.
+        Initialize a new instance of the KeltnerChannel class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param k_multiplier: The multiplier for the ATR (> 0).

@@ -54,7 +54,7 @@ cdef class BacktestEngine:
                  BacktestConfig config=None,
                  FillModel fill_model=None):
         """
-        Initializes a new instance of the BacktestEngine class.
+        Initialize a new instance of the BacktestEngine class.
 
         :param data: The data for the backtest engine.
         :param strategies: The initial strategies for the backtest engine.

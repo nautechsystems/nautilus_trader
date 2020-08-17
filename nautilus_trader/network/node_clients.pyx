@@ -48,7 +48,7 @@ cdef class ClientNode:
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the ClientNode class.
+        Initialize a new instance of the ClientNode class.
 
         :param client_id: The client identifier.
         :param compressor: The message compressor.
@@ -123,7 +123,7 @@ cdef class MessageClient(ClientNode):
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the MessageClient class.
+        Initialize a new instance of the MessageClient class.
 
         :param client_id: The client identifier for the worker.
         :param server_host: The server host address.
@@ -405,7 +405,7 @@ cdef class MessageSubscriber(ClientNode):
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger):
         """
-        Initializes a new instance of the MessageSubscriber class.
+        Initialize a new instance of the MessageSubscriber class.
 
         :param client_id: The client identifier for the worker.
         :param host: The service host address.

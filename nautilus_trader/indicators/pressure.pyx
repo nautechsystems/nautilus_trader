@@ -34,7 +34,7 @@ cdef class Pressure(Indicator):
                  double atr_floor=0.0,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the Pressure class.
+        Initialize a new instance of the Pressure class.
 
         :param period: The period for the indicator (> 0).
         :param ma_type: The moving average type for the calculations.

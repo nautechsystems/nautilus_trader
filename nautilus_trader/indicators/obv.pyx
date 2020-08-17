@@ -27,7 +27,7 @@ cdef class OnBalanceVolume(Indicator):
 
     def __init__(self, int period=0, bint check_inputs=False):
         """
-        Initializes a new instance of the OnBalanceVolume class.
+        Initialize a new instance of the OnBalanceVolume class.
 
         :param period: The period for the indicator, zero indicates no window (>= 0).
         :param check_inputs: The flag indicating whether the input values should be checked.

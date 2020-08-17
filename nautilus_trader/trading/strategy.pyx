@@ -65,7 +65,7 @@ cdef class TradingStrategy:
                  Logger logger=None,
                  bint reraise_exceptions=True):
         """
-        Initializes a new instance of the TradingStrategy class.
+        Initialize a new instance of the TradingStrategy class.
 
         :param order_id_tag: The order_id tag for the strategy (must be unique at trader level).
         :param flatten_on_stop: If all strategy positions should be flattened on stop.
@@ -120,15 +120,15 @@ cdef class TradingStrategy:
         # Data
         self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
-        self._quote_ticks = {}                  # type: {Symbol, [QuoteTick]}
-        self._trade_ticks = {}                  # type: {Symbol, [TradeTick]}
-        self._bars = {}                         # type: {BarType, [Bar]}
-        self._indicators = []                   # type: [Indicator]
-        self._indicator_updaters = {}           # type: {Indicator, [IndicatorUpdater]}
+        self._quote_ticks = {}         # type: {Symbol, [QuoteTick]}
+        self._trade_ticks = {}         # type: {Symbol, [TradeTick]}
+        self._bars = {}                # type: {BarType, [Bar]}
+        self._indicators = []          # type: [Indicator]
+        self._indicator_updaters = {}  # type: {Indicator, [IndicatorUpdater]}
 
         # Registerable modules
-        self._data_client = None                # Initialized when registered with the data client
-        self._exec_engine = None                # Initialized when registered with the execution engine
+        self._data_client = None  # Initialized when registered with the data client
+        self._exec_engine = None  # Initialized when registered with the execution engine
 
         self.is_running = False
 
@@ -189,81 +189,89 @@ cdef class TradingStrategy:
 
     cpdef void on_start(self) except *:
         """
-        Called when the strategy is started.
+        Actions to be performed on strategy start.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
-        Called when a quote tick is received by the strategy.
+        Actions to be performed when the strategy is running and receives a quote tick.
 
         :param tick: The quote tick received.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:
         """
-        Called when a trade tick is received by the strategy.
+        Actions to be performed when the strategy is running and receives a trade tick.
 
         :param tick: The trade tick received.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
-        Called when a bar is received by the strategy.
+        Actions to be performed when the strategy is running and receives a bar.
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_data(self, object data) except *:
         """
-        Called when an instrument update is received by the strategy.
+        Actions to be performed when the strategy is running and receives a data object.
 
         :param data: The data object received.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_event(self, Event event) except *:
         """
-        Called when an event is received by the strategy.
+        Actions to be performed when the strategy is running and receives an event.
 
         :param event: The event received.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_stop(self) except *:
         """
-        Called when the strategy is stopped.
+        Actions to be performed when the strategy is stopped.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_reset(self) except *:
         """
-        Called when the strategy is reset.
+        Actions to be performed when the strategy is reset.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef dict on_save(self):
         """
-        Called when the strategy is saved.
-        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys.
+        Actions to be performed when the strategy is saved.
+
+        Create and return a state dictionary of values to be saved.
+
+        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        the returned state dictionary.
         """
-        return {}  # Override in implementation
+        return {}  # Optionally override in implementation
 
     cpdef void on_load(self, dict state) except *:
         """
-        Called when the strategy is loaded.
+        Actions to be performed when the strategy is loaded.
+
+        Saved state values will be contained in the give state dictionary.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
     cpdef void on_dispose(self) except *:
         """
-        Called when the strategy is disposed.
+        Actions to be performed when the strategy is disposed.
+
+        Cleanup any resources used by the strategy here.
         """
-        pass  # Override in implementation
+        pass  # Optionally override in implementation
 
 
 # -- REGISTRATION METHODS --------------------------------------------------------------------------
@@ -308,7 +316,7 @@ cdef class TradingStrategy:
             update_method: callable=None) except *:
         """
         Register the given indicator with the strategy to receive data of the
-        given data_source (can be Symbol for ticks or BarType).
+        given data_source (can be a <Symbol> for ticks or a <BarType>).
 
         :param data_source: The data source for updates.
         :param indicator: The indicator to register.
@@ -337,9 +345,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """"
-        System method. Update the internal quote ticks with the given tick, update
-        indicators for the symbol, then call on_quote_tick() and pass the tick
-        (if the strategy is running).
+        System method. Handle the given quote tick.
 
         :param tick: The quote tick received.
         :param is_historical: The flag indicating whether the tick is historical (won't be passed to on_tick).
@@ -395,8 +401,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
         """"
-        System method. Update the internal trade ticks with the given tick, 
-        then call on_trade_tick() and pass the tick (if the strategy is running).
+        System method. Handle the given trade tick.
 
         :param tick: The trade tick received.
         :param is_historical: The flag indicating whether the tick is historical (won't be passed to on_tick).
@@ -445,9 +450,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """"
-        System method. Update the internal bars with the given bar, update
-        indicators for the bar type, then call on_bar() and pass the arguments
-        (if the strategy is running).
+        System method. Handle the given bar type and bar.
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
@@ -506,7 +509,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_data(self, object data) except *:
         """
-        System method. Handle the data object.
+        System method. Handle the given data object.
         """
         Condition.not_none(data, 'data')
 
@@ -520,7 +523,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_event(self, Event event) except *:
         """
-        Call on_event() and passes the event (if the strategy is running).
+        System method. Hand the given event.
 
         :param event: The event received.
         """
@@ -1374,14 +1377,6 @@ cdef class TradingStrategy:
 
         return {**state, **user_state}
 
-    cpdef void saved(self, datetime timestamp) except *:
-        """
-        System Method: Add a SAVED state to the state log.
-
-        :param timestamp: The timestamp when the strategy was saved.
-        """
-        Condition.not_none(timestamp, 'timestamp')
-
     cpdef void load(self, dict state) except *:
         """
         Load the strategy state from the give state dictionary.
@@ -1409,7 +1404,7 @@ cdef class TradingStrategy:
 
     cpdef void dispose(self) except *:
         """
-        Dispose of the strategy to release system resources, then call on_dispose().
+        Dispose of the strategy to release system resources.
         """
         self.log.debug(f"Disposing...")
 

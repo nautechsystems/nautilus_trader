@@ -36,7 +36,7 @@ cdef class Quantity(Decimal):
 
     def __init__(self, double value=0, int precision=0):
         """
-        Initializes a new instance of the Quantity class.
+        Initialize a new instance of the Quantity class.
 
         :param value: The value of the quantity (>= 0).
         :param precision: The decimal precision of the quantity (>= 0).
@@ -120,7 +120,7 @@ cdef class Price(Decimal):
 
     def __init__(self, double value, int precision):
         """
-        Initializes a new instance of the Price class.
+        Initialize a new instance of the Price class.
 
         :param value: The value of the price (>= 0).
         :param precision: The decimal precision of the price (>= 0).
@@ -176,7 +176,7 @@ cdef class Money(Decimal):
 
     def __init__(self, double value, Currency currency):
         """
-        Initializes a new instance of the Money class.
+        Initialize a new instance of the Money class.
         Note: The value is rounded to 2 decimal places of precision.
 
         :param value: The value of the money.

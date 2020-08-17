@@ -24,7 +24,7 @@ cdef class LiveUUIDFactory(UUIDFactory):
 
     def __init__(self):
         """
-        Initializes a new instance of the LiveUUIDFactory class.
+        Initialize a new instance of the LiveUUIDFactory class.
         """
         super().__init__()
 

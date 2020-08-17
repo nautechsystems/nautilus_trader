@@ -29,7 +29,7 @@ cdef class EfficiencyRatio(Indicator):
 
     def __init__(self, int period, bint check_inputs=False):
         """
-        Initializes a new instance of the EfficiencyRatio class.
+        Initialize a new instance of the EfficiencyRatio class.
 
         :param period: The rolling window period for the indicator (>= 2).
         :param check_inputs: The flag indicating whether the input values should be checked.

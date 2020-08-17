@@ -122,7 +122,7 @@ cdef class FuzzyCandlesticks(Indicator):
                  double threshold4=3.0,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the FuzzyCandlesticks class.
+        Initialize a new instance of the FuzzyCandlesticks class.
 
         Parameters
         ----------

@@ -191,7 +191,6 @@ cdef class TradingStrategy:
     cpdef void stop(self) except *
     cpdef void reset(self) except *
     cpdef dict save(self)
-    cpdef void saved(self, datetime timestamp) except *
     cpdef void load(self, dict state) except *
     cpdef void dispose(self) except *
     cpdef void account_inquiry(self) except *
