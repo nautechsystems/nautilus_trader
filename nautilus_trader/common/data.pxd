@@ -32,6 +32,7 @@ cdef class DataClient:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef ExchangeRateCalculator _exchange_calculator
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _quote_tick_handlers
@@ -42,7 +43,6 @@ cdef class DataClient:
     cdef dict _bar_handlers
     cdef dict _instrument_handlers
     cdef dict _instruments
-    cdef ExchangeRateCalculator _exchange_calculator
 
     cdef readonly int tick_capacity
     cdef readonly bint use_previous_close

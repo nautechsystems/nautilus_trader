@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines the main Order object, AtomicOrder representing parent and child orders
+Defines the main Order object, BracketOrder representing parent and child orders
 and an OrderFactory for more convenient creation of order objects.
 """
 

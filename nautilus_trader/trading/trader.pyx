@@ -115,7 +115,6 @@ cdef class Trader:
             self.strategies.append(strategy)
 
         for strategy in self.strategies:
-            strategy.register_trader(self.id)
             self._data_client.register_strategy(strategy)
             self._exec_engine.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")

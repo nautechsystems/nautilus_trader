@@ -156,9 +156,10 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_current_time(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
 
         # Act
-        result = strategy.time_now()
+        result = strategy.clock.time_now()
 
         # Assert
         self.assertEqual(pytz.utc, result.tzinfo)
@@ -334,6 +335,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_order(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
@@ -363,6 +365,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_position(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
@@ -415,6 +418,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        strategy.register_trader(TraderId("TESTER", "000"))
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         bar = Bar(
@@ -496,6 +500,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_generate_position_id(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001', clock=TestClock())
+        strategy.register_trader(TraderId("TESTER", "000"))
 
         # Act
         result = strategy.position_id_generator.generate()
@@ -531,17 +536,19 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         clock = TestClock()
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
 
         # Act
         strategy.change_clock(clock)
 
         # Assert
-        self.assertEqual(UNIX_EPOCH, strategy.time_now())
+        self.assertEqual(UNIX_EPOCH, strategy.clock.time_now())
         self.assertEqual(PositionId('P-19700101-000000-000-001-1'), strategy.position_id_generator.generate())
 
     def test_strategy_can_submit_order(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
@@ -564,6 +571,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_cancel_order(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.stop(
@@ -589,6 +597,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_modify_order(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.limit(
@@ -615,6 +624,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_cancel_all_orders(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.stop(
@@ -648,6 +658,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_flatten_position(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
@@ -673,6 +684,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_flatten_all_positions(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
@@ -711,6 +723,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TestStrategy1(bar_type)
+
         bar = Bar(Price(1.00001, 5),
                   Price(1.00004, 5),
                   Price(1.00002, 5),
@@ -731,6 +744,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
@@ -755,6 +769,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
         position1 = PositionId('P-123456')

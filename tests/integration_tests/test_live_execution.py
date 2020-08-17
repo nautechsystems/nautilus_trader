@@ -46,6 +46,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.trader_id = TraderId('TESTER', '000')
 
         self.strategy = EmptyStrategy(order_id_tag='001')
+        self.strategy.register_trader(TraderId("TESTER", "000"))
         self.strategy.change_clock(clock)
         self.strategy.change_logger(logger)
 
