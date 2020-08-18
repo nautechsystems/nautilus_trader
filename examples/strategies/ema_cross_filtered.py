@@ -464,6 +464,9 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
         self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
 
+        if time_now >= self.trading_pause_start:
+            return  # Already in pause window
+
         # Set news update event
         news_time = self.news_event_next.timestamp
         news_name = self.news_event_next.name.replace(" ", "")

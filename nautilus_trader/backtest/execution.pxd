@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
-from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Money, Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.order cimport Order
@@ -27,6 +26,7 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionClient
 from nautilus_trader.backtest.models cimport FillModel

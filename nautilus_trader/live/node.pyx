@@ -104,7 +104,7 @@ cdef class TradingNode:
         # Setup identifiers
         self.trader_id = TraderId(
             name=config_trader["name"],
-            order_id_tag=config_trader["order_id_tag"])
+            order_id_tag=config_trader["id_tag"])
 
         self.account_id = AccountId(
             broker=config_account["broker"],
@@ -155,6 +155,8 @@ cdef class TradingNode:
             tick_pub_port=config_data["tick_pub_port"],
             compressor=compressor,
             encryption=encryption,
+            tick_capacity=int(config_data["tick_capacity"]),
+            bar_capacity=(config_data["bar_capacity"]),
             clock=self._clock,
             uuid_factory=self._uuid_factory,
             logger=self._logger)

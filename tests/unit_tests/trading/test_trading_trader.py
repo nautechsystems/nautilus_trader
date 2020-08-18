@@ -53,7 +53,8 @@ class TraderTests(unittest.TestCase):
 
         data_client = BacktestDataClient(
             data=data,
-            tick_capacity=100,
+            tick_capacity=1000,
+            bar_capacity=1000,
             clock=clock,
             logger=logger)
 

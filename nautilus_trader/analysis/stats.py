@@ -1308,8 +1308,6 @@ def beta_aligned(returns, factor_returns, risk_free=0.0, out=None):
     # Copy N times as a column vector and fill with nans to have the same
     # missing value pattern as the dependent variable.
     #
-    # PERF_TODO: We could probably avoid the space blowup by doing this in
-    # Cython.
 
     # shape: (N, M)
     independent = np.where(

@@ -354,6 +354,8 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
+        self.last_update = None
+
     cpdef void update_tick(self, QuoteTick tick) except *:
         """
         Update the indicator with the given tick.
@@ -361,6 +363,9 @@ cdef class IndicatorUpdater:
         :param tick: The tick to update with.
         """
         Condition.not_none(tick, "tick")
+
+        if self.last_update is not None and tick.timestamp <= self.last_update:
+            return  # Previously handled tick
 
         # Get input arguments
         cdef str param
@@ -377,6 +382,8 @@ cdef class IndicatorUpdater:
         else:
             self._input_method(*inputs)
 
+        self.last_update = tick.timestamp
+
     cpdef void update_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
@@ -384,6 +391,9 @@ cdef class IndicatorUpdater:
         :param bar: The bar to update with.
         """
         Condition.not_none(bar, "bar")
+
+        if self.last_update is not None and bar.timestamp <= self.last_update:
+            return  # Previously handled bar
 
         # Get input arguments
         cdef str param
@@ -399,6 +409,8 @@ cdef class IndicatorUpdater:
             self._input_method(self._indicator, *inputs)
         else:
             self._input_method(*inputs)
+
+        self.last_update = bar.timestamp
 
     cpdef dict build_features_ticks(self, list ticks):
         """
@@ -482,6 +494,9 @@ cdef class BarBuilder:
         :param tick: The tick to update with.
         """
         Condition.not_none(tick, "tick")
+
+        if self.last_update is not None and tick.timestamp < self.last_update:
+            return  # Previously handled tick
 
         cdef Price price = self._get_price(tick)
 

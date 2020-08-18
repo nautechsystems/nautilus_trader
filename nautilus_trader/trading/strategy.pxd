@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -56,12 +54,6 @@ cdef class TradingStrategy:
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
 
-    cdef readonly int tick_capacity
-    cdef readonly int bar_capacity
-
-    cdef dict _quote_ticks
-    cdef dict _trade_ticks
-    cdef dict _bars
     cdef list _indicators
     cdef dict _indicator_updaters
 
@@ -103,30 +95,17 @@ cdef class TradingStrategy:
 
 # -- DATA METHODS ---------------------------------------------------------------------------------#
     cpdef list instrument_symbols(self)
-    cpdef void get_quote_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
-        int limit=*) except *
-    cpdef void get_trade_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
-        int limit=*) except *
-    cpdef void get_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
-        int limit=*) except *
+    cpdef void get_quote_ticks(self, Symbol symbol) except *
+    cpdef void get_trade_ticks(self, Symbol symbol) except *
+    cpdef void get_bars(self, BarType bar_type) except *
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef dict get_instruments(self)
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void subscribe_instrument(self, Symbol symbol) except *
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
     cpdef bint has_quote_ticks(self, Symbol symbol)
@@ -153,8 +132,7 @@ cdef class TradingStrategy:
     cpdef Portfolio portfolio(self)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
-    cpdef double get_exchange_rate(
-        self,
+    cpdef double get_exchange_rate(self,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=*)

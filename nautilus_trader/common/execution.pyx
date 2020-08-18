@@ -1030,7 +1030,7 @@ cdef class ExecutionEngine:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter("ExecEngine", logger)
 
         self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
         self._exec_client = None

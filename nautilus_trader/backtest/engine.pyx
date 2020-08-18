@@ -130,10 +130,10 @@ cdef class BacktestEngine:
         self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.data_client = BacktestDataClient(
             data=data,
-            tick_capacity=100,  # TODO: Configurable
+            tick_capacity=config.tick_capacity,
+            bar_capacity=config.bar_capacity,
             clock=self.test_clock,
             logger=self.test_logger)
-        self.data_client.set_use_previous_close(False)
 
         self.portfolio = Portfolio(
             clock=self.test_clock,
@@ -241,8 +241,6 @@ cdef class BacktestEngine:
 
         # Setup clocks
         self.test_clock.set_time(start)
-        assert(self.data_client.time_now() == start)
-        assert(self.exec_client.time_now() == start)
 
         # Setup data
         self.data_client.setup(start, stop)

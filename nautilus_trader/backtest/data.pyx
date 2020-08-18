@@ -153,19 +153,29 @@ cdef class BacktestDataClient(DataClient):
     def __init__(self,
                  BacktestDataContainer data not None,
                  int tick_capacity,
+                 int bar_capacity,
                  TestClock clock not None,
                  Logger logger not None):
         """
         Initialize a new instance of the BacktestDataClient class.
 
         :param data: The data needed for the backtest data client.
-        :param tick_capacity: The length of the internal tick deques (also determines average spread).
+        :param tick_capacity: The max length of the internal tick deques.
+        :param bar_capacity: The max length of the internal bar deques.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the tick_capacity is not positive (> 0).
+        :raises ValueError: If the bar_capacity is not positive (> 0).
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
-        super().__init__(tick_capacity, clock, TestUUIDFactory(), logger)
+        Condition.positive_int(bar_capacity, "bar_capacity")
+        super().__init__(
+            tick_capacity=tick_capacity,
+            bar_capacity=bar_capacity,
+            use_previous_close=False,  # To correctly reproduce historical data bars
+            clock=clock,
+            uuid_factory=TestUUIDFactory(),
+            logger=logger)
 
         # Check data integrity
         data.check_integrity()
@@ -178,7 +188,7 @@ cdef class BacktestDataClient(DataClient):
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
-            self._handle_instrument(instrument)
+            self.handle_instrument(instrument)
 
         # Prepare data
         cdef list tick_frames = []
@@ -245,7 +255,7 @@ cdef class BacktestDataClient(DataClient):
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
-            self._handle_instrument(instrument)
+            self.handle_instrument(instrument)
 
         # Build tick data stream
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
@@ -330,7 +340,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(tick, "tick")
 
-        self._handle_quote_tick(tick)
+        self.handle_quote_tick(tick)
 
         if self._clock.timer_count == 0 or tick.timestamp < self._clock.next_event_time:
             return  # No events to handle yet

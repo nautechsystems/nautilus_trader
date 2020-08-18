@@ -16,7 +16,7 @@
 import unittest
 
 from nautilus_trader.model.enums import Currency, PriceType
-from nautilus_trader.model.currency import ExchangeRateCalculator
+from nautilus_trader.common.exchange import ExchangeRateCalculator
 
 
 class ExchangeRateCalculatorTests(unittest.TestCase):
@@ -101,7 +101,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         self.assertEqual(0.011353315168029064, result1)  # JPYAUD
         self.assertEqual(88.11501299999999, result2)  # AUDJPY
 
-    def test_calculate_exchange_rate_for_mid_quote_type(self):
+    def test_calculate_exchange_rate_for_mid_price_type(self):
         # Arrange
         converter = ExchangeRateCalculator()
         bid_rates = {"USDJPY": 110.100}
@@ -118,7 +118,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.009081414884438995, result)
 
-    def test_calculate_exchange_rate_for_mid_quote_type2(self):
+    def test_calculate_exchange_rate_for_mid_price_type2(self):
         # Arrange
         converter = ExchangeRateCalculator()
         bid_rates = {"USDJPY": 110.100}

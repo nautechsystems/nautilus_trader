@@ -52,7 +52,7 @@ cdef class Condition:
         if predicate:
             return  # Check passed
 
-        cdef str msg = f"The condition predicate \"{description}\" was False"
+        cdef str msg = f"The condition predicate \'{description}\' was False"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -81,7 +81,7 @@ cdef class Condition:
         if not predicate:
             return  # Check passed
 
-        cdef str msg = f"The condition predicate \"{description}\" was True"
+        cdef str msg = f"The condition predicate \'{description}\' was True"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -110,7 +110,7 @@ cdef class Condition:
         if argument is None:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" argument was not None"
+        cdef str msg = f"The \'{param}\' argument was not None"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -139,7 +139,7 @@ cdef class Condition:
         if argument is not None:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" argument was None"
+        cdef str msg = f"The \'{param}\' argument was None"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -174,7 +174,7 @@ cdef class Condition:
         if isinstance(argument, expected):
             return  # Check passed
 
-        cdef str msg = (f"The \"{param}\" argument was not of type {expected}"
+        cdef str msg = (f"The \'{param}\' argument was not of type {expected}"
                         f", was {type(argument)}")
         if ex_type is None or type(ex_type) != type(Exception):
             raise TypeError(msg)
@@ -235,7 +235,7 @@ cdef class Condition:
         if PyCallable_Check(argument):
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" object was not callable."
+        cdef str msg = f"The \'{param}\' object was not callable."
         if ex_type is None or type(ex_type) != type(Exception):
             raise TypeError(msg)
         else:
@@ -298,9 +298,9 @@ cdef class Condition:
         if argument1 == argument2:
             return  # Check passed
 
-        cdef str msg = (f"The \"{param1}\" {type(argument1)} of {argument1} "
+        cdef str msg = (f"The \'{param1}\' {type(argument1)} of {argument1} "
                         f"was not equal to "
-                        f"the \"{param2}\" {type(argument2)} of {argument2}")
+                        f"the \'{param2}\' {type(argument2)} of {argument2}")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -338,7 +338,7 @@ cdef class Condition:
         if object1 != object2:
             return  # Check passed
 
-        cdef str msg = (f"The \"{param1}\" {type(object1)} of {object1} "
+        cdef str msg = (f"The \'{param1}\' {type(object1)} of {object1} "
                         f"was equal to the \"{param2}\" {type(object2)} of {object1}")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
@@ -376,7 +376,7 @@ cdef class Condition:
         if all(isinstance(element, expected_type) for element in argument):
             return  # Check passed
 
-        cdef str msg = (f"The \"{param}\" collection contained an element with "
+        cdef str msg = (f"The \'{param}\' collection contained an element with "
                         f"a type other than {expected_type}, was {type(argument)}")
         if ex_type is None or type(ex_type) != type(Exception):
             raise TypeError(msg)
@@ -451,7 +451,7 @@ cdef class Condition:
         if element in collection:
             return  # Check passed
 
-        cdef str msg = (f"The \"{param1}\" {element} was not contained in "
+        cdef str msg = (f"The \'{param1}\' {element} was not contained in "
                         f"the {param2} collection")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
@@ -492,8 +492,8 @@ cdef class Condition:
         if element not in collection:
             return  # Check passed
 
-        cdef str msg = (f"The \"{param1}\" {element} was already contained in "
-                        f"the \"{param2}\" collection")
+        cdef str msg = (f"The \'{param1}\' {element} was already contained in "
+                        f"the \'{param2}\' collection")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -524,7 +524,7 @@ cdef class Condition:
         if collection:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" collection was empty"
+        cdef str msg = f"The \'{param}\' collection was empty"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -555,7 +555,7 @@ cdef class Condition:
         if not collection:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" collection was not empty"
+        cdef str msg = f"The \'{param}\' collection was not empty"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -584,7 +584,7 @@ cdef class Condition:
         if value > 0:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" was not a positive real, was {value}"
+        cdef str msg = f"The \'{param}\' was not a positive real, was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -613,7 +613,7 @@ cdef class Condition:
         if value > 0:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" was not a positive integer, was {value}"
+        cdef str msg = f"The \'{param}\' was not a positive integer, was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -642,7 +642,7 @@ cdef class Condition:
         if value >= 0.0:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" was not greater than or equal to zero (>= 0), was {value}"
+        cdef str msg = f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -671,7 +671,7 @@ cdef class Condition:
         if value >= 0:
             return  # Check passed
 
-        cdef str msg = f"The \"{param}\" was not greater than or equal to zero (>= 0), was {value}"
+        cdef str msg = f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value}"
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -709,7 +709,7 @@ cdef class Condition:
         if start <= value <= end:
             return  # Check passed
 
-        cdef str msg = (f"The \"{param}\" was out of range [{start}-{end}]"
+        cdef str msg = (f"The \'{param}\' was out of range [{start}-{end}]"
                         f", was {value}")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
@@ -748,7 +748,7 @@ cdef class Condition:
         if start <= value <= end:
             return  # Check passed
 
-        cdef str msg = (f"The \"{param}\" was out of range [{start}-{end}]"
+        cdef str msg = (f"The \'{param}\' was out of range [{start}-{end}]"
                         f", was {value}")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
@@ -780,8 +780,8 @@ cdef class Condition:
         if argument != "" and not argument.isspace():
             return  # Check passed
 
-        cdef str msg = (f"The \"{param}\" string argument was invalid"
-                        f", was \"{argument}\"")
+        cdef str msg = (f"The \'{param}\' string argument was invalid"
+                        f", was \'{argument}\'")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:

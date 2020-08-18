@@ -29,7 +29,6 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.identifiers cimport Symbol, OrderIdBroker
-from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Decimal, Price, Money, Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.instrument cimport Instrument
@@ -47,6 +46,7 @@ from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInte
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.models cimport FillModel

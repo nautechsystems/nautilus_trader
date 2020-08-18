@@ -24,6 +24,8 @@ cdef class BacktestConfig:
     Provides a configuration for a BacktestEngine.
     """
     def __init__(self,
+                 int tick_capacity=1000,
+                 int bar_capacity=1000,
                  str exec_db_type not None="in-memory",
                  bint exec_db_flush=True,
                  bint frozen_account=False,
@@ -42,6 +44,8 @@ cdef class BacktestConfig:
         """
         Initialize a new instance of the BacktestConfig class.
 
+        :param tick_capacity: The length for the data clients internal ticks deque (> 0).
+        :param bar_capacity: The length for the data clients internal bars deque (> 0).
         :param exec_db_type: The type for the execution database (can be the default 'in-memory' or redis).
         :param exec_db_flush: If the execution database should be flushed on each run.
         :param frozen_account: If the account should be frozen for testing (no pnl applied).
@@ -57,14 +61,20 @@ cdef class BacktestConfig:
         :param log_thread: The boolean flag indicating whether log messages should log the thread.
         :param log_to_file: The boolean flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :raises ValueError: If the starting capital is not positive (> 0).
+        :raises ValueError: If the tick_capacity is not positive (> 0).
+        :raises ValueError: If the bar_capacity is not positive (> 0).
+        :raises ValueError: If the starting_capital is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
         """
+        Condition.positive_int(tick_capacity, "tick_capacity")
+        Condition.positive_int(bar_capacity, "bar_capacity")
         Condition.valid_string(exec_db_type, "exec_db_type")
         Condition.positive_int(starting_capital, "starting_capital")
         Condition.valid_string(short_term_interest_csv_path, "short_term_interest_csv_path")
         Condition.not_negative(commission_rate_bp, "commission_rate_bp")
 
+        self.tick_capacity = tick_capacity
+        self.bar_capacity = bar_capacity
         self.exec_db_type = exec_db_type
         self.exec_db_flush = exec_db_flush
         self.frozen_account = frozen_account
