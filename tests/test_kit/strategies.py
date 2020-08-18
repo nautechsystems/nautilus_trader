@@ -200,7 +200,7 @@ class TestStrategy1(TradingStrategy):
 
     def on_start(self):
         self.object_storer.store("custom start logic")
-        self.account_inquiry()
+        self.subscribe_bars(self.bar_type)
 
     def on_quote_tick(self, tick):
         self.object_storer.store(tick)

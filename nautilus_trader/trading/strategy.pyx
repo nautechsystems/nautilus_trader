@@ -16,9 +16,6 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-from cpython.datetime cimport datetime
-from collections import deque
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, Label
 from nautilus_trader.model.c_enums.currency cimport Currency
@@ -58,8 +55,6 @@ cdef class TradingStrategy:
                  bint flatten_on_stop=True,
                  bint flatten_on_sl_reject=True,
                  bint cancel_all_orders_on_stop=True,
-                 int tick_capacity=1000,
-                 int bar_capacity=1000,
                  Clock clock=None,
                  UUIDFactory uuid_factory=None,
                  Logger logger=None,
@@ -71,19 +66,13 @@ cdef class TradingStrategy:
         :param flatten_on_stop: If all strategy positions should be flattened on stop.
         :param flatten_on_sl_reject: If open positions should be flattened on SL reject.
         :param cancel_all_orders_on_stop: If all residual orders should be cancelled on stop.
-        :param bar_capacity: The length for the internal ticks deque.
-        :param bar_capacity: The length for the internal bars deque.
         :param clock: The clock for the strategy (can be None, default=LiveClock).
         :param uuid_factory: The UUID factory for the strategy (can be None, default=LiveUUIDFactory).
         :param logger: The logger for the strategy (can be None).
         :param reraise_exceptions: If exceptions raised in handling methods should be re-raised.
         :raises ValueError: If the order_id_tag is not a valid string.
-        :raises ValueError: If the tick_capacity is not positive (> 0).
-        :raises ValueError: If the bar_capacity is not positive (> 0).
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
-        Condition.positive_int(tick_capacity, "tick_capacity")
-        Condition.positive_int(bar_capacity, "bar_capacity")
 
         # Identification
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
@@ -110,12 +99,7 @@ cdef class TradingStrategy:
         self.order_factory = None          # Initialized when registered with a trader
         self.position_id_generator = None  # Initialized when registered with a trader
 
-        # Data
-        self.tick_capacity = tick_capacity
-        self.bar_capacity = bar_capacity
-        self._quote_ticks = {}         # type: {Symbol, [QuoteTick]}
-        self._trade_ticks = {}         # type: {Symbol, [TradeTick]}
-        self._bars = {}                # type: {BarType, [Bar]}
+        # Indicators
         self._indicators = []          # type: [Indicator]
         self._indicator_updaters = {}  # type: {Indicator, [IndicatorUpdater]}
 
@@ -190,7 +174,7 @@ cdef class TradingStrategy:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
 
-        :param tick: The quote tick received.
+        :param tick: The tick received.
         """
         pass  # Optionally override in implementation
 
@@ -198,7 +182,7 @@ cdef class TradingStrategy:
         """
         Actions to be performed when the strategy is running and receives a trade tick.
 
-        :param tick: The trade tick received.
+        :param tick: The tick received.
         """
         pass  # Optionally override in implementation
 
@@ -245,7 +229,7 @@ cdef class TradingStrategy:
 
         Create and return a state dictionary of values to be saved.
 
-        Note: "OrderIdCount" and "PositionIdCount" are reserved keys for
+        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
         the returned state dictionary.
         """
         return {}  # Optionally override in implementation
@@ -323,7 +307,8 @@ cdef class TradingStrategy:
             update_method: callable=None) except *:
         """
         Register the given indicator with the strategy to receive data of the
-        given data_source (can be a <Symbol> for ticks or a <BarType>).
+        given data_source (can be a <Symbol> for <QuoteTick> data, or a 
+        <BarType> for <Bar> data).
 
         :param data_source: The data source for updates.
         :param indicator: The indicator to register.
@@ -352,23 +337,13 @@ cdef class TradingStrategy:
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """"
-        System method. Handle the given quote tick.
+        System method. Handle the given tick.
 
-        :param tick: The quote tick received.
-        :param is_historical: The flag indicating whether the tick is historical (won"t be passed to on_tick).
+        :param tick: The tick received.
+        :param is_historical: The flag indicating whether the tick is historical 
+        (won't be passed to on_quote_tick()).
         """
         Condition.not_none(tick, "tick")
-
-        # Update ticks
-        ticks = self._quote_ticks.get(tick.symbol)
-        if ticks is None:
-            # Symbol was not registered
-            ticks = deque(maxlen=self.tick_capacity)
-            self._quote_ticks[tick.symbol] = ticks
-            self.log.warning(f"Received {tick.symbol} <QuoteTick> when symbol not registered. "
-                             f"Handling is now setup.")
-
-        ticks.appendleft(tick)
 
         # Update indicators
         cdef list updaters = self._indicator_updaters.get(tick.symbol)  # Can be None
@@ -390,7 +365,8 @@ cdef class TradingStrategy:
 
     cpdef void handle_quote_ticks(self, list ticks) except *:
         """
-        System method. Handle the given list of quote ticks by handling each tick individually.
+        System method. Handle the given list of ticks by handling each tick 
+        individually.
         """
         Condition.not_none(ticks, "ticks")  # Could be empty
 
@@ -408,23 +384,13 @@ cdef class TradingStrategy:
 
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
         """"
-        System method. Handle the given trade tick.
+        System method. Handle the given tick.
 
         :param tick: The trade tick received.
-        :param is_historical: The flag indicating whether the tick is historical (won't be passed to on_tick).
+        :param is_historical: The flag indicating whether the tick is historical 
+        (won't be passed to on_trade_tick()).
         """
         Condition.not_none(tick, "tick")
-
-        # Update ticks
-        ticks = self._trade_ticks.get(tick.symbol)
-        if ticks is None:
-            # Symbol was not registered
-            ticks = deque(maxlen=self.tick_capacity)
-            self._trade_ticks[tick.symbol] = ticks
-            self.log.warning(f"Received {tick.symbol} <TradeTick> when symbol not registered. "
-                             f"Handling is now setup.")
-
-        ticks.appendleft(tick)
 
         if is_historical:
             return  # Don't pass to on_tick()
@@ -439,7 +405,8 @@ cdef class TradingStrategy:
 
     cpdef void handle_trade_ticks(self, list ticks) except *:
         """
-        System method. Handle the given list of trade ticks by handling each tick individually.
+        System method. Handle the given list of ticks by handling each tick 
+        individually.
         """
         Condition.not_none(ticks, "ticks")  # Could be empty
 
@@ -461,21 +428,11 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
-        :param is_historical: The flag indicating whether the bar is historical (won't be passed to on_bar).
+        :param is_historical: The flag indicating whether the bar is historical 
+        (won't be passed to on_bar).
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bar, "bar")
-
-        # Update bars
-        bars = self._bars.get(bar_type)
-        if bars is None:
-            # BarType was not registered
-            bars = deque(maxlen=self.bar_capacity)
-            self._bars[bar_type] = bars
-            self.log.warning(f"Received {bar_type} {repr(bar)} when bar type not registered. "
-                             f"Handling now setup.")
-
-        bars.appendleft(bar)
 
         # Update indicators
         cdef list updaters = self._indicator_updaters.get(bar_type)  # Can be None
@@ -497,18 +454,18 @@ cdef class TradingStrategy:
 
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
-        System method. Handle the given bar type and bars by handling
-        each bar individually.
+        System method. Handle the given bar type and bars by handling each bar 
+        individually.
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bars, "bars")  # Can be empty
 
         cdef int length = len(bars)
 
-        self.log.info(f"Received Bar[{length}] data for {bar_type}.")
+        self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
 
         if length > 0 and bars[0].timestamp > bars[length - 1].timestamp:
-            raise RuntimeError("Cannot handle Bar[] data (incorrectly sorted).")
+            raise RuntimeError("Cannot handle <Bar[]> data (incorrectly sorted).")
 
         cdef int i
         for i in range(length):
@@ -567,119 +524,62 @@ cdef class TradingStrategy:
 
         return self._data.instrument_symbols()
 
-    cpdef void get_quote_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
-            int limit=0) except *:
+    cpdef void get_quote_ticks(self, Symbol symbol) except *:
         """
         Request the historical quote ticks for the given parameters from the data service.
-        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
         :param symbol: The tick symbol for the request.
-        :param from_datetime: The from datetime for the request.
-        :param to_datetime: The to datetime for the request.
-        :param limit: The limit for the number of ticks in the response (default = tick capacity).
-        :raises ValueError: If the limit is negative (< 0).
-        :raises ValueError: If the from_datetime is not less than the to_datetime.
         """
-        if limit == 0:
-            limit = self.tick_capacity
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         if self._data is None:
             self.log.error("Cannot request quote ticks (data client not registered).")
             return
 
-        if symbol not in self._quote_ticks:
-            self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)
-
         self._data.request_quote_ticks(
-            symbol,
-            from_datetime,
-            to_datetime,
-            limit,
-            self.handle_quote_ticks)
+            symbol=symbol,
+            from_datetime=None,
+            to_datetime=None,
+            limit=self._data.tick_capacity,
+            callback=self.handle_quote_ticks)
 
-    cpdef void get_trade_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
-            int limit=0) except *:
+    cpdef void get_trade_ticks(self, Symbol symbol) except *:
         """
         Request the historical trade ticks for the given parameters from the data service.
-        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
         :param symbol: The tick symbol for the request.
-        :param from_datetime: The from datetime for the request.
-        :param to_datetime: The to datetime for the request.
-        :param limit: The limit for the number of ticks in the response (default = tick capacity).
-        :raises ValueError: If the limit is negative (< 0).
-        :raises ValueError: If the from_datetime is not less than the to_datetime.
         """
-        if limit == 0:
-            limit = self.tick_capacity
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         if self._data is None:
             self.log.error("Cannot request trade ticks (data client not registered).")
             return
 
-        if symbol not in self._trade_ticks:
-            self._trade_ticks[symbol] = deque(maxlen=self.tick_capacity)
-
         self._data.request_trade_ticks(
-            symbol,
-            from_datetime,
-            to_datetime,
-            limit,
-            self.handle_trade_ticks)
+            symbol=symbol,
+            from_datetime=None,
+            to_datetime=None,
+            limit=self._data.tick_capacity,
+            callback=self.handle_trade_ticks)
 
-    cpdef void get_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
-            int limit=0) except *:
+    cpdef void get_bars(self, BarType bar_type) except *:
         """
         Request the historical bars for the given parameters from the data service.
-        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
-        :param bar_type: The historical bar type to download.
-        :param from_datetime: The from datetime for the request (optional can be None).
-        :param to_datetime: The to datetime for the request (optional can be None).
-        :param limit: The limit for the number of bars in the response (default = bar capacity).
-        :raises ValueError: If the limit is negative (< 0).
-        :raises ValueError: If the from_datetime is not less than the to_datetime.
+        :param bar_type: The bar type for the request.
         """
-        if limit == 0:
-            limit = self.bar_capacity
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         if self._data is None:
             self.log.error("Cannot request bars (data client not registered).")
             return
 
-        if bar_type not in self._bars:
-            self._bars[bar_type] = deque(maxlen=self.bar_capacity)
-
         self._data.request_bars(
-            bar_type,
-            from_datetime,
-            to_datetime,
-            limit,
-            self.handle_bars)
+            bar_type=bar_type,
+            from_datetime=None,
+            to_datetime=None,
+            limit=self._data.bar_capacity,
+            callback=self.handle_bars)
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
@@ -709,83 +609,115 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Subscribe to tick data for the given symbol.
+        Subscribe to <QuoteTick> data for the given symbol.
 
         :param symbol: The tick symbol to subscribe to.
         """
         Condition.not_none(symbol, "symbol")
 
         if self._data is None:
-            self.log.error("Cannot subscribe to ticks (data client not registered).")
+            self.log.error(f"Cannot subscribe to {symbol} <QuoteTick> data "
+                           "(data client not registered).")
             return
 
-        self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)
-
         self._data.subscribe_quote_ticks(symbol, self.handle_quote_tick)
-        self.log.info(f"Subscribed to {symbol} quote tick data.")
+        self.log.info(f"Subscribed to {symbol} <QuoteTick> data.")
+
+    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
+        """
+        Subscribe to <TradeTick> data for the given symbol.
+
+        :param symbol: The tick symbol to subscribe to.
+        """
+        Condition.not_none(symbol, "symbol")
+
+        if self._data is None:
+            self.log.error(f"Cannot subscribe to {symbol} <TradeTick> data "
+                           "(data client not registered).")
+            return
+
+        self._data.subscribe_trade_ticks(symbol, self.handle_trade_tick)
+        self.log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
-        Subscribe to bar data for the given bar type.
+        Subscribe to <Bar> data for the given bar type.
 
         :param bar_type: The bar type to subscribe to.
         """
         Condition.not_none(bar_type, "bar_type")
 
         if self._data is None:
-            self.log.error("Cannot subscribe to bars (data client not registered).")
+            self.log.error(f"Cannot subscribe to {bar_type} <Bar> data "
+                           f"(data client not registered).")
             return
 
-        if bar_type not in self._bars:
-            self._bars[bar_type] = deque(maxlen=self.bar_capacity)
-
         self._data.subscribe_bars(bar_type, self.handle_bar)
-        self.log.info(f"Subscribed to {bar_type} bar data.")
+        self.log.info(f"Subscribed to {bar_type} <Bar> data.")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
-        Subscribe to instrument data for the given symbol.
+        Subscribe to <Instrument> data for the given symbol.
 
         :param symbol: The instrument symbol to subscribe to.
         """
         Condition.not_none(symbol, "symbol")
 
         if self._data is None:
-            self.log.error("Cannot subscribe to instrument (data client not registered).")
+            self.log.error(f"Cannot subscribe to {symbol} <Instrument> data "
+                           f"(data client not registered).")
             return
 
         self._data.subscribe_instrument(symbol, self.handle_data)
-        self.log.info(f"Subscribed to {symbol} instrument data.")
+        self.log.info(f"Subscribed to {symbol} <Instrument> data.")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Unsubscribe from tick data for the given symbol.
+        Unsubscribe from <QuoteTick> data for the given symbol.
 
-        :param symbol: The quote tick type to unsubscribe from.
+        :param symbol: The tick symbol to unsubscribe from.
         """
         Condition.not_none(symbol, "symbol")
 
         if self._data is None:
-            self.log.error("Cannot unsubscribe from ticks (data client not registered).")
+            self.log.error(f"Cannot unsubscribe from {symbol} <QuoteTick> data "
+                           "(data client not registered).")
             return
 
         self._data.unsubscribe_quote_ticks(symbol, self.handle_quote_tick)
-        self.log.info(f"Unsubscribed from {symbol} tick data.")
+        self.log.info(f"Unsubscribed from {symbol} <QuoteTick> data.")
+
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
+        """
+        Unsubscribe from <TradeTick> data for the given symbol.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        """
+        Condition.not_none(symbol, "symbol")
+
+        if self._data is None:
+            self.log.error(f"Cannot unsubscribe from {symbol} <TradeTick> data "
+                           "(data client not registered).")
+            return
+
+        self._data.unsubscribe_trade_ticks(symbol, self.handle_trade_tick)
+        self.log.info(f"Unsubscribed from {symbol} <TradeTick> data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
-        Unsubscribe from bar data for the given bar type.
+        Unsubscribe from <Bar> data for the given bar type.
 
         :param bar_type: The bar type to unsubscribe from.
         """
         Condition.not_none(bar_type, "bar_type")
 
         if self._data is None:
-            self.log.error("Cannot unsubscribe from bars (data client not registered).")
+            self.log.error(f"Cannot unsubscribe from {bar_type} <Bar> data "
+                           f"(data client not registered).")
             return
 
         self._data.unsubscribe_bars(bar_type, self.handle_bar)
-        self.log.info(f"Unsubscribed from {bar_type} bar data.")
+        self.log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -796,11 +728,12 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
 
         if self._data is None:
-            self.log.error("Cannot unsubscribe from instrument (data client not registered).")
+            self.log.error(f"Cannot unsubscribe from {symbol} <Instrument> data "
+                           f"(data client not registered).")
             return
 
         self._data.unsubscribe_instrument(symbol, self.handle_data)
-        self.log.info(f"Unsubscribed from {symbol} instrument data.")
+        self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
 
     cpdef bint has_quote_ticks(self, Symbol symbol):
         """
@@ -808,11 +741,12 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks.
         :return bool.
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "data client")
 
-        return (self._data.has_quote_ticks(symbol) and  # noqa (W504 - easier to read)
-                len(self._quote_ticks[symbol]) > 0)     # noqa (W504 - easier to read)
+        return self._data.has_quote_ticks(symbol)
 
     cpdef bint has_trade_ticks(self, Symbol symbol):
         """
@@ -820,11 +754,12 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks.
         :return bool.
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "data client")
 
-        return (self._data.has_trade_ticks(symbol) and  # noqa (W504 - easier to read)
-                len(self._trade_ticks[symbol]) > 0)     # noqa (W504 - easier to read)
+        return self._data.has_trade_ticks(symbol)
 
     cpdef bint has_bars(self, BarType bar_type):
         """
@@ -832,10 +767,12 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type for the bars.
         :return bool.
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(self._data, "data client")
 
-        return bar_type in self._bars and len(self._bars[bar_type]) > 0
+        return self._data.has_bars(bar_type)
 
     cpdef int quote_tick_count(self, Symbol symbol):
         """
@@ -843,10 +780,12 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks.
         :return int.
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "data client")
 
-        return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
+        return self._data.quote_tick_count(symbol)
 
     cpdef int trade_tick_count(self, Symbol symbol):
         """
@@ -854,10 +793,12 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks.
         :return int.
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "data client")
 
-        return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
+        return self._data.trade_tick_count(symbol)
 
     cpdef int bar_count(self, BarType bar_type):
         """
@@ -865,10 +806,12 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to count.
         :return int.
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(self._data, "data client")
 
-        return len(self._bars[bar_type]) if bar_type in self._bars else 0
+        return self._data.bar_count(bar_type)
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
@@ -876,11 +819,12 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks to get.
         :return List[QuoteTick].
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
+        Condition.not_none(self._data, "data client")
 
-        return list(self._quote_ticks[symbol])
+        return self._data.quote_ticks(symbol)
 
     cpdef list trade_ticks(self, Symbol symbol):
         """
@@ -888,11 +832,12 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks to get.
         :return List[TradeTick].
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
+        Condition.not_none(self._data, "data client")
 
-        return list(self._trade_ticks[symbol])
+        return self._data.trade_ticks(symbol)
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -900,11 +845,12 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to get.
         :return List[Bar].
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.is_in(bar_type, self._bars, "bar_type", "bars")
+        Condition.not_none(self._data, "data client")
 
-        return list(self._bars[bar_type])
+        return self._data.bars(bar_type)
 
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
@@ -913,13 +859,13 @@ cdef class TradingStrategy:
         :param symbol: The symbol for the tick to get.
         :param index: The optional index for the tick to get.
         :return QuoteTick.
-        :raises ValueError: If the strategies ticks does not contain the symbol.
+        :raises ValueError: If the data client is not registered.
         :raises IndexError: If the tick index is out of range.
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
+        Condition.not_none(self._data, "data client")
 
-        return self._quote_ticks[symbol][index]
+        return self._data.quote_tick(symbol, index)
 
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
         """
@@ -928,13 +874,13 @@ cdef class TradingStrategy:
         :param symbol: The symbol for the tick to get.
         :param index: The optional index for the tick to get.
         :return TradeTick.
-        :raises ValueError: If the strategies ticks does not contain the symbol.
+        :raises ValueError: If the data client is not registered.
         :raises IndexError: If the tick index is out of range.
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
+        Condition.not_none(self._data, "data client")
 
-        return self._trade_ticks[symbol][index]
+        return self._data.trade_tick(symbol, index)
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """
@@ -943,13 +889,13 @@ cdef class TradingStrategy:
         :param bar_type: The bar type to get.
         :param index: The optional index for the bar to get.
         :return Bar.
-        :raises ValueError: If the strategies bars does not contain the bar type.
+        :raises ValueError: If the data client is not registered.
         :raises IndexError: If the bar index is out of range.
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.is_in(bar_type, self._bars, "bar_type", "bars")
+        Condition.not_none(self._data, "data client")
 
-        return self._bars[bar_type][index]
+        return self._data.bar(bar_type, index)
 
     cpdef double spread(self, Symbol symbol):
         """
@@ -957,9 +903,10 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the spread to get.
         :return float.
-        :raises ValueError: If the data clients ticks does not contain the symbol.
+        :raises: ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "data client")
 
         return self._data.spread(symbol)
 
@@ -969,9 +916,10 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the average spread to get.
         :return float.
-        :raises ValueError: If the strategies ticks does not contain the symbol.
+        :raises ValueError: If the data client is not registered.
         """
         Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "data client")
 
         return self._data.spread_average(symbol)
 
@@ -1006,7 +954,7 @@ cdef class TradingStrategy:
         Return the account for the strategy.
 
         :return: Account.
-        :raises: ValueError: If the execution engine is not registered.
+        :raises ValueError: If the execution engine is not registered.
         """
         Condition.not_none(self._exec, "exec")
 
@@ -1017,7 +965,7 @@ cdef class TradingStrategy:
         Return the portfolio for the strategy.
 
         :return: Portfolio.
-        :raises: ValueError: If the execution engine is not registered.
+        :raises ValueError: If the execution engine is not registered.
         """
         Condition.not_none(self._exec, "exec")
 
@@ -1057,10 +1005,13 @@ cdef class TradingStrategy:
 
         :param from_currency: The currency to convert from.
         :param to_currency: The currency to convert to.
-        :param price_type: The quote type for the exchange rate (default=MID).
+        :param price_type: The price type for the exchange rate (default=MID).
         :return float.
-        :raises ValueError: If the quote type is LAST.
+        :raises ValueError: If the data client is not registered.
+        :raises ValueError: If the price_type is UNDEFINED or LAST.
         """
+        Condition.not_none(self._data, "data client")
+
         return self._data.get_exchange_rate(
             from_currency=from_currency,
             to_currency=to_currency,
@@ -1075,10 +1026,13 @@ cdef class TradingStrategy:
         currency to the account currency.
 
         :param quote_currency: The quote currency to convert from.
-        :param price_type: The quote type for the exchange rate (default=MID).
+        :param price_type: The price type for the exchange rate (default=MID).
         :return float.
-        :raises ValueError: If the quote type is LAST.
+        :raises ValueError: If the data client is not registered.
+        :raises ValueError: If the price_type is UNDEFINED or LAST.
         """
+        Condition.not_none(self._data, "data client")
+
         cdef Account account = self.account()
         if account is None:
             self.log.error("Cannot get exchange rate (account is not initialized).")
@@ -1095,7 +1049,10 @@ cdef class TradingStrategy:
 
         :param order_id: The order_id.
         :return Order or None.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_order(order_id)
 
     cpdef dict orders(self):
@@ -1103,7 +1060,10 @@ cdef class TradingStrategy:
         Return a all orders associated with this strategy.
 
         :return Dict[OrderId, Order].
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_orders(self.id)
 
     cpdef dict orders_working(self):
@@ -1111,7 +1071,10 @@ cdef class TradingStrategy:
         Return all working orders associated with this strategy.
 
         :return Dict[OrderId, Order].
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_orders_working(self.id)
 
     cpdef dict orders_completed(self):
@@ -1119,7 +1082,10 @@ cdef class TradingStrategy:
         Return all completed orders associated with this strategy.
 
         :return Dict[OrderId, Order].
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_orders_completed(self.id)
 
     cpdef Position position(self, PositionId position_id):
@@ -1128,7 +1094,10 @@ cdef class TradingStrategy:
 
         :param position_id: The positions identifier.
         :return Position or None.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_position(position_id)
 
     cpdef Position position_for_order(self, OrderId order_id):
@@ -1137,31 +1106,43 @@ cdef class TradingStrategy:
 
         :param order_id: The order_id.
         :return Position or None.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_position_for_order(order_id)
 
     cpdef dict positions(self):
         """
         Return a dictionary of all positions associated with this strategy.
 
-        :return Dict[PositionId, Position]
+        :return Dict[PositionId, Position].
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_positions(self.id)
 
     cpdef dict positions_open(self):
         """
         Return a dictionary of all active positions associated with this strategy.
 
-        :return Dict[PositionId, Position]
+        :return Dict[PositionId, Position].
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_positions_open(self.id)
 
     cpdef dict positions_closed(self):
         """
         Return a dictionary of all closed positions associated with this strategy.
 
-        :return Dict[PositionId, Position]
+        :return Dict[PositionId, Position].
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.get_positions_closed(self.id)
 
     cpdef bint position_exists(self, PositionId position_id):
@@ -1170,7 +1151,10 @@ cdef class TradingStrategy:
 
         :param position_id: The position_id.
         :return bool.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.position_exists(position_id)
 
     cpdef bint order_exists(self, OrderId order_id):
@@ -1179,7 +1163,10 @@ cdef class TradingStrategy:
 
         :param order_id: The order_id.
         :return bool.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.order_exists(order_id)
 
     cpdef bint is_order_working(self, OrderId order_id):
@@ -1188,7 +1175,10 @@ cdef class TradingStrategy:
 
         :param order_id: The order_id.
         :return bool.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.is_order_working(order_id)
 
     cpdef bint is_order_completed(self, OrderId order_id):
@@ -1197,7 +1187,10 @@ cdef class TradingStrategy:
 
         :param order_id: The order_id.
         :return bool.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.is_order_completed(order_id)
 
     cpdef bint is_position_open(self, PositionId position_id):
@@ -1206,7 +1199,10 @@ cdef class TradingStrategy:
 
         :param position_id: The position_id.
         :return bool.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.is_position_open(position_id)
 
     cpdef bint is_position_closed(self, PositionId position_id):
@@ -1215,7 +1211,10 @@ cdef class TradingStrategy:
 
         :param position_id: The position_id.
         :return bool.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.is_position_closed(position_id)
 
     cpdef bint is_flat(self):
@@ -1224,7 +1223,10 @@ cdef class TradingStrategy:
         other than FLAT across all instruments).
 
         :return bool.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.is_strategy_flat(self.id)
 
     cpdef int count_orders_working(self):
@@ -1232,7 +1234,10 @@ cdef class TradingStrategy:
         Return the count of working orders held by the execution database.
 
         :return int.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.count_orders_working(self.id)
 
     cpdef int count_orders_completed(self):
@@ -1240,7 +1245,10 @@ cdef class TradingStrategy:
         Return the count of completed orders held by the execution database.
 
         :return int.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.count_orders_completed(self.id)
 
     cpdef int count_orders_total(self):
@@ -1248,7 +1256,10 @@ cdef class TradingStrategy:
         Return the total count of orders held by the execution database.
 
         :return int.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.count_orders_total(self.id)
 
     cpdef int count_positions_open(self):
@@ -1256,7 +1267,10 @@ cdef class TradingStrategy:
         Return the count of open positions held by the execution database.
 
         :return int.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.count_positions_open(self.id)
 
     cpdef int count_positions_closed(self):
@@ -1264,7 +1278,10 @@ cdef class TradingStrategy:
         Return the count of closed positions held by the execution database.
 
         :return int.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.count_positions_closed(self.id)
 
     cpdef int count_positions_total(self):
@@ -1272,7 +1289,10 @@ cdef class TradingStrategy:
         Return the total count of positions held by the execution database.
 
         :return int.
+        :raises ValueError: If the execution engine is not registered.
         """
+        Condition.not_none(self._exec, "exec")
+
         return self._exec.database.count_positions_total(self.id)
 
 
@@ -1347,8 +1367,7 @@ cdef class TradingStrategy:
             self.order_factory.reset()
         if self.position_id_generator is not None:
             self.position_id_generator.reset()
-        self._quote_ticks.clear()
-        self._bars.clear()
+
         self._indicators.clear()
         self._indicator_updaters.clear()
 

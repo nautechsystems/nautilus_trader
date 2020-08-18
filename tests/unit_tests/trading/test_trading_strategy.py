@@ -53,7 +53,9 @@ class TradeStrategyTests(unittest.TestCase):
         self.logger = TestLogger()
 
         self.data_client = DataClient(
-            tick_capacity=100,
+            tick_capacity=1000,
+            bar_capacity=1000,
+            use_previous_close=True,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
@@ -214,6 +216,8 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_bars(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_data_client(self.data_client)
+
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
             Price(1.00001, 5),
@@ -223,7 +227,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
-        strategy.handle_bar(bar_type, bar)
+        self.data_client.handle_bar(bar_type, bar)
 
         # Act
         result = strategy.bars(bar_type)
@@ -243,6 +247,8 @@ class TradeStrategyTests(unittest.TestCase):
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_data_client(self.data_client)
+
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
             Price(1.00001, 5),
@@ -252,7 +258,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
-        strategy.handle_bar(bar_type, bar)
+        self.data_client.handle_bar(bar_type, bar)
 
         # Act
         # Assert
@@ -260,6 +266,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_bar(self):
         strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_data_client(self.data_client)
+
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
             Price(1.00001, 5),
@@ -269,7 +277,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
-        strategy.handle_bar(bar_type, bar)
+        self.data_client.handle_bar(bar_type, bar)
 
         # Act
         result = strategy.bar(bar_type, 0)
@@ -286,6 +294,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_quote_tick(self):
         strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_data_client(self.data_client)
 
         tick = QuoteTick(
             AUDUSD_FXCM,
@@ -295,7 +304,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        strategy.handle_quote_tick(tick)
+        self.data_client.handle_quote_tick(tick)
 
         # Act
         result = strategy.quote_tick(tick.symbol, 0)
@@ -305,6 +314,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_trade_tick(self):
         strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_data_client(self.data_client)
 
         tick = TradeTick(
             AUDUSD_FXCM,
@@ -314,7 +324,7 @@ class TradeStrategyTests(unittest.TestCase):
             MatchId("123456789"),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        strategy.handle_trade_tick(tick)
+        self.data_client.handle_trade_tick(tick)
 
         # Act
         result = strategy.trade_tick(tick.symbol, 0)
@@ -719,7 +729,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(position_id2 in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
 
-    def test_can_update_bars_and_indicators(self):
+    def test_can_update_indicators(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TestStrategy1(bar_type)
@@ -735,10 +745,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_bar(bar_type, bar)
 
         # Assert
-        self.assertEqual(1, len(strategy.bars(bar_type)))
         self.assertEqual(1, strategy.ema1.count)
         self.assertEqual(1, strategy.ema2.count)
-        self.assertEqual(0, len(strategy.object_storer.get_store()))
 
     def test_can_track_orders_for_an_opened_position(self):
         # Arrange

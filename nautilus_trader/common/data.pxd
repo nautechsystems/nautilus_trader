@@ -21,10 +21,10 @@ from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.tick cimport QuoteTick, TradeTick
 from nautilus_trader.model.bar cimport BarType, Bar
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -38,16 +38,18 @@ cdef class DataClient:
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
     cdef dict _spreads
-    cdef dict _spreads_average
+    cdef dict _spreads_avg
+    cdef dict _bars
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
     cdef dict _instrument_handlers
     cdef dict _instruments
 
     cdef readonly int tick_capacity
+    cdef readonly int bar_capacity
     cdef readonly bint use_previous_close
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
@@ -84,19 +86,40 @@ cdef class DataClient:
     cpdef void unsubscribe_bars(self, BarType bar_type, handler) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler) except *
     cpdef void update_instruments(self, Venue venue) except *
-# ------------------------------------------------------------------------------------------------ #
 
-    cpdef datetime time_now(self)
+# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+    cpdef void register_strategy(self, TradingStrategy strategy) except *
+
+# -- HANDLER METHODS ----------------------------------------------------------------------------- #
+    cpdef void handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
+    cpdef void handle_quote_ticks(self, list ticks) except *
+    cpdef void handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
+    cpdef void handle_trade_ticks(self, list ticks) except *
+    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
+    cpdef void handle_bars(self, BarType bar_type, list bars) except *
+    cpdef void handle_instrument(self, Instrument instrument) except *
+    cpdef void handle_instruments(self, list instruments) except *
+
+# -- QUERY METHODS ------------------------------------------------------------------------------- #
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instruments(self)
     cpdef list instrument_symbols(self)
-    cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef dict get_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef bint has_quote_ticks(self, Symbol symbol)
     cpdef bint has_trade_ticks(self, Symbol symbol)
+    cpdef bint has_bars(self, BarType bar_type)
+    cpdef int quote_tick_count(self, Symbol symbol)
+    cpdef int trade_tick_count(self, Symbol symbol)
+    cpdef int bar_count(self, BarType bar_type)
+    cpdef list quote_ticks(self, Symbol symbol)
+    cpdef list trade_ticks(self, Symbol symbol)
+    cpdef list bars(self, BarType bar_type)
+    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
+    cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
+    cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef double spread(self, Symbol symbol)
     cpdef double spread_average(self, Symbol symbol)
     cpdef double get_exchange_rate(
@@ -104,7 +127,8 @@ cdef class DataClient:
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=*)
-    cpdef void set_use_previous_close(self, bint value) except *
+# ------------------------------------------------------------------------------------------------ #
+
     cdef void _start_generating_bars(self, BarType bar_type, handler) except *
     cdef void _stop_generating_bars(self, BarType bar_type, handler) except *
     cdef void _add_quote_tick_handler(self, Symbol symbol, handler) except *
@@ -115,16 +139,11 @@ cdef class DataClient:
     cdef void _remove_trade_tick_handler(self, Symbol symbol, handler) except *
     cdef void _remove_bar_handler(self, BarType bar_type, handler) except *
     cdef void _remove_instrument_handler(self, Symbol symbol, handler) except *
-    cpdef void _bulk_build_tick_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback) except *
-    cpdef void _handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void _handle_trade_tick(self, TradeTick tick) except *
-    cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *
-    cpdef void _handle_instrument(self, Instrument instrument) except *
-    cpdef void _handle_instruments(self, list instruments) except *
-    cpdef void _reset(self) except *
+    cdef void _bulk_build_tick_bars(
+            self,
+            BarType bar_type,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback) except *
+    cdef void _reset(self) except *
