@@ -140,7 +140,9 @@ class BatterySeries:
     @staticmethod
     def create(length=4000) -> np.array:
         """
-        Create a 'battery series' comprising of a horizontally asymptotic
+        Create a 'battery series'.
+
+        Series comprises of a horizontally asymptotic
         dive, then a spike, then a step, the a sine wave and finally a high
         volatility random walk.
 

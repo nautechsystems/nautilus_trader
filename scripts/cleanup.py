@@ -15,8 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-A utility script to remove cython and pytest artifact files from the source code
-directories.
+A utility script to remove cython and pytest artifact files from source code directories.
 """
 
 import os
