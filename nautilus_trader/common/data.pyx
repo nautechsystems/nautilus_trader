@@ -435,7 +435,7 @@ cdef class DataClient:
 
     cpdef bint has_quote_ticks(self, Symbol symbol):
         """
-        Return a value indicating whether the data client has quote ticks for 
+        Return a value indicating whether the data client has quote ticks for
         the given symbol.
 
         :param symbol: The symbol for the ticks.
@@ -447,7 +447,7 @@ cdef class DataClient:
 
     cpdef bint has_trade_ticks(self, Symbol symbol):
         """
-        Return a value indicating whether the data client has trade ticks for 
+        Return a value indicating whether the data client has trade ticks for
         the given symbol.
 
         :param symbol: The symbol for the ticks.
@@ -459,7 +459,7 @@ cdef class DataClient:
 
     cpdef bint has_bars(self, BarType bar_type):
         """
-        Return a value indicating whether the data client has bars for the given 
+        Return a value indicating whether the data client has bars for the given
         bar type.
 
         :param bar_type: The bar type for the bars.

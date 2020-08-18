@@ -307,7 +307,7 @@ cdef class TradingStrategy:
             update_method: callable=None) except *:
         """
         Register the given indicator with the strategy to receive data of the
-        given data_source (can be a <Symbol> for <QuoteTick> data, or a 
+        given data_source (can be a <Symbol> for <QuoteTick> data, or a
         <BarType> for <Bar> data).
 
         :param data_source: The data source for updates.
@@ -340,7 +340,7 @@ cdef class TradingStrategy:
         System method. Handle the given tick.
 
         :param tick: The tick received.
-        :param is_historical: The flag indicating whether the tick is historical 
+        :param is_historical: The flag indicating whether the tick is historical
         (won't be passed to on_quote_tick()).
         """
         Condition.not_none(tick, "tick")
@@ -365,7 +365,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_quote_ticks(self, list ticks) except *:
         """
-        System method. Handle the given list of ticks by handling each tick 
+        System method. Handle the given list of ticks by handling each tick
         individually.
         """
         Condition.not_none(ticks, "ticks")  # Could be empty
@@ -387,7 +387,7 @@ cdef class TradingStrategy:
         System method. Handle the given tick.
 
         :param tick: The trade tick received.
-        :param is_historical: The flag indicating whether the tick is historical 
+        :param is_historical: The flag indicating whether the tick is historical
         (won't be passed to on_trade_tick()).
         """
         Condition.not_none(tick, "tick")
@@ -405,7 +405,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_trade_ticks(self, list ticks) except *:
         """
-        System method. Handle the given list of ticks by handling each tick 
+        System method. Handle the given list of ticks by handling each tick
         individually.
         """
         Condition.not_none(ticks, "ticks")  # Could be empty
@@ -428,7 +428,7 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
-        :param is_historical: The flag indicating whether the bar is historical 
+        :param is_historical: The flag indicating whether the bar is historical
         (won't be passed to on_bar).
         """
         Condition.not_none(bar_type, "bar_type")
@@ -454,7 +454,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
-        System method. Handle the given bar type and bars by handling each bar 
+        System method. Handle the given bar type and bars by handling each bar
         individually.
         """
         Condition.not_none(bar_type, "bar_type")
