@@ -113,7 +113,9 @@ class TickTock(TradingStrategy):
 
 
 class TestStrategy1(TradingStrategy):
-    """A simple strategy for unit testing."""
+    """
+    A simple strategy for unit testing.
+    """
 
     __test__ = False
 
@@ -191,9 +193,10 @@ class TestStrategy1(TradingStrategy):
 
 class EMACross(TradingStrategy):
     """
-    A simple moving average cross example strategy. When the fast EMA crosses
-    the slow EMA then a STOP entry bracket order is placed for that direction
-    with a trailing stop and profit target at 1R risk.
+    A simple moving average cross example strategy.
+
+    When the fast EMA crosses the slow EMA then a STOP entry bracket order is
+    placed for that direction with a trailing stop and profit target at 1R risk.
     """
 
     def __init__(self,

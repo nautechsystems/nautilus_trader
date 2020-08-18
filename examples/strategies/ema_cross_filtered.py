@@ -38,9 +38,10 @@ DONE_FOR_DAY = "DONE-FOR-DAY"
 
 class EMACrossFiltered(TradingStrategy):
     """
-    A simple moving average cross example strategy. When the fast EMA crosses
-    the slow EMA then a STOP entry bracket order is placed for that direction
-    with a trailing stop and profit target at 1R risk.
+    A simple moving average cross example strategy.
+
+    When the fast EMA crosses the slow EMA then a STOP entry bracket order is
+    placed for that direction with a trailing stop and profit target at 1R risk.
     """
 
     def __init__(self,

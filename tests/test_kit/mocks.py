@@ -55,8 +55,9 @@ class ObjectStorer:
 
 class MockExecutionClient(ExecutionClient):
     """
-    Provides an execution client for testing. The client will store all
-    received commands in a list.
+    Provides an execution client for testing.
+
+    The client will store all received commands in a list.
     """
 
     def __init__(self, exec_engine, logger):

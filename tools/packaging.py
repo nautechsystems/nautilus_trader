@@ -66,8 +66,9 @@ def scan_directories(directories: list) -> list:
 
 def get_files(directory: str, files: list=None) -> list:
     """
-    Return a list of all file names in the given directory with the given extension
-    by recursive scan and appending to the given list of files.
+    Return a list of all file names in the given directory.
+
+    Recursively scans and appends to the given list of files.
 
     Parameters
     ----------
