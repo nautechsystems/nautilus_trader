@@ -33,7 +33,9 @@ from tests.test_kit.mocks import ObjectStorer
 
 
 class PyStrategy(TradingStrategy):
-    """A strategy which is empty and does nothing."""
+    """
+    A strategy which is empty and does nothing.
+    """
 
     def __init__(self, bar_type: BarType):
         """Initialize a new instance of the PyStrategy class."""
@@ -45,36 +47,17 @@ class PyStrategy(TradingStrategy):
     def on_start(self):
         self.subscribe_bars(self.bar_type)
 
-    def on_quote_tick(self, tick):
-        pass
-
     def on_bar(self, bar_type, bar):
         self.object_storer.store_2(bar_type, bar)
-
-    def on_instrument(self, instrument):
-        pass
 
     def on_event(self, event):
         self.object_storer.store(event)
 
-    def on_stop(self):
-        pass
-
-    def on_reset(self):
-        pass
-
-    def on_save(self):
-        return {}
-
-    def on_load(self, state):
-        pass
-
-    def on_dispose(self):
-        pass
-
 
 class EmptyStrategy(TradingStrategy):
-    """A strategy which is empty and does nothing."""
+    """
+    An empty strategy which is does nothing.
+    """
 
     def __init__(self, order_id_tag):
         """
@@ -84,39 +67,11 @@ class EmptyStrategy(TradingStrategy):
         """
         super().__init__(order_id_tag=order_id_tag)
 
-    def on_start(self):
-        pass
-
-    def on_quote_tick(self, tick):
-        pass
-
-    def on_bar(self, bar_type, bar):
-        pass
-
-    def on_instrument(self, instrument):
-        pass
-
-    def on_event(self, event):
-        pass
-
-    def on_stop(self):
-        pass
-
-    def on_reset(self):
-        pass
-
-    def on_save(self):
-        return {}
-
-    def on_load(self, state):
-        pass
-
-    def on_dispose(self):
-        pass
-
 
 class TickTock(TradingStrategy):
-    """A strategy to test correct sequencing of tick data and timers."""
+    """
+    A strategy to test correct sequencing of tick data and timers.
+    """
 
     def __init__(self, instrument, bar_type):
         """Initialize a new instance of the TickTock class."""
@@ -153,26 +108,8 @@ class TickTock(TradingStrategy):
         self.clock.set_time_alert(name=time_alert_name, alert_time=alert_time)
         self.log.info(f"Set time alert time_alert_name for {alert_time}.")
 
-    def on_instrument(self, instrument):
-        pass
-
     def on_event(self, event):
         self.store.append(event)
-
-    def on_stop(self):
-        pass
-
-    def on_reset(self):
-        pass
-
-    def on_save(self):
-        return {}
-
-    def on_load(self, state):
-        pass
-
-    def on_dispose(self):
-        pass
 
 
 class TestStrategy1(TradingStrategy):

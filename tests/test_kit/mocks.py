@@ -17,7 +17,9 @@ from nautilus_trader.common.execution import ExecutionClient
 
 
 class ObjectStorer:
-    """A test class which stores the given objects."""
+    """
+    A test class which stores the given objects.
+    """
 
     def __init__(self):
         """Initialize a new instance of the ObjectStorer class."""

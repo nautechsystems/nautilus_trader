@@ -140,10 +140,10 @@ cdef class DataClient:
     cdef void _remove_bar_handler(self, BarType bar_type, handler) except *
     cdef void _remove_instrument_handler(self, Symbol symbol, handler) except *
     cdef void _bulk_build_tick_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            callback) except *
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback) except *
     cdef void _reset(self) except *

@@ -132,7 +132,8 @@ cdef class TradingStrategy:
     cpdef Portfolio portfolio(self)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
-    cpdef double get_exchange_rate(self,
+    cpdef double get_exchange_rate(
+        self,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=*)
