@@ -54,7 +54,7 @@ cdef class BacktestEngine:
                  BacktestConfig config=None,
                  FillModel fill_model=None):
         """
-        Initializes a new instance of the BacktestEngine class.
+        Initialize a new instance of the BacktestEngine class.
 
         :param data: The data for the backtest engine.
         :param strategies: The initial strategies for the backtest engine.
@@ -67,10 +67,10 @@ cdef class BacktestEngine:
             config = BacktestConfig()
         if fill_model is None:
             fill_model = FillModel()
-        Condition.list_type(strategies, TradingStrategy, 'strategies')
+        Condition.list_type(strategies, TradingStrategy, "strategies")
 
-        self.trader_id = TraderId('BACKTESTER', '000')
-        self.account_id = AccountId.from_string('NAUTILUS-001-SIMULATED')
+        self.trader_id = TraderId("BACKTESTER", "000")
+        self.account_id = AccountId.from_string("NAUTILUS-001-SIMULATED")
         self.config = config
         self.clock = LiveClock()
         self.created_time = self.clock.time_now()
@@ -109,31 +109,31 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Building engine...")
 
-        if config.exec_db_type == 'in-memory':
+        if config.exec_db_type == "in-memory":
             self.exec_db = InMemoryExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self.test_logger)
-        elif config.exec_db_type == 'redis':
+        elif config.exec_db_type == "redis":
             self.exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
-                host='localhost',
+                host="localhost",
                 port=6379,
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 logger=self.test_logger)
         else:
-            raise ValueError(f'The exec_db_type in the backtest configuration is unrecognized '
-                             f'(can be either \'in-memory\' or \'redis\').')
+            raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
+                             f"(can be either \"in-memory\" or \"redis\").")
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
         self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.data_client = BacktestDataClient(
             data=data,
-            tick_capacity=100,  # TODO: Configurable
+            tick_capacity=config.tick_capacity,
+            bar_capacity=config.bar_capacity,
             clock=self.test_clock,
             logger=self.test_logger)
-        self.data_client.set_use_previous_close(False)
 
         self.portfolio = Portfolio(
             clock=self.test_clock,
@@ -162,8 +162,6 @@ cdef class BacktestEngine:
 
         self.exec_engine.register_client(self.exec_client)
 
-        self._change_clocks_and_loggers(strategies)
-        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
         self.trader = Trader(
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -174,10 +172,13 @@ cdef class BacktestEngine:
             uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
+        self._change_clocks_and_loggers(strategies)
+        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
+
         self.iteration = 0
 
         self.time_to_initialize = self.clock.get_delta(self.created_time)
-        self.log.info(f'Initialized in {self.time_to_initialize}.')
+        self.log.info(f"Initialized in {self.time_to_initialize}.")
         self._backtest_memory()
 
     cpdef void run(
@@ -213,22 +214,22 @@ cdef class BacktestEngine:
         else:
             stop = min(as_utc_timestamp(stop), self.data_client.max_timestamp)
 
-        Condition.equal(start.tz, pytz.utc, 'start.tz', 'UTC')
-        Condition.equal(stop.tz, pytz.utc, 'stop.tz', 'UTC')
-        Condition.true(start >= self.data_client.min_timestamp, 'start >= data_client.min_timestamp')
-        Condition.true(start <= self.data_client.max_timestamp, 'stop <= data_client.max_timestamp')
-        Condition.true(start < stop, 'start < stop')
-        Condition.type_or_none(fill_model, FillModel, 'fill_model')
+        Condition.equal(start.tz, pytz.utc, "start.tz", "UTC")
+        Condition.equal(stop.tz, pytz.utc, "stop.tz", "UTC")
+        Condition.true(start >= self.data_client.min_timestamp, "start >= data_client.min_timestamp")
+        Condition.true(start <= self.data_client.max_timestamp, "stop <= data_client.max_timestamp")
+        Condition.true(start < stop, "start < stop")
+        Condition.type_or_none(fill_model, FillModel, "fill_model")
         if strategies:
-            Condition.not_empty(strategies, 'strategies')
-            Condition.list_type(strategies, TradingStrategy, 'strategies')
+            Condition.not_empty(strategies, "strategies")
+            Condition.list_type(strategies, TradingStrategy, "strategies")
 
         cdef datetime run_started = self.clock.time_now()
 
         # Setup logging
         self.test_logger.clear_log_store()
         if self.config.log_to_file:
-            backtest_log_name = self.logger.name + '-' + format_iso8601(run_started)
+            backtest_log_name = f"{self.logger.name}-{format_iso8601(run_started)}"
             self.logger.change_log_file_name(backtest_log_name)
             self.test_logger.change_log_file_name(backtest_log_name)
 
@@ -240,8 +241,6 @@ cdef class BacktestEngine:
 
         # Setup clocks
         self.test_clock.set_time(start)
-        assert(self.data_client.time_now() == start)
-        assert(self.exec_client.time_now() == start)
 
         # Setup data
         self.data_client.setup(start, stop)
@@ -252,8 +251,8 @@ cdef class BacktestEngine:
 
         # Setup new strategies
         if strategies is not None:
-            self._change_clocks_and_loggers(strategies)
             self.trader.initialize_strategies(strategies)
+            self._change_clocks_and_loggers(strategies)
 
         # Run the backtest
         self.log.info(f"Running backtest...")

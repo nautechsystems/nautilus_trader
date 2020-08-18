@@ -122,7 +122,7 @@ cdef class FuzzyCandlesticks(Indicator):
                  double threshold4=3.0,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the FuzzyCandlesticks class.
+        Initialize a new instance of the FuzzyCandlesticks class.
 
         Parameters
         ----------
@@ -139,11 +139,11 @@ cdef class FuzzyCandlesticks(Indicator):
         check_inputs : bool
             The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(period, 'period')
-        Condition.positive(threshold1, 'threshold1')
-        Condition.true(threshold2 > threshold1, 'threshold2 > threshold1')
-        Condition.true(threshold3 > threshold2, 'threshold3 > threshold2')
-        Condition.true(threshold4 > threshold3, 'threshold4 > threshold3')
+        Condition.positive_int(period, "period")
+        Condition.positive(threshold1, "threshold1")
+        Condition.true(threshold2 > threshold1, "threshold2 > threshold1")
+        Condition.true(threshold3 > threshold2, "threshold3 > threshold2")
+        Condition.true(threshold4 > threshold3, "threshold4 > threshold3")
         super().__init__(params=[period,
                                  threshold1,
                                  threshold2,
@@ -190,12 +190,12 @@ cdef class FuzzyCandlesticks(Indicator):
         :param close_price: The close price (> 0).
         """
         if self.check_inputs:
-            Condition.positive(open_price, 'open_price')
-            Condition.positive(high_price, 'high_price')
-            Condition.positive(low_price, 'low_price')
-            Condition.positive(close_price, 'close_price')
-            Condition.true(high_price >= low_price, 'high_price >= low_price')
-            Condition.true(high_price >= close_price, 'high_price >= close_price')
+            Condition.positive(open_price, "open_price")
+            Condition.positive(high_price, "high_price")
+            Condition.positive(low_price, "low_price")
+            Condition.positive(close_price, "close_price")
+            Condition.true(high_price >= low_price, "high_price >= low_price")
+            Condition.true(high_price >= close_price, "high_price >= close_price")
             Condition.true(low_price <= close_price, 'low_price <= close_price')
 
         # Check if this is the first input

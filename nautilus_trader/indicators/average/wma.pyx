@@ -30,15 +30,15 @@ cdef class WeightedMovingAverage(MovingAverage):
                  int period,
                  weights=None):
         """
-        Initializes a new instance of the SimpleMovingAverage class.
+        Initialize a new instance of the SimpleMovingAverage class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param weights: The weights for the moving average calculation
         (if not None then = period).
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         if weights is not None:
-            Condition.equal(len(weights), period, 'len(weights)', 'period')
+            Condition.equal(len(weights), period, "len(weights)", "period")
         super().__init__(period, params=[period, weights])
 
         self._inputs = deque(maxlen=self.period)

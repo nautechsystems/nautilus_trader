@@ -22,17 +22,17 @@ cpdef enum OrderSide:
 
 cdef inline str order_side_to_string(int value):
     if value == 1:
-        return 'BUY'
+        return "BUY"
     elif value == 2:
-        return 'SELL'
+        return "SELL"
     else:
-        return 'UNDEFINED'
+        return "UNDEFINED"
 
 
 cdef inline OrderSide order_side_from_string(str value):
-    if value == 'BUY':
+    if value == "BUY":
         return OrderSide.BUY
-    elif value == 'SELL':
+    elif value == "SELL":
         return OrderSide.SELL
     else:
         return OrderSide.UNDEFINED

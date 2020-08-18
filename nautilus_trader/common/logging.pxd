@@ -37,37 +37,37 @@ cpdef enum LogLevel:
 
 cdef inline str log_level_to_string(int value):
     if value == 1:
-        return 'VRB'
+        return "VRB"
     elif value == 2:
-        return 'DBG'
+        return "DBG"
     elif value == 3:
-        return 'INF'
+        return "INF"
     elif value == 4:
-        return 'WRN'
+        return "WRN"
     elif value == 5:
-        return 'ERR'
+        return "ERR"
     elif value == 6:
-        return 'CRT'
+        return "CRT"
     elif value == 7:
-        return 'FTL'
+        return "FTL"
     else:
-        return 'UNDEFINED'
+        return "UNDEFINED"
 
 
 cdef inline LogLevel log_level_from_string(str value):
-    if value == 'VRB':
+    if value == "VRB":
         return LogLevel.VERBOSE
-    elif value == 'DBG':
+    elif value == "DBG":
         return LogLevel.DEBUG
-    elif value == 'INF':
+    elif value == "INF":
         return LogLevel.INFO
-    elif value == 'WRN':
+    elif value == "WRN":
         return LogLevel.WARNING
-    elif value == 'ERR':
+    elif value == "ERR":
         return LogLevel.ERROR
-    elif value == 'CRT':
+    elif value == "CRT":
         return LogLevel.CRITICAL
-    elif value == 'FTL':
+    elif value == "FTL":
         return LogLevel.FATAL
     else:
         return LogLevel.UNDEFINED

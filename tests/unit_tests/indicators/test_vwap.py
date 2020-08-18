@@ -31,18 +31,18 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('VolumeWeightedAveragePrice', self.vwap.name)
+        self.assertEqual("VolumeWeightedAveragePrice", self.vwap.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('VolumeWeightedAveragePrice()', str(self.vwap))
+        self.assertEqual("VolumeWeightedAveragePrice()", str(self.vwap))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.vwap).startswith('<VolumeWeightedAveragePrice() object at'))
-        self.assertTrue(repr(self.vwap).endswith('>'))
+        self.assertTrue(repr(self.vwap).startswith("<VolumeWeightedAveragePrice() object at"))
+        self.assertTrue(repr(self.vwap).endswith(">"))
 
     def test_initialized_without_inputs_returns_false(self):
         # Act

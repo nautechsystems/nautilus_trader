@@ -32,13 +32,13 @@ cdef class RateOfChange(Indicator):
                  bint use_log=False,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the RateOfChange class.
+        Initialize a new instance of the RateOfChange class.
 
         :param period: The period for the indicator (> 1).
         :param use_log: Use log returns for value calculation.
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.true(period > 1, 'period > 1')
+        Condition.true(period > 1, "period > 1")
 
         super().__init__(params=[period], check_inputs=check_inputs)
         self.period = period
@@ -54,7 +54,7 @@ cdef class RateOfChange(Indicator):
         :param price: The price value.
         """
         if self.check_inputs:
-            Condition.positive(price, 'price')
+            Condition.positive(price, "price")
 
         self._prices.append(price)
 

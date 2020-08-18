@@ -34,7 +34,9 @@ class DataClientTests(unittest.TestCase):
 
     def setUp(self):
         self.client = DataClient(
-            tick_capacity=100,
+            tick_capacity=1000,
+            bar_capacity=1000,
+            use_previous_close=False,
             clock=TestClock(),
             uuid_factory=TestUUIDFactory(),
             logger=TestLogger())
@@ -49,7 +51,7 @@ class DataClientTests(unittest.TestCase):
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.client._handle_quote_tick(tick)
+        self.client.handle_quote_tick(tick)
 
         # Act
         result = self.client.get_exchange_rate(Currency.JPY, Currency.USD)
@@ -67,7 +69,7 @@ class DataClientTests(unittest.TestCase):
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.client._handle_quote_tick(tick)
+        self.client.handle_quote_tick(tick)
 
         # Act
         result = self.client.get_exchange_rate(Currency.AUD, Currency.USD)

@@ -33,16 +33,16 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
                  ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the MovingAverageConvergenceDivergence class.
+        Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
         :param fast_period: The period for the fast moving average (> 0).
         :param slow_period: The period for the slow moving average (> 0 & > fast_sma).
         :param ma_type: The moving average type for the calculations.
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(fast_period, 'fast_period')
-        Condition.positive_int(slow_period, 'slow_period')
-        Condition.true(slow_period > fast_period, 'slow_period > fast_period')
+        Condition.positive_int(fast_period, "fast_period")
+        Condition.positive_int(slow_period, "slow_period")
+        Condition.true(slow_period > fast_period, "slow_period > fast_period")
         super().__init__(params=[fast_period,
                                  slow_period,
                                  ma_type.name],

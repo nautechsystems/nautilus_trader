@@ -25,11 +25,11 @@ cdef class Account:
 
     def __init__(self, AccountStateEvent event):
         """
-        Initializes a new instance of the Account class.
+        Initialize a new instance of the Account class.
 
         :param: event: The initial account state event.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         self._events = [event]
         self.event_count = 1
@@ -58,7 +58,7 @@ cdef class Account:
         :param other: The other object.
         :return bool.
         """
-        Condition.not_none(other, 'other')
+        Condition.not_none(other, "other")
 
         return self.id == other.id
 
@@ -69,7 +69,7 @@ cdef class Account:
         :param other: The other object.
         :return bool.
         """
-        Condition.not_none(other, 'other')
+        Condition.not_none(other, "other")
 
         return not self.__eq__(other)
 
@@ -110,8 +110,8 @@ cdef class Account:
 
         :param event: The account event to apply.
         """
-        Condition.not_none(event, 'event')
-        Condition.equal(self.id, event.account_id, 'id', 'event.account_id')
+        Condition.not_none(event, "event")
+        Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
         self.event_count += 1

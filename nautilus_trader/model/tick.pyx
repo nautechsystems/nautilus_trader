@@ -32,7 +32,7 @@ cdef class Tick:
                  Symbol symbol not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the Tick class.
+        Initialize a new instance of the Tick class.
 
         Parameters
         ----------
@@ -173,7 +173,7 @@ cdef class QuoteTick(Tick):
                  Quantity ask_size not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the QuoteTick class.
+        Initialize a new instance of the QuoteTick class.
 
         Parameters
         ----------
@@ -286,7 +286,7 @@ cdef class TradeTick(Tick):
                  MatchId match_id not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the TradeTick class.
+        Initialize a new instance of the TradeTick class.
 
         Parameters
         ----------

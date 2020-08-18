@@ -23,7 +23,7 @@ cdef class ObjectCache:
 
     def __init__(self, type type_value not None, parser not None):
         """
-        Initializes a new instance of the ObjectCache class.
+        Initialize a new instance of the ObjectCache class.
         """
         self.type_key = str
         self.type_value = type_value
@@ -39,7 +39,7 @@ cdef class ObjectCache:
 
         :return object.
         """
-        Condition.valid_string(key, 'key')
+        Condition.valid_string(key, "key")
 
         parsed = self._cache.get(key)
         if parsed is None:

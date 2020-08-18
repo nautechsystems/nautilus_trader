@@ -59,6 +59,8 @@ cdef class IndicatorUpdater:
     cdef list _outputs
     cdef bint _include_self
 
+    cdef readonly datetime last_update
+
     cpdef void update_tick(self, QuoteTick tick) except *
     cpdef void update_bar(self, Bar bar) except *
     cpdef dict build_features_ticks(self, list ticks)

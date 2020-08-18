@@ -27,7 +27,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
     def __init__(self, bint check_inputs=False):
         """
-        Initializes a new instance of the VolumeWeightedAveragePrice class.
+        Initialize a new instance of the VolumeWeightedAveragePrice class.
 
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
@@ -55,8 +55,8 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         :param timestamp: The timestamp.
         """
         if self.check_inputs:
-            Condition.positive(price, 'price')
-            Condition.not_negative(volume, 'volume')
+            Condition.positive(price, "price")
+            Condition.not_negative(volume, "volume")
 
         # On a new day reset the indicator
         if timestamp.day != self._day:

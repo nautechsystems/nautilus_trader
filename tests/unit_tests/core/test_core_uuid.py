@@ -23,14 +23,14 @@ class UUIDTests(unittest.TestCase):
     def test_create_uuid_from_hex_string_value(self):
         # Arrange
         # Act
-        uuid_object1 = UUID('{12345678-1234-5678-1234-567812345678}')
-        uuid_object2 = UUID('12345678123456781234567812345678')
-        uuid_object3 = UUID('urn:uuid:12345678-1234-5678-1234-567812345678')
+        uuid_object1 = UUID("{12345678-1234-5678-1234-567812345678}")
+        uuid_object2 = UUID("12345678123456781234567812345678")
+        uuid_object3 = UUID("urn:uuid:12345678-1234-5678-1234-567812345678")
 
         # Assert
-        self.assertEqual('UUID(\'12345678-1234-5678-1234-567812345678\')', repr(uuid_object1))
-        self.assertEqual('UUID(\'12345678-1234-5678-1234-567812345678\')', repr(uuid_object2))
-        self.assertEqual('UUID(\'12345678-1234-5678-1234-567812345678\')', repr(uuid_object3))
+        self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid_object1))
+        self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid_object2))
+        self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid_object3))
 
     def test_create_uuid_from_bytes_val(self):
         # Arrange
@@ -38,7 +38,7 @@ class UUIDTests(unittest.TestCase):
         uuid_object = UUID(bytes_val=b'\x12\x34\x56\x78' * 4)
 
         # Assert
-        self.assertEqual('UUID(\'12345678-1234-5678-1234-567812345678\')', repr(uuid_object))
+        self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid_object))
 
     def test_create_uuid_from_little_endian_bytes_le(self):
         # Arrange
@@ -46,7 +46,7 @@ class UUIDTests(unittest.TestCase):
         uuid_object = UUID(bytes_le=b'\x78\x56\x34\x12\x34\x12\x78\x56\x12\x34\x56\x78\x12\x34\x56\x78')
 
         # Assert
-        self.assertEqual('UUID(\'12345678-1234-5678-1234-567812345678\')', repr(uuid_object))
+        self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid_object))
 
     def test_create_uuid_from_fields_tuple(self):
         # Arrange
@@ -54,7 +54,7 @@ class UUIDTests(unittest.TestCase):
         uuid_object = UUID(fields=(0x12345678, 0x1234, 0x5678, 0x12, 0x34, 0x567812345678))
 
         # Assert
-        self.assertEqual('UUID(\'12345678-1234-5678-1234-567812345678\')', repr(uuid_object))
+        self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid_object))
 
     def test_create_uuid_from_int_val(self):
         # Arrange
@@ -62,7 +62,7 @@ class UUIDTests(unittest.TestCase):
         uuid_object = UUID(int_val=0x12345678123456781234567812345678)
 
         # Assert
-        self.assertEqual('UUID(\'12345678-1234-5678-1234-567812345678\')', repr(uuid_object))
+        self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid_object))
 
     def test_create_uuid1(self):
         # Arrange
@@ -75,7 +75,7 @@ class UUIDTests(unittest.TestCase):
     def test_create_uuid3(self):
         # Arrange
         # Act
-        uuid_object = uuid3(UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'), 'some_name')
+        uuid_object = uuid3(UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "some_name")
 
         # Assert
         self.assertTrue(isinstance(uuid_object, UUID))
@@ -94,7 +94,7 @@ class UUIDTests(unittest.TestCase):
     def test_create_uuid5(self):
         # Arrange
         # Act
-        uuid_object = uuid5(UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'), 'some_name')
+        uuid_object = uuid5(UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "some_name")
 
         # Assert
         self.assertTrue(isinstance(uuid_object, UUID))

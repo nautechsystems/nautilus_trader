@@ -30,18 +30,18 @@ class HilbertTransformTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('HilbertTransform', self.ht.name)
+        self.assertEqual("HilbertTransform", self.ht.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('HilbertTransform(7)', str(self.ht))
+        self.assertEqual("HilbertTransform(7)", str(self.ht))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.ht).startswith('<HilbertTransform(7) object at'))
-        self.assertTrue(repr(self.ht).endswith('>'))
+        self.assertTrue(repr(self.ht).startswith("<HilbertTransform(7) object at"))
+        self.assertTrue(repr(self.ht).endswith(">"))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -163,7 +163,7 @@ class HilbertTransformTests(unittest.TestCase):
         # plt.plot(battery_signal)
         # plt.plot(output1)
         # plt.plot(output2)
-        # plt.title(f'Battery Signal -> {self.ht.name} output')
-        # plt.xlabel('X (period)')
-        # plt.ylabel('Y (value)')
+        # plt.title(f"Battery Signal -> {self.ht.name} output")
+        # plt.xlabel("X (period)")
+        # plt.ylabel("Y (value)")
         # plt.show()

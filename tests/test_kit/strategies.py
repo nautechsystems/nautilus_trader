@@ -38,10 +38,8 @@ class PyStrategy(TradingStrategy):
     """
 
     def __init__(self, bar_type: BarType):
-        """
-        Initializes a new instance of the PyStrategy class.
-        """
-        super().__init__(order_id_tag='001')
+        """Initialize a new instance of the PyStrategy class."""
+        super().__init__(order_id_tag="001")
 
         self.bar_type = bar_type
         self.object_storer = ObjectStorer()
@@ -49,77 +47,25 @@ class PyStrategy(TradingStrategy):
     def on_start(self):
         self.subscribe_bars(self.bar_type)
 
-    def on_quote_tick(self, tick):
-        pass
-
     def on_bar(self, bar_type, bar):
-        print(bar)
         self.object_storer.store_2(bar_type, bar)
-
-    def on_instrument(self, instrument):
-        pass
 
     def on_event(self, event):
         self.object_storer.store(event)
 
-    def on_stop(self):
-        pass
-
-    def on_reset(self):
-        pass
-
-    def on_save(self):
-        return {}
-
-    def on_load(self, state):
-        pass
-
-    def on_dispose(self):
-        pass
-
 
 class EmptyStrategy(TradingStrategy):
     """
-    A strategy which is empty and does nothing.
+    An empty strategy which is does nothing.
     """
 
     def __init__(self, order_id_tag):
         """
-        Initializes a new instance of the EmptyStrategy class.
+        Initialize a new instance of the EmptyStrategy class.
 
         :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
         """
         super().__init__(order_id_tag=order_id_tag)
-
-    def on_start(self):
-        pass
-
-    def on_quote_tick(self, tick):
-        pass
-
-    def on_bar(self, bar_type, bar):
-        pass
-
-    def on_instrument(self, instrument):
-        pass
-
-    def on_event(self, event):
-        pass
-
-    def on_stop(self):
-        pass
-
-    def on_reset(self):
-        pass
-
-    def on_save(self):
-        return {}
-
-    def on_load(self, state):
-        pass
-
-    def on_dispose(self):
-        pass
 
 
 class TickTock(TradingStrategy):
@@ -128,10 +74,8 @@ class TickTock(TradingStrategy):
     """
 
     def __init__(self, instrument, bar_type):
-        """
-        Initializes a new instance of the TickTock class.
-        """
-        super().__init__(order_id_tag='000')
+        """Initialize a new instance of the TickTock class."""
+        super().__init__(order_id_tag="000")
 
         self.instrument = instrument
         self.bar_type = bar_type
@@ -144,61 +88,42 @@ class TickTock(TradingStrategy):
         self.subscribe_ticks(self.bar_type.symbol)
 
     def on_quote_tick(self, tick):
-        self.log.info(f'Received Tick({tick})')
+        self.log.info(f"Received Tick({tick})")
         self.store.append(tick)
 
     def on_bar(self, bar_type, bar):
-        self.log.info(f'Received {bar_type} Bar({bar})')
+        self.log.info(f"Received {bar_type} Bar({bar})")
         self.store.append(bar)
         if not self.timer_running:
-            timer_name = 'Test-Timer'
+            timer_name = "Test-Timer"
             self.clock.set_timer(name=timer_name, interval=timedelta(seconds=10))
             self.timer_running = True
             self.log.info(f"Started timer {timer_name}.")
 
         self.time_alert_counter += 1
 
-        time_alert_name = f'Test-Alert-{self.time_alert_counter}'
+        time_alert_name = f"Test-Alert-{self.time_alert_counter}"
         alert_time = bar.timestamp + timedelta(seconds=30)
 
         self.clock.set_time_alert(name=time_alert_name, alert_time=alert_time)
         self.log.info(f"Set time alert time_alert_name for {alert_time}.")
 
-    def on_instrument(self, instrument):
-        pass
-
     def on_event(self, event):
         self.store.append(event)
 
-    def on_stop(self):
-        pass
-
-    def on_reset(self):
-        pass
-
-    def on_save(self):
-        return {}
-
-    def on_load(self, state):
-        pass
-
-    def on_dispose(self):
-        pass
-
 
 class TestStrategy1(TradingStrategy):
-    """"
+    """
     A simple strategy for unit testing.
     """
+
     __test__ = False
 
     def __init__(self,
                  bar_type,
-                 id_tag_strategy='001',
+                 id_tag_strategy="001",
                  clock=TestClock()):
-        """
-        Initializes a new instance of the TestStrategy1 class.
-        """
+        """Initialize a new instance of the TestStrategy1 class."""
         super().__init__(order_id_tag=id_tag_strategy, clock=clock)
 
         self.object_storer = ObjectStorer()
@@ -213,21 +138,20 @@ class TestStrategy1(TradingStrategy):
         self.position_id = None
 
     def on_start(self):
-        self.object_storer.store('custom start logic')
-        self.account_inquiry()
+        self.object_storer.store("custom start logic")
+        self.subscribe_bars(self.bar_type)
 
     def on_quote_tick(self, tick):
         self.object_storer.store(tick)
 
     def on_bar(self, bar_type, bar):
-
         self.object_storer.store((bar_type, Bar))
 
         if bar_type.equals(self.bar_type):
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    Label('TestStrategy1_E'),
+                    Label("TestStrategy1_E"),
                     OrderSide.BUY,
                     100000)
 
@@ -237,7 +161,7 @@ class TestStrategy1(TradingStrategy):
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    Label('TestStrategy1_E'),
+                    Label("TestStrategy1_E"),
                     OrderSide.SELL,
                     100000)
 
@@ -251,27 +175,28 @@ class TestStrategy1(TradingStrategy):
         self.object_storer.store(event)
 
     def on_stop(self):
-        self.object_storer.store('custom stop logic')
+        self.object_storer.store("custom stop logic")
 
     def on_reset(self):
-        self.object_storer.store('custom reset logic')
+        self.object_storer.store("custom reset logic")
 
     def on_save(self):
-        self.object_storer.store('custom save logic')
+        self.object_storer.store("custom save logic")
         return {}
 
     def on_load(self, state):
-        self.object_storer.store('custom load logic')
+        self.object_storer.store("custom load logic")
 
     def on_dispose(self):
-        self.object_storer.store('custom dispose logic')
+        self.object_storer.store("custom dispose logic")
 
 
 class EMACross(TradingStrategy):
-    """"
-    A simple moving average cross example strategy. When the fast EMA crosses
-    the slow EMA then a STOP entry bracket order is placed for that direction
-    with a trailing stop and profit target at 1R risk.
+    """
+    A simple moving average cross example strategy.
+
+    When the fast EMA crosses the slow EMA then a STOP entry bracket order is
+    placed for that direction with a trailing stop and profit target at 1R risk.
     """
 
     def __init__(self,
@@ -282,9 +207,9 @@ class EMACross(TradingStrategy):
                  slow_ema: int=20,
                  atr_period: int=20,
                  sl_atr_multiple: float=2.0,
-                 extra_id_tag: str=''):
+                 extra_id_tag: str=""):
         """
-        Initializes a new instance of the EMACrossPy class.
+        Initialize a new instance of the EMACrossPy class.
 
         :param symbol: The symbol for the strategy.
         :param bar_spec: The bar specification for the strategy.
@@ -295,7 +220,7 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace("/", "") + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -315,9 +240,7 @@ class EMACross(TradingStrategy):
         self.atr = AverageTrueRange(atr_period)
 
     def on_start(self):
-        """
-        This method is called when self.start() is called, and after internal start logic.
-        """
+        """Actions to be performed on strategy start."""
         # Put custom code to be run on strategy start here (or pass)
         instrument = self.get_instrument(self.symbol)
 
@@ -352,23 +275,19 @@ class EMACross(TradingStrategy):
 
     def on_quote_tick(self, tick: QuoteTick):
         """
-        This method is called whenever a Tick is received by the strategy, and
-        after the Tick has been processed by the base class.
-        The received Tick object is then passed into this method.
+        Actions to be performed when the strategy is running and receives a quote tick.
 
-        :param tick: The received tick.
+        :param tick: The quote tick received.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
-        This method is called whenever the strategy receives a Bar, and after the
-        Bar has been processed by the base class.
-        The received BarType and Bar objects are then passed into this method.
+        Actions to be performed when the strategy is running and receives a bar.
 
-        :param bar_type: The received bar type.
-        :param bar: The received bar.
+        :param bar_type: The bar type received.
+        :param bar: The bar received.
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging
 
@@ -518,53 +437,56 @@ class EMACross(TradingStrategy):
 
     def on_data(self, data):
         """
-        This method is called whenever the strategy receives a data update.
+        Actions to be performed when the strategy is running and receives a data object.
 
-        :param data: The received data.
+        :param data: The data object received.
         """
-        # Put custom code for data handling here (or pass)
         pass
 
     def on_event(self, event):
         """
-        This method is called whenever the strategy receives an Event object,
-        and after the event has been processed by the TradingStrategy base class.
-        These events could be AccountEvent, OrderEvent, PositionEvent, TimeEvent.
+        Actions to be performed when the strategy is running and receives an event.
 
-        :param event: The received event.
+        :param event: The event received.
         """
-        # Put custom code for event handling here (or pass)
         pass
 
     def on_stop(self):
         """
-        This method is called when self.stop() is called and after internal
-        stopping logic.
+        Actions to be performed when the strategy is stopped.
         """
-        # Put custom code to be run on strategy stop here (or pass)
         pass
 
     def on_reset(self):
         """
-        This method is called when self.reset() is called, and after internal
-        reset logic such as clearing the internally held bars, ticks and resetting
-        all indicators.
+        Actions to be performed when the strategy is reset.
         """
-        # Put custom code to be run on a strategy reset here (or pass)
         pass
 
     def on_save(self) -> {}:
-        # Put custom state to be saved here (or return empty dictionary)
+        """
+        Actions to be performed when the strategy is saved.
+
+        Create and return a state dictionary of values to be saved.
+
+        Note: "OrderIdCount" and "PositionIdCount" are reserved keys for
+        the returned state dictionary.
+        """
         return {}
 
     def on_load(self, state: {}):
-        # Put custom state to be loaded here (or pass)
+        """
+        Actions to be performed when the strategy is loaded.
+
+        Saved state values will be contained in the give state dictionary.
+        """
         pass
 
     def on_dispose(self):
         """
-        This method is called when self.dispose() is called. Dispose of any
-        resources that have been used by the strategy here.
+        Actions to be performed when the strategy is disposed.
+
+        Cleanup any resources used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)

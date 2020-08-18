@@ -30,14 +30,14 @@ cdef class Message:
                  UUID identifier not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the Message class.
+        Initialize a new instance of the Message class.
 
         :param message_type: The message type.
         :param identifier: The message identifier.
         :param timestamp: The message timestamp.
         :raises ValueError: If the message_type is UNDEFINED.
         """
-        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
+        Condition.not_equal(message_type, MessageType.UNDEFINED, "message_type", "UNDEFINED")
 
         self.message_type = message_type
         self.id = identifier
@@ -106,7 +106,7 @@ cdef class Command(Message):
 
     def __init__(self, UUID identifier not None, datetime timestamp not None):
         """
-        Initializes a new instance of the Command class.
+        Initialize a new instance of the Command class.
 
         :param identifier: The command identifier.
         :param timestamp: The command timestamp.
@@ -123,7 +123,7 @@ cdef class Document(Message):
                  UUID identifier not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the Document class.
+        Initialize a new instance of the Document class.
 
         :param identifier: The event identifier.
         :param timestamp: The event timestamp.
@@ -140,7 +140,7 @@ cdef class Event(Message):
                  UUID identifier not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the Event class.
+        Initialize a new instance of the Event class.
 
         :param identifier: The event identifier.
         :param timestamp: The event timestamp.
@@ -155,7 +155,7 @@ cdef class Request(Message):
 
     def __init__(self, UUID identifier not None, datetime timestamp not None):
         """
-        Initializes a new instance of the Request class.
+        Initialize a new instance of the Request class.
 
         :param identifier: The request identifier.
         :param timestamp: The request timestamp.
@@ -173,7 +173,7 @@ cdef class Response(Message):
                  UUID identifier not None,
                  datetime timestamp not None):
         """
-        Initializes a new instance of the Response class.
+        Initialize a new instance of the Response class.
 
         :param identifier: The correlation identifier.
         :param identifier: The response identifier.

@@ -339,7 +339,7 @@ cdef class Condition:
             return  # Check passed
 
         cdef str msg = (f"The \'{param1}\' {type(object1)} of {object1} "
-                        f"was equal to the \'{param2}\' {type(object2)} of {object1}")
+                        f"was equal to the \"{param2}\" {type(object2)} of {object1}")
         if ex_type is None or type(ex_type) != type(Exception):
             raise ValueError(msg)
         else:
@@ -414,8 +414,8 @@ cdef class Condition:
 
         """
         Condition.not_none(argument, param, ex_type)
-        Condition.list_type(list(argument.keys()), key_type, param + ' keys', ex_type)
-        Condition.list_type(list(argument.values()), value_type, param + ' values', ex_type)
+        Condition.list_type(list(argument.keys()), key_type, param + " keys", ex_type)
+        Condition.list_type(list(argument.values()), value_type, param + " values", ex_type)
 
     @staticmethod
     cdef void is_in(
@@ -777,7 +777,7 @@ cdef class Condition:
         """
         Condition.not_none(argument, param, ex_type)
 
-        if argument != '' and not argument.isspace():
+        if argument != "" and not argument.isspace():
             return  # Check passed
 
         cdef str msg = (f"The \'{param}\' string argument was invalid"

@@ -29,18 +29,18 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
     def test_name(self):
         # Act
         # Assert
-        self.assertEqual('AdaptiveMovingAverage', self.ama.name)
+        self.assertEqual("AdaptiveMovingAverage", self.ama.name)
 
     def test_str(self):
         # Act
         # Assert
-        self.assertEqual('AdaptiveMovingAverage(10, 2, 30)', str(self.ama))
+        self.assertEqual("AdaptiveMovingAverage(10, 2, 30)", str(self.ama))
 
     def test_repr(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.ama).startswith('<AdaptiveMovingAverage(10, 2, 30) object at'))
-        self.assertTrue(repr(self.ama).endswith('>'))
+        self.assertTrue(repr(self.ama).startswith("<AdaptiveMovingAverage(10, 2, 30) object at"))
+        self.assertTrue(repr(self.ama).endswith(">"))
 
     def test_period(self):
         # Act

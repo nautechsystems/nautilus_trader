@@ -33,7 +33,7 @@ cdef class AccountInquiry(Command):
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """
-        Initializes a new instance of the AccountInquiry class.
+        Initialize a new instance of the AccountInquiry class.
 
         :param trader_id: The trader_id.
         :param account_id: The account_id for the inquiry.
@@ -70,7 +70,7 @@ cdef class SubmitOrder(Command):
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """
-        Initializes a new instance of the SubmitOrder class.
+        Initialize a new instance of the SubmitOrder class.
 
         :param trader_id: The trader_id associated with the order.
         :param account_id: The account_id to submit the order to.
@@ -116,7 +116,7 @@ cdef class SubmitBracketOrder(Command):
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """
-        Initializes a new instance of the SubmitBracketOrder class.
+        Initialize a new instance of the SubmitBracketOrder class.
 
         :param trader_id: The trader_id associated with the order.
         :param account_id: The account_id to submit the order to.
@@ -162,7 +162,7 @@ cdef class ModifyOrder(Command):
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """
-        Initializes a new instance of the ModifyOrder class.
+        Initialize a new instance of the ModifyOrder class.
 
         :param trader_id: The trader_id for the command.
         :param account_id: The account_id for the command.
@@ -207,7 +207,7 @@ cdef class CancelOrder(Command):
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """
-        Initializes a new instance of the CancelOrder class.
+        Initialize a new instance of the CancelOrder class.
 
         :param trader_id: The trader_id for the command.
         :param account_id: The account_id for the command.

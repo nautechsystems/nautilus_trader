@@ -34,21 +34,21 @@ class WeightedMovingAverageTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('WeightedMovingAverage', self.wma.name)
+        self.assertEqual("WeightedMovingAverage", self.wma.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual(
-            'WeightedMovingAverage(10, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])',
+            "WeightedMovingAverage(10, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])",
             str(self.wma))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertTrue(repr(self.wma).startswith(
-            '<WeightedMovingAverage(10, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]) object at'))
-        self.assertTrue(repr(self.wma).endswith('>'))
+            "<WeightedMovingAverage(10, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]) object at"))
+        self.assertTrue(repr(self.wma).endswith(">"))
 
     def test_weights_returns_expected_weights(self):
         # Act

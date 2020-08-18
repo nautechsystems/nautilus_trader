@@ -17,6 +17,8 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
 
 cdef class BacktestConfig:
+    cdef readonly int tick_capacity
+    cdef readonly int bar_capacity
     cdef readonly str exec_db_type
     cdef readonly bint exec_db_flush
     cdef readonly bint frozen_account

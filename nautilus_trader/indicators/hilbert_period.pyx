@@ -32,12 +32,12 @@ cdef class HilbertPeriod(Indicator):
 
     def __init__(self, int period=7, bint check_inputs=False):
         """
-        Initializes a new instance of the HilbertPeriod class.
+        Initialize a new instance of the HilbertPeriod class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         super().__init__(params=[period], check_inputs=check_inputs)
 
         self.period = period
@@ -61,9 +61,9 @@ cdef class HilbertPeriod(Indicator):
         :param low: The low price (> 0).
         """
         if self.check_inputs:
-            Condition.positive(high, 'high')
-            Condition.positive(low, 'low')
-            Condition.true(high >= low, 'high >= low')
+            Condition.positive(high, "high")
+            Condition.positive(low, "low")
+            Condition.true(high >= low, "high >= low")
 
         self._inputs.append((high + low) / 2)
 

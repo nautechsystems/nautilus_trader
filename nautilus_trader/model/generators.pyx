@@ -32,7 +32,7 @@ cdef class IdentifierGenerator:
                  Clock clock not None,
                  int initial_count=0):
         """
-        Initializes a new instance of the IdentifierGenerator class.
+        Initialize a new instance of the IdentifierGenerator class.
 
         :param prefix: The prefix for each generated identifier.
         :param id_tag_trader: The identifier tag for the trader.
@@ -42,8 +42,8 @@ cdef class IdentifierGenerator:
         :raises ValueError: If the prefix is not a valid string.
         :raises ValueError: If the initial count is negative (< 0).
         """
-        Condition.valid_string(prefix, 'prefix')
-        Condition.not_negative_int(initial_count, 'initial_count')
+        Condition.valid_string(prefix, "prefix")
+        Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
         self.prefix = prefix
@@ -74,11 +74,11 @@ cdef class IdentifierGenerator:
         """
         self.count += 1
 
-        return (f'{self.prefix}-'
-                f'{self._get_datetime_tag()}-'
-                f'{self.id_tag_trader.value}-'
-                f'{self.id_tag_strategy.value}-'
-                f'{self.count}')
+        return (f"{self.prefix}-"
+                f"{self._get_datetime_tag()}-"
+                f"{self.id_tag_trader.value}-"
+                f"{self.id_tag_strategy.value}-"
+                f"{self.count}")
 
     cdef str _get_datetime_tag(self):
         """
@@ -87,13 +87,13 @@ cdef class IdentifierGenerator:
         :return str.
         """
         cdef datetime time_now = self._clock.time_now()
-        return (f'{time_now.year}'
-                f'{time_now.month:02d}'
-                f'{time_now.day:02d}'
-                f'-'
-                f'{time_now.hour:02d}'
-                f'{time_now.minute:02d}'
-                f'{time_now.second:02d}')
+        return (f"{time_now.year}"
+                f"{time_now.month:02d}"
+                f"{time_now.day:02d}"
+                f"-"
+                f"{time_now.hour:02d}"
+                f"{time_now.minute:02d}"
+                f"{time_now.second:02d}")
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
@@ -107,7 +107,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
                  Clock clock not None=LiveClock(),
                  int initial_count=0):
         """
-        Initializes a new instance of the OrderIdGenerator class.
+        Initialize a new instance of the OrderIdGenerator class.
 
         :param id_tag_trader: The order_id tag for the trader.
         :param id_tag_strategy: The order_id tag for the strategy.
@@ -115,7 +115,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         :param initial_count: The initial count for the generator.
         :raises ValueError: If the initial count is negative (< 0).
         """
-        super().__init__('O',
+        super().__init__("O",
                          id_tag_trader,
                          id_tag_strategy,
                          clock,
@@ -141,7 +141,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
                  Clock clock not None=LiveClock(),
                  int initial_count=0):
         """
-        Initializes a new instance of the PositionIdGenerator class.
+        Initialize a new instance of the PositionIdGenerator class.
 
         :param id_tag_trader: The position_id tag for the trader.
         :param id_tag_strategy: The position_id tag for the strategy.
@@ -149,7 +149,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         :param initial_count: The initial count for the generator.
         :raises ValueError: If the initial count is negative (< 0).
         """
-        super().__init__('P',
+        super().__init__("P",
                          id_tag_trader,
                          id_tag_strategy,
                          clock,

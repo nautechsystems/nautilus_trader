@@ -42,14 +42,14 @@ cdef class OrderFactory:
                  UUIDFactory uuid_factory not None=LiveUUIDFactory(),
                  int initial_count=0):
         """
-        Initializes a new instance of the OrderFactory class.
+        Initialize a new instance of the OrderFactory class.
 
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The clock for the component.
         :raises ValueError: If the initial count is negative (< 0).
         """
-        Condition.not_negative_int(initial_count, 'initial_count')
+        Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
@@ -359,7 +359,7 @@ cdef class OrderFactory:
         """
         cdef Label entry_label = None
         if label is not None:
-            entry_label = Label(label.value + '_E')
+            entry_label = Label(label.value + "_E")
 
         cdef Order entry_order = self.market(
             symbol,
@@ -404,7 +404,7 @@ cdef class OrderFactory:
         """
         cdef Label entry_label = None
         if label is not None:
-            entry_label = Label(label.value + '_E')
+            entry_label = Label(label.value + "_E")
 
         cdef Order entry_order = self.limit(
             symbol,
@@ -451,7 +451,7 @@ cdef class OrderFactory:
         """
         cdef Label entry_label = None
         if label is not None:
-            entry_label = Label(label.value + '_E')
+            entry_label = Label(label.value + "_E")
 
         cdef Order entry_order = self.stop(
             symbol,

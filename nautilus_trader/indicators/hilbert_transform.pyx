@@ -31,12 +31,12 @@ cdef class HilbertTransform(Indicator):
 
     def __init__(self, int period=7, bint check_inputs=False):
         """
-        Initializes a new instance of the HilbertTransform class.
+        Initialize a new instance of the HilbertTransform class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param check: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         super().__init__(params=[period], check_inputs=check_inputs)
 
         self.period = period
@@ -57,7 +57,7 @@ cdef class HilbertTransform(Indicator):
         :param price: The price value (> 0).
         """
         if self.check_inputs:
-            Condition.positive(price, 'price')
+            Condition.positive(price, "price")
 
         self._inputs.append(price)
 

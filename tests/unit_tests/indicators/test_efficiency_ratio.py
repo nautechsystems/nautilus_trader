@@ -29,18 +29,18 @@ class EfficiencyRatioTests(unittest.TestCase):
     def test_name(self):
         # Act
         # Assert
-        self.assertEqual('EfficiencyRatio', self.er.name)
+        self.assertEqual("EfficiencyRatio", self.er.name)
 
     def test_str(self):
         # Act
         # Assert
-        self.assertEqual('EfficiencyRatio(10)', str(self.er))
+        self.assertEqual("EfficiencyRatio(10)", str(self.er))
 
     def test_repr(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.er).startswith('<EfficiencyRatio(10) object at'))
-        self.assertTrue(repr(self.er).endswith('>'))
+        self.assertTrue(repr(self.er).startswith("<EfficiencyRatio(10) object at"))
+        self.assertTrue(repr(self.er).endswith(">"))
 
     def test_period(self):
         # Act

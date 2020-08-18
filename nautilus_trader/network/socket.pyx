@@ -24,7 +24,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, ServerId
 from nautilus_trader.network.encryption cimport EncryptionSettings
 
-cdef str _UTF8 = 'utf-8'
+cdef str _UTF8 = "utf-8"
 
 
 cdef class Socket:
@@ -41,7 +41,7 @@ cdef class Socket:
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the Socket class.
+        Initialize a new instance of the Socket class.
 
         :param socket_id: The socket identifier.
         :param host: The socket host address.
@@ -52,8 +52,8 @@ cdef class Socket:
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(port, 'port')
+        Condition.valid_string(host, "host")
+        Condition.valid_port(port, "port")
 
         self._log = logger
         self._socket = zmq.Context.instance().socket(socket_type)
@@ -61,11 +61,11 @@ cdef class Socket:
         self._socket.setsockopt(zmq.LINGER, 1)
 
         self.socket_id = socket_id
-        self.network_address = f'tcp://{host}:{port}'
+        self.network_address = f"tcp://{host}:{port}"
 
         if encryption.use_encryption:
-            if encryption.algorithm != 'curve':
-                raise ValueError(f'Invalid encryption specified, was \'{encryption.algorithm}\'')
+            if encryption.algorithm != "curve":
+                raise ValueError(f"Invalid encryption specified, was \"{encryption.algorithm}\"")
             key_file_client = os.path.join(encryption.keys_dir, "client.key_secret")
             key_file_server = os.path.join(encryption.keys_dir, "server.key")
             client_public, client_secret = zmq.auth.load_certificate(key_file_client)
@@ -114,7 +114,7 @@ cdef class Socket:
         """
         Send the given payload on the socket.
         """
-        Condition.not_none(frames, 'frames')
+        Condition.not_none(frames, "frames")
 
         try:
             self._socket.send_multipart(frames)
@@ -151,7 +151,7 @@ cdef class ClientSocket(Socket):
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the ClientSocket class.
+        Initialize a new instance of the ClientSocket class.
 
         :param client_id: The client identifier.
         :param host: The socket host address.
@@ -162,8 +162,8 @@ cdef class ClientSocket(Socket):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(port, 'port')
+        Condition.valid_string(host, "host")
+        Condition.valid_port(port, "port")
         super().__init__(
             client_id,
             host,
@@ -204,7 +204,7 @@ cdef class SubscriberSocket(ClientSocket):
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the SubscriberSocket class.
+        Initialize a new instance of the SubscriberSocket class.
 
         :param client_id: The client identifier.
         :param host: The socket host address.
@@ -214,8 +214,8 @@ cdef class SubscriberSocket(ClientSocket):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(port, 'port')
+        Condition.valid_string(host, "host")
+        Condition.valid_port(port, "port")
         super().__init__(
             client_id,
             host,
@@ -230,7 +230,7 @@ cdef class SubscriberSocket(ClientSocket):
 
         :param topic: The topic to subscribe to.
         """
-        Condition.valid_string(topic, 'topic')
+        Condition.valid_string(topic, "topic")
 
         self._socket.setsockopt(zmq.SUBSCRIBE, topic.encode(_UTF8))
         self._log.debug(f"Subscribed to topic {topic}")
@@ -241,7 +241,7 @@ cdef class SubscriberSocket(ClientSocket):
 
         :param topic: The topic to unsubscribe from.
         """
-        Condition.valid_string(topic, 'topic')
+        Condition.valid_string(topic, "topic")
 
         self._socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(_UTF8))
         self._log.debug(f"Unsubscribed from topic {topic}")
@@ -260,7 +260,7 @@ cdef class ServerSocket(Socket):
             EncryptionSettings encryption not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the ServerSocket class.
+        Initialize a new instance of the ServerSocket class.
 
         :param server_id: The server identifier.
         :param port: The socket port.
@@ -270,10 +270,10 @@ cdef class ServerSocket(Socket):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [49152, 65535].
         """
-        Condition.valid_port(port, 'port')
+        Condition.valid_port(port, "port")
         super().__init__(
             server_id,
-            '127.0.0.1',
+            "127.0.0.1",
             port,
             socket_type,
             encryption,

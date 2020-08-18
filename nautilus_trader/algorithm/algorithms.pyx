@@ -29,7 +29,7 @@ cdef class TrailingStopSignal:
 
     def __init__(self, Price price=None):
         """
-        Initializes a new instance of the TrailingStopSignal class.
+        Initialize a new instance of the TrailingStopSignal class.
 
         :param price: The price for the trailing stop signal.
         """
@@ -44,7 +44,7 @@ cdef class TrailingStopAlgorithm:
 
     def __init__(self, Order order):
         """
-        Initializes a new instance of the TrailingStopAlgorithm class.
+        Initialize a new instance of the TrailingStopAlgorithm class.
 
         :param order: The order for the trailing stop.
         """
@@ -77,7 +77,7 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
 
     def __init__(self, Order order, Symbol symbol):
         """
-        Initializes a new instance of the TickTrailingStopAlgorithm class.
+        Initialize a new instance of the TickTrailingStopAlgorithm class.
 
         :param order: The order for the trailing stop.
         """
@@ -126,7 +126,7 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
 
     def __init__(self, Order order, BarType bar_type):
         """
-        Initializes a new instance of the BarTrailingStopAlgorithm class.
+        Initialize a new instance of the BarTrailingStopAlgorithm class.
 
         :param order: The order for the trailing stop.
         """
@@ -181,7 +181,7 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
                  Order order,
                  BarType bar_type):
         """
-        Initializes a new instance of the BarsBackTrail class.
+        Initialize a new instance of the BarsBackTrail class.
 
         :param order: The order for the trailing stop.
         """

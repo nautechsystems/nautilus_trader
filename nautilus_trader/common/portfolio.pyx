@@ -33,7 +33,7 @@ cdef class Portfolio:
                  UUIDFactory uuid_factory not None,
                  Logger logger=None):
         """
-        Initializes a new instance of the Portfolio class.
+        Initialize a new instance of the Portfolio class.
 
         :param clock: The clock for the component.
         :param uuid_factory: The uuid factory for the component.
@@ -65,7 +65,7 @@ cdef class Portfolio:
 
         :param event: The event to update with.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         if event.timestamp.date() != self.date_now:
             self.date_now = event.timestamp.date()

@@ -148,13 +148,13 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.equal, 'O-123456', 'O-123', 'order_id1', 'order_id2')
-        self.assertRaises(ValueError, PyCondition.equal, 'O-123456', 'P-123456', 'order_id', 'position_id')
+        self.assertRaises(ValueError, PyCondition.equal, "O-123456", "O-123", "order_id1", "order_id2")
+        self.assertRaises(ValueError, PyCondition.equal, "O-123456", "P-123456", "order_id", "position_id")
 
     def test_condition_equal_when_args_are_equal_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.equal('O-123456', 'O-123456', 'order_id1', 'order_id2')
+        PyCondition.equal("O-123456", "O-123456", "order_id1", "order_id2")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised
@@ -163,12 +163,12 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.not_equal, 'O-123456', 'O-123456', 'order_id1', 'order_id2')
+        self.assertRaises(ValueError, PyCondition.not_equal, "O-123456", "O-123456", "order_id1", "order_id2")
 
     def test_condition_not_equal_when_args_are_not_equal_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.not_equal('O-123456', 'O-', 'order_id1', 'order_id2')
+        PyCondition.not_equal("O-123456", "O-", "order_id1", "order_id2")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised
@@ -177,12 +177,12 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(TypeError, PyCondition.list_type, ['a', 'b', 3], str, "param")
+        self.assertRaises(TypeError, PyCondition.list_type, ["a", "b", 3], str, "param")
 
     def test_condition_list_type_when_contains_correct_types_or_none_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.list_type(['a', 'b', 'c'], str, "param")
+        PyCondition.list_type(["a", "b", "c"], str, "param")
         PyCondition.list_type([], None, "param")
 
         # Assert
@@ -192,14 +192,14 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(TypeError, PyCondition.dict_types, {'key': 1}, str, str, "param")
+        self.assertRaises(TypeError, PyCondition.dict_types, {"key": 1}, str, str, "param")
         self.assertRaises(TypeError, PyCondition.dict_types, {1: 1}, str, str, "param")
         self.assertRaises(TypeError, PyCondition.dict_types, {1: "value"}, str, str, "param")
 
     def test_condition_dict_types_when_contains_correct_types_or_none_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.dict_types({'key': 1}, str, int, "param_name")
+        PyCondition.dict_types({"key": 1}, str, int, "param_name")
         PyCondition.dict_types({}, str, str, "param_name")
 
         # Assert
@@ -209,12 +209,12 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.is_in, 'a', ['b', 1], 'item', 'list')
+        self.assertRaises(ValueError, PyCondition.is_in, "a", ["b", 1], "item", "list")
 
     def test_condition_is_in_when_item_is_in_list_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.is_in('a', ['a', 1], 'item', 'list')
+        PyCondition.is_in("a", ["a", 1], "item", "list")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised
@@ -223,12 +223,12 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.not_in, 'a', ['a', 1], 'item', 'list')
+        self.assertRaises(ValueError, PyCondition.not_in, "a", ["a", 1], "item", "list")
 
     def test_condition_not_in_when_item_not_in_list_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.not_in('b', ['a', 1], 'item', 'list')
+        PyCondition.not_in("b", ["a", 1], "item", "list")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised
@@ -237,12 +237,12 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.is_in, 'a', {'b': 1}, 'key', 'dict')
+        self.assertRaises(ValueError, PyCondition.is_in, "a", {"b": 1}, "key", "dict")
 
     def test_condition_key_is_in_when_key_is_in_dictionary_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.is_in('a', {'a': 1}, 'key', 'dict')
+        PyCondition.is_in("a", {"a": 1}, "key", "dict")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised
@@ -251,12 +251,12 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.not_in, 'a', {'a': 1}, 'key', 'dict')
+        self.assertRaises(ValueError, PyCondition.not_in, "a", {"a": 1}, "key", "dict")
 
     def test_condition_key_not_in_when_key_not_in_dictionary_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.not_in('b', {'a': 1}, 'key', 'dict')
+        PyCondition.not_in("b", {"a": 1}, "key", "dict")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised

@@ -43,21 +43,22 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         clock = TestClock()
         logger = TestLogger()
 
-        self.trader_id = TraderId('TESTER', '000')
+        self.trader_id = TraderId("TESTER", "000")
 
-        self.strategy = EmptyStrategy(order_id_tag='001')
+        self.strategy = EmptyStrategy(order_id_tag="001")
+        self.strategy.register_trader(TraderId("TESTER", "000"))
         self.strategy.change_clock(clock)
         self.strategy.change_logger(logger)
 
         self.database = RedisExecutionDatabase(
             trader_id=self.trader_id,
-            host='localhost',
+            host="localhost",
             port=6379,
             command_serializer=MsgPackCommandSerializer(),
             event_serializer=MsgPackEventSerializer(),
             logger=logger)
 
-        self.test_redis = redis.Redis(host='localhost', port=6379, db=0)
+        self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
 
     def tearDown(self):
         # Tests will start failing if redis is not flushed on tear down
@@ -68,21 +69,21 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual('Trader-TESTER-000', self.database.key_trader)
-        self.assertEqual('Trader-TESTER-000:Accounts:', self.database.key_accounts)
-        self.assertEqual('Trader-TESTER-000:Orders:', self.database.key_orders)
-        self.assertEqual('Trader-TESTER-000:Positions:', self.database.key_positions)
-        self.assertEqual('Trader-TESTER-000:Strategies:', self.database.key_strategies)
-        self.assertEqual('Trader-TESTER-000:Index:OrderPosition', self.database.key_index_order_position)
-        self.assertEqual('Trader-TESTER-000:Index:OrderStrategy', self.database.key_index_order_strategy)
-        self.assertEqual('Trader-TESTER-000:Index:PositionStrategy', self.database.key_index_position_strategy)
-        self.assertEqual('Trader-TESTER-000:Index:PositionOrders:', self.database.key_index_position_orders)
-        self.assertEqual('Trader-TESTER-000:Index:StrategyOrders:', self.database.key_index_strategy_orders)
-        self.assertEqual('Trader-TESTER-000:Index:StrategyPositions:', self.database.key_index_strategy_positions)
-        self.assertEqual('Trader-TESTER-000:Index:Orders:Working', self.database.key_index_orders_working)
-        self.assertEqual('Trader-TESTER-000:Index:Orders:Completed', self.database.key_index_orders_completed)
-        self.assertEqual('Trader-TESTER-000:Index:Positions:Open', self.database.key_index_positions_open)
-        self.assertEqual('Trader-TESTER-000:Index:Positions:Closed', self.database.key_index_positions_closed)
+        self.assertEqual("Trader-TESTER-000", self.database.key_trader)
+        self.assertEqual("Trader-TESTER-000:Accounts:", self.database.key_accounts)
+        self.assertEqual("Trader-TESTER-000:Orders:", self.database.key_orders)
+        self.assertEqual("Trader-TESTER-000:Positions:", self.database.key_positions)
+        self.assertEqual("Trader-TESTER-000:Strategies:", self.database.key_strategies)
+        self.assertEqual("Trader-TESTER-000:Index:OrderPosition", self.database.key_index_order_position)
+        self.assertEqual("Trader-TESTER-000:Index:OrderStrategy", self.database.key_index_order_strategy)
+        self.assertEqual("Trader-TESTER-000:Index:PositionStrategy", self.database.key_index_position_strategy)
+        self.assertEqual("Trader-TESTER-000:Index:PositionOrders:", self.database.key_index_position_orders)
+        self.assertEqual("Trader-TESTER-000:Index:StrategyOrders:", self.database.key_index_strategy_orders)
+        self.assertEqual("Trader-TESTER-000:Index:StrategyPositions:", self.database.key_index_strategy_positions)
+        self.assertEqual("Trader-TESTER-000:Index:Orders:Working", self.database.key_index_orders_working)
+        self.assertEqual("Trader-TESTER-000:Index:Orders:Completed", self.database.key_index_orders_completed)
+        self.assertEqual("Trader-TESTER-000:Index:Positions:Open", self.database.key_index_positions_open)
+        self.assertEqual("Trader-TESTER-000:Index:Positions:Closed", self.database.key_index_positions_closed)
 
     def test_can_add_account(self):
         # Arrange
@@ -507,35 +508,35 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.position_exists(PositionId('P-123456')))
+        self.assertFalse(self.database.position_exists(PositionId("P-123456")))
 
     def test_position_exists_for_order_when_no_position_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.position_exists_for_order(OrderId('O-123456')))
+        self.assertFalse(self.database.position_exists_for_order(OrderId("O-123456")))
 
     def test_position_indexed_for_order_when_no_indexing_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.position_indexed_for_order(OrderId('O-123456')))
+        self.assertFalse(self.database.position_indexed_for_order(OrderId("O-123456")))
 
     def test_order_exists_when_no_order_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.order_exists(OrderId('O-123456')))
+        self.assertFalse(self.database.order_exists(OrderId("O-123456")))
 
     def test_position_for_order_when_not_found_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.database.get_position_for_order(OrderId('O-123456')))
+        self.assertIsNone(self.database.get_position_for_order(OrderId("O-123456")))
 
     def test_get_order_when_no_order_returns_none(self):
         # Arrange
-        position_id = PositionId('P-123456')
+        position_id = PositionId("P-123456")
 
         # Act
         result = self.database.get_position(position_id)
@@ -545,7 +546,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_get_position_when_no_position_returns_none(self):
         # Arrange
-        order_id = OrderId('O-201908080101-000-001')
+        order_id = OrderId("O-201908080101-000-001")
 
         # Act
         result = self.database.get_order(order_id)

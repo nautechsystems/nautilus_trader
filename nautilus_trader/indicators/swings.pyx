@@ -28,12 +28,12 @@ cdef class Swings(Indicator):
 
     def __init__(self, int period, bint check_inputs=False):
         """
-        Initializes a new instance of the Swings class.
+        Initialize a new instance of the Swings class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         super().__init__(params=[period], check_inputs=check_inputs)
 
         self.period = period
@@ -70,9 +70,9 @@ cdef class Swings(Indicator):
         :param timestamp: The timestamp.
         """
         if self.check_inputs:
-            Condition.positive(high, 'high')
-            Condition.positive(low, 'low')
-            Condition.true(high >= low, 'high >= low')
+            Condition.positive(high, "high")
+            Condition.positive(low, "low")
+            Condition.true(high >= low, "high >= low")
 
         self._calculate_swing_logic(high, low, timestamp)
 

@@ -28,7 +28,7 @@ cdef class MessageQueueOutbound:
                  Socket socket not None,
                  LoggerAdapter logger not None):
         """
-        Initializes a new instance of the MessageQueueOutbound class.
+        Initialize a new instance of the MessageQueueOutbound class.
 
         Parameters
         ----------
@@ -55,7 +55,7 @@ cdef class MessageQueueInbound:
                  frames_receiver: callable,
                  LoggerAdapter logger not None):
         """
-        Initializes a new instance of the MessageQueueInbound class.
+        Initialize a new instance of the MessageQueueInbound class.
 
         Parameters
         ----------
