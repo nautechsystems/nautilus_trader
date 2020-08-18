@@ -27,11 +27,11 @@ cdef class ExponentialMovingAverage(MovingAverage):
 
     def __init__(self, int period):
         """
-        Initializes a new instance of the ExponentialMovingAverage class.
+        Initialize a new instance of the ExponentialMovingAverage class.
 
         :param period: The rolling window period for the indicator (> 0).
         """
-        Condition.positive_int(period, 'period')
+        Condition.positive_int(period, "period")
         super().__init__(period, params=[period])
 
         self.alpha = 2.0 / (period + 1.0)

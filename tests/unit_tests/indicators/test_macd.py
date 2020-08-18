@@ -29,18 +29,18 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('MovingAverageConvergenceDivergence', self.macd.name)
+        self.assertEqual("MovingAverageConvergenceDivergence", self.macd.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)', str(self.macd))
+        self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", str(self.macd))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertTrue(repr(self.macd).startswith(
-            '<MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL) object at'))
+            "<MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL) object at"))
         self.assertTrue(repr(self.macd).endswith('>'))
 
     def test_initialized_without_inputs_returns_false(self):

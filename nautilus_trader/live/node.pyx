@@ -71,10 +71,10 @@ cdef class TradingNode:
 
     def __init__(
             self,
-            str config_path='config.json',
+            str config_path="config.json",
             list strategies=None):
         """
-        Initializes a new instance of the TradingNode class.
+        Initialize a new instance of the TradingNode class.
 
         :param config_path: The path to the config file.
         :param strategies: The list of strategies for the internal Trader.
@@ -82,46 +82,46 @@ cdef class TradingNode:
         """
         if strategies is None:
             strategies = []
-        Condition.valid_string(config_path, 'config_path')
+        Condition.valid_string(config_path, "config_path")
 
         # Load the configuration from the file specified in config_path
-        with open(config_path, 'r') as config_file:
+        with open(config_path, "r") as config_file:
             config = json.load(config_file)
 
-        config_trader = config['trader']
-        config_account = config['account']
-        config_log = config['logging']
-        config_strategy = config['strategy']
-        config_messaging = config['messaging']
-        config_data = config['data_client']
-        config_exec_db = config['exec_database']
-        config_exec_client = config['exec_client']
+        config_trader = config["trader"]
+        config_account = config["account"]
+        config_log = config["logging"]
+        config_strategy = config["strategy"]
+        config_messaging = config["messaging"]
+        config_data = config["data_client"]
+        config_exec_db = config["exec_database"]
+        config_exec_client = config["exec_client"]
 
         self._clock = LiveClock()
         self._uuid_factory = LiveUUIDFactory()
-        self._zmq_context = zmq.Context(io_threads=int(config_messaging['zmq_threads']))
+        self._zmq_context = zmq.Context(io_threads=int(config_messaging["zmq_threads"]))
 
         # Setup identifiers
         self.trader_id = TraderId(
-            name=config_trader['name'],
-            order_id_tag=config_trader['order_id_tag'])
+            name=config_trader["name"],
+            order_id_tag=config_trader["id_tag"])
 
         self.account_id = AccountId(
-            broker=config_account['broker'],
-            account_number=config_account['account_number'],
-            account_type=account_type_from_string(config_account['account_type']))
+            broker=config_account["broker"],
+            account_number=config_account["account_number"],
+            account_type=account_type_from_string(config_account["account_type"]))
 
         # Setup logging
         self._log_store = LogStore(trader_id=self.trader_id)
 
         self._logger = LiveLogger(
             name=self.trader_id.value,
-            level_console=LogLevel[config_log['log_level_console']],
-            level_file=LogLevel[config_log['log_level_file']],
-            level_store=LogLevel[config_log['log_level_store']],
+            level_console=LogLevel[config_log["log_level_console"]],
+            level_file=LogLevel[config_log["log_level_file"]],
+            level_store=LogLevel[config_log["log_level_store"]],
             log_thread=True,
-            log_to_file=config_log['log_to_file'],
-            log_file_path=config_log['log_file_path'],
+            log_to_file=config_log["log_to_file"],
+            log_file_path=config_log["log_file_path"],
             clock=self._clock,
             store=self._log_store)
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
@@ -129,10 +129,10 @@ cdef class TradingNode:
         self._log.info("Starting...")
 
         # Setup compressor
-        compressor_type = config_messaging['compression']
-        if compressor_type in ('', 'none'):
+        compressor_type = config_messaging["compression"]
+        if compressor_type in ("", "none"):
             compressor = BypassCompressor()
-        elif compressor_type == 'lz4':
+        elif compressor_type == "lz4":
             compressor = LZ4Compressor()
         else:
             raise RuntimeError(f"Compressor type {compressor_type} not recognized. "
@@ -140,21 +140,23 @@ cdef class TradingNode:
 
         # Setup encryption
         working_directory = os.getcwd()
-        keys_dir = os.path.join(working_directory, config_messaging['keys_dir'])
+        keys_dir = os.path.join(working_directory, config_messaging["keys_dir"])
         encryption = EncryptionSettings(
-            algorithm=config_messaging['encryption'],
+            algorithm=config_messaging["encryption"],
             keys_dir=keys_dir)
 
-        self._venue = Venue(config_data['venue'])
+        self._venue = Venue(config_data["venue"])
         self._data_client = LiveDataClient(
             trader_id=self.trader_id,
-            host=config_data['host'],
-            data_req_port=config_data['data_req_port'],
-            data_res_port=config_data['data_res_port'],
-            data_pub_port=config_data['data_pub_port'],
-            tick_pub_port=config_data['tick_pub_port'],
+            host=config_data["host"],
+            data_req_port=config_data["data_req_port"],
+            data_res_port=config_data["data_res_port"],
+            data_pub_port=config_data["data_pub_port"],
+            tick_pub_port=config_data["tick_pub_port"],
             compressor=compressor,
             encryption=encryption,
+            tick_capacity=int(config_data["tick_capacity"]),
+            bar_capacity=(config_data["bar_capacity"]),
             clock=self._clock,
             uuid_factory=self._uuid_factory,
             logger=self._logger)
@@ -166,11 +168,11 @@ cdef class TradingNode:
 
         self.analyzer = PerformanceAnalyzer()
 
-        if config_exec_db['type'] == 'redis':
+        if config_exec_db["type"] == "redis":
             self._exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
-                host=config_exec_db['host'],
-                port=config_exec_db['port'],
+                host=config_exec_db["host"],
+                port=config_exec_db["port"],
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 logger=self._logger)
@@ -190,10 +192,10 @@ cdef class TradingNode:
 
         self._exec_client = LiveExecClient(
             exec_engine=self._exec_engine,
-            host=config_exec_client['host'],
-            command_req_port=config_exec_client['command_req_port'],
-            command_res_port=config_exec_client['command_res_port'],
-            event_pub_port=config_exec_client['event_pub_port'],
+            host=config_exec_client["host"],
+            command_req_port=config_exec_client["command_req_port"],
+            command_res_port=config_exec_client["command_res_port"],
+            event_pub_port=config_exec_client["event_pub_port"],
             compressor=compressor,
             encryption=encryption,
             logger=self._logger)
@@ -210,11 +212,11 @@ cdef class TradingNode:
             uuid_factory=self._uuid_factory,
             logger=self._logger)
 
-        Condition.equal(self.trader_id, self.trader.id, 'trader_id', 'trader.id')
+        Condition.equal(self.trader_id, self.trader.id, "trader_id", "trader.id")
 
         self._check_residuals_delay = 2.0  # Hard coded delay to await system spool up (refactor)
-        self._load_strategy_state = config_strategy['load_state']
-        self._save_strategy_state = config_strategy['save_state']
+        self._load_strategy_state = config_strategy["load_state"]
+        self._save_strategy_state = config_strategy["save_state"]
 
         if self._load_strategy_state:
             self.trader.load()
@@ -225,7 +227,7 @@ cdef class TradingNode:
         """
         Load the given strategies into the trading nodes trader.
         """
-        Condition.not_empty(strategies, 'strategies')
+        Condition.not_empty(strategies, "strategies")
 
         self.trader.initialize_strategies(strategies)
 

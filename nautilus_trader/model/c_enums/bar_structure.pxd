@@ -30,49 +30,49 @@ cpdef enum BarStructure:
 
 cdef inline str bar_structure_to_string(int value):
     if value == 1:
-        return 'TICK'
+        return "TICK"
     elif value == 2:
-        return 'TICK_IMBALANCE'
+        return "TICK_IMBALANCE"
     elif value == 3:
-        return 'VOLUME'
+        return "VOLUME"
     elif value == 4:
-        return 'VOLUME_IMBALANCE'
+        return "VOLUME_IMBALANCE"
     elif value == 5:
-        return 'DOLLAR'
+        return "DOLLAR"
     elif value == 6:
-        return 'DOLLAR_IMBALANCE'
+        return "DOLLAR_IMBALANCE"
     elif value == 7:
-        return 'SECOND'
+        return "SECOND"
     elif value == 8:
-        return 'MINUTE'
+        return "MINUTE"
     elif value == 9:
-        return 'HOUR'
+        return "HOUR"
     elif value == 10:
-        return 'DAY'
+        return "DAY"
     else:
-        return 'UNDEFINED'
+        return "UNDEFINED"
 
 
 cdef inline BarStructure bar_structure_from_string(str value):
-    if value == 'TICK':
+    if value == "TICK":
         return BarStructure.TICK
-    elif value == 'TICK_IMBALANCE':
+    elif value == "TICK_IMBALANCE":
         return BarStructure.TICK_IMBALANCE
-    elif value == 'VOLUME':
+    elif value == "VOLUME":
         return BarStructure.VOLUME
-    elif value == 'VOLUME_IMBALANCE':
+    elif value == "VOLUME_IMBALANCE":
         return BarStructure.VOLUME_IMBALANCE
-    elif value == 'DOLLAR':
+    elif value == "DOLLAR":
         return BarStructure.DOLLAR
-    elif value == 'DOLLAR_IMBALANCE':
+    elif value == "DOLLAR_IMBALANCE":
         return BarStructure.DOLLAR_IMBALANCE
-    elif value == 'SECOND':
+    elif value == "SECOND":
         return BarStructure.SECOND
-    elif value == 'MINUTE':
+    elif value == "MINUTE":
         return BarStructure.MINUTE
-    elif value == 'HOUR':
+    elif value == "HOUR":
         return BarStructure.HOUR
-    elif value == 'DAY':
+    elif value == "DAY":
         return BarStructure.DAY
     else:
         return BarStructure.UNDEFINED

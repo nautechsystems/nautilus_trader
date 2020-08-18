@@ -26,7 +26,7 @@ cdef class ClientId(Identifier):
 
     def __init__(self, str value not None):
         """
-        Initializes a new instance of the ClientId class.
+        Initialize a new instance of the ClientId class.
 
         :param value: The client identifier value.
         """
@@ -40,7 +40,7 @@ cdef class ServerId(Identifier):
 
     def __init__(self, str value not None):
         """
-        Initializes a new instance of the ServerId class.
+        Initialize a new instance of the ServerId class.
 
         :param value: The server identifier value.
         """
@@ -54,7 +54,7 @@ cdef class SessionId(Identifier):
 
     def __init__(self, str value not None):
         """
-        Initializes a new instance of the SessionId class.
+        Initialize a new instance of the SessionId class.
 
         :param value: The session identifier value.
         """
@@ -62,7 +62,7 @@ cdef class SessionId(Identifier):
 
     @staticmethod
     cdef SessionId create(ClientId client_id, datetime now, str secret):
-        cdef bytes hashable = f'{client_id}-{format_iso8601(now)}-{secret}'.encode('utf-8')
+        cdef bytes hashable = f"{client_id}-{format_iso8601(now)}-{secret}".encode("utf-8")
         return SessionId(hashlib.sha256(hashable).hexdigest())
 
     @staticmethod

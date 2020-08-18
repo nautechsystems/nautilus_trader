@@ -39,7 +39,7 @@ cdef class TestUUIDFactory(UUIDFactory):
 
     def __init__(self):
         """
-        Initializes a new instance of the TestGuidFactory class.
+        Initialize a new instance of the TestGuidFactory class.
         """
         super().__init__()
 

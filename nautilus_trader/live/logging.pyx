@@ -33,13 +33,13 @@ cdef class LogStore:
                  TraderId trader_id not None,
                  LogSerializer serializer not None=MsgPackLogSerializer()):
         """
-        Initializes a new instance of the LogStore class.
+        Initialize a new instance of the LogStore class.
 
         :param trader_id: The trader_id.
         :raises ValueError: If the redis_host is not a valid string.
         :raises ValueError: If the redis_port is not in range [0, 65535].
         """
-        self._key = f'Trader-{trader_id.value}:LogStore'
+        self._key = f"Trader-{trader_id.value}:LogStore"
         self._serializer = serializer
 
     cpdef void store(self, LogMessage message):
@@ -48,7 +48,7 @@ cdef class LogStore:
 
         :param message: The log message to store.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         # self._queue.put(message)
 
@@ -73,11 +73,11 @@ cdef class LiveLogger(Logger):
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path not None='logs/',
+                 str log_file_path not None="logs/",
                  LiveClock clock not None=LiveClock(),
                  LogStore store=None):
         """
-        Initializes a new instance of the LiveLogger class.
+        Initialize a new instance of the LiveLogger class.
 
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
@@ -113,7 +113,7 @@ cdef class LiveLogger(Logger):
 
         :param message: The log message to log.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._queue.put(message)
 

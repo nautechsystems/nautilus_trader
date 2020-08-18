@@ -32,16 +32,16 @@ cdef class HilbertSignalNoiseRatio(Indicator):
                  double amplitude_floor=0.001,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the HilbertSignalNoiseRatio class.
+        Initialize a new instance of the HilbertSignalNoiseRatio class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param range_floor: The floor value for range calculations.
         :param amplitude_floor: The floor value for amplitude calculations (0.001 from paper).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(period, 'period')
-        Condition.not_negative(range_floor, 'range_floor')
-        Condition.not_negative(amplitude_floor, 'amplitude_floor')
+        Condition.positive_int(period, "period")
+        Condition.not_negative(range_floor, "range_floor")
+        Condition.not_negative(amplitude_floor, "amplitude_floor")
         super().__init__(params=[period], check_inputs=check_inputs)
 
         self.period = period
@@ -69,9 +69,9 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         :param low: The low price (> 0).
         """
         if self.check_inputs:
-            Condition.positive(high, 'high')
-            Condition.positive(low, 'low')
-            Condition.true(high >= low, 'high >= low')
+            Condition.positive(high, "high")
+            Condition.positive(low, "low")
+            Condition.true(high >= low, "high >= low")
 
         self._inputs.append((high + low) / 2.0)
 
@@ -95,7 +95,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         if self._previous_range == 0.0:
             self._previous_range = last_range
 
-        # Compute 'noise' as the average (smoothed) range
+        # Compute noise as the average (smoothed) range
         self._range = max((0.2 * last_range) + (0.8 * self._previous_range), self._range_floor)
         self._previous_range = self._range
 

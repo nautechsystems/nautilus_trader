@@ -57,7 +57,9 @@ class BacktestExecClientTests(unittest.TestCase):
         self.logger = TestLogger()
 
         self.data_client = DataClient(
-            tick_capacity=100,
+            tick_capacity=1000,
+            bar_capacity=1000,
+            use_previous_close=False,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
@@ -69,7 +71,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        trader_id = TraderId('TESTER', '000')
+        trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
         self.exec_db = InMemoryExecutionDatabase(
@@ -96,7 +98,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
     def test_can_account_collateral_inquiry(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag='001')
+        strategy = TradingStrategy(order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -261,11 +263,12 @@ class BacktestExecClientTests(unittest.TestCase):
     #
     #     self.exec_engine.register_client(exec_client)
     #     strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+    #     strategy.register_trader(TraderId("TESTER", "000"))
     #     self.data_client.register_strategy(strategy)
     #     self.exec_engine.register_strategy(strategy)
     #     strategy.start()
     #
-    #     self.exec_client.process_tick(TestStubs.tick_3decimal(self.usdjpy.symbol))  # Prepare market
+    #     self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
     #     order = strategy.order_factory.market(
     #         USDJPY_FXCM,
     #         OrderSide.BUY,

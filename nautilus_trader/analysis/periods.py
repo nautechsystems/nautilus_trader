@@ -8,11 +8,11 @@ MONTHS_PER_YEAR = 12
 WEEKS_PER_YEAR = 52
 QTRS_PER_YEAR = 4
 
-DAILY = 'daily'
-WEEKLY = 'weekly'
-MONTHLY = 'monthly'
-QUARTERLY = 'quarterly'
-YEARLY = 'yearly'
+DAILY = "daily"
+WEEKLY = "weekly"
+MONTHLY = "monthly"
+QUARTERLY = "quarterly"
+YEARLY = "yearly"
 
 ANNUALIZATION_FACTORS = {
     DAILY: APPROX_BDAYS_PER_YEAR,

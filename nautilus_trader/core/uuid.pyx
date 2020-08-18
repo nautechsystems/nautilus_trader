@@ -659,7 +659,7 @@ def getnode():
     for getter in _GETTERS + [_random_getnode]:
         try:
             _node = getter()
-        except:  # noqa (E722 do not use bare 'except')  TODO: Refactor
+        except:  # noqa (E722 do not use bare 'except')
             continue
         if (_node is not None) and (0 <= _node < (1 << 48)):
             return _node

@@ -47,9 +47,9 @@ class TestFunctionsTests(unittest.TestCase):
         time_object1 = UNIX_EPOCH
         time_object2 = pd.Timestamp(UNIX_EPOCH)
 
-        time_object3 = pd.DataFrame({'timestamp': ['2019-05-21T12:00:00+00:00',
-                                                   '2019-05-21T12:15:00+00:00']})
-        time_object3.set_index('timestamp')
+        time_object3 = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
+                                                   "2019-05-21T12:15:00+00:00"]})
+        time_object3.set_index("timestamp")
         time_object3.index = pd.to_datetime(time_object3.index)
 
         # Act
@@ -89,12 +89,12 @@ class TestFunctionsTests(unittest.TestCase):
         result5 = format_iso8601(dt5)
 
         # Assert
-        self.assertEqual('1970-01-01 00:00:00+00:00', str(pd.to_datetime(dt1, utc=True)))
-        self.assertEqual('1970-01-01T00:00:00.000Z', result1)
-        self.assertEqual('1970-01-01T00:00:00.000Z', result2)
-        self.assertEqual('1970-01-01T00:00:00.001Z', result3)
-        self.assertEqual('1970-01-01T00:00:01.000Z', result4)
-        self.assertEqual('1970-01-01T01:01:02.003Z', result5)
+        self.assertEqual("1970-01-01 00:00:00+00:00", str(pd.to_datetime(dt1, utc=True)))
+        self.assertEqual("1970-01-01T00:00:00.000Z", result1)
+        self.assertEqual("1970-01-01T00:00:00.000Z", result2)
+        self.assertEqual("1970-01-01T00:00:00.001Z", result3)
+        self.assertEqual("1970-01-01T00:00:01.000Z", result4)
+        self.assertEqual("1970-01-01T01:01:02.003Z", result5)
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
@@ -106,7 +106,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp3 = timestamp1 + min1
         timestamp4 = timestamp2 + min1
         timestamp5 = UNIX_EPOCH
-        timestamp6 = timestamp2.tz_localize('UTC')
+        timestamp6 = timestamp2.tz_localize("UTC")
 
         # Assert
         self.assertEqual(timestamp1, timestamp2)
@@ -123,7 +123,7 @@ class TestFunctionsTests(unittest.TestCase):
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
+        self.assertEqual(pd.Timestamp("2013-02-01 00:00:00+00:00"), result)
         self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_given_tz_naive_pandas_timestamp(self):
@@ -134,7 +134,7 @@ class TestFunctionsTests(unittest.TestCase):
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
+        self.assertEqual(pd.Timestamp("2013-02-01 00:00:00+00:00"), result)
         self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_given_tz_aware_datetime(self):
@@ -145,18 +145,18 @@ class TestFunctionsTests(unittest.TestCase):
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
+        self.assertEqual(pd.Timestamp("2013-02-01 00:00:00+00:00"), result)
         self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_given_tz_aware_pandas(self):
         # Arrange
-        timestamp = pd.Timestamp(2013, 2, 1, 0, 0, 0, 0).tz_localize('UTC')
+        timestamp = pd.Timestamp(2013, 2, 1, 0, 0, 0, 0).tz_localize("UTC")
 
         # Act
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        self.assertEqual(pd.Timestamp('2013-02-01 00:00:00+00:00'), result)
+        self.assertEqual(pd.Timestamp("2013-02-01 00:00:00+00:00"), result)
         self.assertEqual(pytz.utc, result.tz)
 
     def test_as_utc_timestamp_equality(self):
@@ -164,7 +164,7 @@ class TestFunctionsTests(unittest.TestCase):
         timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0)
         timestamp2 = UNIX_EPOCH
         timestamp3 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0)
-        timestamp4 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0).tz_localize('UTC')
+        timestamp4 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0).tz_localize("UTC")
 
         # Act
         timestamp1_converted = as_utc_timestamp(timestamp1)
@@ -179,9 +179,9 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_with_utc_index_given_tz_unaware_dataframe(self):
         # Arrange
-        data = pd.DataFrame({'timestamp': ['2019-05-21T12:00:00+00:00',
-                                           '2019-05-21T12:15:00+00:00']})
-        data.set_index('timestamp')
+        data = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
+                                           "2019-05-21T12:15:00+00:00"]})
+        data.set_index("timestamp")
         data.index = pd.to_datetime(data.index)
 
         # Act
@@ -192,9 +192,9 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_with_utc_index_given_tz_aware_dataframe(self):
         # Arrange
-        data = pd.DataFrame({'timestamp': ['2019-05-21T12:00:00+00:00',
-                                           '2019-05-21T12:15:00+00:00']})
-        data.set_index('timestamp')
+        data = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
+                                           "2019-05-21T12:15:00+00:00"]})
+        data.set_index("timestamp")
         data.index = pd.to_datetime(data.index, utc=True)
 
         # Act
@@ -205,14 +205,14 @@ class TestFunctionsTests(unittest.TestCase):
 
     def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
         # Arrange
-        data1 = pd.DataFrame({'timestamp': ['2019-05-21 12:00:00',
-                                            '2019-05-21 12:15:00']})
-        data1.set_index('timestamp')
+        data1 = pd.DataFrame({"timestamp": ["2019-05-21 12:00:00",
+                                            "2019-05-21 12:15:00"]})
+        data1.set_index("timestamp")
         data1.index = pd.to_datetime(data1.index)
 
-        data2 = pd.DataFrame({'timestamp': [datetime(1970, 1, 1, 0, 0, 0, 0),
+        data2 = pd.DataFrame({"timestamp": [datetime(1970, 1, 1, 0, 0, 0, 0),
                                             datetime(1970, 1, 1, 0, 0, 0, 0)]})
-        data2.set_index('timestamp')
+        data2.set_index("timestamp")
         data2.index = pd.to_datetime(data2.index, utc=True)
 
         # Act

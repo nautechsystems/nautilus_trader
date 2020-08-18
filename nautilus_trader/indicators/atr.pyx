@@ -33,7 +33,7 @@ cdef class AverageTrueRange(Indicator):
                  double value_floor=0.0,
                  bint check_inputs=False):
         """
-        Initializes a new instance of the AverageTrueRange class.
+        Initialize a new instance of the AverageTrueRange class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param ma_type: The moving average type for the indicator (cannot be None).
@@ -42,8 +42,8 @@ cdef class AverageTrueRange(Indicator):
         :param value_floor: The floor (minimum) output value for the indicator (>= 0).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.positive_int(period, 'period')
-        Condition.not_negative(value_floor, 'value_floor')
+        Condition.positive_int(period, "period")
+        Condition.not_negative(value_floor, "value_floor")
         super().__init__(params=[period,
                                  ma_type.name,
                                  use_previous,
@@ -71,12 +71,12 @@ cdef class AverageTrueRange(Indicator):
         :param close: The close price (> 0).
         """
         if self.check_inputs:
-            Condition.positive(high, 'high')
-            Condition.positive(low, 'low')
-            Condition.positive(close, 'close')
-            Condition.true(high >= low, 'high >= low')
-            Condition.true(high >= close, 'high >= close')
-            Condition.true(low <= close, 'low <= close')
+            Condition.positive(high, "high")
+            Condition.positive(low, "low")
+            Condition.positive(close, "close")
+            Condition.true(high >= low, "high >= low")
+            Condition.true(high >= close, "high >= close")
+            Condition.true(low <= close, "low <= close")
 
         # Calculate average
         if self._use_previous:
@@ -98,7 +98,7 @@ cdef class AverageTrueRange(Indicator):
         :param close: The mid close price (> 0).
         """
         if self.check_inputs:
-            Condition.positive(close, 'close')
+            Condition.positive(close, "close")
 
         if not self.has_inputs:
             self._previous_close = close

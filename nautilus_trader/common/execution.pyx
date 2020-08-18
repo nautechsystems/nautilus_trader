@@ -39,7 +39,7 @@ cdef class ExecutionDatabase:
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initializes a new instance of the ExecutionDatabase class.
+        Initialize a new instance of the ExecutionDatabase class.
 
         :param trader_id: The trader_id for the component.
         :param logger: The logger for the component.
@@ -279,7 +279,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initializes a new instance of the InMemoryExecutionDatabase class.
+        Initialize a new instance of the InMemoryExecutionDatabase class.
 
         :param trader_id: The trader_id for the component.
         :param logger: The logger for the component.
@@ -312,8 +312,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param account: The account to add.
         :raises ValueError: If the account_id is already contained in the cached_accounts.
         """
-        Condition.not_none(account, 'account')
-        Condition.not_in(account.id, self._cached_accounts, 'account.id', 'cached_accounts')
+        Condition.not_none(account, "account")
+        Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
 
         self._cached_accounts[account.id] = account
 
@@ -332,13 +332,13 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :raises ValueError: If order.id is already contained in the index_order_strategy.
         :raises ValueError: If order.id is already contained in the index_order_position.
         """
-        Condition.not_none(order, 'order')
-        Condition.not_none(strategy_id, 'strategy_id')
-        Condition.not_none(position_id, 'position_id')
-        Condition.not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
-        Condition.not_in(order.id, self._index_orders, 'order.id', 'index_orders')
-        Condition.not_in(order.id, self._index_order_strategy, 'order.id', 'index_order_strategy')
-        Condition.not_in(order.id, self._index_order_position, 'order.id', 'index_order_position')
+        Condition.not_none(order, "order")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_none(position_id, "position_id")
+        Condition.not_in(order.id, self._cached_orders, "order.id", "cached_orders")
+        Condition.not_in(order.id, self._index_orders, "order.id", "index_orders")
+        Condition.not_in(order.id, self._index_order_strategy, "order.id", "index_order_strategy")
+        Condition.not_in(order.id, self._index_order_position, "order.id", "index_order_position")
 
         self._cached_orders[order.id] = order
 
@@ -383,12 +383,12 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :raises ValueError: If the position.id is already contained in the index_positions.
         :raises ValueError: If the position.id is already contained in the index_positions_open.
         """
-        Condition.not_none(position, 'position')
-        Condition.not_none(strategy_id, 'strategy_id')
-        Condition.not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
-        Condition.not_in(position.id_broker, self._index_broker_position, 'position.id_broker', 'index_broker_position')
-        Condition.not_in(position.id, self._index_positions, 'position.id', 'index_positions')
-        Condition.not_in(position.id, self._index_positions_open, 'position.id', 'index_positions_open')
+        Condition.not_none(position, "position")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
+        Condition.not_in(position.id_broker, self._index_broker_position, "position.id_broker", "index_broker_position")
+        Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
+        Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
         self._cached_positions[position.id] = position
 
@@ -412,9 +412,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to update.
         """
-        Condition.not_none(strategy, 'strategy')
+        Condition.not_none(strategy, "strategy")
 
-        self._log.info(f'Saving {strategy.id} (in-memory database does nothing).')
+        self._log.info(f"Saving {strategy.id} (in-memory database does nothing).")
         self._strategies.add(strategy.id)
 
     cpdef void update_order(self, Order order) except *:
@@ -423,7 +423,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :param order: The order to update (from last event).
         """
-        Condition.not_none(order, 'order')
+        Condition.not_none(order, "order")
 
         if order.is_working:
             self._index_orders_working.add(order.id)
@@ -438,7 +438,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :param position: The position to update (from last event).
         """
-        Condition.not_none(position, 'position')
+        Condition.not_none(position, "position")
 
         if position.is_closed:
             self._index_positions_closed.add(position.id)
@@ -450,9 +450,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to load.
         """
-        Condition.not_none(strategy, 'strategy')
+        Condition.not_none(strategy, "strategy")
 
-        self._log.info(f'Loading {strategy.id} (in-memory database does nothing).')
+        self._log.info(f"Loading {strategy.id} (in-memory database does nothing).")
         # Do nothing in memory
 
     cpdef Account load_account(self, AccountId account_id):
@@ -462,7 +462,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param account_id: The account identifier to load.
         :return: Account or None.
         """
-        Condition.not_none(account_id, 'account_id')
+        Condition.not_none(account_id, "account_id")
 
         return self._cached_accounts.get(account_id)
 
@@ -473,7 +473,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to load.
         :return: Order or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._cached_orders.get(order_id)
 
@@ -484,7 +484,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id to load.
         :return: Position or None.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return self._cached_positions.get(position_id)
 
@@ -495,8 +495,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy: The strategy to deregister.
         :raises ValueError: If the strategy is not contained in the strategies.
         """
-        Condition.not_none(strategy, 'strategy')
-        Condition.is_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
+        Condition.not_none(strategy, "strategy")
+        Condition.is_in(strategy.id, self._strategies, "strategy.id", "strategies")
 
         self._strategies.discard(strategy.id)
 
@@ -533,7 +533,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Flush the database which clears all data.
         """
-        self._log.info('Flushing database (in-memory database does nothing).')
+        self._log.info("Flushing database (in-memory database does nothing).")
 
 
 # -- QUERIES ---------------------------------------------------------------------------------------
@@ -545,7 +545,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param account_id: The account_id.
         :return Account or None.
         """
-        Condition.not_none(account_id, 'account_id')
+        Condition.not_none(account_id, "account_id")
 
         return self._cached_accounts.get(account_id)
 
@@ -661,7 +661,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id associated with the strategy.
         :return StrategyId or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._index_order_strategy.get(order_id)
 
@@ -672,7 +672,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id associated with the strategy.
         :return StrategyId or None.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return self._index_position_strategy.get(position_id)
 
@@ -682,7 +682,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :return Order or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._cached_orders.get(order_id)
 
@@ -744,7 +744,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return Position or None.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return self._cached_positions.get(position_id)
 
@@ -755,7 +755,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id for the position.
         :return Position or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
@@ -772,7 +772,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id associated with the position.
         :return PositionId or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef PositionId position_id = self._index_order_position.get(order_id)
         if position_id is None:
@@ -788,7 +788,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id_broker: The broker position_id.
         :return PositionId or None.
         """
-        Condition.not_none(position_id_broker, 'position_id_broker')
+        Condition.not_none(position_id_broker, "position_id_broker")
 
         cdef PositionId position_id = self._index_broker_position.get(position_id_broker)
         if position_id is None:
@@ -858,7 +858,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to check.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return order_id in self._index_orders
 
@@ -869,7 +869,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to check.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return order_id in self._index_orders_working
 
@@ -880,7 +880,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to check.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return order_id in self._index_orders_completed
 
@@ -891,7 +891,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return bool.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return position_id in self._index_positions  # Only open positions added here
 
@@ -903,7 +903,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef PositionId position_id = self._index_order_position.get(order_id)
         if position_id is None:
@@ -918,7 +918,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return order_id in self._index_order_position
 
@@ -930,7 +930,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return bool.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return position_id in self._index_positions_open
 
@@ -942,7 +942,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return bool.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return position_id in self._index_positions_closed
 
@@ -1015,7 +1015,7 @@ cdef class ExecutionEngine:
                  UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the ExecutionEngine class.
+        Initialize a new instance of the ExecutionEngine class.
 
         :param trader_id: The trader identifier for the engine.
         :param account_id: The account identifier for the engine.
@@ -1026,11 +1026,11 @@ cdef class ExecutionEngine:
         :param logger: The logger for the engine.
         :raises ValueError: If the trader_id is not equal to the database.trader_id.
         """
-        Condition.equal(trader_id, database.trader_id, 'trader_id', 'database.trader_id')
+        Condition.equal(trader_id, database.trader_id, "trader_id", "database.trader_id")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter("ExecEngine", logger)
 
         self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
         self._exec_client = None
@@ -1053,7 +1053,7 @@ cdef class ExecutionEngine:
 
         :param exec_client: The execution client to register.
         """
-        Condition.not_none(exec_client, 'exec_client')
+        Condition.not_none(exec_client, "exec_client")
 
         self._exec_client = exec_client
         self._log.info("Registered execution client.")
@@ -1065,10 +1065,11 @@ cdef class ExecutionEngine:
         :param strategy: The strategy to register.
         :raises ValueError: If the strategy is already registered with the execution engine.
         """
-        Condition.not_none(strategy, 'strategy')
-        Condition.not_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')
+        Condition.not_none(strategy, "strategy")
+        Condition.not_in(strategy.id, self._registered_strategies, "strategy.id", "registered_strategies")
 
         self._registered_strategies[strategy.id] = strategy
+        strategy.register_trader(self.trader_id)
         strategy.register_execution_engine(self)
         self._log.info(f"Registered strategy {strategy}.")
 
@@ -1079,8 +1080,8 @@ cdef class ExecutionEngine:
         :param strategy: The strategy to deregister.
         :raises ValueError: If the strategy is not registered with the execution client.
         """
-        Condition.not_none(strategy, 'strategy')
-        Condition.is_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')
+        Condition.not_none(strategy, "strategy")
+        Condition.is_in(strategy.id, self._registered_strategies, "strategy.id", "registered_strategies")
 
         del self._registered_strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")
@@ -1091,7 +1092,7 @@ cdef class ExecutionEngine:
 
         :param command: The command to execute.
         """
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         self._execute_command(command)
 
@@ -1101,7 +1102,7 @@ cdef class ExecutionEngine:
 
         :param event: The event to handle.
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         self._handle_event(event)
 
@@ -1139,7 +1140,7 @@ cdef class ExecutionEngine:
         :param strategy_id: The strategy_id.
         :return bool.
         """
-        Condition.not_none(strategy_id, 'strategy_id')
+        Condition.not_none(strategy_id, "strategy_id")
 
         return self.database.count_positions_open(strategy_id) == 0
 
@@ -1155,7 +1156,7 @@ cdef class ExecutionEngine:
 # --------------------------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
-        self._log.debug(f'{RECV}{CMD} {command}.')
+        self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
         if isinstance(command, AccountInquiry):
@@ -1175,7 +1176,7 @@ cdef class ExecutionEngine:
             self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event) except *:
-        self._log.debug(f'{RECV}{EVT} {event}.')
+        self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
@@ -1336,7 +1337,7 @@ cdef class ExecutionClient:
 
     def __init__(self, ExecutionEngine exec_engine not None, Logger logger not None):
         """
-        Initializes a new instance of the ExecutionClient class.
+        Initialize a new instance of the ExecutionClient class.
 
         :param exec_engine: The execution engine to connect to the client.
         :param logger: The logger for the component.

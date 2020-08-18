@@ -44,11 +44,12 @@ cdef class ExchangeRateCalculator:
         :param bid_rates: The dictionary of currency pair bid rates Dict[str, double].
         :param ask_rates: The dictionary of currency pair ask rates Dict[str, double].
         :raises ValueError: If the bid rates length is not equal to the ask rates length.
+        :raises ValueError: If price type is UNDEFINED or LAST.
         :return double.
         """
-        Condition.not_none(bid_rates, 'bid_rates')
-        Condition.not_none(ask_rates, 'ask_rates')
-        Condition.equal(len(bid_rates), len(ask_rates), 'len(bid_rates)', 'len(ask_rates)')
+        Condition.not_none(bid_rates, "bid_rates")
+        Condition.not_none(ask_rates, "ask_rates")
+        Condition.equal(len(bid_rates), len(ask_rates), "len(bid_rates)", "len(ask_rates)")
 
         if from_currency == to_currency:
             return 1.0  # No exchange necessary

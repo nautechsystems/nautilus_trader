@@ -37,7 +37,7 @@ def parse_requirements(requirements_txt_path: str, strip: bool=False) -> [str]:
     with open(requirements_txt_path) as fp:
         requirements = fp.read().splitlines()
         if strip:
-            requirements = [''.join([i for i in requirement if i.isalpha()]) for requirement in requirements]
+            requirements = ["".join([i for i in requirement if i.isalpha()]) for requirement in requirements]
         return requirements
 
 
@@ -66,8 +66,9 @@ def scan_directories(directories: list) -> list:
 
 def get_files(directory: str, files: list=None) -> list:
     """
-    Return a list of all file names in the given directory with the given extension
-    by recursive scan and appending to the given list of files.
+    Return a list of all file names in the given directory.
+
+    Recursively scans and appends to the given list of files.
 
     Parameters
     ----------
@@ -130,10 +131,10 @@ def make_extensions(directories: list) -> list:
 
     """
     extensions = []
-    for file in find_files('.pyx', directories):
+    for file in find_files(".pyx", directories):
         extensions.append(Extension(
             name=file.replace(os.path.sep, ".")[:-4],
             sources=[file],
-            include_dirs=['.']))
+            include_dirs=["."]))
 
     return extensions

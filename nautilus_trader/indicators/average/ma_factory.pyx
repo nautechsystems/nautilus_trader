@@ -38,7 +38,7 @@ cdef class MovingAverageFactory:
         :param ma_type: The moving average type.
         :return: The moving average indicator.
         """
-        Condition.positive(period, 'period')
+        Condition.positive(period, "period")
 
         if ma_type == MovingAverageType.SIMPLE:
             return SimpleMovingAverage(period)

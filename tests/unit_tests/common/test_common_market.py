@@ -67,7 +67,7 @@ class TickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarStructure.TICK, self.tick_builder.resolution)
         self.assertEqual(1000, len(ticks))
-        self.assertEqual(Timestamp('2013-01-01 22:02:35.907000', tz='UTC'), ticks.iloc[1].name)
+        self.assertEqual(Timestamp("2013-01-01 22:02:35.907000", tz="UTC"), ticks.iloc[1].name)
 
     def test_build_ticks_with_bar_data(self):
         # Arrange
@@ -86,19 +86,19 @@ class TickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarStructure.MINUTE, self.tick_builder.resolution)
         self.assertEqual(1491252, len(tick_data))
-        self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), tick_data.iloc[0].name)
-        self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), tick_data.iloc[1].name)
-        self.assertEqual(Timestamp('2013-01-01T21:59:59.900000+00:00', tz='UTC'), tick_data.iloc[2].name)
-        self.assertEqual(Timestamp('2013-01-01T22:00:00.000000+00:00', tz='UTC'), tick_data.iloc[3].name)
-        self.assertEqual(0, tick_data.iloc[0]['symbol'])
-        self.assertEqual(0, tick_data.iloc[0]['bid_size'])
-        self.assertEqual(0, tick_data.iloc[0]['ask_size'])
-        self.assertEqual(0, tick_data.iloc[1]['bid_size'])
-        self.assertEqual(0, tick_data.iloc[1]['ask_size'])
-        self.assertEqual(0, tick_data.iloc[2]['bid_size'])
-        self.assertEqual(0, tick_data.iloc[2]['ask_size'])
-        self.assertEqual(1.5, tick_data.iloc[3]['bid_size'])
-        self.assertEqual(2.25, tick_data.iloc[3]['ask_size'])
+        self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[0].name)
+        self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[1].name)
+        self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[2].name)
+        self.assertEqual(Timestamp("2013-01-01T22:00:00.000000+00:00", tz="UTC"), tick_data.iloc[3].name)
+        self.assertEqual(0, tick_data.iloc[0]["symbol"])
+        self.assertEqual(0, tick_data.iloc[0]["bid_size"])
+        self.assertEqual(0, tick_data.iloc[0]["ask_size"])
+        self.assertEqual(0, tick_data.iloc[1]["bid_size"])
+        self.assertEqual(0, tick_data.iloc[1]["ask_size"])
+        self.assertEqual(0, tick_data.iloc[2]["bid_size"])
+        self.assertEqual(0, tick_data.iloc[2]["ask_size"])
+        self.assertEqual(1.5, tick_data.iloc[3]["bid_size"])
+        self.assertEqual(2.25, tick_data.iloc[3]["ask_size"])
 
 
 class BarDataWranglerTests(unittest.TestCase):
@@ -178,8 +178,8 @@ class IndicatorUpdaterTests(unittest.TestCase):
         result = updater.build_features_bars(bars)
 
         # Assert
-        self.assertTrue('value' in result)
-        self.assertEqual(1000, len(result['value']))
+        self.assertTrue("value" in result)
+        self.assertEqual(1000, len(result["value"]))
         self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_update_ema_indicator(self):

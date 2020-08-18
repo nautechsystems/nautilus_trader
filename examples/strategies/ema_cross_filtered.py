@@ -30,17 +30,18 @@ from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-UPDATE_SESSIONS = 'UPDATE-SESSIONS'
-UPDATE_NEWS = 'UPDATE-NEWS'
-NEWS_FLATTEN = 'NEWS-FLATTEN'
-DONE_FOR_DAY = 'DONE-FOR-DAY'
+UPDATE_SESSIONS = "UPDATE-SESSIONS"
+UPDATE_NEWS = "UPDATE-NEWS"
+NEWS_FLATTEN = "NEWS-FLATTEN"
+DONE_FOR_DAY = "DONE-FOR-DAY"
 
 
 class EMACrossFiltered(TradingStrategy):
-    """"
-    A simple moving average cross example strategy. When the fast EMA crosses
-    the slow EMA then a STOP entry bracket order is placed for that direction
-    with a trailing stop and profit target at 1R risk.
+    """
+    A simple moving average cross example strategy.
+
+    When the fast EMA crosses the slow EMA then a STOP entry bracket order is
+    placed for that direction with a trailing stop and profit target at 1R risk.
     """
 
     def __init__(self,
@@ -53,9 +54,9 @@ class EMACrossFiltered(TradingStrategy):
                  sl_atr_multiple: float=2.0,
                  news_currencies: list=[],
                  news_impacts: list=[],
-                 extra_id_tag: str=''):
+                 extra_id_tag: str=""):
         """
-        Initializes a new instance of the EMACrossPy class.
+        Initialize a new instance of the EMACrossPy class.
 
         :param symbol: The symbol for the strategy.
         :param bar_spec: The bar specification for the strategy.
@@ -66,7 +67,7 @@ class EMACrossFiltered(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace("/", "") + extra_id_tag)
 
         # Custom strategy variables (all optional)
         self.symbol = symbol
@@ -107,7 +108,7 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_start(self):
         """
-        This method is called when self.start() is called, and after internal start logic.
+        Actions to be performed on strategy start.
         """
         # Put custom code to be run on strategy start here (or pass)
         instrument = self.get_instrument(self.symbol)
@@ -149,23 +150,19 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_quote_tick(self, tick: QuoteTick):
         """
-        This method is called whenever a Tick is received by the strategy, and
-        after the Tick has been processed by the base class.
-        The received Tick object is then passed into this method.
+        Actions to be performed when the strategy is running and receives a quote tick.
 
-        :param tick: The received tick.
+        :param tick: The quote tick received.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
-        This method is called whenever the strategy receives a Bar, and after the
-        Bar has been processed by the base class.
-        The received BarType and Bar objects are then passed into this method.
+        Actions to be performed when the strategy is running and receives a bar.
 
-        :param bar_type: The received bar type.
-        :param bar: The received bar.
+        :param bar_type: The bar type received.
+        :param bar: The bar received.
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging
 
@@ -222,20 +219,17 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_data(self, data):
         """
-        This method is called whenever the strategy receives a data update.
+        Actions to be performed when the strategy is running and receives a data object.
 
-        :param data: The received data.
+        :param data: The data object received.
         """
-        # Put custom code for data handling here (or pass)
         pass
 
     def on_event(self, event):
         """
-        This method is called whenever the strategy receives an Event object,
-        and after the event has been processed by the TradingStrategy base class.
-        These events could be AccountEvent, OrderEvent, PositionEvent, TimeEvent.
+        Actions to be performed when the strategy is running and receives an event.
 
-        :param event: The received event.
+        :param event: The event received.
         """
         if isinstance(event, TimeEvent):
             if event.name.startswith(DONE_FOR_DAY):
@@ -254,17 +248,14 @@ class EMACrossFiltered(TradingStrategy):
 
     def on_stop(self):
         """
-        This method is called when self.stop() is called and after internal
-        stopping logic.
+        Actions to be performed when the strategy is stopped.
         """
         # Put custom code to be run on strategy stop here (or pass)
         pass
 
     def on_reset(self):
         """
-        This method is called when self.reset() is called, and after internal
-        reset logic such as clearing the internally held bars, ticks and resetting
-        all indicators.
+        Actions to be performed when the strategy is reset.
         """
         # Trading session times
         self.session_next_start = None
@@ -278,17 +269,29 @@ class EMACrossFiltered(TradingStrategy):
         self.trading_pause_end = None
 
     def on_save(self) -> {}:
-        # Put custom state to be saved here (or return empty dictionary)
+        """
+        Actions to be performed when the strategy is saved.
+
+        Create and return a state dictionary of values to be saved.
+
+        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        the returned state dictionary.
+        """
         return {}
 
     def on_load(self, state: {}):
-        # Put custom state to be loaded here (or pass)
+        """
+        Actions to be performed when the strategy is loaded.
+
+        Saved state values will be contained in the give state dictionary.
+        """
         pass
 
     def on_dispose(self):
         """
-        This method is called when self.dispose() is called. Dispose of any
-        resources that have been used by the strategy here.
+        Actions to be performed when the strategy is disposed.
+
+        Cleanup any resources used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)
@@ -433,7 +436,7 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set trading end to {self.trading_end}")
 
         # Set session update event
-        alert_label = f'-{time_now.date()}'
+        alert_label = f"-{time_now.date()}"
         self.clock.set_time_alert(DONE_FOR_DAY + alert_label, self.trading_end)
         self.clock.set_time_alert(UPDATE_SESSIONS + alert_label, self.session_next_end + timedelta(seconds=1))
 
@@ -448,10 +451,10 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set next news event
         self.news_event_next = self.news_filter.next_event(time_now)
-        if self.news_event_next.impact == 'HIGH':
+        if self.news_event_next.impact == "HIGH":
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
-        elif self.news_event_next.impact == 'MEDIUM':
+        elif self.news_event_next.impact == "MEDIUM":
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
 
@@ -462,10 +465,13 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
         self.log.info(f"Set next trading pause end to {self.trading_pause_end}")
 
+        if time_now >= self.trading_pause_start:
+            return  # Already in pause window
+
         # Set news update event
         news_time = self.news_event_next.timestamp
-        news_name = self.news_event_next.name.replace(' ', '')
-        alert_label = f'-{news_time.date()}-{news_time.hour:02d}{news_time.minute:02d}-{news_name}'
+        news_name = self.news_event_next.name.replace(" ", "")
+        alert_label = f"-{news_time.date()}-{news_time.hour:02d}{news_time.minute:02d}-{news_name}"
         self.clock.set_time_alert(UPDATE_NEWS + alert_label, self.trading_pause_end)
         self.clock.set_time_alert(NEWS_FLATTEN + alert_label, self.trading_pause_start + timedelta(seconds=1))
 

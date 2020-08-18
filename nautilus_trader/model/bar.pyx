@@ -35,7 +35,7 @@ cdef class BarSpecification:
                  BarStructure structure,
                  PriceType price_type):
         """
-        Initializes a new instance of the BarSpecification class.
+        Initialize a new instance of the BarSpecification class.
 
         :param step: The bar step (> 0).
         :param structure: The bar structure.
@@ -171,7 +171,7 @@ cdef class BarType:
                  Symbol symbol not None,
                  BarSpecification bar_spec not None):
         """
-        Initializes a new instance of the BarType class.
+        Initialize a new instance of the BarType class.
 
         :param symbol: The bar symbol.
         :param bar_spec: The bar specification.
@@ -303,7 +303,7 @@ cdef class Bar:
                  datetime timestamp not None,
                  bint check=False):
         """
-        Initializes a new instance of the Bar class.
+        Initialize a new instance of the Bar class.
 
         :param open_price: The bars open price.
         :param high_price: The bars high price.

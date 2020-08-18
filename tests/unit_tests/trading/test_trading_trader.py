@@ -48,12 +48,13 @@ class TraderTests(unittest.TestCase):
         clock = TestClock()
         uuid_factory = TestUUIDFactory()
         logger = TestLogger()
-        trader_id = TraderId('TESTER', '000')
+        trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
         data_client = BacktestDataClient(
             data=data,
-            tick_capacity=100,
+            tick_capacity=1000,
+            bar_capacity=1000,
             clock=clock,
             logger=logger)
 
@@ -86,8 +87,8 @@ class TraderTests(unittest.TestCase):
             logger=logger)
         self.exec_engine.register_client(self.exec_client)
 
-        strategies = [EmptyStrategy('001'),
-                      EmptyStrategy('002')]
+        strategies = [EmptyStrategy("001"),
+                      EmptyStrategy("002")]
 
         self.trader = Trader(
             trader_id=trader_id,
@@ -105,8 +106,8 @@ class TraderTests(unittest.TestCase):
         trader_id = self.trader.id
 
         # Assert
-        self.assertEqual(TraderId('TESTER', '000'), trader_id)
-        self.assertEqual(IdTag('000'), trader_id.order_id_tag)
+        self.assertEqual(TraderId("TESTER", "000"), trader_id)
+        self.assertEqual(IdTag("000"), trader_id.order_id_tag)
         self.assertFalse(self.trader.is_running)
         self.assertEqual(2, len(self.trader.strategy_status()))
 
@@ -116,16 +117,16 @@ class TraderTests(unittest.TestCase):
         status = self.trader.strategy_status()
 
         # Assert
-        self.assertTrue(StrategyId('EmptyStrategy', '001') in status)
-        self.assertTrue(StrategyId('EmptyStrategy', '002') in status)
-        self.assertFalse(status[StrategyId('EmptyStrategy', '001')])
-        self.assertFalse(status[StrategyId('EmptyStrategy', '002')])
+        self.assertTrue(StrategyId("EmptyStrategy", "001") in status)
+        self.assertTrue(StrategyId("EmptyStrategy", "002") in status)
+        self.assertFalse(status[StrategyId("EmptyStrategy", "001")])
+        self.assertFalse(status[StrategyId("EmptyStrategy", "002")])
         self.assertEqual(2, len(status))
 
     def test_can_change_strategies(self):
         # Arrange
-        strategies = [EmptyStrategy('003'),
-                      EmptyStrategy('004')]
+        strategies = [EmptyStrategy("003"),
+                      EmptyStrategy("004")]
 
         # Act
         self.trader.initialize_strategies(strategies)
@@ -137,8 +138,8 @@ class TraderTests(unittest.TestCase):
 
     def test_trader_detects_none_unique_identifiers(self):
         # Arrange
-        strategies = [EmptyStrategy('000'),
-                      EmptyStrategy('000')]
+        strategies = [EmptyStrategy("000"),
+                      EmptyStrategy("000")]
 
         # Act
         self.assertRaises(ValueError, self.trader.initialize_strategies, strategies)
@@ -150,10 +151,10 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.trader.is_running)
-        self.assertTrue(StrategyId('EmptyStrategy', '001') in self.trader.strategy_status())
-        self.assertTrue(StrategyId('EmptyStrategy', '002') in self.trader.strategy_status())
-        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy', '001')])
-        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy', '002')])
+        self.assertTrue(StrategyId("EmptyStrategy", "001") in self.trader.strategy_status())
+        self.assertTrue(StrategyId("EmptyStrategy", "002") in self.trader.strategy_status())
+        self.assertTrue(self.trader.strategy_status()[StrategyId("EmptyStrategy", "001")])
+        self.assertTrue(self.trader.strategy_status()[StrategyId("EmptyStrategy", "002")])
 
     def test_can_stop_a_running_trader(self):
         # Arrange
@@ -164,7 +165,7 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(self.trader.is_running)
-        self.assertTrue(StrategyId('EmptyStrategy', '001') in self.trader.strategy_status())
-        self.assertTrue(StrategyId('EmptyStrategy', '002') in self.trader.strategy_status())
-        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy', '001')])
-        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy', '002')])
+        self.assertTrue(StrategyId("EmptyStrategy", "001") in self.trader.strategy_status())
+        self.assertTrue(StrategyId("EmptyStrategy", "002") in self.trader.strategy_status())
+        self.assertFalse(self.trader.strategy_status()[StrategyId("EmptyStrategy", "001")])
+        self.assertFalse(self.trader.strategy_status()[StrategyId("EmptyStrategy", "002")])

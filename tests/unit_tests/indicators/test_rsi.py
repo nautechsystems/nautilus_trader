@@ -29,19 +29,19 @@ class RelativeStrengthIndexTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('RelativeStrengthIndex', self.rsi.name)
+        self.assertEqual("RelativeStrengthIndex", self.rsi.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('RelativeStrengthIndex(10, EXPONENTIAL)', str(self.rsi))
+        self.assertEqual("RelativeStrengthIndex(10, EXPONENTIAL)", str(self.rsi))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertTrue(repr(self.rsi).startswith(
-            '<RelativeStrengthIndex(10, EXPONENTIAL) object at'))
-        self.assertTrue(repr(self.rsi).endswith('>'))
+            "<RelativeStrengthIndex(10, EXPONENTIAL) object at"))
+        self.assertTrue(repr(self.rsi).endswith(">"))
 
     def test_period_returns_expected_value(self):
         # Act

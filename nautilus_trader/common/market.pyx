@@ -44,7 +44,7 @@ cdef class TickDataWrangler:
                  dict data_bars_bid=None,
                  dict data_bars_ask=None):
         """
-        Initializes a new instance of the TickDataWrangler class.
+        Initialize a new instance of the TickDataWrangler class.
 
         :param instrument: The instrument for the data wrangler.
         :param data_ticks: The optional pd.DataFrame containing the tick data.
@@ -55,15 +55,15 @@ cdef class TickDataWrangler:
         :raises: ValueError: If the ask_data is a type other than None or Dict.
         :raises: ValueError: If the tick_data is None and the bars data is None.
         """
-        Condition.type_or_none(data_ticks, pd.DataFrame, 'tick_data')
-        Condition.type_or_none(data_bars_bid, dict, 'bid_data')
-        Condition.type_or_none(data_bars_ask, dict, 'ask_data')
+        Condition.type_or_none(data_ticks, pd.DataFrame, "tick_data")
+        Condition.type_or_none(data_bars_bid, dict, "bid_data")
+        Condition.type_or_none(data_bars_ask, dict, "ask_data")
 
         if data_ticks is not None and len(data_ticks) > 0:
             self._data_ticks = as_utc_index(data_ticks)
         else:
-            Condition.true(data_bars_bid is not None, 'data_bars_bid is not None')
-            Condition.true(data_bars_ask is not None, 'data_bars_ask is not None')
+            Condition.true(data_bars_bid is not None, "data_bars_bid is not None")
+            Condition.true(data_bars_ask is not None, "data_bars_ask is not None")
             self._data_bars_bid = data_bars_bid
             self._data_bars_ask = data_bars_ask
 
@@ -81,13 +81,13 @@ cdef class TickDataWrangler:
         if self._data_ticks is not None and len(self._data_ticks) > 0:
             # Build ticks from data
             self.tick_data = self._data_ticks
-            self.tick_data['symbol'] = symbol_indexer
+            self.tick_data["symbol"] = symbol_indexer
 
-            if 'bid_size' not in self.tick_data.columns:
-                self.tick_data['bid_size'] = 1.0
+            if "bid_size" not in self.tick_data.columns:
+                self.tick_data["bid_size"] = 1.0
 
-            if 'ask_size' not in self.tick_data.columns:
-                self.tick_data['ask_size'] = 1.0
+            if "ask_size" not in self.tick_data.columns:
+                self.tick_data["ask_size"] = 1.0
 
             self.resolution = BarStructure.TICK
             return
@@ -110,74 +110,74 @@ cdef class TickDataWrangler:
             bars_ask = self._data_bars_ask[BarStructure.DAY]
             self.resolution = BarStructure.DAY
 
-        Condition.not_none(bars_bid, 'bars_bid')
-        Condition.not_none(bars_ask, 'bars_ask')
-        Condition.true(len(bars_bid) > 0, 'len(bars_bid) > 0')
-        Condition.true(len(bars_ask) > 0, 'len(bars_ask) > 0')
-        Condition.true(all(bars_bid.index) == all(bars_ask.index), 'bars_bid.index == bars_ask.index')
-        Condition.true(bars_bid.shape == bars_ask.shape, 'bars_bid.shape == bars_ask.shape')
+        Condition.not_none(bars_bid, "bars_bid")
+        Condition.not_none(bars_ask, "bars_ask")
+        Condition.true(len(bars_bid) > 0, "len(bars_bid) > 0")
+        Condition.true(len(bars_ask) > 0, "len(bars_ask) > 0")
+        Condition.true(all(bars_bid.index) == all(bars_ask.index), "bars_bid.index == bars_ask.index")
+        Condition.true(bars_bid.shape == bars_ask.shape, "bars_bid.shape == bars_ask.shape")
 
         bars_bid = as_utc_index(bars_bid)
         bars_ask = as_utc_index(bars_ask)
 
         cdef dict data_open = {
-            'bid': bars_bid['open'].values,
-            'ask': bars_ask['open'].values,
-            'bid_size': bars_bid['volume'].values,
-            'ask_size': bars_ask['volume'].values
+            "bid": bars_bid["open"].values,
+            "ask": bars_ask["open"].values,
+            "bid_size": bars_bid["volume"].values,
+            "ask_size": bars_ask["volume"].values
         }
 
         cdef dict data_high = {
-            'bid': bars_bid['high'].values,
-            'ask': bars_ask['high'].values,
-            'bid_size': bars_bid['volume'].values,
-            'ask_size': bars_ask['volume'].values
+            "bid": bars_bid["high"].values,
+            "ask": bars_ask["high"].values,
+            "bid_size": bars_bid["volume"].values,
+            "ask_size": bars_ask["volume"].values
         }
 
         cdef dict data_low = {
-            'bid': bars_bid['low'].values,
-            'ask': bars_ask['low'].values,
-            'bid_size': bars_bid['volume'].values,
-            'ask_size': bars_ask['volume'].values
+            "bid": bars_bid["low"].values,
+            "ask": bars_ask["low"].values,
+            "bid_size": bars_bid["volume"].values,
+            "ask_size": bars_ask["volume"].values
         }
 
         cdef dict data_close = {
-            'bid': bars_bid['close'],
-            'ask': bars_ask['close'],
-            'bid_size': bars_bid['volume'],
-            'ask_size': bars_ask['volume']
+            "bid": bars_bid["close"],
+            "ask": bars_ask["close"],
+            "bid_size": bars_bid["volume"],
+            "ask_size": bars_ask["volume"]
         }
 
-        df_ticks_o = pd.DataFrame(data=data_open, index=bars_bid.index.shift(periods=-100, freq='ms'))
-        df_ticks_h = pd.DataFrame(data=data_high, index=bars_bid.index.shift(periods=-100, freq='ms'))
-        df_ticks_l = pd.DataFrame(data=data_low, index=bars_bid.index.shift(periods=-100, freq='ms'))
+        df_ticks_o = pd.DataFrame(data=data_open, index=bars_bid.index.shift(periods=-100, freq="ms"))
+        df_ticks_h = pd.DataFrame(data=data_high, index=bars_bid.index.shift(periods=-100, freq="ms"))
+        df_ticks_l = pd.DataFrame(data=data_low, index=bars_bid.index.shift(periods=-100, freq="ms"))
         df_ticks_c = pd.DataFrame(data=data_close)
 
         # Drop rows with no volume
-        df_ticks_o = df_ticks_o[(df_ticks_h[['bid_size']] > 0).all(axis=1)]
-        df_ticks_h = df_ticks_h[(df_ticks_h[['bid_size']] > 0).all(axis=1)]
-        df_ticks_l = df_ticks_l[(df_ticks_l[['bid_size']] > 0).all(axis=1)]
-        df_ticks_c = df_ticks_c[(df_ticks_c[['bid_size']] > 0).all(axis=1)]
-        df_ticks_o = df_ticks_o[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
-        df_ticks_h = df_ticks_h[(df_ticks_h[['ask_size']] > 0).all(axis=1)]
-        df_ticks_l = df_ticks_l[(df_ticks_l[['ask_size']] > 0).all(axis=1)]
-        df_ticks_c = df_ticks_c[(df_ticks_c[['ask_size']] > 0).all(axis=1)]
+        df_ticks_o = df_ticks_o[(df_ticks_h[["bid_size"]] > 0).all(axis=1)]
+        df_ticks_h = df_ticks_h[(df_ticks_h[["bid_size"]] > 0).all(axis=1)]
+        df_ticks_l = df_ticks_l[(df_ticks_l[["bid_size"]] > 0).all(axis=1)]
+        df_ticks_c = df_ticks_c[(df_ticks_c[["bid_size"]] > 0).all(axis=1)]
+        df_ticks_o = df_ticks_o[(df_ticks_h[["ask_size"]] > 0).all(axis=1)]
+        df_ticks_h = df_ticks_h[(df_ticks_h[["ask_size"]] > 0).all(axis=1)]
+        df_ticks_l = df_ticks_l[(df_ticks_l[["ask_size"]] > 0).all(axis=1)]
+        df_ticks_c = df_ticks_c[(df_ticks_c[["ask_size"]] > 0).all(axis=1)]
 
         # Set high low tick volumes to zero
-        df_ticks_o['bid_size'] = 0
-        df_ticks_o['ask_size'] = 0
-        df_ticks_h['bid_size'] = 0
-        df_ticks_h['ask_size'] = 0
-        df_ticks_l['bid_size'] = 0
-        df_ticks_l['ask_size'] = 0
+        df_ticks_o["bid_size"] = 0
+        df_ticks_o["ask_size"] = 0
+        df_ticks_h["bid_size"] = 0
+        df_ticks_h["ask_size"] = 0
+        df_ticks_l["bid_size"] = 0
+        df_ticks_l["ask_size"] = 0
 
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
-        df_ticks_final.sort_index(axis=0, kind='mergesort', inplace=True)
+        df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
 
         # Build ticks from data
         self.tick_data = df_ticks_final
-        self.tick_data['symbol'] = symbol_indexer
+        self.tick_data["symbol"] = symbol_indexer
 
     cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
         """
@@ -217,7 +217,7 @@ cdef class BarDataWrangler:
                  int volume_multiple=1,
                  data: pd.DataFrame=None):
         """
-        Initializes a new instance of the BarDataWrangler class.
+        Initialize a new instance of the BarDataWrangler class.
 
         :param precision: The decimal precision for bar prices (>= 0).
         :param data: The the bars market data.
@@ -226,9 +226,9 @@ cdef class BarDataWrangler:
         :raises: ValueError: If the volume_multiple is not positive (> 0).
         :raises: ValueError: If the data is a type other than DataFrame.
         """
-        Condition.not_negative_int(precision, 'precision')
-        Condition.positive_int(volume_multiple, 'volume_multiple')
-        Condition.type(data, pd.DataFrame, 'data')
+        Condition.not_negative_int(precision, "precision")
+        Condition.positive_int(volume_multiple, "volume_multiple")
+        Condition.type(data, pd.DataFrame, "data")
 
         self._precision = precision
         self._volume_multiple = volume_multiple
@@ -250,7 +250,7 @@ cdef class BarDataWrangler:
 
         :return List[Bar].
         """
-        Condition.not_negative_int(index, 'index')
+        Condition.not_negative_int(index, "index")
 
         return list(map(self._build_bar,
                         self._data.iloc[index:].values,
@@ -262,7 +262,7 @@ cdef class BarDataWrangler:
 
         :return List[Bar].
         """
-        Condition.not_negative_int(start, 'start')
+        Condition.not_negative_int(start, "start")
 
         return list(map(self._build_bar,
                         self._data.iloc[start:end].values,
@@ -279,21 +279,21 @@ cdef class BarDataWrangler:
                    timestamp)
 
 
-cdef str _BID = 'bid'
-cdef str _ASK = 'ask'
-cdef str _POINT = 'point'
-cdef str _PRICE = 'price'
-cdef str _MID = 'mid'
-cdef str _OPEN = 'open'
-cdef str _HIGH = 'high'
-cdef str _LOW = 'low'
-cdef str _CLOSE = 'close'
-cdef str _OPEN_PRICE = 'open_price'
-cdef str _HIGH_PRICE = 'high_price'
-cdef str _LOW_PRICE = 'low_price'
-cdef str _CLOSE_PRICE = 'close_price'
-cdef str _VOLUME = 'volume'
-cdef str _TIMESTAMP = 'timestamp'
+cdef str _BID = "bid"
+cdef str _ASK = "ask"
+cdef str _POINT = "point"
+cdef str _PRICE = "price"
+cdef str _MID = "mid"
+cdef str _OPEN = "open"
+cdef str _HIGH = "high"
+cdef str _LOW = "low"
+cdef str _CLOSE = "close"
+cdef str _OPEN_PRICE = "open_price"
+cdef str _HIGH_PRICE = "high_price"
+cdef str _LOW_PRICE = "low_price"
+cdef str _CLOSE_PRICE = "close_price"
+cdef str _VOLUME = "volume"
+cdef str _TIMESTAMP = "timestamp"
 
 cdef dict _PARAM_MAP = {
     _BID: _BID,
@@ -326,14 +326,14 @@ cdef class IndicatorUpdater:
                  input_method: callable=None,
                  list outputs: [str]=None):
         """
-        Initializes a new instance of the IndicatorUpdater class.
+        Initialize a new instance of the IndicatorUpdater class.
 
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
         :raises TypeError: If the input_method is not of type callable or None.
         """
-        Condition.callable_or_none(input_method, 'input_method')
+        Condition.callable_or_none(input_method, "input_method")
 
         self._indicator = indicator
         if input_method is None:
@@ -344,15 +344,17 @@ cdef class IndicatorUpdater:
         self._input_params = []
 
         for param in inspect.signature(self._input_method).parameters:
-            if param == 'self':
+            if param == "self":
                 self._include_self = True
             else:
                 self._input_params.append(_PARAM_MAP[param])
 
         if outputs is None or not outputs:
-            self._outputs = ['value']
+            self._outputs = ["value"]
         else:
             self._outputs = outputs
+
+        self.last_update = None
 
     cpdef void update_tick(self, QuoteTick tick) except *:
         """
@@ -360,7 +362,10 @@ cdef class IndicatorUpdater:
 
         :param tick: The tick to update with.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
+
+        if self.last_update is not None and tick.timestamp <= self.last_update:
+            return  # Previously handled tick
 
         # Get input arguments
         cdef str param
@@ -377,13 +382,18 @@ cdef class IndicatorUpdater:
         else:
             self._input_method(*inputs)
 
+        self.last_update = tick.timestamp
+
     cpdef void update_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 
         :param bar: The bar to update with.
         """
-        Condition.not_none(bar, 'bar')
+        Condition.not_none(bar, "bar")
+
+        if self.last_update is not None and bar.timestamp <= self.last_update:
+            return  # Previously handled bar
 
         # Get input arguments
         cdef str param
@@ -400,13 +410,15 @@ cdef class IndicatorUpdater:
         else:
             self._input_method(*inputs)
 
+        self.last_update = bar.timestamp
+
     cpdef dict build_features_ticks(self, list ticks):
         """
         Return a dictionary of output features from the given bars data.
 
         :return Dict[str, float].
         """
-        Condition.not_none(ticks, 'ticks')
+        Condition.not_none(ticks, "ticks")
 
         cdef dict features = {}
         for output in self._outputs:
@@ -427,7 +439,7 @@ cdef class IndicatorUpdater:
 
         :return Dict[str, float].
         """
-        Condition.not_none(bars, 'bars')
+        Condition.not_none(bars, "bars")
 
         cdef dict features = {}
         for output in self._outputs:
@@ -456,7 +468,7 @@ cdef class BarBuilder:
 
     def __init__(self, BarSpecification bar_spec not None, bint use_previous_close=False):
         """
-        Initializes a new instance of the BarBuilder class.
+        Initialize a new instance of the BarBuilder class.
 
         :param bar_spec: The bar specification for the builder.
         :param use_previous_close: The flag indicating whether the previous close
@@ -481,7 +493,10 @@ cdef class BarBuilder:
 
         :param tick: The tick to update with.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
+
+        if self.last_update is not None and tick.timestamp < self.last_update:
+            return  # Previously handled tick
 
         cdef Price price = self._get_price(tick)
 
@@ -597,7 +612,7 @@ cdef class BarAggregator:
                  Logger logger not None,
                  bint use_previous_close):
         """
-        Initializes a new instance of the BarAggregator class.
+        Initialize a new instance of the BarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.
@@ -629,7 +644,7 @@ cdef class TickBarAggregator(BarAggregator):
                  handler not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the TickBarBuilder class.
+        Initialize a new instance of the TickBarBuilder class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.
@@ -648,7 +663,7 @@ cdef class TickBarAggregator(BarAggregator):
 
         :param tick: The tick for the update.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
 
         self._builder.update(tick)
 
@@ -675,7 +690,7 @@ cdef class TimeBarAggregator(BarAggregator):
                  Clock clock not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the TimeBarAggregator class.
+        Initialize a new instance of the TimeBarAggregator class.
 
         :param bar_type: The bar type for the aggregator.
         :param handler: The bar handler for the aggregator.
@@ -700,7 +715,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         :param tick: The tick for the update.
         """
-        Condition.not_none(tick, 'tick')
+        Condition.not_none(tick, "tick")
 
         if self._clock.is_test_clock:
             if self.next_close < tick.timestamp:

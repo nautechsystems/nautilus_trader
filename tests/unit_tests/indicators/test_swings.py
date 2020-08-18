@@ -30,17 +30,17 @@ class SwingsTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # act
         # assert
-        self.assertEqual('Swings', self.swings.name)
+        self.assertEqual("Swings", self.swings.name)
 
     def test_str_returns_expected_string(self):
         # act
         # assert
-        self.assertEqual('Swings(3)', str(self.swings))
+        self.assertEqual("Swings(3)", str(self.swings))
 
     def test_repr_returns_expected_string(self):
         # act
         # assert
-        self.assertTrue(repr(self.swings).startswith('<Swings(3) object at'))
+        self.assertTrue(repr(self.swings).startswith("<Swings(3) object at"))
 
     def test_period_returns_expected_value(self):
         # act

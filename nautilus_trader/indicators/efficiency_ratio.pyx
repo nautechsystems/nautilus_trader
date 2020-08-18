@@ -29,12 +29,12 @@ cdef class EfficiencyRatio(Indicator):
 
     def __init__(self, int period, bint check_inputs=False):
         """
-        Initializes a new instance of the EfficiencyRatio class.
+        Initialize a new instance of the EfficiencyRatio class.
 
         :param period: The rolling window period for the indicator (>= 2).
         :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        Condition.true(period >= 2, 'period >= 2')
+        Condition.true(period >= 2, "period >= 2")
         super().__init__(params=[period], check_inputs=check_inputs)
 
         self.period = period
@@ -50,7 +50,7 @@ cdef class EfficiencyRatio(Indicator):
         :param price: The price (> 0).
         """
         if self.check_inputs:
-            Condition.positive(price, 'price')
+            Condition.positive(price, "price")
 
         self._inputs.append(price)
 

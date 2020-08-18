@@ -22,10 +22,10 @@ from nautilus_trader.common.logging import LogMessage, LogLevel
 from nautilus_trader.live.logging import LogStore
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
-GBPUSD_FXCM = Symbol('GBP/USD', Venue('FXCM'))
+AUDUSD_FXCM = Symbol("AUD/USD", Venue("FXCM"))
+GBPUSD_FXCM = Symbol("GBP/USD", Venue("FXCM"))
 
-UTF8 = 'utf8'
+UTF8 = "utf8"
 LOCALHOST = "127.0.0.1"
 
 # Requirements:
@@ -37,10 +37,10 @@ class LogStoreTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
 
-        self.trader_id = TraderId('TESTER', '000')
+        self.trader_id = TraderId("TESTER", "000")
         self.store = LogStore(trader_id=self.trader_id)
 
-        self.test_redis = redis.Redis(host='localhost', port=6379, db=0)
+        self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
 
     def tearDown(self):
         # Tests will start failing if redis is not flushed on tear down
@@ -49,7 +49,7 @@ class LogStoreTests(unittest.TestCase):
 
     def test_can_store_log_message(self):
         # Arrange
-        message = LogMessage(UNIX_EPOCH, LogLevel.WARNING, 'This is a test message.', threading.get_ident())
+        message = LogMessage(UNIX_EPOCH, LogLevel.WARNING, "This is a test message.", threading.get_ident())
 
         # Act
         self.store.store(message)

@@ -1,7 +1,7 @@
 {
   "trader": {
     "name": "tester",
-    "order_id_tag": "000"
+    "id_tag": "000"
   },
 
   "account": {
@@ -37,7 +37,9 @@
     "data_res_port": 55502,
     "data_pub_port": 55503,
     "tick_pub_port": 55504,
-    "venue": "FXCM"
+    "venue": "FXCM",
+    "tick_capacity": 1000,
+    "bar_capacity": 1000
   },
 
   "exec_client": {

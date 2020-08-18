@@ -31,8 +31,8 @@ from nautilus_trader.network.socket cimport ClientSocket
 from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.constants cimport *
 
-cdef str _IS_CONNECTED = '_is_connected?'
-cdef str _IS_DISCONNECTED = '_is_disconnected?'
+cdef str _IS_CONNECTED = "_is_connected?"
+cdef str _IS_DISCONNECTED = "_is_disconnected?"
 
 
 cdef class ClientNode:
@@ -48,7 +48,7 @@ cdef class ClientNode:
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the ClientNode class.
+        Initialize a new instance of the ClientNode class.
 
         :param client_id: The client identifier.
         :param compressor: The message compressor.
@@ -77,7 +77,7 @@ cdef class ClientNode:
         handler : callable
             The handler to register.
         """
-        Condition.callable(handler, 'handler')
+        Condition.callable(handler, "handler")
 
         if self._message_handler is not None:
             self._log.debug(f"Registered message handler {handler} by replacing {self._message_handler}.")
@@ -123,7 +123,7 @@ cdef class MessageClient(ClientNode):
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger not None):
         """
-        Initializes a new instance of the MessageClient class.
+        Initialize a new instance of the MessageClient class.
 
         :param client_id: The client identifier for the worker.
         :param server_host: The server host address.
@@ -141,9 +141,9 @@ cdef class MessageClient(ClientNode):
         :raises ValueError: If the server_req_port is not in range [49152, 65535].
         :raises ValueError: If the server_res_port is not in range [49152, 65535].
         """
-        Condition.valid_string(server_host, 'server_host')
-        Condition.valid_port(server_req_port, 'server_in_port')
-        Condition.valid_port(server_res_port, 'server_out_port')
+        Condition.valid_string(server_host, "server_host")
+        Condition.valid_port(server_req_port, "server_in_port")
+        Condition.valid_port(server_res_port, "server_out_port")
         super().__init__(
             client_id,
             compressor,
@@ -203,7 +203,7 @@ cdef class MessageClient(ClientNode):
 
         cdef Connect connect = Connect(
             self.client_id,
-            SessionId.create(self.client_id, timestamp, 'None').value,
+            SessionId.create(self.client_id, timestamp, "None").value,
             self._uuid_factory.generate(),
             timestamp)
 
@@ -280,7 +280,7 @@ cdef class MessageClient(ClientNode):
         body : bytes
             The serialized message body.
         """
-        Condition.not_none(message, 'message')
+        Condition.not_none(message, "message")
 
         self._register_message(message)
 
@@ -288,9 +288,9 @@ cdef class MessageClient(ClientNode):
         self._send(message.message_type, message.__class__.__name__, body)
 
     cdef void _send(self, MessageType message_type, str class_name, bytes body) except *:
-        Condition.not_equal(message_type, MessageType.UNDEFINED, 'message_type', 'UNDEFINED')
-        Condition.valid_string(class_name, 'class_name')
-        Condition.not_empty(body, 'body')
+        Condition.not_equal(message_type, MessageType.UNDEFINED, "message_type", "UNDEFINED")
+        Condition.valid_string(class_name, "class_name")
+        Condition.not_empty(body, "body")
 
         cdef dict header = {
             MESSAGE_TYPE: message_type_to_string(message_type).title(),
@@ -405,7 +405,7 @@ cdef class MessageSubscriber(ClientNode):
             UUIDFactory uuid_factory not None,
             LoggerAdapter logger):
         """
-        Initializes a new instance of the MessageSubscriber class.
+        Initialize a new instance of the MessageSubscriber class.
 
         :param client_id: The client identifier for the worker.
         :param host: The service host address.
@@ -419,8 +419,8 @@ cdef class MessageSubscriber(ClientNode):
         :raises ValueError: If the port is not in range [0, 65535].
         :raises ValueError: If the topic is not a valid string.
         """
-        Condition.valid_string(host, 'host')
-        Condition.valid_port(port, 'port')
+        Condition.valid_string(host, "host")
+        Condition.valid_port(port, "port")
         super().__init__(
             client_id,
             compressor,
@@ -472,7 +472,7 @@ cdef class MessageSubscriber(ClientNode):
 
         :param topic: The topic to subscribe to.
         """
-        Condition.valid_string(topic, 'topic')
+        Condition.valid_string(topic, "topic")
 
         self._socket.subscribe(topic)
 
@@ -482,7 +482,7 @@ cdef class MessageSubscriber(ClientNode):
 
         :param topic: The topic to unsubscribe from.
         """
-        Condition.valid_string(topic, 'topic')
+        Condition.valid_string(topic, "topic")
 
         self._socket.unsubscribe(topic)
 

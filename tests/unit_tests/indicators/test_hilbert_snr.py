@@ -30,18 +30,18 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('HilbertSignalNoiseRatio', self.snr.name)
+        self.assertEqual("HilbertSignalNoiseRatio", self.snr.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('HilbertSignalNoiseRatio(7)', str(self.snr))
+        self.assertEqual("HilbertSignalNoiseRatio(7)", str(self.snr))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.snr).startswith('<HilbertSignalNoiseRatio(7) object at'))
-        self.assertTrue(repr(self.snr).endswith('>'))
+        self.assertTrue(repr(self.snr).startswith("<HilbertSignalNoiseRatio(7) object at"))
+        self.assertTrue(repr(self.snr).endswith(">"))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -152,7 +152,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
         # plt.plot(battery_signal)
         # plt.plot(output)
-        # plt.title(f'Battery Signal -> {self.snr.name} output')
-        # plt.xlabel('X (period)')
-        # plt.ylabel('Y (value)')
+        # plt.title(f"Battery Signal -> {self.snr.name} output")
+        # plt.xlabel("X (period)")
+        # plt.ylabel("Y (value)")
         # plt.show()

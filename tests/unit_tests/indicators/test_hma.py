@@ -29,18 +29,18 @@ class HullMovingAverageTests(unittest.TestCase):
     def test_name_returns_expected_name(self):
         # Act
         # Assert
-        self.assertEqual('HullMovingAverage', self.hma.name)
+        self.assertEqual("HullMovingAverage", self.hma.name)
 
     def test_str_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual('HullMovingAverage(10)', str(self.hma))
+        self.assertEqual("HullMovingAverage(10)", str(self.hma))
 
     def test_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertTrue(repr(self.hma).startswith('<HullMovingAverage(10) object at'))
-        self.assertTrue(repr(self.hma).endswith('>'))
+        self.assertTrue(repr(self.hma).startswith("<HullMovingAverage(10) object at"))
+        self.assertTrue(repr(self.hma).endswith(">"))
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange

@@ -35,23 +35,23 @@ from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-cdef str _UTF8 = 'utf-8'
+cdef str _UTF8 = "utf-8"
 
-cdef str _INDEX = 'Index'
-cdef str _TRADER = 'Trader'
-cdef str _CONFIG = 'Config'
-cdef str _ACCOUNTS = 'Accounts'
-cdef str _ORDER = 'Order'
-cdef str _ORDERS = 'Orders'
-cdef str _BROKER = 'BrokerId'
-cdef str _POSITION = 'Position'
-cdef str _POSITIONS = 'Positions'
-cdef str _STRATEGY = 'Strategy'
-cdef str _STRATEGIES = 'Strategies'
-cdef str _WORKING = 'Working'
-cdef str _COMPLETED = 'Completed'
-cdef str _OPEN = 'Open'
-cdef str _CLOSED = 'Closed'
+cdef str _INDEX = "Index"
+cdef str _TRADER = "Trader"
+cdef str _CONFIG = "Config"
+cdef str _ACCOUNTS = "Accounts"
+cdef str _ORDER = "Order"
+cdef str _ORDERS = "Orders"
+cdef str _BROKER = "BrokerId"
+cdef str _POSITION = "Position"
+cdef str _POSITIONS = "Positions"
+cdef str _STRATEGY = "Strategy"
+cdef str _STRATEGIES = "Strategies"
+cdef str _WORKING = "Working"
+cdef str _COMPLETED = "Completed"
+cdef str _OPEN = "Open"
+cdef str _CLOSED = "Closed"
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
@@ -68,7 +68,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  Logger logger not None,
                  bint load_caches=True):
         """
-        Initializes a new instance of the RedisExecutionDatabase class.
+        Initialize a new instance of the RedisExecutionDatabase class.
 
         :param trader_id: The trader_id.
         :param host: The redis host for the database connection.
@@ -79,29 +79,29 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         """
-        Condition.valid_string(host, 'host')
-        Condition.in_range_int(port, 0, 65535, 'port')
+        Condition.valid_string(host, "host")
+        Condition.in_range_int(port, 0, 65535, "port")
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader                   = f'{_TRADER}-{trader_id.value}'                                 # noqa
-        self.key_accounts                 = f'{self.key_trader}:{_ACCOUNTS}:'                              # noqa
-        self.key_orders                   = f'{self.key_trader}:{_ORDERS}:'                                # noqa
-        self.key_positions                = f'{self.key_trader}:{_POSITIONS}:'                             # noqa
-        self.key_strategies               = f'{self.key_trader}:{_STRATEGIES}:'                            # noqa
-        self.key_index_order_position     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_POSITION}'      # HASH  # noqa
-        self.key_index_order_strategy     = f'{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}'      # HASH  # noqa
-        self.key_index_broker_position    = f'{self.key_trader}:{_INDEX}:{_BROKER}{_POSITION}'     # HASH  # noqa
-        self.key_index_position_strategy  = f'{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}'   # HASH  # noqa
-        self.key_index_position_orders    = f'{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:'    # SET   # noqa
-        self.key_index_strategy_orders    = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:'    # SET   # noqa
-        self.key_index_strategy_positions = f'{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:' # SET   # noqa
-        self.key_index_orders             = f'{self.key_trader}:{_INDEX}:{_ORDERS}'                # SET   # noqa
-        self.key_index_orders_working     = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_WORKING}'     # SET   # noqa
-        self.key_index_orders_completed   = f'{self.key_trader}:{_INDEX}:{_ORDERS}:{_COMPLETED}'   # SET   # noqa
-        self.key_index_positions          = f'{self.key_trader}:{_INDEX}:{_POSITIONS}'             # SET   # noqa
-        self.key_index_positions_open     = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}'     # SET   # noqa
-        self.key_index_positions_closed   = f'{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}'   # SET   # noqa
+        self.key_trader                   = f"{_TRADER}-{trader_id.value}"                                 # noqa
+        self.key_accounts                 = f"{self.key_trader}:{_ACCOUNTS}:"                              # noqa
+        self.key_orders                   = f"{self.key_trader}:{_ORDERS}:"                                # noqa
+        self.key_positions                = f"{self.key_trader}:{_POSITIONS}:"                             # noqa
+        self.key_strategies               = f"{self.key_trader}:{_STRATEGIES}:"                            # noqa
+        self.key_index_order_position     = f"{self.key_trader}:{_INDEX}:{_ORDER}{_POSITION}"      # HASH  # noqa
+        self.key_index_order_strategy     = f"{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}"      # HASH  # noqa
+        self.key_index_broker_position    = f"{self.key_trader}:{_INDEX}:{_BROKER}{_POSITION}"     # HASH  # noqa
+        self.key_index_position_strategy  = f"{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}"   # HASH  # noqa
+        self.key_index_position_orders    = f"{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:"    # SET   # noqa
+        self.key_index_strategy_orders    = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:"    # SET   # noqa
+        self.key_index_strategy_positions = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:" # SET   # noqa
+        self.key_index_orders             = f"{self.key_trader}:{_INDEX}:{_ORDERS}"                # SET   # noqa
+        self.key_index_orders_working     = f"{self.key_trader}:{_INDEX}:{_ORDERS}:{_WORKING}"     # SET   # noqa
+        self.key_index_orders_completed   = f"{self.key_trader}:{_INDEX}:{_ORDERS}:{_COMPLETED}"   # SET   # noqa
+        self.key_index_positions          = f"{self.key_trader}:{_INDEX}:{_POSITIONS}"             # SET   # noqa
+        self.key_index_positions_open     = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}"     # SET   # noqa
+        self.key_index_positions_closed   = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}"   # SET   # noqa
 
         # Serializers
         self._command_serializer = command_serializer
@@ -130,9 +130,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Re-caching accounts from the database...")
         self._cached_accounts.clear()
 
-        cdef list account_keys = self._redis.keys(f'{self.key_accounts}*')
+        cdef list account_keys = self._redis.keys(f"{self.key_accounts}*")
         if not account_keys:
-            self._log.info('No accounts found in database.')
+            self._log.info("No accounts found in database.")
             return
 
         cdef bytes key_bytes
@@ -154,9 +154,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Re-caching orders from the database...")
         self._cached_orders.clear()
 
-        cdef list order_keys = self._redis.keys(f'{self.key_orders}*')
+        cdef list order_keys = self._redis.keys(f"{self.key_orders}*")
         if not order_keys:
-            self._log.info('No orders found in database.')
+            self._log.info("No orders found in database.")
             return
 
         cdef bytes key_bytes
@@ -178,9 +178,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Re-caching positions from the database...")
         self._cached_positions.clear()
 
-        cdef list position_keys = self._redis.keys(f'{self.key_positions}*')
+        cdef list position_keys = self._redis.keys(f"{self.key_positions}*")
         if not position_keys:
-            self._log.info('No positions found in database.')
+            self._log.info("No positions found in database.")
             return
 
         cdef bytes key_bytes
@@ -203,8 +203,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param account: The account to add.
         :raises ValueError: If the account_id is already contained in the cached_accounts.
         """
-        Condition.not_none(account, 'account')
-        Condition.not_in(account.id, self._cached_accounts, 'account.id', 'cached_accounts')
+        Condition.not_none(account, "account")
+        Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
 
         self._cached_accounts[account.id] = account
 
@@ -229,10 +229,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id to index for the order.
         :raises ValueError: If the order_id is already contained in the cached_orders.
         """
-        Condition.not_none(order, 'order')
-        Condition.not_none(strategy_id, 'strategy_id')
-        Condition.not_none(position_id, 'position_id')
-        Condition.not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
+        Condition.not_none(order, "order")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_none(position_id, "position_id")
+        Condition.not_in(order.id, self._cached_orders, "order.id", "cached_orders")
 
         self._cached_orders[order.id] = order
 
@@ -274,9 +274,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param strategy_id: The strategy_id to associate with the position.
         :raises ValueError: If the position_id is already contained in the cached_positions.
         """
-        Condition.not_none(position, 'position')
-        Condition.not_none(strategy_id, 'strategy_id')
-        Condition.not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
+        Condition.not_none(position, "position")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
 
         self._cached_positions[position.id] = position
 
@@ -307,7 +307,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param account: The account to update (from last event).
         """
-        Condition.not_none(account, 'account')
+        Condition.not_none(account, "account")
 
         self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
         self._log.debug(f"Updated Account(id={account.id}).")
@@ -318,14 +318,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to update.
         """
-        Condition.not_none(strategy, 'strategy')
+        Condition.not_none(strategy, "strategy")
 
         cdef dict state = strategy.save()
 
         pipe = self._redis.pipeline()
 
         for key, value in state.items():
-            pipe.hset(name=self.key_strategies + strategy.id.value + ':State', key=key, value=value)
+            pipe.hset(name=self.key_strategies + strategy.id.value + ":State", key=key, value=value)
             self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
         cdef list reply = pipe.execute()
 
@@ -337,7 +337,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param order: The order to update (from last event).
         """
-        Condition.not_none(order, 'order')
+        Condition.not_none(order, "order")
 
         # Command pipeline
         pipe = self._redis.pipeline()
@@ -362,7 +362,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param position: The position to update (from last event).
         """
-        Condition.not_none(position, 'position')
+        Condition.not_none(position, "position")
 
         # Command pipeline
         pipe = self._redis.pipeline()
@@ -387,9 +387,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to load.
         """
-        Condition.not_none(strategy, 'strategy')
+        Condition.not_none(strategy, "strategy")
 
-        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ':State')
+        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ":State")
 
         if not state:
             self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
@@ -408,7 +408,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param account_id: The account identifier to load.
         :return: Account or None.
         """
-        Condition.not_none(account_id, 'account_id')
+        Condition.not_none(account_id, "account_id")
 
         cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
         if not events:
@@ -425,7 +425,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to load.
         :return: Order or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef list events = self._redis.lrange(name=self.key_orders + order_id.value, start=0, end=-1)
 
@@ -449,7 +449,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id to load.
         :return: Position or None.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
 
@@ -472,7 +472,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to deregister.
         """
-        Condition.not_none(strategy, 'strategy')
+        Condition.not_none(strategy, "strategy")
 
         pipe = self._redis.pipeline()
         pipe.delete(self.key_strategies + strategy.id.value)
@@ -490,9 +490,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Flush the database which clears all data.
         """
-        self._log.debug('Flushing database....')
+        self._log.debug("Flushing database....")
         self._redis.flushdb()
-        self._log.info('Flushed database.')
+        self._log.info("Flushed database.")
 
     cdef set _decode_set_to_order_ids(self, set original):
         return {OrderId(element.decode(_UTF8)) for element in original}
@@ -512,7 +512,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param account_id: The account_id.
         :return Account or None.
         """
-        Condition.not_none(account_id, 'account_id')
+        Condition.not_none(account_id, "account_id")
 
         return self._cached_accounts.get(account_id)
 
@@ -522,7 +522,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :return Set[StrategyId].
         """
-        return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f'{self.key_strategies}*'))
+        return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f"{self.key_strategies}*"))
 
     cpdef set get_order_ids(self, StrategyId strategy_id=None):
         """
@@ -606,7 +606,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id associated with the strategy.
         :return StrategyId or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=order_id.value)
         return StrategyId.from_string(strategy_id.decode(_UTF8))
@@ -618,7 +618,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id associated with the strategy.
         :return StrategyId or None.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         cdef bytes strategy_id = self._redis.hget(name=self.key_index_position_strategy, key=position_id.value)
         return StrategyId.from_string(strategy_id.decode(_UTF8))
@@ -629,7 +629,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :return Order or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._cached_orders.get(order_id)
 
@@ -709,7 +709,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return Position or None.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return self._cached_positions.get(position_id)
 
@@ -720,7 +720,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id for the position.
         :return Position or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
@@ -737,7 +737,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id associated with the position.
         :return PositionId or None.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
         if position_id_bytes is None:
@@ -754,7 +754,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id_broker: The broker position_id.
         :return PositionId or None.
         """
-        Condition.not_none(position_id_broker, 'position_id_broker')
+        Condition.not_none(position_id_broker, "position_id_broker")
 
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id_broker.value)
         if position_id_bytes is None:
@@ -843,7 +843,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to check.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._redis.sismember(name=self.key_index_orders, value=order_id.value)
 
@@ -854,7 +854,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to check.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._redis.sismember(name=self.key_index_orders_working, value=order_id.value)
 
@@ -865,7 +865,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to check.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._redis.sismember(name=self.key_index_orders_completed, value=order_id.value)
 
@@ -876,7 +876,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return bool.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return self._redis.sismember(name=self.key_index_positions, value=position_id.value)
 
@@ -888,7 +888,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         cdef bytes position_id = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
 
@@ -904,7 +904,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order_id to check.
         :return bool.
         """
-        Condition.not_none(order_id, 'order_id')
+        Condition.not_none(order_id, "order_id")
 
         return self._redis.hexists(name=self.key_index_order_position, key=order_id.value)
 
@@ -916,7 +916,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return bool.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return self._redis.sismember(name=self.key_index_positions_open, value=position_id.value)
 
@@ -928,7 +928,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return bool.
         """
-        Condition.not_none(position_id, 'position_id')
+        Condition.not_none(position_id, "position_id")
 
         return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
 
@@ -1025,7 +1025,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                  UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initializes a new instance of the LiveExecutionEngine class.
+        Initialize a new instance of the LiveExecutionEngine class.
 
         :param trader_id: The trader_id for the engine.
         :param account_id: The account_id for the engine.
@@ -1054,7 +1054,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         :param command: The command to execute.
         """
-        Condition.not_none(command, 'command')
+        Condition.not_none(command, "command")
 
         self._queue.put(command)
 
@@ -1064,7 +1064,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         :param event: The event to handle
         """
-        Condition.not_none(event, 'event')
+        Condition.not_none(event, "event")
 
         self._queue.put(event)
 

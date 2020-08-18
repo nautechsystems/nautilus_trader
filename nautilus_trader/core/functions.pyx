@@ -121,7 +121,7 @@ cpdef double basis_points_as_percentage(double basis_points):
 
 # Closures in cpdef functions not yet supported (10/02/20)
 cdef long get_size_of(obj):
-    Condition.not_none(obj, 'obj')
+    Condition.not_none(obj, "obj")
 
     cdef set marked = {id(obj)}
     obj_q = [obj]
@@ -150,11 +150,11 @@ cdef long get_size_of(obj):
 
 
 cdef dict POWER_LABELS = {
-    0: 'bytes',
-    1: 'KB',
-    2: 'MB',
-    3: 'GB',
-    4: 'TB'
+    0: "bytes",
+    1: "KB",
+    2: "MB",
+    3: "GB",
+    4: "TB"
 }
 
 cpdef str format_bytes(double size):
@@ -164,7 +164,7 @@ cpdef str format_bytes(double size):
     :param size: The size in bytes.
     :return: str.
     """
-    Condition.not_negative(size, 'size')
+    Condition.not_negative(size, "size")
 
     cdef double power = pow(2, 10)
 
@@ -172,10 +172,10 @@ cpdef str format_bytes(double size):
     while size >= power:
         size /= power
         n += 1
-    return f'{fast_round(size, 2):,} {POWER_LABELS[n]}'
+    return f"{fast_round(size, 2):,} {POWER_LABELS[n]}"
 
 
-cpdef str pad_string(str string, int length, str pad=' '):
+cpdef str pad_string(str string, int length, str pad=" "):
     """
     Return the given string front padded.
 
@@ -186,9 +186,9 @@ cpdef str pad_string(str string, int length, str pad=' '):
     :return str.
 
     """
-    Condition.not_none(string, 'string')
-    Condition.not_negative_int(length, 'length')
-    Condition.not_none(pad, 'pad')
+    Condition.not_none(string, "string")
+    Condition.not_negative_int(length, "length")
+    Condition.not_none(pad, "pad")
 
     return ((length - len(string)) * pad) + string
 
@@ -201,6 +201,6 @@ def max_in_dict(dict dictionary):
     :param dictionary: The dictionary to check.
     :return The key.
     """
-    Condition.not_none(dictionary, 'dictionary')
+    Condition.not_none(dictionary, "dictionary")
 
     return max(dictionary.items(), key=lambda x: x[1])[0]
