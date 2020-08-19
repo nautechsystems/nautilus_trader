@@ -45,7 +45,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 UTF8 = "utf8"
-LOCALHOST = "127.0.0.1"
+LOCALHOST = '127.0.0.1'
 TEST_COMMANDS_REQ_PORT = 57555
 TEST_COMMANDS_REP_PORT = 57556
 TEST_EVENTS_PUB_PORT = 57557

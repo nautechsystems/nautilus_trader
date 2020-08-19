@@ -32,8 +32,6 @@ cdef dict _EPSILON_MAP = {
     10: 1e-10,
 }
 
-cdef Decimal64 _ZERO_DECIMAL = Decimal64()
-
 cdef class Decimal64:
     """
     Represents a decimal64 floating point value.
@@ -82,18 +80,6 @@ cdef class Decimal64:
         # The values are considered NOT equal if their absolute difference is
         # greater than OR equal to epsilon
         return fabs(value1 - value2) >= self._epsilon
-
-    @staticmethod
-    cdef Decimal64 zero():
-        """
-        Return a zero valued decimal.
-
-        Returns
-        -------
-        Decimal64
-            The value and precision will be zero.
-        """
-        return _ZERO_DECIMAL
 
     @staticmethod
     cdef Decimal64 from_string_to_decimal(str value):

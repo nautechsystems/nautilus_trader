@@ -35,6 +35,9 @@ from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.trading.trader cimport Trader
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
+from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
+from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LogStore, LiveLogger
@@ -145,6 +148,15 @@ cdef class TradingNode:
             algorithm=config_messaging["encryption"],
             keys_dir=keys_dir)
 
+        # Serializers
+        command_serializer = MsgPackCommandSerializer()
+        event_serializer = MsgPackEventSerializer()
+        header_serializer = MsgPackDictionarySerializer()
+        request_serializer = MsgPackRequestSerializer()
+        response_serializer = MsgPackResponseSerializer()
+        data_serializer = BsonDataSerializer()
+        instrument_serializer = BsonInstrumentSerializer()
+
         self._venue = Venue(config_data["venue"])
         self._data_client = LiveDataClient(
             trader_id=self.trader_id,
@@ -155,8 +167,13 @@ cdef class TradingNode:
             tick_pub_port=config_data["tick_pub_port"],
             compressor=compressor,
             encryption=encryption,
-            tick_capacity=int(config_data["tick_capacity"]),
-            bar_capacity=(config_data["bar_capacity"]),
+            header_serializer=header_serializer,
+            request_serializer=request_serializer,
+            response_serializer=response_serializer,
+            data_serializer=data_serializer,
+            instrument_serializer=instrument_serializer,
+            tick_capacity=config_data["tick_capacity"],
+            bar_capacity=config_data["bar_capacity"],
             clock=self._clock,
             uuid_factory=self._uuid_factory,
             logger=self._logger)
@@ -173,8 +190,8 @@ cdef class TradingNode:
                 trader_id=self.trader_id,
                 host=config_exec_db["host"],
                 port=config_exec_db["port"],
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
+                command_serializer=command_serializer,
+                event_serializer=event_serializer,
                 logger=self._logger)
         else:
             self._exec_db = InMemoryExecutionDatabase(
@@ -198,6 +215,13 @@ cdef class TradingNode:
             event_pub_port=config_exec_client["event_pub_port"],
             compressor=compressor,
             encryption=encryption,
+            command_serializer=command_serializer,
+            header_serializer=header_serializer,
+            request_serializer=request_serializer,
+            response_serializer=response_serializer,
+            event_serializer=event_serializer,
+            clock=self._clock,
+            uuid_factory=self._uuid_factory,
             logger=self._logger)
 
         self._exec_engine.register_client(self._exec_client)

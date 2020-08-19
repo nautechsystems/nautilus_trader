@@ -30,17 +30,14 @@ from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSeria
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 from nautilus_trader.serialization.data cimport Utf8QuoteTickSerializer, Utf8TradeTickSerializer
 from nautilus_trader.serialization.data cimport Utf8BarSerializer
-from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
-from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.messages cimport Response, MessageReceived, MessageRejected
 from nautilus_trader.network.messages cimport DataRequest, DataResponse, QueryFailure
-from nautilus_trader.network.compression cimport Compressor, BypassCompressor
+from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -57,18 +54,18 @@ cdef class LiveDataClient(DataClient):
                  int data_res_port,
                  int data_pub_port,
                  int tick_pub_port,
-                 Compressor compressor not None=BypassCompressor(),
-                 EncryptionSettings encryption not None=EncryptionSettings(),
-                 DictionarySerializer header_serializer not None=MsgPackDictionarySerializer(),
-                 RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
-                 ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
-                 DataSerializer data_serializer not None=BsonDataSerializer(),
-                 InstrumentSerializer instrument_serializer not None=BsonInstrumentSerializer(),
-                 int tick_capacity=1000,
-                 int bar_capacity=1000,
-                 LiveClock clock not None=LiveClock(),
-                 LiveUUIDFactory uuid_factory not None=LiveUUIDFactory(),
-                 LiveLogger logger not None=LiveLogger()):
+                 Compressor compressor not None,
+                 EncryptionSettings encryption not None,
+                 DictionarySerializer header_serializer not None,
+                 RequestSerializer request_serializer not None,
+                 ResponseSerializer response_serializer not None,
+                 DataSerializer data_serializer not None,
+                 InstrumentSerializer instrument_serializer not None,
+                 int tick_capacity,
+                 int bar_capacity,
+                 LiveClock clock not None,
+                 LiveUUIDFactory uuid_factory not None,
+                 LiveLogger logger not None):
         """
         Initialize a new instance of the LiveDataClient class.
 
