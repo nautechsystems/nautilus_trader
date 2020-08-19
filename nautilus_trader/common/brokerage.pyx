@@ -19,7 +19,7 @@ import pandas as pd
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
-from nautilus_trader.model.objects cimport Decimal, Money, Quantity, Price
+from nautilus_trader.model.objects cimport Decimal64, Money, Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader import PACKAGE_ROOT
@@ -45,7 +45,7 @@ cdef class CommissionCalculator:
         """
         if rates is None:
             rates = {}
-        Condition.dict_types(rates, Symbol, Decimal, "rates")
+        Condition.dict_types(rates, Symbol, Decimal64, "rates")
 
         self.rates = rates
         self.default_rate_bp = default_rate_bp

@@ -14,30 +14,33 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class Decimal:
+cdef class Decimal64:
+    cdef double _epsilon
     cdef double _value
 
     cdef readonly int precision
 
-    @staticmethod
-    cdef Decimal zero()
+    cdef bint _eq_eps_delta(self, double value1, double value2)
+    cdef bint _ne_eps_delta(self, double value1, double value2)
 
     @staticmethod
-    cdef Decimal from_string_to_decimal(str value)
+    cdef Decimal64 zero()
+
+    @staticmethod
+    cdef Decimal64 from_string_to_decimal(str value)
 
     @staticmethod
     cdef int precision_from_string(str value)
 
-    cpdef bint equals(self, Decimal other)
     cpdef str to_string(self, bint format_commas=*)
     cpdef int as_int(self)
     cpdef double as_double(self)
     cpdef object as_decimal(self)
-    cpdef bint eq(self, Decimal other)
-    cpdef bint ne(self, Decimal other)
-    cpdef bint lt(self, Decimal other)
-    cpdef bint le(self, Decimal other)
-    cpdef bint gt(self, Decimal other)
-    cpdef bint ge(self, Decimal other)
-    cpdef Decimal add_as_decimal(self, Decimal other, bint keep_precision=*)
-    cpdef Decimal sub_as_decimal(self, Decimal other, bint keep_precision=*)
+    cpdef bint eq(self, Decimal64 other)
+    cpdef bint ne(self, Decimal64 other)
+    cpdef bint lt(self, Decimal64 other)
+    cpdef bint le(self, Decimal64 other)
+    cpdef bint gt(self, Decimal64 other)
+    cpdef bint ge(self, Decimal64 other)
+    cpdef Decimal64 add_as_decimal(self, Decimal64 other, bint keep_precision=*)
+    cpdef Decimal64 sub_as_decimal(self, Decimal64 other, bint keep_precision=*)

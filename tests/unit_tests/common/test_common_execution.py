@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.core.types import ValidString
 from nautilus_trader.model.enums import OrderSide
@@ -192,7 +192,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Money(0, Currency.USD),
-            Decimal(0),
+            Decimal64(0),
             ValidString("N"),
             uuid4(),
             UNIX_EPOCH)
@@ -215,7 +215,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Money(0, Currency.USD),
-            Decimal(0),
+            Decimal64(0),
             ValidString("N"),
             uuid4(),
             UNIX_EPOCH)

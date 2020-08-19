@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.core.types import ValidString, Label
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderState, OrderPurpose
@@ -688,7 +688,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), order.filled_quantity)
         self.assertEqual(Price(1.00000, 5), order.price)
         self.assertEqual(Price(1.00001, 5), order.average_price)
-        self.assertEqual(Decimal(0.00001, 5), order.slippage)
+        self.assertEqual(Decimal64(0.00001, 5), order.slippage)
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
@@ -723,7 +723,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Quantity(50000), order.filled_quantity)
         self.assertEqual(Price(1.00000, 5), order.price)
         self.assertEqual(Price(0.999999, 6), order.average_price)
-        self.assertEqual(Decimal(-0.000001, 6), order.slippage)
+        self.assertEqual(Decimal64(-0.000001, 6), order.slippage)
         self.assertFalse(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 

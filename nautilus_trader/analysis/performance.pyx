@@ -20,7 +20,6 @@ from numpy import float64
 from scipy.stats import kurtosis, skew
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_round
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
@@ -482,30 +481,30 @@ cdef class PerformanceAnalyzer:
         cdef str currency = currency_to_string(account_currency)
 
         return [
-            f"PNL:               {fast_round(self.total_pnl(), precision=2):,} {currency}",
-            f"PNL %:             {fast_round(self.total_pnl_percentage(), precision=2)}%",
-            f"Max Winner:        {fast_round(self.max_winner(), precision=2):,} {currency}",
-            f"Avg Winner:        {fast_round(self.avg_winner(), precision=2):,} {currency}",
-            f"Min Winner:        {fast_round(self.min_winner(), precision=2):,} {currency}",
-            f"Min Loser:         {fast_round(self.min_loser(), precision=2):,} {currency}",
-            f"Avg Loser:         {fast_round(self.avg_loser(), precision=2):,} {currency}",
-            f"Max Loser:         {fast_round(self.max_loser(), precision=2):,} {currency}",
-            f"Win Rate:          {fast_round(self.win_rate(), precision=2)}",
-            f"Expectancy:        {fast_round(self.expectancy(), precision=2):,} {currency}",
-            f"Annual return:     {fast_round(self.annual_return() * 100, precision=2)}%",
-            f"Cum returns:       {fast_round(self.cum_return() * 100, precision=2)}%",
-            f"Max drawdown:      {fast_round(self.max_drawdown_return() * 100, precision=2)}%",
-            f"Annual vol:        {fast_round(self.annual_volatility() * 100, precision=2)}%",
-            f"Sharpe ratio:      {fast_round(self.sharpe_ratio(), precision=2)}",
-            f"Calmar ratio:      {fast_round(self.calmar_ratio(), precision=2)}",
-            f"Sortino ratio:     {fast_round(self.sortino_ratio(), precision=2)}",
-            f"Omega ratio:       {fast_round(self.omega_ratio(), precision=2)}",
-            f"Stability:         {fast_round(self.stability_of_timeseries(), precision=2)}",
-            f"Returns Mean:      {fast_round(self.returns_mean(), precision=5)}",
-            f"Returns Variance:  {fast_round(self.returns_variance(), precision=8)}",
-            f"Returns Skew:      {fast_round(self.returns_skew(), precision=2)}",
-            f"Returns Kurtosis:  {fast_round(self.returns_kurtosis(), precision=2)}",
-            f"Tail ratio:        {fast_round(self.returns_tail_ratio(), precision=2)}",
-            f"Alpha:             {fast_round(self.alpha(), precision=2)}",
-            f"Beta:              {fast_round(self.beta(), precision=2)}"
+            f"PNL:               {round(self.total_pnl(), 2):,} {currency}",
+            f"PNL %:             {round(self.total_pnl_percentage(), 2)}%",
+            f"Max Winner:        {round(self.max_winner(), 2):,} {currency}",
+            f"Avg Winner:        {round(self.avg_winner(), 2):,} {currency}",
+            f"Min Winner:        {round(self.min_winner(), 2):,} {currency}",
+            f"Min Loser:         {round(self.min_loser(), 2):,} {currency}",
+            f"Avg Loser:         {round(self.avg_loser(), 2):,} {currency}",
+            f"Max Loser:         {round(self.max_loser(), 2):,} {currency}",
+            f"Win Rate:          {round(self.win_rate(), 2)}",
+            f"Expectancy:        {round(self.expectancy(), 2):,} {currency}",
+            f"Annual return:     {round(self.annual_return() * 100, 2)}%",
+            f"Cum returns:       {round(self.cum_return() * 100, 2)}%",
+            f"Max drawdown:      {round(self.max_drawdown_return() * 100, 2)}%",
+            f"Annual vol:        {round(self.annual_volatility() * 100, 2)}%",
+            f"Sharpe ratio:      {round(self.sharpe_ratio(), 2)}",
+            f"Calmar ratio:      {round(self.calmar_ratio(), 2)}",
+            f"Sortino ratio:     {round(self.sortino_ratio(), 2)}",
+            f"Omega ratio:       {round(self.omega_ratio(), 2)}",
+            f"Stability:         {round(self.stability_of_timeseries(), 2)}",
+            f"Returns Mean:      {round(self.returns_mean(), 5)}",
+            f"Returns Variance:  {round(self.returns_variance(), 8)}",
+            f"Returns Skew:      {round(self.returns_skew(), 2)}",
+            f"Returns Kurtosis:  {round(self.returns_kurtosis(), 2)}",
+            f"Tail ratio:        {round(self.returns_tail_ratio(), 2)}",
+            f"Alpha:             {round(self.alpha(), 2)}",
+            f"Beta:              {round(self.beta(), 2)}"
         ]

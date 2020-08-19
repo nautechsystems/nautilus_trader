@@ -54,7 +54,7 @@ cdef class Position:
         self.entry_direction = event.order_side
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
-        self.closed_time = None  # Can be none
+        self.closed_time = None    # Can be none
         self.open_duration = None  # Can be none
         self.average_open_price = event.average_price.as_double()
         self.average_close_price = 0.0
