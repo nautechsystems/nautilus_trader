@@ -23,21 +23,21 @@ cpdef enum MarketPosition:
 
 cdef inline str market_position_to_string(int value):
     if value == 1:
-        return "FLAT"
+        return 'FLAT'
     elif value == 2:
-        return "LONG"
+        return 'LONG'
     elif value == 3:
-        return "SHORT"
+        return 'SHORT'
     else:
-        return "UNDEFINED"
+        return 'UNDEFINED'
 
 
 cdef inline MarketPosition market_position_from_string(str value):
-    if value == "FLAT":
+    if value == 'FLAT':
         return MarketPosition.FLAT
-    elif value == "LONG":
+    elif value == 'LONG':
         return MarketPosition.LONG
-    elif value == "SHORT":
+    elif value == 'SHORT':
         return MarketPosition.SHORT
     else:
         return MarketPosition.UNDEFINED

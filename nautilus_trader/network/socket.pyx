@@ -24,7 +24,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, ServerId
 from nautilus_trader.network.encryption cimport EncryptionSettings
 
-cdef str _UTF8 = "utf-8"
+cdef str _UTF8 = 'utf-8'
 
 
 cdef class Socket:

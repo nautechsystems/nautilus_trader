@@ -48,11 +48,11 @@ cdef class Trader:
         :param clock: The clock for the trader.
         :param uuid_factory: The uuid_factory for the trader.
         :param logger: The logger for the trader.
-        :raises ValueError: If the strategies is None.
-        :raises ValueError: If the strategies list is empty.
-        :raises TypeError: If the strategies list contains a type other than TradingStrategy.
-        :raises ValueError: If the trader_id is not equal to the exec_engine.trader_id.
-        :raises ValueError: If the account_id is not equal to the exec_engine.account_id.
+        :raises ValueError: If strategies is None.
+        :raises ValueError: If strategies list is empty.
+        :raises TypeError: If strategies list contains a type other than TradingStrategy.
+        :raises ValueError: If trader_id is not equal to the exec_engine.trader_id.
+        :raises ValueError: If account_id is not equal to the exec_engine.account_id.
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
         Condition.equal(account_id, exec_engine.account_id, "account_id", "exec_engine.account_id")

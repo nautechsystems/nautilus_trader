@@ -709,7 +709,7 @@ cpdef UUID uuid1(node=None, clock_seq=None):
 cpdef UUID uuid3(UUID namespace_uuid, str name):
     """Generate a UUID from the MD5 hash of a namespace UUID and a name."""
     from hashlib import md5
-    digest = md5(namespace_uuid.bytes + bytes(name, "utf-8")).digest()
+    digest = md5(namespace_uuid.bytes + bytes(name, 'utf-8')).digest()
     return UUID(bytes_val=digest[:16], version=3)
 
 cpdef UUID uuid4():
@@ -719,7 +719,7 @@ cpdef UUID uuid4():
 cpdef UUID uuid5(UUID namespace_uuid, str name):
     """Generate a UUID from the SHA-1 hash of a namespace UUID and a name."""
     from hashlib import sha1
-    hash = sha1(namespace_uuid.bytes + bytes(name, "utf-8")).digest()
+    hash = sha1(namespace_uuid.bytes + bytes(name, 'utf-8')).digest()
     return UUID(bytes_val=hash[:16], version=5)
 
 # The following standard UUIDs are for use with uuid3() or uuid5().

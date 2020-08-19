@@ -30,19 +30,19 @@ BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
 BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
 symbols_fx = [
-    Symbol("AUD/USD", Venue("FXCM")),
-    Symbol("AUD/JPY", Venue("FXCM")),
-    Symbol("EUR/USD", Venue("FXCM")),
-    Symbol("EUR/GBP", Venue("FXCM")),
-    Symbol("EUR/JPY", Venue("FXCM")),
-    Symbol("GBP/USD", Venue("FXCM")),
-    Symbol("GBP/JPY", Venue("FXCM")),
-    Symbol("USD/JPY", Venue("FXCM")),
-    Symbol("USD/CAD", Venue("FXCM")),
-    Symbol("USD/CHF", Venue("FXCM")),
+    Symbol("AUD/USD", Venue('FXCM')),
+    Symbol("AUD/JPY", Venue('FXCM')),
+    Symbol("EUR/USD", Venue('FXCM')),
+    Symbol("EUR/GBP", Venue('FXCM')),
+    Symbol("EUR/JPY", Venue('FXCM')),
+    Symbol("GBP/USD", Venue('FXCM')),
+    Symbol("GBP/JPY", Venue('FXCM')),
+    Symbol("USD/JPY", Venue('FXCM')),
+    Symbol("USD/CAD", Venue('FXCM')),
+    Symbol("USD/CHF", Venue('FXCM')),
 ]
 
-news_impacts = ["HIGH", "MEDIUM"]
+news_impacts = ['HIGH', 'MEDIUM']
 strategies = []
 
 for symbol in symbols_fx:
@@ -59,7 +59,7 @@ for symbol in symbols_fx:
         news_impacts=news_impacts))
 
 # strategies.append(EMACrossFiltered(
-#     Symbol("XAU/USD", Venue("FXCM")),
+#     Symbol("XAU/USD", Venue('FXCM')),
 #     BAR_SPEC_CFD,
 #     risk_bp=10.0,
 #     fast_ema=10,
@@ -69,7 +69,7 @@ for symbol in symbols_fx:
 #     news_impacts=news_impacts))
 #
 # strategies.append(EMACrossFiltered(
-#     Symbol("SPX500", Venue("FXCM")),
+#     Symbol("SPX500", Venue('FXCM')),
 #     BAR_SPEC_CFD,
 #     risk_bp=10.0,
 #     fast_ema=10,
@@ -79,7 +79,7 @@ for symbol in symbols_fx:
 #     news_impacts=news_impacts))
 #
 # strategies.append(EMACrossFiltered(
-#     Symbol("AUS200", Venue("FXCM")),
+#     Symbol("AUS200", Venue('FXCM')),
 #     BAR_SPEC_CFD,
 #     risk_bp=10.0,
 #     fast_ema=10,
@@ -89,7 +89,7 @@ for symbol in symbols_fx:
 #     news_impacts=news_impacts))
 #
 # strategies.append(EMACrossFiltered(
-#     Symbol("USOil", Venue("FXCM")),
+#     Symbol("USOil", Venue('FXCM')),
 #     BAR_SPEC_CFD,
 #     risk_bp=10.0,
 #     fast_ema=10,
@@ -99,7 +99,7 @@ for symbol in symbols_fx:
 #     news_impacts=news_impacts))
 #
 # strategies.append(EMACrossFiltered(
-#     Symbol("GER30", Venue("FXCM")),
+#     Symbol("GER30", Venue('FXCM')),
 #     BAR_SPEC_CFD,
 #     risk_bp=10.0,
 #     fast_ema=10,

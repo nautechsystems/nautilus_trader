@@ -451,10 +451,10 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set next news event
         self.news_event_next = self.news_filter.next_event(time_now)
-        if self.news_event_next.impact == "HIGH":
+        if self.news_event_next.impact == 'HIGH':
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
-        elif self.news_event_next.impact == "MEDIUM":
+        elif self.news_event_next.impact == 'MEDIUM':
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
 
