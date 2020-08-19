@@ -16,7 +16,6 @@
 import pandas as pd
 
 
-cpdef double fast_round(double value, int precision)
 cpdef double fast_mean(list values)
 cpdef double fast_mean_iterated(
     list values,

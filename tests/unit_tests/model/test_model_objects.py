@@ -50,9 +50,9 @@ class ObjectTests(unittest.TestCase):
         quantity3 = Quantity(2)
 
         # Assert
-        self.assertEqual(1, quantity1)
         self.assertEqual(quantity1, quantity2)
-        self.assertNotEqual(1, quantity3)
+        self.assertTrue(quantity1.equals(quantity1))
+        self.assertFalse(quantity1.equals(quantity3))
         self.assertNotEqual(quantity1, quantity3)
 
     def test_quantity_str(self):

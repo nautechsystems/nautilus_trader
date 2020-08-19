@@ -44,7 +44,7 @@ cdef class AccountStateEvent(Event):
                  Money cash_activity_day not None,
                  Money margin_used_liquidation not None,
                  Money margin_used_maintenance not None,
-                 Decimal margin_ratio not None,
+                 Decimal64 margin_ratio not None,
                  ValidString margin_call_status not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):

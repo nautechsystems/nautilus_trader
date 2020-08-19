@@ -23,21 +23,21 @@ cpdef enum AccountType:
 
 cdef inline str account_type_to_string(int value):
     if value == 1:
-        return "SIMULATED"
+        return 'SIMULATED'
     elif value == 2:
-        return "DEMO"
+        return 'DEMO'
     elif value == 3:
-        return "REAL"
+        return 'REAL'
     else:
-        return "UNDEFINED"
+        return 'UNDEFINED'
 
 
 cdef inline AccountType account_type_from_string(str value):
-    if value == "SIMULATED":
+    if value == 'SIMULATED':
         return AccountType.SIMULATED
-    elif value == "DEMO":
+    elif value == 'DEMO':
         return AccountType.DEMO
-    elif value == "REAL":
+    elif value == 'REAL':
         return AccountType.REAL
     else:
         return AccountType.UNDEFINED

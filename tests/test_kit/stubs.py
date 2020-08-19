@@ -17,7 +17,7 @@ import pytz
 from datetime import datetime, timedelta
 
 from nautilus_trader.core.types import ValidString
-from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.model.enums import BarStructure, PriceType, Currency, AccountType, OrderSide
 from nautilus_trader.model.objects import Money, Price, Quantity
 from nautilus_trader.model.tick import QuoteTick
@@ -65,8 +65,8 @@ class TestStubs:
             round_lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(0),
-            rollover_interest_sell=Decimal(0),
+            rollover_interest_buy=Decimal64(0),
+            rollover_interest_sell=Decimal64(0),
             timestamp=UNIX_EPOCH)
 
     @staticmethod
@@ -83,8 +83,8 @@ class TestStubs:
             round_lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(0),
-            rollover_interest_sell=Decimal(0),
+            rollover_interest_buy=Decimal64(0),
+            rollover_interest_sell=Decimal64(0),
             timestamp=UNIX_EPOCH)
 
     @staticmethod
@@ -179,7 +179,7 @@ class TestStubs:
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Money(0, Currency.USD),
-            Decimal(0),
+            Decimal64(0),
             ValidString("N"),
             uuid4(),
             UNIX_EPOCH)

@@ -18,7 +18,7 @@ from bson.raw_bson import RawBSONDocument
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal, Quantity, Price
+from nautilus_trader.model.objects cimport Decimal64, Quantity, Price
 from nautilus_trader.model.tick cimport QuoteTick, TradeTick
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.instrument cimport Instrument, ForexInstrument
@@ -370,8 +370,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
                 round_lot_size=Quantity.from_string(deserialized[ROUND_LOT_SIZE]),
                 min_trade_size=Quantity.from_string(deserialized[MIN_TRADE_SIZE]),
                 max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
-                rollover_interest_buy=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
-                rollover_interest_sell=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
+                rollover_interest_buy=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
+                rollover_interest_sell=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
                 timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
         return Instrument(
@@ -388,8 +388,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             round_lot_size=Quantity.from_string(deserialized[ROUND_LOT_SIZE]),
             min_trade_size=Quantity.from_string(deserialized[MIN_TRADE_SIZE]),
             max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
-            rollover_interest_sell=Decimal.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
+            rollover_interest_buy=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
+            rollover_interest_sell=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
             timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
 

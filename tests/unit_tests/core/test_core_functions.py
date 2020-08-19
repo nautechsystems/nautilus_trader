@@ -16,27 +16,13 @@
 import unittest
 import numpy as np
 
-from nautilus_trader.core.functions import fast_round, fast_mean, fast_mean_iterated
+from nautilus_trader.core.functions import fast_mean, fast_mean_iterated
 from nautilus_trader.core.functions import fast_std, fast_std_with_mean
 from nautilus_trader.core.functions import basis_points_as_percentage, format_bytes, pad_string
 from nautilus_trader.core.functions import max_in_dict
 
 
 class TestFunctionsTests(unittest.TestCase):
-
-    def test_fast_round(self):
-        # Arrange
-        # Act
-        result0 = fast_round(1.0012, 0)
-        result1 = fast_round(1.0012, 3)
-        result2 = fast_round(-0.020, 2)
-        result3 = fast_round(1.0015, 3)
-
-        # Assert
-        self.assertEqual(1.0, result0)
-        self.assertEqual(1.001, result1)
-        self.assertEqual(-0.02, result2)
-        self.assertEqual(1.002, result3)
 
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange

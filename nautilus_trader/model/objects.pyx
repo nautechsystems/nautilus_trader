@@ -16,14 +16,14 @@
 """Define common basic value objects in the trading domain."""
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 
 
 cdef Quantity _QUANTITY_ZERO = Quantity()
-cdef Quantity _QUANTITY_ONE = Quantity(1)
+cdef Quantity _QUANTITY_ONE = Quantity(value=1, precision=0)
 
-cdef class Quantity(Decimal):
+cdef class Quantity(Decimal64):
     """
     Represents a quantity with a non-negative value.
 
@@ -46,6 +46,15 @@ cdef class Quantity(Decimal):
         Condition.not_negative(value, "value")
         super().__init__(value, precision)
 
+    cpdef bint equals(self, Quantity other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.eq(other)
+
     @staticmethod
     cdef Quantity zero():
         """
@@ -58,7 +67,7 @@ cdef class Quantity(Decimal):
     @staticmethod
     cdef Quantity one():
         """
-        Return a quantity with a value of 1.
+        Return a quantity with a value of 1, and precision of 0.
 
         :return Quantity.
         """
@@ -75,7 +84,7 @@ cdef class Quantity(Decimal):
         """
         Condition.valid_string(value, "value")
 
-        return Quantity(float(value), precision=Decimal.precision_from_string(value))
+        return Quantity(float(value), precision=Decimal64.precision_from_string(value))
 
     cpdef Quantity add(self, Quantity other):
         """
@@ -113,9 +122,9 @@ cdef class Quantity(Decimal):
         return f"{millions}M"
 
 
-cdef class Price(Decimal):
+cdef class Price(Decimal64):
     """
-    Represents a price of a financial market instrument.
+    Represents the price of a financial market instrument.
     """
 
     def __init__(self, double value, int precision):
@@ -130,6 +139,15 @@ cdef class Price(Decimal):
         Condition.not_negative(value, "value")
         super().__init__(value, precision)
 
+    cpdef bint equals(self, Price other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.eq(other)
+
     @staticmethod
     cdef Price from_string(str value):
         """
@@ -141,9 +159,9 @@ cdef class Price(Decimal):
         """
         Condition.valid_string(value, "value")
 
-        return Price(float(value), precision=Decimal.precision_from_string(value))
+        return Price(float(value), precision=Decimal64.precision_from_string(value))
 
-    cpdef Price add(self, Decimal other):
+    cpdef Price add(self, Decimal64 other):
         """
         Return a new price by adding the given decimal to this price.
 
@@ -155,7 +173,7 @@ cdef class Price(Decimal):
 
         return Price(self._value + other._value, self.precision)
 
-    cpdef Price sub(self, Decimal other):
+    cpdef Price sub(self, Decimal64 other):
         """
         Return a new price by subtracting the decimal price from this price.
 
@@ -169,7 +187,7 @@ cdef class Price(Decimal):
         return Price(self._value - other._value, self.precision)
 
 
-cdef class Money(Decimal):
+cdef class Money(Decimal64):
     """
     Represents the 'concept' of money including currency type.
     """
@@ -186,6 +204,16 @@ cdef class Money(Decimal):
         super().__init__(value, precision=2)
 
         self.currency = currency
+
+    cpdef bint equals(self, Money other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        :raises ValueError: If the other is not of type Money.
+        """
+        return self.eq(other) and self.currency == other.currency
 
     @staticmethod
     cdef Money from_string(str value, Currency currency):
@@ -225,20 +253,6 @@ cdef class Money(Decimal):
         # Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
 
         return Money(self._value - other._value, self.currency)
-
-    cpdef bint equals(self, Decimal other):
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        :param other: The other object.
-        :return bool.
-        :raises ValueError: If the other is not of type Money.
-        """
-        Condition.type(other, Money, "other")
-
-        # noinspection PyProtectedMember
-        # direct access to protected member ok here
-        return self._value == other._value and self.currency == other.currency
 
     cpdef str to_string_formatted(self):
         """

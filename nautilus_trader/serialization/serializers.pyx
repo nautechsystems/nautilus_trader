@@ -28,7 +28,7 @@ from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string, currency_from_string
 from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker, ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
-from nautilus_trader.model.objects cimport Quantity, Decimal, Money
+from nautilus_trader.model.objects cimport Quantity, Decimal64, Money
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, OrderInvalid
@@ -475,7 +475,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Money.from_string(unpacked[CASH_ACTIVITY_DAY].decode(UTF8), currency),
                 Money.from_string(unpacked[MARGIN_USED_LIQUIDATION].decode(UTF8), currency),
                 Money.from_string(unpacked[MARGIN_USED_MAINTENANCE].decode(UTF8), currency),
-                Decimal.from_string_to_decimal(unpacked[MARGIN_RATIO].decode(UTF8)),
+                Decimal64.from_string_to_decimal(unpacked[MARGIN_RATIO].decode(UTF8)),
                 ValidString(unpacked[MARGIN_CALL_STATUS].decode(UTF8)),
                 event_id,
                 event_timestamp)
