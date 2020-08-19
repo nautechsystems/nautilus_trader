@@ -234,10 +234,9 @@ cdef class Money(Decimal64):
 
         :param other: The other money to add.
         :return Money.
-        :raises ValueError: If the other currency is not equal to this money.
+        :raises ValueError: If the other currency is not equal to this monies.
         """
-        # TODO: Fix handling of multiple currencies
-        # Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
+        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
 
         return Money(self._value + other._value, self.currency)
 
@@ -249,8 +248,7 @@ cdef class Money(Decimal64):
         :return Money.
         :raises ValueError: If the other currency is not equal to this money.
         """
-        # TODO: Fix handling of multiple currencies
-        # Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
+        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
 
         return Money(self._value - other._value, self.currency)
 

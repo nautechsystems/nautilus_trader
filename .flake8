@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+[darglint]
+docstring_style=numpy
+
 [flake8]
 filename = *.py, *.pyx, *.pxd
 exclude = .eggs, *.egg, build, stats.py, utils.py
