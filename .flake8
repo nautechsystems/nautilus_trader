@@ -19,7 +19,7 @@ docstring_style=numpy
 [flake8]
 filename = *.py, *.pyx, *.pxd
 exclude = .eggs, *.egg, build, stats.py, utils.py
-ignore = E225, E252, E999, D100, D101, D104, D102, D200, D400
+ignore = E225, E252, E999, D100, D101, D104, D102, D200, D400, S322
 max-complexity = 10
 max-line-length = 150
 

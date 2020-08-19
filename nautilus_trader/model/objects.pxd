@@ -42,7 +42,6 @@ cdef class Price(Decimal64):
     cpdef Price sub(self, Decimal64 other)
 
 
-
 cdef class Money(Decimal64):
     cdef readonly Currency currency
 

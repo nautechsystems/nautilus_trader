@@ -33,7 +33,7 @@ cdef class CommissionCalculator:
     def __init__(self,
                  dict rates=None,
                  double default_rate_bp=0.20,
-                 Money minimum=Money(2.00, Currency.USD)):
+                 Money minimum=None):
         """
         Initialize a new instance of the CommissionCalculator class.
 
@@ -45,6 +45,8 @@ cdef class CommissionCalculator:
         """
         if rates is None:
             rates = {}
+        if minimum is None:
+            minimum = Money(0, Currency.USD)
         Condition.dict_types(rates, Symbol, Decimal64, "rates")
 
         self.rates = rates

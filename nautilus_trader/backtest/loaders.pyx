@@ -108,6 +108,6 @@ cdef class InstrumentLoader:
             round_lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal64.zero(),
-            rollover_interest_sell=Decimal64.zero(),
+            rollover_interest_buy=Decimal64(),
+            rollover_interest_sell=Decimal64(),
             timestamp=datetime.now(pytz.utc))

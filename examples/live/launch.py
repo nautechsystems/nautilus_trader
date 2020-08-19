@@ -30,16 +30,16 @@ BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
 BAR_SPEC_CFD = BarSpecification(5, BarStructure.MINUTE, PriceType.BID)
 
 symbols_fx = [
-    Symbol("AUD/USD", Venue('FXCM')),
-    Symbol("AUD/JPY", Venue('FXCM')),
-    Symbol("EUR/USD", Venue('FXCM')),
-    Symbol("EUR/GBP", Venue('FXCM')),
-    Symbol("EUR/JPY", Venue('FXCM')),
-    Symbol("GBP/USD", Venue('FXCM')),
-    Symbol("GBP/JPY", Venue('FXCM')),
-    Symbol("USD/JPY", Venue('FXCM')),
-    Symbol("USD/CAD", Venue('FXCM')),
-    Symbol("USD/CHF", Venue('FXCM')),
+    Symbol('AUD/USD', Venue('FXCM')),
+    Symbol('AUD/JPY', Venue('FXCM')),
+    Symbol('EUR/USD', Venue('FXCM')),
+    Symbol('EUR/GBP', Venue('FXCM')),
+    Symbol('EUR/JPY', Venue('FXCM')),
+    Symbol('GBP/USD', Venue('FXCM')),
+    Symbol('GBP/JPY', Venue('FXCM')),
+    Symbol('USD/JPY', Venue('FXCM')),
+    Symbol('USD/CAD', Venue('FXCM')),
+    Symbol('USD/CHF', Venue('FXCM')),
 ]
 
 news_impacts = ['HIGH', 'MEDIUM']

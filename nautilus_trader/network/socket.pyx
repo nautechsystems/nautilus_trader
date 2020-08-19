@@ -273,7 +273,7 @@ cdef class ServerSocket(Socket):
         Condition.valid_port(port, "port")
         super().__init__(
             server_id,
-            "127.0.0.1",
+            '127.0.0.1',
             port,
             socket_type,
             encryption,

@@ -45,7 +45,7 @@ class CommissionCalculatorTests(unittest.TestCase):
 
     def test_can_calculate_correct_minimum_commission(self):
         # Arrange
-        calculator = CommissionCalculator()
+        calculator = CommissionCalculator(minimum=Money(2.00, Currency.USD))
 
         # Act
         result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD))

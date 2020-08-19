@@ -204,7 +204,7 @@ class EMACross(TradingStrategy):
                  slow_ema: int=20,
                  atr_period: int=20,
                  sl_atr_multiple: float=2.0,
-                 extra_id_tag: str=""):
+                 extra_id_tag: str=''):
         """
         Initialize a new instance of the EMACrossPy class.
 
