@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.objects cimport Quantity, Price
@@ -37,8 +37,8 @@ cdef class Instrument:
     cdef readonly Quantity round_lot_size
     cdef readonly Quantity min_trade_size
     cdef readonly Quantity max_trade_size
-    cdef readonly Decimal rollover_interest_buy
-    cdef readonly Decimal rollover_interest_sell
+    cdef readonly Decimal64 rollover_interest_buy
+    cdef readonly Decimal64 rollover_interest_sell
     cdef readonly datetime timestamp
 
 

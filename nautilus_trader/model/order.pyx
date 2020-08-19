@@ -21,7 +21,7 @@ and an OrderFactory for more convenient creation of order objects.
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -149,7 +149,7 @@ cdef class Order:
         self.filled_quantity = Quantity.zero()
         self.filled_timestamp = None        # Can be None
         self.average_price = None           # Can be None
-        self.slippage = Decimal.zero()
+        self.slippage = Decimal64.zero()
         self.state = OrderState.INITIALIZED
         self.init_id = init_id
         self.is_buy = self.side == OrderSide.BUY
@@ -382,9 +382,9 @@ cdef class Order:
             return
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal(self.average_price.as_double() - self.price.as_double(), self.average_price.precision)
+            self.slippage = Decimal64(self.average_price.as_double() - self.price.as_double(), self.average_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal(self.price.as_double() - self.average_price.as_double(), self.average_price.precision)
+            self.slippage = Decimal64(self.price.as_double() - self.average_price.as_double(), self.average_price.precision)
 
 
 cdef class BracketOrder:

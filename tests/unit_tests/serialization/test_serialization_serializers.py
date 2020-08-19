@@ -18,7 +18,7 @@ import unittest
 from datetime import datetime
 from base64 import b64encode, b64decode
 
-from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import UUID, uuid4
 from nautilus_trader.core.types import ValidString, Label
 from nautilus_trader.model.identifiers import IdTag, OrderId, OrderIdBroker, ExecutionId
@@ -1097,8 +1097,8 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
             min_limit_distance=1,
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(0.025, 3),
-            rollover_interest_sell=Decimal(-0.035, 3),
+            rollover_interest_buy=Decimal64(0.025, 3),
+            rollover_interest_sell=Decimal64(-0.035, 3),
             timestamp=UNIX_EPOCH)
 
         # Act

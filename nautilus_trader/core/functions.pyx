@@ -18,21 +18,9 @@
 
 import gc
 import sys
-from libc.math cimport round, pow, sqrt
+from libc.math cimport pow, sqrt
 
 from nautilus_trader.core.correctness cimport Condition
-
-
-cpdef double fast_round(double value, int precision):
-    """
-    Return the given value rounded to the nearest precision digits.
-
-    :param value: The value to round.
-    :param precision: The precision to round to.
-    :return: double.
-    """
-    cdef int power = 10 ** precision     # Zero power rule 10^0 = 1
-    return round(value * power) / power  # Rounding to nearest
 
 
 cpdef double fast_mean(list values):
@@ -101,12 +89,12 @@ cpdef double fast_std_with_mean(list values, double mean):
     :return: double.
     """
     cdef int length = len(values)
-    cdef double std_deviation = 0.0
+    cdef double std_dev = 0.0
 
     for i in range(length):
-        std_deviation += pow(values[i] - mean, 2)
+        std_dev += pow(values[i] - mean, 2)
 
-    return sqrt(std_deviation / length)
+    return sqrt(std_dev / length)
 
 
 cpdef double basis_points_as_percentage(double basis_points):
@@ -172,7 +160,7 @@ cpdef str format_bytes(double size):
     while size >= power:
         size /= power
         n += 1
-    return f"{fast_round(size, 2):,} {POWER_LABELS[n]}"
+    return f"{round(size, 2):,} {POWER_LABELS[n]}"
 
 
 cpdef str pad_string(str string, int length, str pad=" "):

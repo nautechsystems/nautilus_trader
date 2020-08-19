@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.model.c_enums.currency cimport Currency
 
 
-cdef class Quantity(Decimal):
+cdef class Quantity(Decimal64):
+    cpdef bint equals(self, Quantity other)
 
     @staticmethod
     cdef Quantity zero()
@@ -32,15 +33,20 @@ cdef class Quantity(Decimal):
     cpdef str to_string_formatted(self)
 
 
-cdef class Price(Decimal):
+cdef class Price(Decimal64):
+    cpdef bint equals(self, Price other)
+
     @staticmethod
     cdef Price from_string(str value)
-    cpdef Price add(self, Decimal other)
-    cpdef Price sub(self, Decimal other)
+    cpdef Price add(self, Decimal64 other)
+    cpdef Price sub(self, Decimal64 other)
 
 
-cdef class Money(Decimal):
+
+cdef class Money(Decimal64):
     cdef readonly Currency currency
+
+    cpdef bint equals(self, Money other)
 
     @staticmethod
     cdef Money from_string(str value, Currency currency)
