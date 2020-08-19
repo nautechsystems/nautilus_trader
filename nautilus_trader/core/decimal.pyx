@@ -66,7 +66,6 @@ cdef class Decimal64:
         """
         Condition.true(not isnan(value), "value is not nan")
         Condition.true(isfinite(value), "value is finite")
-        # TODO: Check value has no greater than 16 significands
         Condition.in_range_int(precision, 0, 9, "precision")
 
         cdef int power = 10 ** precision             # For zero precision then zero power rule 10^0 = 1
@@ -99,17 +98,17 @@ cdef class Decimal64:
     @staticmethod
     cdef Decimal64 from_string_to_decimal(str value):
         """
-        Return a decimal from the given string. 
-    
+        Return a decimal from the given string.
+
         Precision will be inferred from the number of digits after the decimal place.
-    
+
         Note: If no decimal place then precision will be zero.
-    
+
         Parameters
         ----------
-        value : str 
+        value : str
             The string value to parse.
-    
+
         Returns
         -------
         Decimal64
@@ -122,20 +121,20 @@ cdef class Decimal64:
     @staticmethod
     cdef int precision_from_string(str value):
         """
-        Return the decimal precision inferred from the number of digits after 
+        Return the decimal precision inferred from the number of digits after
         the '.' decimal place.
-        
+
         Note: If no decimal place then precision will be zero.
 
         Parameters
         ----------
-        value : str 
+        value : str
             The string value to parse.
-        
+
         Returns
         -------
         int
-        
+
         """
         Condition.valid_string(value, "value")
 
@@ -148,7 +147,7 @@ cdef class Decimal64:
         Returns
         -------
         int
-        
+
         """
         return int(self._value)
 
@@ -159,7 +158,7 @@ cdef class Decimal64:
         Returns
         -------
         double
-        
+
         """
         return self._value
 
@@ -170,7 +169,7 @@ cdef class Decimal64:
         Returns
         -------
         decimal.Decimal
-        
+
         """
         return decimal.Decimal(f"{self._value:.{self.precision}f}")
 
@@ -182,11 +181,11 @@ cdef class Decimal64:
         ----------
         format_commas : bool
             If the string should be formatted with commas separating thousands.
-        
+
         Returns
         -------
         str
-        
+
         """
         if format_commas:
             if self.precision == 0:
@@ -207,7 +206,7 @@ cdef class Decimal64:
         ----------
         other : Decimal64
             The other decimal for the equality check.
-            
+
         Returns
         -------
         bool
@@ -219,14 +218,14 @@ cdef class Decimal64:
 
     cpdef bint ne(self, Decimal64 other):
         """
-        Return a value indicating whether this decimal is not equal to (!=) the 
+        Return a value indicating whether this decimal is not equal to (!=) the
         given decimal.
 
         Parameters
         ----------
         other : Decimal64
             The other decimal for the equality check.
-            
+
         Returns
         -------
         bool
@@ -238,7 +237,7 @@ cdef class Decimal64:
 
     cpdef bint lt(self, Decimal64 other):
         """
-        Return a value indicating whether this decimal is less than (<) the 
+        Return a value indicating whether this decimal is less than (<) the
         given decimal.
 
         Parameters
@@ -257,7 +256,7 @@ cdef class Decimal64:
 
     cpdef bint le(self, Decimal64 other):
         """
-        Return a value indicating whether this decimal is less than or equal to 
+        Return a value indicating whether this decimal is less than or equal to
         (<=) the given decimal.
 
         Parameters
@@ -276,7 +275,7 @@ cdef class Decimal64:
 
     cpdef bint gt(self, Decimal64 other):
         """
-        Return a value indicating whether this decimal is greater than (>) the 
+        Return a value indicating whether this decimal is greater than (>) the
         given decimal.
 
         Parameters
@@ -295,7 +294,7 @@ cdef class Decimal64:
 
     cpdef bint ge(self, Decimal64 other):
         """
-        Return a value indicating whether this decimal is greater than or equal 
+        Return a value indicating whether this decimal is greater than or equal
         to (>=) the given decimal.
 
         Parameters
@@ -320,9 +319,9 @@ cdef class Decimal64:
         ----------
         other : Decimal64
             The other decimal to add.
-        keep_precision : bool 
+        keep_precision : bool
             If the original precision should be maintained.
-        
+
         Returns
         -------
         Decimal64
@@ -345,9 +344,9 @@ cdef class Decimal64:
         ----------
         other : Decimal64
             The other decimal to subtract.
-        keep_precision : bool 
+        keep_precision : bool
             If the original precision should be maintained.
-        
+
         Returns
         -------
         Decimal64

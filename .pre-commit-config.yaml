@@ -14,7 +14,6 @@ repos:
       - id: check-xml
       - id: check-yaml
       - id: debug-statements
-  #    - id: detect-aws-credentials
       - id: detect-private-key
       - id: fix-encoding-pragma
         args: [--remove]
@@ -29,8 +28,8 @@ repos:
     hooks:
       - id: flake8
         additional_dependencies:
-          # - flake8-bandit==2.1.2
-          #  - flake8-bugbear==20.1.4
+          - flake8-bandit==2.1.2
+          - flake8-bugbear==20.1.4
           - flake8-rst-docstrings==0.0.13
           - pep8-naming==0.10.0
-          # - darglint==1.3.0
+#          - darglint==1.3.0

@@ -41,12 +41,12 @@ class BacktestAcceptanceTests(unittest.TestCase):
         config = BacktestConfig(
             tick_capacity=1000,
             bar_capacity=1000,
-            exec_db_type="in-memory",
+            exec_db_type='in-memory',
             exec_db_flush=False,
             frozen_account=False,
             starting_capital=1000000,
             account_currency=Currency.USD,
-            short_term_interest_csv_path="default",
+            short_term_interest_csv_path='default',
             commission_rate_bp=0.20,
             bypass_logging=True,
             level_console=LogLevel.DEBUG,
@@ -57,7 +57,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[EmptyStrategy("000")],
+            strategies=[EmptyStrategy('000')],
             config=config)
 
     def tearDown(self):
@@ -105,8 +105,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(559, strategies[0].fast_ema.count)
-        # TODO: Recent data rewrite changed the result of this??
-        # self.assertEqual(-574.52, self.engine.analyzer.get_performance_stats()["PNL"])  # Money represented as double here
+        self.assertEqual(-5296.87, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_can_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -119,7 +118,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                sl_atr_multiple=2.0)]
 
         start = datetime(2013, 1, 2, 0, 0, 0, 0)
-        stop = datetime(2013, 1, 5, 0, 0, 0, 0)
+        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
 
         self.engine.run(start, stop, strategies=strategies)
         result1 = self.engine.analyzer.get_performance_stats()
@@ -140,7 +139,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                slow_ema=20,
                                atr_period=20,
                                sl_atr_multiple=2.0,
-                               extra_id_tag="001"),
+                               extra_id_tag='001'),
                       EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
@@ -148,7 +147,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                slow_ema=20,
                                atr_period=20,
                                sl_atr_multiple=2.0,
-                               extra_id_tag="002")]
+                               extra_id_tag='002')]
 
         start = datetime(2013, 1, 2, 0, 0, 0, 0)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0)

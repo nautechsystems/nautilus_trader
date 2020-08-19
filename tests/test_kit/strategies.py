@@ -119,12 +119,9 @@ class TestStrategy1(TradingStrategy):
 
     __test__ = False
 
-    def __init__(self,
-                 bar_type,
-                 id_tag_strategy="001",
-                 clock=TestClock()):
+    def __init__(self, bar_type, id_tag_strategy="001"):
         """Initialize a new instance of the TestStrategy1 class."""
-        super().__init__(order_id_tag=id_tag_strategy, clock=clock)
+        super().__init__(order_id_tag=id_tag_strategy, clock=TestClock())
 
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
@@ -220,7 +217,7 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace("/", "") + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -313,7 +310,7 @@ class EMACross(TradingStrategy):
 
         # Check liquidity
         liquidity_ratio = self.atr.value / average_spread
-        if liquidity_ratio >= 2.0:
+        if liquidity_ratio >= 1.0:  # Changed from 2.0 in examples after average spread change
             self._check_signal(bar, sl_buffer, spread_buffer)
         else:
             self.log.info(f"liquidity_ratio == {liquidity_ratio} (low liquidity).")

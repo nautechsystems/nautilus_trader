@@ -165,43 +165,43 @@ cdef class UUID:
             hex_str = hex_str.replace('urn:', '').replace('uuid:', '')
             hex_str = hex_str.strip('{}').replace('-', '')
             if len(hex_str) != 32:
-                raise ValueError('badly formed hexadecimal UUID string')
+                raise ValueError("badly formed hexadecimal UUID string")
             int_val = int(hex_str, 16)
         if bytes_le is not None:
             if len(bytes_le) != 16:
-                raise ValueError('bytes_le is not a 16-char string')
+                raise ValueError("bytes_le is not a 16-char string")
             bytes_val = (bytes_le[4 - 1::-1] + bytes_le[6 - 1:4 - 1:-1] +  # noqa (W504 line break before binary operator)
                          bytes_le[8 - 1:6 - 1:-1] + bytes_le[8:])
         if bytes_val is not None:
             if len(bytes_val) != 16:
-                raise ValueError('bytes is not a 16-char string')
+                raise ValueError("bytes is not a 16-char string")
             int_val = int.from_bytes(bytes_val, byteorder='big')
         if fields is not None:
             if len(fields) != 6:
-                raise ValueError('fields is not a 6-tuple')
+                raise ValueError("fields is not a 6-tuple")
             (time_low, time_mid, time_hi_version,
              clock_seq_hi_variant, clock_seq_low, node) = fields
             if not 0 <= time_low < 1 << 32:
-                raise ValueError('field 1 out of range (need a 32-bit value)')
+                raise ValueError("field 1 out of range (need a 32-bit value)")
             if not 0 <= time_mid < 1 << 16:
-                raise ValueError('field 2 out of range (need a 16-bit value)')
+                raise ValueError("field 2 out of range (need a 16-bit value)")
             if not 0 <= time_hi_version < 1 << 16:
-                raise ValueError('field 3 out of range (need a 16-bit value)')
+                raise ValueError("field 3 out of range (need a 16-bit value)")
             if not 0 <= clock_seq_hi_variant < 1 << 8:
-                raise ValueError('field 4 out of range (need an 8-bit value)')
+                raise ValueError("field 4 out of range (need an 8-bit value)")
             if not 0 <= clock_seq_low < 1 << 8:
-                raise ValueError('field 5 out of range (need an 8-bit value)')
+                raise ValueError("field 5 out of range (need an 8-bit value)")
             if not 0 <= node < 1 << 48:
-                raise ValueError('field 6 out of range (need a 48-bit value)')
+                raise ValueError("field 6 out of range (need a 48-bit value)")
             clock_seq = (clock_seq_hi_variant << 8) | clock_seq_low
             int_val = ((time_low << 96) | (time_mid << 80) |  # noqa (W504 line break before binary operator)
                        (time_hi_version << 64) | (clock_seq << 48) | node)
 
-        assert 0 <= int_val < 1 << 128, 'int is out of range (need a 128-bit value)'
+        assert 0 <= int_val < 1 << 128, "int is out of range (need a 128-bit value)"
 
         if version != -1:
             if not 1 <= version <= 5:
-                raise ValueError('illegal version number')
+                raise ValueError("illegal version number")
             # Set the variant to RFC 4122
             int_val &= ~(0xc000 << 48)
             int_val |= 0x8000 << 48
