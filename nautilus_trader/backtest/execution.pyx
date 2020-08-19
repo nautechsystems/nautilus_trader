@@ -29,7 +29,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.identifiers cimport Symbol, OrderIdBroker
-from nautilus_trader.model.objects cimport Decimal, Price, Money, Quantity
+from nautilus_trader.model.objects cimport Decimal64, Price, Money, Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order
@@ -121,7 +121,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._set_min_distances()
 
     cdef void _set_slippages(self) except *:
-        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
+        cdef dict slippage_index = {}  # type: {Symbol, Decimal64}
 
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = instrument.tick_size
@@ -129,15 +129,15 @@ cdef class BacktestExecClient(ExecutionClient):
         self._slippages = slippage_index
 
     cdef void _set_min_distances(self) except *:
-        cdef dict min_stops = {}   # type: {Symbol, Decimal}
-        cdef dict min_limits = {}  # type: {Symbol, Decimal}
+        cdef dict min_stops = {}   # type: {Symbol, Decimal64}
+        cdef dict min_limits = {}  # type: {Symbol, Decimal64}
 
         for symbol, instrument in self.instruments.items():
-            min_stops[symbol] = Decimal(
+            min_stops[symbol] = Decimal64(
                 instrument.tick_size * instrument.min_stop_distance,
                 instrument.price_precision)
 
-            min_limits[symbol] = Decimal(
+            min_limits[symbol] = Decimal64(
                 instrument.tick_size * instrument.min_limit_distance,
                 instrument.price_precision)
 
@@ -214,7 +214,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money(0, self.account_currency),
             Money(0, self.account_currency),
             Money(0, self.account_currency),
-            Decimal.zero(),
+            Decimal64.zero(),
             ValidString("N"),
             self._uuid_factory.generate(),
             self._clock.time_now())
@@ -387,7 +387,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 self.account_cash_activity_day,
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal.zero(),
+                margin_ratio=Decimal64.zero(),
                 margin_call_status=ValidString("N"),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
@@ -475,7 +475,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 self.account_cash_activity_day,
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal.zero(),
+                margin_ratio=Decimal64.zero(),
                 margin_call_status=ValidString("N"),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())

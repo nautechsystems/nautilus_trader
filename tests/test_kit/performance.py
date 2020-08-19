@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import gc
+import sys
 import math
 import timeit
 import inspect
@@ -20,6 +22,34 @@ import inspect
 
 _MILLISECONDS_IN_SECOND = 1000
 _MICROSECONDS_IN_SECOND = 1000000
+
+
+def get_size_of(obj):
+
+    marked = {id(obj)}
+    obj_q = [obj]
+    size = 0
+
+    while obj_q:
+        size += sum(map(sys.getsizeof, obj_q))
+
+        # Lookup all the object referred to by the object in obj_q.
+        # See: https://docs.python.org/3.7/library/gc.html#gc.get_referents
+        all_refs = ((id(o), o) for o in gc.get_referents(*obj_q))
+
+        # Filter object that are already marked.
+        # Using dict notation will prevent repeated objects.
+        new_ref = {
+            o_id: o for o_id, o in all_refs if o_id not in marked and not isinstance(o, type)
+        }
+
+        # The new obj_q will be the ones that were not marked,
+        # and we will update marked with their ids so we will
+        # not traverse them again.
+        obj_q = new_ref.values()
+        marked.update(new_ref.keys())
+
+    return size
 
 
 class PerformanceHarness:
@@ -47,18 +77,18 @@ class PerformanceHarness:
 
         return minimum
 
-    # @staticmethod
-    # def object_size(x, print_output=True) -> int:
-    #     """
-    #     Return the object size in bytes and optionally print the message.
-    #
-    #     :param x: The object to check.
-    #     :param print_output: If the output should be printed to the console.
-    #     :return: int.
-    #     """
-    #     size = get_size_of(x)
-    #
-    #     if print_output:
-    #         print(f"\n# Object size test: {type(x)} is {size} bytes.")
-    #
-    #     return size
+    @staticmethod
+    def object_size(x, print_output=True) -> int:
+        """
+        Return the object size in bytes and optionally print the message.
+
+        :param x: The object to check.
+        :param print_output: If the output should be printed to the console.
+        :return: int.
+        """
+        size = get_size_of(x)
+
+        if print_output:
+            print(f"\n# Object size test: {type(x)} is {size} bytes.")
+
+        return size

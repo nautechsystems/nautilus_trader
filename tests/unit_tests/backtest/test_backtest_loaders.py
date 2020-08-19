@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.backtest.loaders import InstrumentLoader
 
@@ -32,7 +32,7 @@ class BacktestLoadersTests(unittest.TestCase):
         # Assert
         self.assertEqual(Symbol("AUD/USD", Venue("FXCM")), instrument.symbol)
         self.assertEqual(5, instrument.price_precision)
-        self.assertEqual(Decimal(0.00001, 5), instrument.tick_size)
+        self.assertEqual(Decimal64(0.00001, 5), instrument.tick_size)
         self.assertEqual(840, instrument.quote_currency)
 
     def test_default_fx_with_3_dp_returns_expected_instrument(self):
@@ -45,5 +45,5 @@ class BacktestLoadersTests(unittest.TestCase):
         # Assert
         self.assertEqual(Symbol("USD/JPY", Venue("FXCM")), instrument.symbol)
         self.assertEqual(3, instrument.price_precision)
-        self.assertEqual(Decimal(0.001, 3), instrument.tick_size)
+        self.assertEqual(Decimal64(0.001, 3), instrument.tick_size)
         self.assertEqual(392, instrument.quote_currency)

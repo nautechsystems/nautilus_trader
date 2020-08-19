@@ -19,7 +19,7 @@ import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.model.enums import Currency  # Do not remove
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -108,6 +108,6 @@ cdef class InstrumentLoader:
             round_lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal.zero(),
-            rollover_interest_sell=Decimal.zero(),
+            rollover_interest_buy=Decimal64.zero(),
+            rollover_interest_sell=Decimal64.zero(),
             timestamp=datetime.now(pytz.utc))
