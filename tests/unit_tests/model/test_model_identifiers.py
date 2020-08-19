@@ -100,7 +100,7 @@ class IdentifierTests(unittest.TestCase):
 
     def test_can_parse_symbol_from_string(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue("FXCM"))
+        symbol = Symbol("AUD/USD", Venue('FXCM'))
 
         # Act
         result = Symbol.py_from_string(symbol.value)
@@ -137,12 +137,12 @@ class IdentifierTests(unittest.TestCase):
     def test_account_identifier(self):
         # Arrange
         # Act
-        account_id1 = AccountId("FXCM", "02851908", AccountType.DEMO)
-        account_id2 = AccountId("FXCM", "09999999", AccountType.DEMO)
+        account_id1 = AccountId('FXCM', "02851908", AccountType.DEMO)
+        account_id2 = AccountId('FXCM', "09999999", AccountType.DEMO)
 
         # Assert
         self.assertEqual(account_id1, account_id1)
         self.assertNotEqual(account_id1, account_id2)
         self.assertEqual("FXCM-02851908-DEMO", account_id1.value)
-        self.assertEqual(Brokerage("FXCM"), account_id1.broker)
+        self.assertEqual(Brokerage('FXCM'), account_id1.broker)
         self.assertEqual(account_id1, AccountId.py_from_string("FXCM-02851908-DEMO"))

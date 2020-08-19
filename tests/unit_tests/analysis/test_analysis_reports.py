@@ -26,8 +26,8 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.analysis.reports import ReportProvider
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
-AUDUSD_FXCM = Symbol("AUD/USD", Venue("FXCM"))
-GBPUSD_FXCM = Symbol("GBP/USD", Venue("FXCM"))
+AUDUSD_FXCM = Symbol("AUD/USD", Venue('FXCM'))
+GBPUSD_FXCM = Symbol("GBP/USD", Venue('FXCM'))
 
 
 class ReportProviderTests(unittest.TestCase):

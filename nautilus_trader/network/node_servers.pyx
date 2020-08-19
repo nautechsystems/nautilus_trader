@@ -31,7 +31,7 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.constants cimport UTF8
 
 cdef bytes _STRING = message_type_to_string(MessageType.STRING).title().encode(UTF8)
-cdef str _TYPE_UTF8 = "UTF8"
+cdef str _TYPE_UTF8 = 'UTF8'
 
 
 cdef class ServerNode:

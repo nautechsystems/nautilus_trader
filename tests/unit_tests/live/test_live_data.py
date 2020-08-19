@@ -371,7 +371,7 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         self.data_client.connect()
-        self.data_client.request_instruments(Venue("FXCM"), data_receiver.store)
+        self.data_client.request_instruments(Venue('FXCM'), data_receiver.store)
 
         time.sleep(0.1)
 

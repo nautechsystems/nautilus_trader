@@ -24,25 +24,25 @@ cpdef enum PriceType:
 
 cdef inline str price_type_to_string(int value):
     if value == 1:
-        return "BID"
+        return 'BID'
     elif value == 2:
-        return "ASK"
+        return 'ASK'
     elif value == 3:
-        return "MID"
+        return 'MID'
     elif value == 4:
-        return "LAST"
+        return 'LAST'
     else:
-        return "UNDEFINED"
+        return 'UNDEFINED'
 
 
 cdef inline PriceType price_type_from_string(str value):
-    if value == "BID":
+    if value == 'BID':
         return PriceType.BID
-    elif value == "ASK":
+    elif value == 'ASK':
         return PriceType.ASK
-    elif value == "MID":
+    elif value == 'MID':
         return PriceType.MID
-    elif value == "LAST":
+    elif value == 'LAST':
         return PriceType.LAST
     else:
         return PriceType.UNDEFINED

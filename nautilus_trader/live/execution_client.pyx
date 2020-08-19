@@ -36,8 +36,8 @@ from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 
 
-cdef str _UTF8 = "utf-8"
-cdef str _EVENT = "Event"
+cdef str _UTF8 = 'utf-8'
+cdef str _EVENT = 'Event'
 
 cdef class LiveExecClient(ExecutionClient):
     """
