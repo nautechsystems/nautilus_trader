@@ -465,7 +465,7 @@ class EMACrossFiltered(TradingStrategy):
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
 
         self.log.info(f"Set next news event {self.news_event_next.name} "
-                      f"affecting {self.news_event_next.base_currency} "
+                      f"affecting {self.news_event_next.currency} "
                       f"with expected {self.news_event_next.impact} impact "
                       f"at {self.news_event_next.timestamp}")
         self.log.info(f"Set next trading pause start to {self.trading_pause_start}")
