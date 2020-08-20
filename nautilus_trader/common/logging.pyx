@@ -118,8 +118,8 @@ cdef class Logger:
         :param log_to_file: If log messages should be written to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :param clock: The clock for the logger.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the log_file_path is not a valid string.
+        :raises ValueError: If name is not a valid string.
+        :raises ValueError: If log_file_path is not a valid string.
         """
         if name is not None:
             Condition.valid_string(name, "name")
@@ -256,8 +256,8 @@ cdef class TestLogger(Logger):
         :param log_to_file: If log messages should write to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :param clock: The clock for the logger.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the log_file_path is not a valid string.
+        :raises ValueError: If name is not a valid string.
+        :raises ValueError: If log_file_path is not a valid string.
         """
         super().__init__(name,
                          bypass_logging,

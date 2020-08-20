@@ -35,23 +35,23 @@ from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-cdef str _UTF8 = "utf-8"
+cdef str _UTF8 = 'utf-8'
 
-cdef str _INDEX = "Index"
-cdef str _TRADER = "Trader"
-cdef str _CONFIG = "Config"
-cdef str _ACCOUNTS = "Accounts"
-cdef str _ORDER = "Order"
-cdef str _ORDERS = "Orders"
-cdef str _BROKER = "BrokerId"
-cdef str _POSITION = "Position"
-cdef str _POSITIONS = "Positions"
-cdef str _STRATEGY = "Strategy"
-cdef str _STRATEGIES = "Strategies"
-cdef str _WORKING = "Working"
-cdef str _COMPLETED = "Completed"
-cdef str _OPEN = "Open"
-cdef str _CLOSED = "Closed"
+cdef str _INDEX = 'Index'
+cdef str _TRADER = 'Trader'
+cdef str _CONFIG = 'Config'
+cdef str _ACCOUNTS = 'Accounts'
+cdef str _ORDER = 'Order'
+cdef str _ORDERS = 'Orders'
+cdef str _BROKER = 'BrokerId'
+cdef str _POSITION = 'Position'
+cdef str _POSITIONS = 'Positions'
+cdef str _STRATEGY = 'Strategy'
+cdef str _STRATEGIES = 'Strategies'
+cdef str _WORKING = 'Working'
+cdef str _COMPLETED = 'Completed'
+cdef str _OPEN = 'Open'
+cdef str _CLOSED = 'Closed'
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):

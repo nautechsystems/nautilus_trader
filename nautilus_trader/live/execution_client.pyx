@@ -23,21 +23,15 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
-from nautilus_trader.network.compression cimport Compressor, BypassCompressor
+from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, RequestSerializer
-from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
-from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
-from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.factories cimport LiveUUIDFactory
-from nautilus_trader.live.logging cimport LiveLogger
+from nautilus_trader.serialization.serializers cimport EventSerializer
 
 
-cdef str _UTF8 = "utf-8"
-cdef str _EVENT = "Event"
+cdef str _UTF8 = 'utf-8'
+cdef str _EVENT = 'Event'
 
 cdef class LiveExecClient(ExecutionClient):
     """
@@ -52,16 +46,16 @@ cdef class LiveExecClient(ExecutionClient):
             int command_req_port,
             int command_res_port,
             int event_pub_port,
-            Compressor compressor not None=BypassCompressor(),
-            EncryptionSettings encryption not None=EncryptionSettings(),
-            CommandSerializer command_serializer not None=MsgPackCommandSerializer(),
-            DictionarySerializer header_serializer not None=MsgPackDictionarySerializer(),
-            RequestSerializer request_serializer not None=MsgPackRequestSerializer(),
-            ResponseSerializer response_serializer not None=MsgPackResponseSerializer(),
-            EventSerializer event_serializer not None=MsgPackEventSerializer(),
-            Clock clock not None=LiveClock(),
-            UUIDFactory uuid_factory not None=LiveUUIDFactory(),
-            Logger logger not None=LiveLogger()):
+            Compressor compressor not None,
+            EncryptionSettings encryption not None,
+            CommandSerializer command_serializer not None,
+            DictionarySerializer header_serializer not None,
+            RequestSerializer request_serializer not None,
+            ResponseSerializer response_serializer not None,
+            EventSerializer event_serializer not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger not None):
         """
         Initialize a new instance of the LiveExecClient class.
 
@@ -78,12 +72,12 @@ cdef class LiveExecClient(ExecutionClient):
         :param clock: The clock for the component.
         :param uuid_factory: The uuid factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the service_name is not a valid string.
-        :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the events_topic is not a valid string.
-        :raises ValueError: If the commands_req_port is not in range [49152, 65535].
-        :raises ValueError: If the commands_rep_port is not in range [49152, 65535].
-        :raises ValueError: If the events_port is not in range [49152, 65535].
+        :raises ValueError: If service_name is not a valid string.
+        :raises ValueError: If host is not a valid string.
+        :raises ValueError: If events_topic is not a valid string.
+        :raises ValueError: If commands_req_port is not in range [49152, 65535].
+        :raises ValueError: If commands_rep_port is not in range [49152, 65535].
+        :raises ValueError: If events_port is not in range [49152, 65535].
         """
         Condition.valid_string(host, "host")
         Condition.in_range_int(command_req_port, 0, 65535, "command_req_port")

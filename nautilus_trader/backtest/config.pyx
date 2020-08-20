@@ -61,10 +61,10 @@ cdef class BacktestConfig:
         :param log_thread: The boolean flag indicating whether log messages should log the thread.
         :param log_to_file: The boolean flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :raises ValueError: If the tick_capacity is not positive (> 0).
-        :raises ValueError: If the bar_capacity is not positive (> 0).
-        :raises ValueError: If the starting_capital is not positive (> 0).
-        :raises ValueError: If the commission_rate is negative (< 0).
+        :raises ValueError: If tick_capacity is not positive (> 0).
+        :raises ValueError: If bar_capacity is not positive (> 0).
+        :raises ValueError: If starting_capital is not positive (> 0).
+        :raises ValueError: If commission_rate is negative (< 0).
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
         Condition.positive_int(bar_capacity, "bar_capacity")

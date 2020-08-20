@@ -24,16 +24,16 @@ from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, Time
 from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.trading.filters import ForexSession
-from nautilus_trader.trading.filters import ForexSessionFilter, EconomicNewsEventFilter
+from nautilus_trader.trading.analyzers import SpreadAnalyzer
+from nautilus_trader.trading.filters import ForexSession, ForexSessionFilter, EconomicNewsEventFilter
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-UPDATE_SESSIONS = "UPDATE-SESSIONS"
-UPDATE_NEWS = "UPDATE-NEWS"
-NEWS_FLATTEN = "NEWS-FLATTEN"
-DONE_FOR_DAY = "DONE-FOR-DAY"
+UPDATE_SESSIONS = 'UPDATE-SESSIONS'
+UPDATE_NEWS = 'UPDATE-NEWS'
+NEWS_FLATTEN = 'NEWS-FLATTEN'
+DONE_FOR_DAY = 'DONE-FOR-DAY'
 
 
 class EMACrossFiltered(TradingStrategy):
@@ -52,8 +52,8 @@ class EMACrossFiltered(TradingStrategy):
                  slow_ema: int=20,
                  atr_period: int=20,
                  sl_atr_multiple: float=2.0,
-                 news_currencies: list=[],
-                 news_impacts: list=[],
+                 news_currencies: list=None,
+                 news_impacts: list=None,
                  extra_id_tag: str=""):
         """
         Initialize a new instance of the EMACrossPy class.
@@ -67,7 +67,12 @@ class EMACrossFiltered(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace("/", "") + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+
+        if news_currencies is None:
+            news_currencies = []
+        if news_impacts is None:
+            news_impacts = []
 
         # Custom strategy variables (all optional)
         self.symbol = symbol
@@ -78,6 +83,7 @@ class EMACrossFiltered(TradingStrategy):
         self.SL_buffer = 0.0        # instrument.tick_size * 10
         self.SL_atr_multiple = sl_atr_multiple
 
+        self.spread_analyzer = SpreadAnalyzer(self.symbol, 100)
         self.position_sizer = None  # initialized in on_start()
         self.quote_currency = None  # initialized in on_start()
 
@@ -155,7 +161,7 @@ class EMACrossFiltered(TradingStrategy):
         :param tick: The quote tick received.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
-        pass
+        self.spread_analyzer.update(tick)
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -183,7 +189,7 @@ class EMACrossFiltered(TradingStrategy):
             if time_now < self.trading_pause_end:
                 self.log.info(f"Trading paused until {self.trading_pause_end} "
                               f"for news event {self.news_event_next.name} "
-                              f"affecting {self.news_event_next.currency} "
+                              f"affecting {self.news_event_next.base_currency} "
                               f"with expected {self.news_event_next.impact} impact "
                               f"at {self.news_event_next.timestamp}")
                 return  # Waiting for end of pause period
@@ -200,12 +206,12 @@ class EMACrossFiltered(TradingStrategy):
             return  # Wait for ticks...
 
         # Check average spread
-        average_spread = self.spread_average(self.symbol)
+        average_spread = self.spread_analyzer.average_spread
         if average_spread == 0.0:
             self.log.warning(f"average_spread == {average_spread} (not initialized).")
             return  # Protect divide by zero
 
-        spread_buffer = max(average_spread, self.spread(self.symbol))
+        spread_buffer = max(average_spread, self.spread_analyzer.current_spread)
         sl_buffer = self.atr.value * self.SL_atr_multiple
 
         # Check liquidity
@@ -451,10 +457,10 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set next news event
         self.news_event_next = self.news_filter.next_event(time_now)
-        if self.news_event_next.impact == "HIGH":
+        if self.news_event_next.impact == 'HIGH':
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_high_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_high_after
-        elif self.news_event_next.impact == "MEDIUM":
+        elif self.news_event_next.impact == 'MEDIUM':
             self.trading_pause_start = self.news_event_next.timestamp - self.news_buffer_medium_before
             self.trading_pause_end = self.news_event_next.timestamp + self.news_buffer_medium_after
 
@@ -470,7 +476,7 @@ class EMACrossFiltered(TradingStrategy):
 
         # Set news update event
         news_time = self.news_event_next.timestamp
-        news_name = self.news_event_next.name.replace(" ", "")
+        news_name = self.news_event_next.name.replace(' ', '')
         alert_label = f"-{news_time.date()}-{news_time.hour:02d}{news_time.minute:02d}-{news_name}"
         self.clock.set_time_alert(UPDATE_NEWS + alert_label, self.trading_pause_end)
         self.clock.set_time_alert(NEWS_FLATTEN + alert_label, self.trading_pause_start + timedelta(seconds=1))

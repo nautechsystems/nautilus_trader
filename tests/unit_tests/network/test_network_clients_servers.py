@@ -33,7 +33,7 @@ from nautilus_trader.live.logging import LiveLogger
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import UNIX_EPOCH
 
-LOCALHOST = "127.0.0.1"
+LOCALHOST = '127.0.0.1'
 TEST_RECV_PORT = 55657
 TEST_SEND_PORT = 55658
 

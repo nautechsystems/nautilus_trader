@@ -78,7 +78,7 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Brokerage("FXCM"), account.broker)
+        self.assertEqual(Brokerage('FXCM'), account.broker)
         self.assertEqual(AccountNumber("123456"), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(97000, Currency.AUD), account.free_equity)
@@ -110,7 +110,7 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Brokerage("FXCM"), account.broker)
+        self.assertEqual(Brokerage('FXCM'), account.broker)
         self.assertEqual(AccountNumber("123456"), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(0, Currency.AUD), account.free_equity)
@@ -142,7 +142,7 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Brokerage("FXCM"), account.broker)
+        self.assertEqual(Brokerage('FXCM'), account.broker)
         self.assertEqual(AccountNumber("123456"), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(0, Currency.AUD), account.free_equity)

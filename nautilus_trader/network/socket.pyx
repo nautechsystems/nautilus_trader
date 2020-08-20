@@ -24,7 +24,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, ServerId
 from nautilus_trader.network.encryption cimport EncryptionSettings
 
-cdef str _UTF8 = "utf-8"
+cdef str _UTF8 = 'utf-8'
 
 
 cdef class Socket:
@@ -273,7 +273,7 @@ cdef class ServerSocket(Socket):
         Condition.valid_port(port, "port")
         super().__init__(
             server_id,
-            "127.0.0.1",
+            '127.0.0.1',
             port,
             socket_type,
             encryption,

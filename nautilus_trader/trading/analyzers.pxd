@@ -13,36 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum PriceType:
-    UNDEFINED = 0,  # Invalid value
-    BID = 1,
-    ASK = 2,
-    MID = 3,
-    LAST = 4
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef inline str price_type_to_string(int value):
-    if value == 1:
-        return 'BID'
-    elif value == 2:
-        return 'ASK'
-    elif value == 3:
-        return 'MID'
-    elif value == 4:
-        return 'LAST'
-    else:
-        return 'UNDEFINED'
+cdef class SpreadAnalyzer:
+    cdef readonly Symbol symbol
+    cdef readonly int capacity
+    cdef readonly bint initialized
+    cdef readonly double current_spread
+    cdef readonly double average_spread
 
+    cdef object _spreads
 
-cdef inline PriceType price_type_from_string(str value):
-    if value == 'BID':
-        return PriceType.BID
-    elif value == 'ASK':
-        return PriceType.ASK
-    elif value == 'MID':
-        return PriceType.MID
-    elif value == 'LAST':
-        return PriceType.LAST
-    else:
-        return PriceType.UNDEFINED
+    cpdef void update(self, QuoteTick tick) except *
+    cpdef void reset(self)

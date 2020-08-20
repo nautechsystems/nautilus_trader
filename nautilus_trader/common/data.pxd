@@ -37,8 +37,6 @@ cdef class DataClient:
     cdef dict _trade_ticks
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
-    cdef dict _spreads
-    cdef dict _spreads_avg
     cdef dict _bars
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
@@ -120,8 +118,6 @@ cdef class DataClient:
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
-    cpdef double spread(self, Symbol symbol)
-    cpdef double spread_average(self, Symbol symbol)
     cpdef double get_exchange_rate(
         self,
         Currency from_currency,

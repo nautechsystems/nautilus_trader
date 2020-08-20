@@ -26,9 +26,7 @@ cdef class WeightedMovingAverage(MovingAverage):
     An indicator which calculates a weighted moving average across a rolling window.
     """
 
-    def __init__(self,
-                 int period,
-                 weights=None):
+    def __init__(self, int period, weights=None):
         """
         Initialize a new instance of the SimpleMovingAverage class.
 

@@ -27,7 +27,7 @@ cdef class Indicator:
         :param params: A boolean flag indicating whether method preconditions should be used.
         """
         self.name = self.__class__.__name__
-        self.params = "" if params is [] else str(params)[1:-1].replace("'", "").strip("()")
+        self.params = '' if params is [] else str(params)[1:-1].replace("'", '').strip('()')
         self.check_inputs = check_inputs
         self.has_inputs = False
         self.initialized = False

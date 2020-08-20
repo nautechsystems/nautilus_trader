@@ -41,20 +41,20 @@ class TestStubs:
 
     @staticmethod
     def symbol_audusd_fxcm() -> Symbol:
-        return Symbol("AUD/USD", Venue("FXCM"))
+        return Symbol("AUD/USD", Venue('FXCM'))
 
     @staticmethod
     def symbol_gbpusd_fxcm() -> Symbol:
-        return Symbol("GBP/USD", Venue("FXCM"))
+        return Symbol("GBP/USD", Venue('FXCM'))
 
     @staticmethod
     def symbol_usdjpy_fxcm() -> Symbol:
-        return Symbol("USD/JPY", Venue("FXCM"))
+        return Symbol("USD/JPY", Venue('FXCM'))
 
     @staticmethod
     def instrument_gbpusd() -> ForexInstrument:
         return ForexInstrument(
-            Symbol("GBP/USD", Venue("FXCM")),
+            Symbol("GBP/USD", Venue('FXCM')),
             price_precision=5,
             size_precision=0,
             min_stop_distance_entry=0,
@@ -72,7 +72,7 @@ class TestStubs:
     @staticmethod
     def instrument_usdjpy() -> ForexInstrument:
         return ForexInstrument(
-            Symbol("USD/JPY", Venue("FXCM")),
+            Symbol("USD/JPY", Venue('FXCM')),
             price_precision=3,
             size_precision=0,
             min_stop_distance_entry=0,
