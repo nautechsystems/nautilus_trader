@@ -897,32 +897,6 @@ cdef class TradingStrategy:
 
         return self._data.bar(bar_type, index)
 
-    cpdef double spread(self, Symbol symbol):
-        """
-        Return the current spread for the given symbol.
-
-        :param symbol: The symbol for the spread to get.
-        :return float.
-        :raises: ValueError: If the data client is not registered.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
-
-        return self._data.spread(symbol)
-
-    cpdef double spread_average(self, Symbol symbol):
-        """
-        Return the average spread of the ticks from the given symbol.
-
-        :param symbol: The symbol for the average spread to get.
-        :return float.
-        :raises ValueError: If the data client is not registered.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
-
-        return self._data.spread_average(symbol)
-
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 
@@ -1353,8 +1327,10 @@ cdef class TradingStrategy:
 
     cpdef void reset(self) except *:
         """
-        Reset the strategy by returning all stateful values to their
-        initial value, the on_reset() implementation is then called.
+        Reset the strategy.
+
+        All stateful values are reset to their initial value, on_reset() is then
+        called.
         Note: The strategy cannot be running otherwise an error is logged.
         """
         if self.is_running:

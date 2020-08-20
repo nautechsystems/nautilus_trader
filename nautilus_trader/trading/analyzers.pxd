@@ -13,22 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
-
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.tick cimport QuoteTick
 
 
-__author__ = "Nautech Systems"
+cdef class SpreadAnalyzer:
+    cdef readonly Symbol symbol
+    cdef readonly int capacity
+    cdef readonly bint initialized
+    cdef readonly double current_spread
+    cdef readonly double average_spread
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 46
-_PATCH_VERSION = 0
-_PRE_RELEASE = ''
+    cdef object _spreads
 
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+    cpdef void update(self, QuoteTick tick) except *
+    cpdef void reset(self)
