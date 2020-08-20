@@ -78,9 +78,9 @@ cdef class Trader:
         Change strategies with the given list of trading strategies.
 
         :param strategies: The list of strategies to load into the trader.
-        :raises ValueError: If the strategies is None.
-        :raises ValueError: If the strategies list is empty.
-        :raises TypeError: If the strategies list contains a type other than TradingStrategy.
+        :raises ValueError: If strategies is None.
+        :raises ValueError: If strategies is empty.
+        :raises TypeError: If strategies contains a type other than TradingStrategy.
         """
         Condition.not_empty(strategies, "strategies")
         Condition.list_type(strategies, TradingStrategy, "strategies")
