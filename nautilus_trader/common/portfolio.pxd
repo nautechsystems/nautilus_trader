@@ -33,7 +33,7 @@ cdef class Portfolio:
     cdef dict _positions_closed
 
     cdef readonly date date_now
-    cdef readonly Currency currency
+    cdef readonly Currency base_currency
     cdef readonly Money daily_pnl_realized
     cdef readonly Money total_pnl_realized
 

@@ -175,7 +175,7 @@ def annualization_factor(period, annualization):
             raise ValueError(
                 "Period cannot be '{}'. "
                 "Can be '{}'.".format(
-                    period, "', '".join(ANNUALIZATION_FACTORS.keys())
+                    period, '', ''.join(ANNUALIZATION_FACTORS.keys())
                 )
             )
     else:

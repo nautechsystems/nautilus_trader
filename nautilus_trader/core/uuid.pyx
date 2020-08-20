@@ -165,43 +165,43 @@ cdef class UUID:
             hex_str = hex_str.replace('urn:', '').replace('uuid:', '')
             hex_str = hex_str.strip('{}').replace('-', '')
             if len(hex_str) != 32:
-                raise ValueError('badly formed hexadecimal UUID string')
+                raise ValueError("badly formed hexadecimal UUID string")
             int_val = int(hex_str, 16)
         if bytes_le is not None:
             if len(bytes_le) != 16:
-                raise ValueError('bytes_le is not a 16-char string')
+                raise ValueError("bytes_le is not a 16-char string")
             bytes_val = (bytes_le[4 - 1::-1] + bytes_le[6 - 1:4 - 1:-1] +  # noqa (W504 line break before binary operator)
                          bytes_le[8 - 1:6 - 1:-1] + bytes_le[8:])
         if bytes_val is not None:
             if len(bytes_val) != 16:
-                raise ValueError('bytes is not a 16-char string')
+                raise ValueError("bytes is not a 16-char string")
             int_val = int.from_bytes(bytes_val, byteorder='big')
         if fields is not None:
             if len(fields) != 6:
-                raise ValueError('fields is not a 6-tuple')
+                raise ValueError("fields is not a 6-tuple")
             (time_low, time_mid, time_hi_version,
              clock_seq_hi_variant, clock_seq_low, node) = fields
             if not 0 <= time_low < 1 << 32:
-                raise ValueError('field 1 out of range (need a 32-bit value)')
+                raise ValueError("field 1 out of range (need a 32-bit value)")
             if not 0 <= time_mid < 1 << 16:
-                raise ValueError('field 2 out of range (need a 16-bit value)')
+                raise ValueError("field 2 out of range (need a 16-bit value)")
             if not 0 <= time_hi_version < 1 << 16:
-                raise ValueError('field 3 out of range (need a 16-bit value)')
+                raise ValueError("field 3 out of range (need a 16-bit value)")
             if not 0 <= clock_seq_hi_variant < 1 << 8:
-                raise ValueError('field 4 out of range (need an 8-bit value)')
+                raise ValueError("field 4 out of range (need an 8-bit value)")
             if not 0 <= clock_seq_low < 1 << 8:
-                raise ValueError('field 5 out of range (need an 8-bit value)')
+                raise ValueError("field 5 out of range (need an 8-bit value)")
             if not 0 <= node < 1 << 48:
-                raise ValueError('field 6 out of range (need a 48-bit value)')
+                raise ValueError("field 6 out of range (need a 48-bit value)")
             clock_seq = (clock_seq_hi_variant << 8) | clock_seq_low
             int_val = ((time_low << 96) | (time_mid << 80) |  # noqa (W504 line break before binary operator)
                        (time_hi_version << 64) | (clock_seq << 48) | node)
 
-        assert 0 <= int_val < 1 << 128, 'int is out of range (need a 128-bit value)'
+        assert 0 <= int_val < 1 << 128, "int is out of range (need a 128-bit value)"
 
         if version != -1:
             if not 1 <= version <= 5:
-                raise ValueError('illegal version number')
+                raise ValueError("illegal version number")
             # Set the variant to RFC 4122
             int_val &= ~(0xc000 << 48)
             int_val |= 0x8000 << 48
@@ -709,7 +709,7 @@ cpdef UUID uuid1(node=None, clock_seq=None):
 cpdef UUID uuid3(UUID namespace_uuid, str name):
     """Generate a UUID from the MD5 hash of a namespace UUID and a name."""
     from hashlib import md5
-    digest = md5(namespace_uuid.bytes + bytes(name, "utf-8")).digest()
+    digest = md5(namespace_uuid.bytes + bytes(name, 'utf-8')).digest()
     return UUID(bytes_val=digest[:16], version=3)
 
 cpdef UUID uuid4():
@@ -719,7 +719,7 @@ cpdef UUID uuid4():
 cpdef UUID uuid5(UUID namespace_uuid, str name):
     """Generate a UUID from the SHA-1 hash of a namespace UUID and a name."""
     from hashlib import sha1
-    hash = sha1(namespace_uuid.bytes + bytes(name, "utf-8")).digest()
+    hash = sha1(namespace_uuid.bytes + bytes(name, 'utf-8')).digest()
     return UUID(bytes_val=hash[:16], version=5)
 
 # The following standard UUIDs are for use with uuid3() or uuid5().

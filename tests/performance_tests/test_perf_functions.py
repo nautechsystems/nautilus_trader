@@ -40,7 +40,7 @@ class FunctionPerformanceTests(unittest.TestCase):
     def test_fast_mean(self):
         result = PerformanceHarness.profile_function(self.fast_mean, 3, 100000)
         # ~85ms (85064μs) minimum of 3 runs @ 100,000 iterations each run.
-        self.assertTrue(result < 0.1)
+        self.assertTrue(result < 0.15)
 
     def test_fast_std(self):
         result = PerformanceHarness.profile_function(self.fast_std, 3, 10000)

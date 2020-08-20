@@ -20,7 +20,6 @@ from cpython.datetime cimport datetime
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.model.tick cimport QuoteTick, TradeTick
@@ -78,8 +77,6 @@ cdef class DataClient:
         self._trade_ticks = {}          # type: {Symbol, [TradeTick]}
         self._quote_tick_handlers = {}  # type: {Symbol, [QuoteTickHandler]}
         self._trade_tick_handlers = {}  # type: {Symbol, [TradeTickHandler]}
-        self._spreads = {}              # type: {Symbol, [float]}
-        self._spreads_avg = {}          # type: {Symbol, float}
         self._bars = {}                 # type: {BarType, [Bar]}
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
@@ -205,18 +202,14 @@ cdef class DataClient:
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
         cdef Symbol symbol = tick.symbol
-        cdef double spread = tick.ask.as_double() - tick.bid.as_double()
 
         # Update ticks and spreads
         ticks = self._quote_ticks.get(symbol)
-        spreads = self._spreads.get(symbol)
 
         if ticks is None:
             # The symbol was not registered
             ticks = deque(maxlen=self.tick_capacity)
-            spreads = deque(maxlen=self.tick_capacity)
             self._quote_ticks[symbol] = ticks
-            self._spreads[symbol] = spreads
 
         cdef int ticks_length = len(ticks)
         if ticks_length > 0 and tick.timestamp <= ticks[0].timestamp:
@@ -225,21 +218,6 @@ cdef class DataClient:
             return  # Tick previously handled
 
         ticks.appendleft(tick)
-        spreads.appendleft(spread)
-
-        # Update average spread
-        cdef double average_spread = self._spreads_avg.get(symbol, -1)
-        if average_spread == -1:
-            average_spread = spread
-
-        cdef double new_average_spread = fast_mean_iterated(
-            values=list(spreads),
-            next_value=spread,
-            current_value=average_spread,
-            expected_length=self.tick_capacity,
-            drop_left=False)
-
-        self._spreads_avg[symbol] = new_average_spread
 
         if not send_to_handlers:
             return
@@ -273,7 +251,6 @@ cdef class DataClient:
         if ticks is None:
             # The symbol was not registered
             ticks = deque(maxlen=self.tick_capacity)
-            spreads = deque(maxlen=self.tick_capacity)
             self._trade_ticks[symbol] = ticks
 
         cdef int ticks_length = len(ticks)
@@ -583,32 +560,6 @@ cdef class DataClient:
 
         return self._bars[bar_type][index]
 
-    cpdef double spread(self, Symbol symbol):
-        """
-        Return the current spread for the given symbol.
-
-        :param symbol: The symbol for the spread to get.
-        :return float.
-        :raises ValueError: If the data clients ticks does not contain the symbol.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._spreads, "symbol", "spreads")
-
-        return self._spreads[symbol][0]
-
-    cpdef double spread_average(self, Symbol symbol):
-        """
-        Return the average spread of the ticks from the given symbol.
-
-        :param symbol: The symbol for the average spread to get.
-        :return float.
-        :raises ValueError: If the data clients ticks does not contain the symbol.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._spreads_avg, "symbol", "spreads_average")
-
-        return self._spreads_avg.get(symbol)
-
     cpdef double get_exchange_rate(
             self,
             Currency from_currency,
@@ -683,7 +634,6 @@ cdef class DataClient:
             # Setup handlers
             self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)  # type: [QuoteTick]
             self._quote_tick_handlers[symbol] = []                        # type: [QuoteTickHandler]
-            self._spreads[symbol] = deque(maxlen=self.tick_capacity)      # type: [float]
             self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
         # Add handler for subscriber
@@ -863,8 +813,6 @@ cdef class DataClient:
         self._clock.cancel_all_timers()
         self._quote_ticks.clear()
         self._quote_tick_handlers.clear()
-        self._spreads.clear()
-        self._spreads_avg.clear()
         self._bar_aggregators.clear()
         self._bar_handlers.clear()
         self._instrument_handlers.clear()

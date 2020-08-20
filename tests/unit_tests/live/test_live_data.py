@@ -53,7 +53,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         self.data_mapper = DataMapper()
         self.data_serializer = BsonDataSerializer()
-
+        self.instrument_serializer = BsonInstrumentSerializer()
         self.header_serializer = MsgPackDictionarySerializer()
         self.request_serializer = MsgPackRequestSerializer()
         self.response_serializer = MsgPackResponseSerializer()
@@ -64,7 +64,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.logger = LiveLogger(level_console=LogLevel.VERBOSE)
 
         self.data_server = MessageServer(
-            server_id=ServerId("DataServer-001"),
+            server_id=ServerId('DataServer-001'),
             recv_port=TEST_DATA_REQ_PORT,
             send_port=TEST_DATA_REP_PORT,
             header_serializer=self.header_serializer,
@@ -74,28 +74,28 @@ class LiveDataClientTests(unittest.TestCase):
             encryption=self.encryption,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=LoggerAdapter("DataServer", self.logger))
+            logger=LoggerAdapter('DataServer', self.logger))
 
         self.data_server_sink = []
         self.data_server.register_request_handler(self.data_server_sink.append)
 
         self.data_publisher = MessagePublisher(
-            server_id=ServerId("DataPublisher-001"),
+            server_id=ServerId('DataPublisher-001'),
             port=TEST_DATA_PUB_PORT,
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=LoggerAdapter("DataPublisher", self.logger))
+            logger=LoggerAdapter('DataPublisher', self.logger))
 
         self.tick_publisher = MessagePublisher(
-            server_id=ServerId("TickPublisher-001"),
+            server_id=ServerId('TickPublisher-001'),
             port=TEST_TICK_PUB_PORT,
             compressor=self.compressor,
             encryption=self.encryption,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=LoggerAdapter("TickPublisher", self.logger))
+            logger=LoggerAdapter('TickPublisher', self.logger))
 
         self.data_server.start()
         self.data_publisher.start()
@@ -104,7 +104,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         self.data_client = LiveDataClient(
             trader_id=TraderId("Tester", "000"),
-            host="127.0.0.1",
+            host='127.0.0.1',
             data_req_port=TEST_DATA_REQ_PORT,
             data_res_port=TEST_DATA_REP_PORT,
             data_pub_port=TEST_DATA_PUB_PORT,
@@ -115,9 +115,13 @@ class LiveDataClientTests(unittest.TestCase):
             request_serializer=self.request_serializer,
             response_serializer=self.response_serializer,
             data_serializer=self.data_serializer,
+            instrument_serializer=self.instrument_serializer,
+            tick_capacity=1000,
+            bar_capacity=1000,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
+
         self.data_client.connect()
         time.sleep(0.1)
 
@@ -371,7 +375,7 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         self.data_client.connect()
-        self.data_client.request_instruments(Venue("FXCM"), data_receiver.store)
+        self.data_client.request_instruments(Venue('FXCM'), data_receiver.store)
 
         time.sleep(0.1)
 

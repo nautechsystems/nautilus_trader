@@ -149,7 +149,7 @@ cdef class Order:
         self.filled_quantity = Quantity.zero()
         self.filled_timestamp = None        # Can be None
         self.average_price = None           # Can be None
-        self.slippage = Decimal64.zero()
+        self.slippage = Decimal64()
         self.state = OrderState.INITIALIZED
         self.init_id = init_id
         self.is_buy = self.side == OrderSide.BUY

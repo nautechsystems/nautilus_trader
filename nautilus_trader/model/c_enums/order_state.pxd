@@ -32,57 +32,57 @@ cpdef enum OrderState:
 
 cdef inline str order_state_to_string(int value):
     if value == 1:
-        return "INITIALIZED"
+        return 'INITIALIZED'
     elif value == 2:
-        return "INVALID"
+        return 'INVALID'
     elif value == 3:
-        return "DENIED"
+        return 'DENIED'
     elif value == 4:
-        return "SUBMITTED"
+        return 'SUBMITTED'
     elif value == 5:
-        return "ACCEPTED"
+        return 'ACCEPTED'
     elif value == 6:
-        return "REJECTED"
+        return 'REJECTED'
     elif value == 7:
-        return "WORKING"
+        return 'WORKING'
     elif value == 8:
-        return "CANCELLED"
+        return 'CANCELLED'
     elif value == 9:
-        return "EXPIRED"
+        return 'EXPIRED'
     elif value == 10:
-        return "OVER_FILLED"
+        return 'OVER_FILLED'
     elif value == 11:
-        return "PARTIALLY_FILLED"
+        return 'PARTIALLY_FILLED'
     elif value == 12:
-        return "FILLED"
+        return 'FILLED'
     else:
-        return "UNDEFINED"
+        return 'UNDEFINED'
 
 
 cdef inline OrderState order_state_from_string(str value):
-    if value == "INITIALIZED":
+    if value == 'INITIALIZED':
         return OrderState.INITIALIZED
-    elif value == "INVALID":
+    elif value == 'INVALID':
         return OrderState.INVALID
-    elif value == "DENIED":
+    elif value == 'DENIED':
         return OrderState.DENIED
-    elif value == "SUBMITTED":
+    elif value == 'SUBMITTED':
         return OrderState.SUBMITTED
-    elif value == "ACCEPTED":
+    elif value == 'ACCEPTED':
         return OrderState.ACCEPTED
-    elif value == "REJECTED":
+    elif value == 'REJECTED':
         return OrderState.REJECTED
-    elif value == "WORKING":
+    elif value == 'WORKING':
         return OrderState.WORKING
-    elif value == "CANCELLED":
+    elif value == 'CANCELLED':
         return OrderState.CANCELLED
-    elif value == "EXPIRED":
+    elif value == 'EXPIRED':
         return OrderState.EXPIRED
-    elif value == "OVER_FILLED":
+    elif value == 'OVER_FILLED':
         return OrderState.OVER_FILLED
-    elif value == "PARTIALLY_FILLED":
+    elif value == 'PARTIALLY_FILLED':
         return OrderState.PARTIALLY_FILLED
-    elif value == "FILLED":
+    elif value == 'FILLED':
         return OrderState.FILLED
     else:
         return OrderState.UNDEFINED

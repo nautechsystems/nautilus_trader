@@ -46,9 +46,9 @@ cdef class Portfolio:
         self._positions_open = {}    # type: [Symbol, {PositionId, Position}]
         self._positions_closed = {}  # type: [Symbol, {PositionId, Position}]
 
-        self.currency = Currency.USD  # Default
-        self.daily_pnl_realized = Money(0, self.currency)
-        self.total_pnl_realized = Money(0, self.currency)
+        self.base_currency = Currency.USD  # Default
+        self.daily_pnl_realized = Money(0, self.base_currency)
+        self.total_pnl_realized = Money(0, self.base_currency)
         self.date_now = self._clock.time_now().date()
 
     cpdef void set_base_currency(self, Currency currency) except *:
@@ -57,7 +57,7 @@ cdef class Portfolio:
 
         :param currency: The base currency to set.
         """
-        self.currency = currency
+        self.base_currency = currency
 
     cpdef void update(self, PositionEvent event) except *:
         """
@@ -86,9 +86,9 @@ cdef class Portfolio:
 
         self._positions_open.clear()
         self._positions_closed.clear()
-        self.currency = Currency.USD  # Default
-        self.daily_pnl_realized = Money(0, self.currency)
-        self.total_pnl_realized = Money(0, self.currency)
+        self.base_currency = Currency.USD  # Default
+        self.daily_pnl_realized = Money(0, self.base_currency)
+        self.total_pnl_realized = Money(0, self.base_currency)
         self.date_now = self._clock.time_now().date()
 
         self._log.info("Reset.")
@@ -193,8 +193,10 @@ cdef class Portfolio:
 
         if position.entry_direction != fill_event.order_side:
             # Increment PNL
-            self.daily_pnl_realized = self.daily_pnl_realized.add(position.realized_pnl_last)
-            self.total_pnl_realized = self.total_pnl_realized.add(position.realized_pnl_last)
+            pass
+            # TODO: Handle multiple currencies
+            # self.daily_pnl_realized = self.daily_pnl_realized.add(position.realized_pnl_last)
+            # self.total_pnl_realized = self.total_pnl_realized.add(position.realized_pnl_last)
 
     cdef void _handle_position_closed(self, PositionClosed event) except *:
         cdef Position position = event.position
@@ -223,5 +225,6 @@ cdef class Portfolio:
             positions_closed[position.id] = position
 
         # Increment PNL
-        self.daily_pnl_realized = self.daily_pnl_realized.add(position.realized_pnl)
-        self.total_pnl_realized = self.total_pnl_realized.add(position.realized_pnl)
+        # TODO: Handle multiple currencies
+        # self.daily_pnl_realized = self.daily_pnl_realized.add(position.realized_pnl)
+        # self.total_pnl_realized = self.total_pnl_realized.add(position.realized_pnl)

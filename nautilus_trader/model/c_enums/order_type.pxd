@@ -25,29 +25,29 @@ cpdef enum OrderType:
 
 cdef inline str order_type_to_string(int value):
     if value == 1:
-        return "MARKET"
+        return 'MARKET'
     elif value == 2:
-        return "LIMIT"
+        return 'LIMIT'
     elif value == 3:
-        return "STOP"
+        return 'STOP'
     elif value == 4:
-        return "STOP_LIMIT"
+        return 'STOP_LIMIT'
     elif value == 5:
-        return "MIT"
+        return 'MIT'
     else:
-        return "UNDEFINED"
+        return 'UNDEFINED'
 
 
 cdef inline OrderType order_type_from_string(str value):
-    if value == "MARKET":
+    if value == 'MARKET':
         return OrderType.MARKET
-    elif value == "LIMIT":
+    elif value == 'LIMIT':
         return OrderType.LIMIT
-    elif value == "STOP":
+    elif value == 'STOP':
         return OrderType.STOP
-    elif value == "STOP_LIMIT":
+    elif value == 'STOP_LIMIT':
         return OrderType.STOP_LIMIT
-    elif value == "MIT":
+    elif value == 'MIT':
         return OrderType.MIT
     else:
         return OrderType.UNDEFINED

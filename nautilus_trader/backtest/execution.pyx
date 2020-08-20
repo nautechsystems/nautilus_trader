@@ -81,7 +81,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param clock: The clock for the component.
         :param uuid_factory: The UUID factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the instruments list contains a type other than Instrument.
+        :raises ValueError: If instruments contains a type other than Instrument.
         """
         Condition.dict_types(instruments, Symbol, Instrument, "instruments")
         super().__init__(exec_engine, logger)
@@ -214,7 +214,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money(0, self.account_currency),
             Money(0, self.account_currency),
             Money(0, self.account_currency),
-            Decimal64.zero(),
+            Decimal64(),
             ValidString("N"),
             self._uuid_factory.generate(),
             self._clock.time_now())
@@ -387,7 +387,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 self.account_cash_activity_day,
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal64.zero(),
+                margin_ratio=Decimal64(),
                 margin_call_status=ValidString("N"),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
@@ -475,7 +475,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 self.account_cash_activity_day,
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal64.zero(),
+                margin_ratio=Decimal64(),
                 margin_call_status=ValidString("N"),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())

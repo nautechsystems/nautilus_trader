@@ -24,9 +24,6 @@ cdef class Decimal64:
     cdef bint _ne_eps_delta(self, double value1, double value2)
 
     @staticmethod
-    cdef Decimal64 zero()
-
-    @staticmethod
     cdef Decimal64 from_string_to_decimal(str value)
 
     @staticmethod

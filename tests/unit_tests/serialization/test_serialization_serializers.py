@@ -801,7 +801,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(OrderId("O-123456"), result.order_id)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.submitted_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -822,7 +822,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
         self.assertEqual(Label("TEST_ORDER"), result.label)
@@ -873,8 +873,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
-        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
         self.assertEqual(Label("E"), result.label)
         self.assertEqual(OrderType.STOP, result.order_type)
         self.assertEqual(Quantity(100000), result.quantity)
@@ -906,8 +906,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
-        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
         self.assertEqual(Label("E"), result.label)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(OrderType.STOP, result.order_type)
@@ -936,7 +936,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderCancelled))
         self.assertEqual(OrderId("O-123456"), result.order_id)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.cancelled_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -959,7 +959,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(OrderId("O-123456"), result.order_id)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual("REJECT_RESPONSE?", result.rejected_response_to.value)
         self.assertEqual("ORDER_NOT_FOUND", result.rejected_reason.value)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.rejected_time)
@@ -985,7 +985,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(Price(2, 1), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.modified_time)
         self.assertTrue(isinstance(result.id, UUID))
@@ -1008,7 +1008,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderExpired))
         self.assertEqual(OrderId("O-123456"), result.order_id)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.expired_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -1033,10 +1033,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
         self.assertEqual(OrderId("O-123456"), result.order_id)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(ExecutionId("E123456"), result.execution_id)
         self.assertEqual(PositionIdBroker("P123456"), result.position_id_broker)
-        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
+        self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
         self.assertEqual(840, result.quote_currency)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(50000), result.filled_quantity)
@@ -1065,10 +1065,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderFilled))
         self.assertEqual(OrderId("O-123456"), result.order_id)
-        self.assertEqual(AccountId("FXCM", "02851908", AccountType.DEMO), result.account_id)
+        self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(ExecutionId("E123456"), result.execution_id)
         self.assertEqual(PositionIdBroker("P123456"), result.position_id_broker)
-        self.assertEqual(Symbol("AUDUSD", Venue("FXCM")), result.symbol)
+        self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
         self.assertEqual(840, result.quote_currency)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)
@@ -1084,7 +1084,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         serializer = BsonInstrumentSerializer()
 
         instrument = Instrument(
-            symbol=Symbol("AUDUSD", Venue("FXCM")),
+            symbol=Symbol("AUDUSD", Venue('FXCM')),
             quote_currency=Currency.USD,
             security_type=SecurityType.FOREX,
             price_precision=5,
@@ -1266,7 +1266,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         # Arrange
         query = {
             "DataType": "Instrument[]",
-            "Symbol": "FXCM",
+            "Symbol": 'FXCM',
         }
 
         request = DataRequest(

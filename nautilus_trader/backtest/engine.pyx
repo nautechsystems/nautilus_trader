@@ -61,7 +61,7 @@ cdef class BacktestEngine:
         :param config: The optional configuration for the backtest engine (if None will be default).
         :param fill_model: The optional initial fill model for the backtest engine
         (if None then no probabilistic fills).
-        :raises TypeError: If the strategies list contains a type other than TradingStrategy.
+        :raises TypeError: If strategies contains a type other than TradingStrategy.
         """
         if config is None:
             config = BacktestConfig()

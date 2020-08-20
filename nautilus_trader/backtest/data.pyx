@@ -71,7 +71,7 @@ cdef class BacktestDataContainer:
 
         :param symbol: The symbol for the tick data.
         :param data: The tick data to add.
-        :raises TypeError: If the data is a type other than DataFrame.
+        :raises TypeError: If data is a type other than DataFrame.
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(data, "data")
@@ -89,7 +89,7 @@ cdef class BacktestDataContainer:
         :param structure: The bar structure of the data.
         :param price_type: The price type of the data.
         :param data: The bar data to add.
-        :raises TypeError: If the data is a type other than DataFrame.
+        :raises TypeError: If data is a type other than DataFrame.
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(data, "data")
@@ -364,8 +364,8 @@ cdef class BacktestDataClient(DataClient):
         :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
-        :raises ValueError: If the limit is negative (< 0).
-        :raises TypeError: If the callback is not of type callable.
+        :raises ValueError: If limit is negative (< 0).
+        :raises TypeError: If callback is not of type callable.
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
@@ -388,8 +388,8 @@ cdef class BacktestDataClient(DataClient):
         :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
-        :raises ValueError: If the limit is negative (< 0).
-        :raises TypeError: If the callback is not of type callable.
+        :raises ValueError: If limit is negative (< 0).
+        :raises TypeError: If callback is not of type callable.
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
@@ -412,8 +412,8 @@ cdef class BacktestDataClient(DataClient):
         :param to_datetime: The to datetime for the request.
         :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
         :param callback: The callback for the response.
-        :raises ValueError: If the limit is negative (< 0).
-        :raises TypeError: If the callback is not of type callable.
+        :raises ValueError: If limit is negative (< 0).
+        :raises TypeError: If callback is not of type callable.
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(limit, "limit")
@@ -427,7 +427,7 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
-        :raises TypeError: If the callback is not of type callable.
+        :raises TypeError: If callback is not of type callable.
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable(callback, "callback")
@@ -442,7 +442,7 @@ cdef class BacktestDataClient(DataClient):
 
         :param venue: The venue for the request.
         :param callback: The callback for the response.
-        :raises TypeError: If the callback is not of type callable.
+        :raises TypeError: If callback is not of type callable.
         """
         Condition.callable(callback, "callback")
 
@@ -456,8 +456,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type callable.
+        :raises ValueError: If symbol is not a key in data_providers.
+        :raises TypeError: If handler is not of type callable.
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
@@ -470,8 +470,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type callable.
+        :raises ValueError: If symbol is not a key in data_providers.
+        :raises TypeError: If handler is not of type callable.
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
@@ -484,8 +484,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type callable or None.
+        :raises ValueError: If symbol is not a key in data_providers.
+        :raises TypeError: If handler is not of type callable or None.
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.callable_or_none(handler, "handler")
@@ -498,7 +498,7 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The instrument symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises TypeError: If the handler is not of type callable or None.
+        :raises TypeError: If handler is not of type callable or None.
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable_or_none(handler, "handler")
@@ -513,8 +513,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type callable or None.
+        :raises ValueError: If symbol is not a key in data_providers.
+        :raises TypeError: If handler is not of type callable or None.
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable_or_none(handler, "handler")
@@ -527,8 +527,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type callable or None.
+        :raises ValueError: If symbol is not a key in data_providers.
+        :raises TypeError: If handler is not of type callable or None.
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable_or_none(handler, "handler")
@@ -541,8 +541,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises TypeError: If the handler is not of type callable or None.
+        :raises ValueError: If symbol is not a key in data_providers.
+        :raises TypeError: If handler is not of type callable or None.
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.callable_or_none(handler, "handler")
@@ -555,7 +555,7 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The instrument symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises TypeError: If the handler is not of type Callable.
+        :raises TypeError: If handler is not of type Callable.
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable_or_none(handler, "handler")

@@ -40,8 +40,8 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.strategies import TestStrategy1
 
-USDJPY_FXCM = Symbol("USD/JPY", Venue("FXCM"))
-AUDUSD_FXCM = Symbol("AUD/USD", Venue("FXCM"))
+USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
+AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
 
 
 class TradeStrategyTests(unittest.TestCase):
@@ -67,7 +67,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        trader_id = TraderId("TESTER", "000")
+        trader_id = TraderId('TESTER', '000')
         account_id = TestStubs.account_id()
 
         self.exec_db = InMemoryExecutionDatabase(
