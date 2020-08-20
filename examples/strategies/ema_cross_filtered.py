@@ -24,8 +24,8 @@ from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, Time
 from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.trading.filters import ForexSession
-from nautilus_trader.trading.filters import ForexSessionFilter, EconomicNewsEventFilter
+from nautilus_trader.trading.analyzers import SpreadAnalyzer
+from nautilus_trader.trading.filters import ForexSession, ForexSessionFilter, EconomicNewsEventFilter
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
 
@@ -83,6 +83,7 @@ class EMACrossFiltered(TradingStrategy):
         self.SL_buffer = 0.0        # instrument.tick_size * 10
         self.SL_atr_multiple = sl_atr_multiple
 
+        self.spread_analyzer = SpreadAnalyzer(self.symbol, 100)
         self.position_sizer = None  # initialized in on_start()
         self.quote_currency = None  # initialized in on_start()
 
@@ -160,7 +161,7 @@ class EMACrossFiltered(TradingStrategy):
         :param tick: The quote tick received.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
-        pass
+        self.spread_analyzer.update(tick)
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -205,12 +206,12 @@ class EMACrossFiltered(TradingStrategy):
             return  # Wait for ticks...
 
         # Check average spread
-        average_spread = self.spread_average(self.symbol)
+        average_spread = self.spread_analyzer.average_spread
         if average_spread == 0.0:
             self.log.warning(f"average_spread == {average_spread} (not initialized).")
             return  # Protect divide by zero
 
-        spread_buffer = max(average_spread, self.spread(self.symbol))
+        spread_buffer = max(average_spread, self.spread_analyzer.current_spread)
         sl_buffer = self.atr.value * self.SL_atr_multiple
 
         # Check liquidity
