@@ -70,7 +70,7 @@ cdef class TradingStrategy:
         :param uuid_factory: The UUID factory for the strategy (can be None, default=LiveUUIDFactory).
         :param logger: The logger for the strategy (can be None).
         :param reraise_exceptions: If exceptions raised in handling methods should be re-raised.
-        :raises ValueError: If the order_id_tag is not a valid string.
+        :raises ValueError: If order_id_tag is not a valid string.
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
@@ -313,7 +313,7 @@ cdef class TradingStrategy:
         :param data_source: The data source for updates.
         :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
-        :raises ValueError: If the update_method is not of type callable.
+        :raises ValueError: If update_method is not of type callable.
         """
         Condition.not_none(data_source, "data_source")
         Condition.not_none(indicator, "indicator")
@@ -587,7 +587,7 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol of the instrument to return.
         :return Instrument or None.
-        :raises ValueError: If strategy has not been registered with a data client.
+        :raises ValueError: If the strategy has not been registered with a data client.
         """
         if self._data is None:
             self.log.error("Cannot get instrument (data client not registered).")
@@ -960,7 +960,7 @@ cdef class TradingStrategy:
 
         :param market_position: The market position to flatten.
         :return OrderSide.
-        :raises ValueError: If the given market position is FLAT.
+        :raises ValueError: If market_position is FLAT.
         """
         if market_position == MarketPosition.LONG:
             return OrderSide.SELL
@@ -982,7 +982,7 @@ cdef class TradingStrategy:
         :param price_type: The price type for the exchange rate (default=MID).
         :return float.
         :raises ValueError: If the data client is not registered.
-        :raises ValueError: If the price_type is UNDEFINED or LAST.
+        :raises ValueError: If price_type is UNDEFINED or LAST.
         """
         Condition.not_none(self._data, "data client")
 
@@ -1003,7 +1003,7 @@ cdef class TradingStrategy:
         :param price_type: The price type for the exchange rate (default=MID).
         :return float.
         :raises ValueError: If the data client is not registered.
-        :raises ValueError: If the price_type is UNDEFINED or LAST.
+        :raises ValueError: If price_type is UNDEFINED or LAST.
         """
         Condition.not_none(self._data, "data client")
 

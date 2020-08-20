@@ -81,7 +81,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param clock: The clock for the component.
         :param uuid_factory: The UUID factory for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the instruments list contains a type other than Instrument.
+        :raises ValueError: If instruments contains a type other than Instrument.
         """
         Condition.dict_types(instruments, Symbol, Instrument, "instruments")
         super().__init__(exec_engine, logger)

@@ -153,7 +153,7 @@ cdef class RolloverInterestCalculator:
         :param symbol: The forex currency symbol for the calculation.
         :param date: The date for the overnight rate.
         :return: double.
-        :raises ValueError: If the symbol.code length is not in range [6, 7].
+        :raises ValueError: If symbol.code length is not in range [6, 7].
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(date, "timestamp")
