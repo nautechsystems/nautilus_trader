@@ -629,7 +629,7 @@ cdef class BarAggregator:
 
     cpdef void update(self, QuoteTick tick) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void _handle_bar(self, Bar bar) except *:
         self._handler.handle(self.bar_type, bar)

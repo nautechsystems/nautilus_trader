@@ -1280,18 +1280,23 @@ cdef class TradingStrategy:
             self.log.error("Cannot start strategy (the execution engine is not registered).")
             return
 
+        self.is_running = True
+
         try:
             self.on_start()
         except Exception as ex:
             self.log.exception(ex)
 
-        self.is_running = True
         self.log.info(f"Running...")
 
     cpdef void stop(self) except *:
         """
         Stop the trade strategy and call on_stop().
         """
+        if not self.is_running:
+            self.log.error(f"Cannot stop a strategy which isn't running.")
+            return
+
         self.log.debug(f"Stopping...")
 
         # Clean up clock

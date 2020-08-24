@@ -150,7 +150,11 @@ cdef class Trader:
 
         self._log.debug("Stopping...")
         for strategy in self.strategies:
-            strategy.stop()
+            if strategy.is_running:
+                self._log.info(f"{strategy} stopping...")
+                strategy.stop()
+            else:
+                self._log.warning(f"{strategy} already stopped.")
 
         self.is_running = False
         self._log.info("Stopped.")

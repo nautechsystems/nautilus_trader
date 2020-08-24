@@ -107,7 +107,7 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
         :param tick: The tick to run the algorithm with.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef TrailingStopSignal calculate_sell(self, Tick tick):
         """
@@ -116,7 +116,7 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
         :param tick: The tick to run the algorithm with.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
@@ -156,7 +156,7 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
         :param bar: The bar to run the algorithm with.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef TrailingStopSignal calculate_sell(self, Bar bar):
         """
@@ -165,7 +165,7 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
         :param bar: The bar to run the algorithm with.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class BarsBackTrail(BarTrailingStopAlgorithm):
