@@ -16,21 +16,26 @@
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.model.identifiers import IdTag, TraderId, StrategyId
-from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
-from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
+from nautilus_trader.backtest.data import BacktestDataClient
+from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.data import BacktestDataContainer, BacktestDataClient
+from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.execution import ExecutionEngine
+from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.trader import Trader
+from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.data import TestDataProvider
 
 USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 

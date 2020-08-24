@@ -15,9 +15,13 @@
 
 import unittest
 
-from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.bar import BarSpecification, BarType, Bar
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()

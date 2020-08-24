@@ -13,17 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-import unittest
 from datetime import datetime
+import unittest
 
-from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.common.logging import TestLogger
+import pytz
+
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.data import DataClient
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()

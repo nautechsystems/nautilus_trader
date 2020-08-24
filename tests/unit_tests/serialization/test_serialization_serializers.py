@@ -13,45 +13,82 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-import unittest
+from base64 import b64decode
+from base64 import b64encode
 from datetime import datetime
-from base64 import b64encode, b64decode
+import unittest
 
-from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.core.uuid import UUID, uuid4
-from nautilus_trader.core.types import ValidString, Label
-from nautilus_trader.model.identifiers import IdTag, OrderId, OrderIdBroker, ExecutionId
-from nautilus_trader.model.identifiers import PositionId, PositionIdBroker, StrategyId, AccountId
-from nautilus_trader.model.enums import OrderSide, OrderType, OrderPurpose, TimeInForce, Currency
-from nautilus_trader.model.enums import AccountType, SecurityType
-from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.commands import AccountInquiry, SubmitOrder, SubmitBracketOrder
-from nautilus_trader.model.commands import ModifyOrder, CancelOrder
-from nautilus_trader.model.events import AccountStateEvent, OrderInitialized, OrderInvalid
-from nautilus_trader.model.events import OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
-from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
-from nautilus_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.model.order import Order
+import pytz
+
+from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import LogMessage, LogLevel
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogMessage
+from nautilus_trader.core.decimal import Decimal64
+from nautilus_trader.core.types import Label
+from nautilus_trader.core.types import ValidString
+from nautilus_trader.core.uuid import UUID
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.commands import AccountInquiry
+from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import ModifyOrder
+from nautilus_trader.model.commands import SubmitBracketOrder
+from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import OrderPurpose
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import SecurityType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCancelReject
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderInvalid
+from nautilus_trader.model.events import OrderModified
+from nautilus_trader.model.events import OrderPartiallyFilled
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import OrderIdBroker
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order import Order
+from nautilus_trader.network.identifiers import ClientId
+from nautilus_trader.network.identifiers import ServerId
+from nautilus_trader.network.identifiers import SessionId
+from nautilus_trader.network.messages import Connect
+from nautilus_trader.network.messages import Connected
+from nautilus_trader.network.messages import DataRequest
+from nautilus_trader.network.messages import DataResponse
+from nautilus_trader.network.messages import Disconnect
+from nautilus_trader.network.messages import Disconnected
 from nautilus_trader.serialization.base import Serializer
-from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
-from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
-from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
-from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
+from nautilus_trader.serialization.data import BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.serialization.serializers import MsgPackLogSerializer
-from nautilus_trader.serialization.data import BsonInstrumentSerializer
-from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
-from nautilus_trader.network.messages import Connect, Connected, Disconnect, Disconnected
-from nautilus_trader.network.messages import DataRequest, DataResponse
-
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
+from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
+from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

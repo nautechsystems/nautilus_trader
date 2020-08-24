@@ -17,9 +17,12 @@ import unittest
 
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.identifiers import MatchId
-from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.model.tick import QuoteTick, TradeTick
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

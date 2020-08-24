@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -25,7 +26,6 @@ from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol, IdTag
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.model.order cimport Order, BracketOrder
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 
@@ -38,8 +38,8 @@ cdef class OrderFactory:
     def __init__(self,
                  IdTag id_tag_trader not None,
                  IdTag id_tag_strategy not None,
-                 Clock clock not None=LiveClock(),
-                 UUIDFactory uuid_factory not None=LiveUUIDFactory(),
+                 Clock clock=None,
+                 UUIDFactory uuid_factory=None,
                  int initial_count=0):
         """
         Initialize a new instance of the OrderFactory class.
@@ -49,6 +49,10 @@ cdef class OrderFactory:
         :param clock: The clock for the component.
         :raises ValueError: If initial_count is negative (< 0).
         """
+        if clock is None:
+            clock = LiveClock()
+        if uuid_factory is None:
+            uuid_factory = LiveUUIDFactory()
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
@@ -61,7 +65,7 @@ cdef class OrderFactory:
 
     cpdef int count(self):
         """
-        System Method: Return the internal order_id generator count.
+        Return the internal order_id generator count.
 
         :return: int.
         """

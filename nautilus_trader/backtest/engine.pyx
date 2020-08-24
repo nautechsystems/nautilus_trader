@@ -20,15 +20,17 @@ import pytz
 import psutil
 from cpython.datetime cimport datetime
 
+from nautilus_trader.backtest.clock cimport TestClock
+from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_timestamp, format_iso8601
 from nautilus_trader.core.functions cimport format_bytes, pad_string, get_size_of
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
-from nautilus_trader.common.clock cimport TestClock, TimeEventHandler
-from nautilus_trader.common.uuid cimport TestUUIDFactory
-from nautilus_trader.common.logging cimport LogLevel, LoggerAdapter, TestLogger, nautilus_header
+from nautilus_trader.common.timer cimport TimeEventHandler
+from nautilus_trader.common.logging cimport LogLevel, LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer

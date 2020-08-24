@@ -13,13 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import redis
 import threading
 import unittest
 
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
-from nautilus_trader.common.logging import LogMessage, LogLevel
+import redis
+
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogMessage
 from nautilus_trader.live.logging import LogStore
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = Symbol("AUD/USD", Venue('FXCM'))

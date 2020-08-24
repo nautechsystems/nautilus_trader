@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 from collections import deque
+import unittest
 
 from tests.test_kit.performance import PerformanceHarness
 

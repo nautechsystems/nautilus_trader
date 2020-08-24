@@ -13,25 +13,36 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
+from datetime import datetime
+from datetime import timedelta
 import unittest
-from pandas import Timestamp
-from datetime import datetime, timedelta
 
-from nautilus_trader.model.enums import PriceType, BarStructure
-from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.bar import Bar, BarSpecification, BarType
-from nautilus_trader.common.market import TickDataWrangler, BarDataWrangler, IndicatorUpdater
-from nautilus_trader.common.market import BarBuilder, TickBarAggregator, TimeBarAggregator
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from pandas import Timestamp
+import pytz
+
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.common.market import BarBuilder
+from nautilus_trader.common.market import BarDataWrangler
+from nautilus_trader.common.market import IndicatorUpdater
+from nautilus_trader.common.market import TickBarAggregator
+from nautilus_trader.common.market import TickDataWrangler
+from nautilus_trader.common.market import TimeBarAggregator
+from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
-from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.data import TestDataProvider
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.mocks import ObjectStorer
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

@@ -22,6 +22,8 @@ import pandas as pd
 from cpython.datetime cimport datetime
 from pandas import DatetimeIndex
 
+from nautilus_trader.backtest.clock cimport TestClock
+from nautilus_trader.backtest.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.functions cimport get_size_of, format_bytes
@@ -32,8 +34,7 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.identifiers cimport Symbol, Venue
-from nautilus_trader.common.clock cimport TimeEventHandler, TestClock
-from nautilus_trader.common.uuid cimport TestUUIDFactory
+from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport TickDataWrangler

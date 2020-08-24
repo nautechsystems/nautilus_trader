@@ -14,22 +14,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 from datetime import datetime
 
-from nautilus_trader.model.enums import BarStructure, Currency, PriceType
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.backtest.data import BacktestDataContainer
-from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-
-from tests.test_kit.data import TestDataProvider
-from tests.test_kit.stubs import TestStubs
+import pandas as pd
 
 from examples.strategies.ema_cross import EMACross
-
+from nautilus_trader.backtest.config import BacktestConfig
+from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import PriceType
+from tests.test_kit.data import TestDataProvider
+from tests.test_kit.stubs import TestStubs
 
 if __name__ == "__main__":
     USDJPY = TestStubs.instrument_usdjpy()

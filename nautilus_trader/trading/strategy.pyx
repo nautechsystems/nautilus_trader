@@ -41,8 +41,6 @@ from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.factories cimport LiveUUIDFactory
 
 
 cdef class TradingStrategy:
@@ -51,13 +49,13 @@ cdef class TradingStrategy:
     """
 
     def __init__(self,
+                 Clock clock not None,
+                 UUIDFactory uuid_factory not None,
+                 Logger logger not None,
                  str order_id_tag not None="000",
                  bint flatten_on_stop=True,
                  bint flatten_on_sl_reject=True,
                  bint cancel_all_orders_on_stop=True,
-                 Clock clock=None,
-                 UUIDFactory uuid_factory=None,
-                 Logger logger=None,
                  bint reraise_exceptions=True):
         """
         Initialize a new instance of the TradingStrategy class.
@@ -79,11 +77,7 @@ cdef class TradingStrategy:
         self.trader_id = None  # Initialized when registered with a trader
 
         # Components
-        if clock is None:
-            clock = LiveClock()
         self.clock = clock
-        if uuid_factory is None:
-            uuid_factory = LiveUUIDFactory()
         self.uuid_factory = uuid_factory
         self.log = LoggerAdapter(self.id.value, logger)
 

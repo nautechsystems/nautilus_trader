@@ -13,25 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
+from datetime import datetime
+from datetime import timedelta
 import unittest
-from datetime import datetime, timedelta
 
-from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.enums import OrderSide, MarketPosition, Currency
-from nautilus_trader.model.objects import Price, Quantity, Money
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.identifiers import (
-    IdTag,
-    OrderId,
-    PositionId,
-    ExecutionId,
-    PositionIdBroker)
-from nautilus_trader.model.position import Position
-from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
+import pytz
+
+from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.clock import TestClock
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import MarketPosition
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderPartiallyFilled
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
+from nautilus_trader.model.tick import QuoteTick
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

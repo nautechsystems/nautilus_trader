@@ -15,13 +15,18 @@
 
 from datetime import timedelta
 
+from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import OrderPurpose
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.bar import Bar, BarType, BarSpecification
-from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
-from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.trading.analyzers import SpreadAnalyzer
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy

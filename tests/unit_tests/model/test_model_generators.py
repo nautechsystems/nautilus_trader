@@ -15,9 +15,12 @@
 
 import unittest
 
-from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId
-from nautilus_trader.model.generators import OrderIdGenerator, PositionIdGenerator
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.model.generators import OrderIdGenerator
+from nautilus_trader.model.generators import PositionIdGenerator
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import PositionId
 
 
 class OrderIdGeneratorTests(unittest.TestCase):

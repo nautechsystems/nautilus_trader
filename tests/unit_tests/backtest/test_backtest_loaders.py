@@ -15,9 +15,10 @@
 
 import unittest
 
-from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.backtest.loaders import InstrumentLoader
+from nautilus_trader.core.decimal import Decimal64
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 
 
 class BacktestLoadersTests(unittest.TestCase):

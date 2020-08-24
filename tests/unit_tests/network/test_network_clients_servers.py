@@ -13,23 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 import time
+import unittest
+
 import zmq
 
-from nautilus_trader.core.message import MessageType
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.network.node_clients import MessageClient, MessageSubscriber
-from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
-from nautilus_trader.network.compression import BypassCompressor
-from nautilus_trader.network.encryption import EncryptionSettings
-from nautilus_trader.network.identifiers import ClientId, ServerId, SessionId
-from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
-from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
+from nautilus_trader.core.message import MessageType
 from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.live.factories import LiveUUIDFactory
 from nautilus_trader.live.logging import LiveLogger
+from nautilus_trader.network.compression import BypassCompressor
+from nautilus_trader.network.encryption import EncryptionSettings
+from nautilus_trader.network.identifiers import ClientId
+from nautilus_trader.network.identifiers import ServerId
+from nautilus_trader.network.identifiers import SessionId
+from nautilus_trader.network.node_clients import MessageClient
+from nautilus_trader.network.node_clients import MessageSubscriber
+from nautilus_trader.network.node_servers import MessagePublisher
+from nautilus_trader.network.node_servers import MessageServer
+from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
+from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
+from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import UNIX_EPOCH
 

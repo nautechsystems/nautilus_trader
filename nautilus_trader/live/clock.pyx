@@ -18,7 +18,7 @@ from cpython.datetime cimport datetime, timedelta
 from threading import Timer as TimerThread
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 
 

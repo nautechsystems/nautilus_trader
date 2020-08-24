@@ -13,22 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
+from cpython.datetime cimport datetime, timedelta
 
-import os
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.message cimport Event
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+cdef class TimeEvent(Event):
+    cdef readonly str name
 
 
-__author__ = "Nautech Systems"
+cdef class TimeEventHandler:
+    cdef readonly TimeEvent event
+    cdef readonly object handler
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 47
-_PATCH_VERSION = 0
-_PRE_RELEASE = ''
+    cdef void handle(self) except *
 
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+
+cdef class Timer:
+    cdef readonly str name
+    cdef readonly object callback
+    cdef readonly timedelta interval
+    cdef readonly datetime start_time
+    cdef readonly datetime next_time
+    cdef readonly datetime stop_time
+    cdef readonly expired
+
+    cpdef TimeEvent pop_event(self, UUID event_id)
+    cpdef void iterate_next_time(self, datetime now) except *
+    cpdef void cancel(self) except *

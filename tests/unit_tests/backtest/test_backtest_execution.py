@@ -13,26 +13,31 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 import unittest
 
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.common.data import DataClient
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
-from nautilus_trader.trading.strategy import TradingStrategy
+import pandas as pd
+
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
-from tests.test_kit.strategies import TestStrategy1
+from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.data import DataClient
+from nautilus_trader.common.execution import ExecutionEngine
+from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderModified
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from tests.test_kit.data import TestDataProvider
+from tests.test_kit.strategies import TestStrategy1
 from tests.test_kit.stubs import TestStubs
 
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
@@ -98,7 +103,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
     def test_can_account_collateral_inquiry(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.exec_engine.register_strategy(strategy)
 
         # Act
