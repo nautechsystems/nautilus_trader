@@ -15,29 +15,38 @@
 
 import unittest
 
-from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.core.types import ValidString
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import AccountId, TraderId, IdTag, OrderId
-from nautilus_trader.model.identifiers import PositionId, ExecutionId, PositionIdBroker
-from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.model.position import Position
-from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.events import AccountStateEvent
-from nautilus_trader.model.enums import Currency
-from nautilus_trader.common.account import Account
-from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.account import Account
+from nautilus_trader.common.execution import ExecutionEngine
+from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.core.decimal import Decimal64
+from nautilus_trader.core.types import ValidString
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.mocks import MockExecutionClient
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -53,7 +62,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
 
-        self.strategy = TradingStrategy(order_id_tag="001")
+        self.strategy = TradingStrategy(
+            clock=clock,
+            uuid_factory=TestUUIDFactory(),
+            logger=logger,
+            order_id_tag="001")
         self.strategy.register_trader(TraderId("TESTER", "000"))
         self.strategy.change_clock(clock)
         self.strategy.change_logger(logger)
@@ -403,7 +416,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = TestUUIDFactory()
-        logger = TestLogger()
+        self.logger = TestLogger()
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
@@ -416,11 +429,11 @@ class ExecutionEngineTests(unittest.TestCase):
         self.portfolio = Portfolio(
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=logger)
+            logger=self.logger)
 
         self.analyzer = PerformanceAnalyzer()
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
+        self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -428,16 +441,20 @@ class ExecutionEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=logger)
+            logger=self.logger)
 
         self.exec_engine.handle_event(TestStubs.account_event())
 
-        self.exec_client = MockExecutionClient(self.exec_engine, logger)
+        self.exec_client = MockExecutionClient(self.exec_engine, self.logger)
         self.exec_engine.register_client(self.exec_client)
 
     def test_can_register_strategy(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -447,7 +464,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_deregister_strategy(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -458,7 +480,11 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_is_flat_when_strategy_registered_returns_true(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -474,7 +500,11 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_engine.is_flat())
 
     def test_can_reset_execution_engine(self):
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         self.exec_engine.register_strategy(strategy)  # Also registers with portfolio
 
@@ -486,7 +516,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_submit_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -515,7 +550,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_handle_order_fill_event(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -561,7 +601,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_add_to_existing_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -620,7 +665,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_close_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
         self.exec_engine.register_strategy(strategy)
         strategy.change_clock(self.clock)
 
@@ -687,8 +737,18 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
-        strategy1 = TradingStrategy(order_id_tag="001")
-        strategy2 = TradingStrategy(order_id_tag="002")
+        strategy1 = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
+        strategy2 = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="002")
+
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
         position1_id = strategy1.position_id_generator.generate()
@@ -768,8 +828,18 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
-        strategy1 = TradingStrategy(order_id_tag="001")
-        strategy2 = TradingStrategy(order_id_tag="002")
+        strategy1 = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
+        strategy2 = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="002")
+
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
         position_id1 = strategy1.position_id_generator.generate()

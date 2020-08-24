@@ -14,13 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+
 import numpy as np
 
-from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandlesticks
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandle
+from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandlesticks
+from nautilus_trader.indicators.fuzzy_enum import CandleBodySize
 from nautilus_trader.indicators.fuzzy_enum import CandleDirection
 from nautilus_trader.indicators.fuzzy_enum import CandleSize
-from nautilus_trader.indicators.fuzzy_enum import CandleBodySize
 from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
 from tests.test_kit.series import BatterySeries
 
@@ -217,7 +218,7 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(1000):
+        for _i in range(1000):
             self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
 
         # Act

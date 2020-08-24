@@ -13,18 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 from datetime import timedelta
+import unittest
 
-from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.enums import OrderSide, Currency
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, ExecutionId, PositionIdBroker
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.analysis.reports import ReportProvider
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = Symbol("AUD/USD", Venue('FXCM'))
 GBPUSD_FXCM = Symbol("GBP/USD", Venue('FXCM'))

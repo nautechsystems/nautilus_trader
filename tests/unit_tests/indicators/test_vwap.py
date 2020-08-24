@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 from datetime import timedelta
+import unittest
 
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
 from tests.test_kit.series import BatterySeries
@@ -128,7 +128,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(100):
+        for _i in range(100):
             self.vwap.update(1.00000, 10000, UNIX_EPOCH)
 
         # Act

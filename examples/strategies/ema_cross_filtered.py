@@ -13,22 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-from datetime import datetime, timedelta
+from datetime import datetime
+from datetime import timedelta
 
+import pytz
+
+from nautilus_trader.common.timer import TimeEvent
+from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import OrderPurpose
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.bar import Bar, BarType, BarSpecification
-from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
-from nautilus_trader.common.clock import TimeEvent
-from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.trading.analyzers import SpreadAnalyzer
-from nautilus_trader.trading.filters import ForexSession, ForexSessionFilter, EconomicNewsEventFilter
+from nautilus_trader.trading.filters import EconomicNewsEventFilter
+from nautilus_trader.trading.filters import ForexSession
+from nautilus_trader.trading.filters import ForexSessionFilter
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
-
 
 UPDATE_SESSIONS = 'UPDATE-SESSIONS'
 UPDATE_NEWS = 'UPDATE-NEWS'

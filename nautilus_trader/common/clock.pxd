@@ -15,42 +15,9 @@
 
 from cpython.datetime cimport datetime, timedelta
 
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.message cimport Event
-from nautilus_trader.common.uuid cimport UUIDFactory, TestUUIDFactory
+from nautilus_trader.common.timer cimport Timer
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
-
-
-cdef class TimeEvent(Event):
-    cdef readonly str name
-
-
-cdef class TimeEventHandler:
-    cdef readonly TimeEvent event
-    cdef readonly object handler
-
-    cdef void handle(self) except *
-
-
-cdef class Timer:
-    cdef readonly str name
-    cdef readonly object callback
-    cdef readonly timedelta interval
-    cdef readonly datetime start_time
-    cdef readonly datetime next_time
-    cdef readonly datetime stop_time
-    cdef readonly expired
-
-    cpdef TimeEvent pop_event(self, UUID event_id)
-    cpdef void iterate_next_time(self, datetime now) except *
-    cpdef void cancel(self) except *
-
-
-cdef class TestTimer(Timer):
-    cdef TestUUIDFactory _uuid_factory
-
-    cpdef list advance(self, datetime to_time)
-    cpdef Event pop_next_event(self)
 
 
 cdef class Clock:
@@ -95,11 +62,3 @@ cdef class Clock:
     cdef void _remove_timer(self, Timer timer) except *
     cdef void _update_stack(self) except *
     cdef void _update_timing(self) except *
-
-
-cdef class TestClock(Clock):
-    cdef datetime _time
-    cdef dict _pending_events
-
-    cpdef void set_time(self, datetime to_time) except *
-    cpdef list advance_time(self, datetime to_time)

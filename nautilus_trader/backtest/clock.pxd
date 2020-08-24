@@ -13,22 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
+from cpython.datetime cimport datetime
 
-import os
+from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport Timer
+from nautilus_trader.core.message cimport Event
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+cdef class TestTimer(Timer):
+    cdef TestUUIDFactory _uuid_factory
+
+    cpdef list advance(self, datetime to_time)
+    cpdef Event pop_next_event(self)
 
 
-__author__ = "Nautech Systems"
+cdef class TestClock(Clock):
+    cdef datetime _time
+    cdef dict _pending_events
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 47
-_PATCH_VERSION = 0
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+    cpdef void set_time(self, datetime to_time) except *
+    cpdef list advance_time(self, datetime to_time)

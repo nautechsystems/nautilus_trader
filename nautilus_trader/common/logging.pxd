@@ -109,10 +109,6 @@ cdef class Logger:
     cdef void _print_to_console(self, LogLevel level, str text) except *
 
 
-cdef class TestLogger(Logger):
-    pass
-
-
 cdef class LoggerAdapter:
     cdef Logger _logger
 

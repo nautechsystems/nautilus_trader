@@ -13,13 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
+from datetime import datetime
+from datetime import timedelta
 import time
 import unittest
-from datetime import datetime, timedelta
 
+import pytz
+
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.timer import TimeEvent
+from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.common.clock import TimeEventHandler, TestClock, TimeEvent
 from nautilus_trader.live.clock import LiveClock
 from tests.test_kit.stubs import UNIX_EPOCH
 

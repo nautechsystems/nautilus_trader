@@ -13,22 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
-
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.uuid cimport UUID, uuid4
 
 
-__author__ = "Nautech Systems"
+cdef class TestUUIDFactory(UUIDFactory):
+    """
+    Provides a fake UUID factory for testing purposes.
+    """
+    __test__ = False
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 47
-_PATCH_VERSION = 0
-_PRE_RELEASE = ''
+    def __init__(self):
+        """
+        Initialize a new instance of the TestGuidFactory class.
+        """
+        super().__init__()
 
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+        self._uuid = uuid4()
+
+    cpdef UUID generate(self):
+        """
+        Return the single test UUID instance.
+
+        :return UUID.
+        """
+        return self._uuid

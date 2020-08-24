@@ -14,12 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+
 import numpy as np
 
-from nautilus_trader.core.functions import fast_mean, fast_mean_iterated
-from nautilus_trader.core.functions import fast_std, fast_std_with_mean
-from nautilus_trader.core.functions import basis_points_as_percentage, format_bytes, pad_string
+from nautilus_trader.core.functions import basis_points_as_percentage
+from nautilus_trader.core.functions import fast_mean
+from nautilus_trader.core.functions import fast_mean_iterated
+from nautilus_trader.core.functions import fast_std
+from nautilus_trader.core.functions import fast_std_with_mean
+from nautilus_trader.core.functions import format_bytes
 from nautilus_trader.core.functions import max_in_dict
+from nautilus_trader.core.functions import pad_string
 
 
 class TestFunctionsTests(unittest.TestCase):

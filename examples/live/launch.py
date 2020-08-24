@@ -14,12 +14,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.enums import BarStructure, PriceType
-from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.live.node import TradingNode
-
 from examples.strategies.ema_cross_filtered import EMACrossFiltered
+from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 
 # Requirements to run;
 #   - A Redis instance listening on the default port 6379
