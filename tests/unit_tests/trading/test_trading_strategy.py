@@ -518,9 +518,11 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         # Act
+        strategy.start()
         strategy.stop()
 
         # Assert

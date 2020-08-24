@@ -15,6 +15,9 @@
 
 from datetime import timedelta
 
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
@@ -61,7 +64,11 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(
+            clock=TestClock(),
+            uuid_factory=TestUUIDFactory(),
+            logger=TestLogger(),
+            order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -83,7 +90,12 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        # Put custom code to be run on strategy start here (or pass)
+        if self.symbol not in self.instrument_symbols():
+            self.log.error(f"Could not find instrument {self.symbol}")
+            self.log.error("Stopping...")
+            self.stop()
+            return
+
         instrument = self.get_instrument(self.symbol)
 
         self.precision = instrument.price_precision

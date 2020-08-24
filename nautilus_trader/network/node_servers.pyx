@@ -66,15 +66,15 @@ cdef class ServerNode:
 
     cpdef void start(self) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void stop(self) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class MessageServer(ServerNode):
