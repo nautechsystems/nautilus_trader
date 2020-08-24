@@ -305,7 +305,7 @@ class TestStubs:
     @staticmethod
     def position_which_is_closed(number=1, close_price=None) -> Position:
         if close_price is None:
-            close_price = Price(1.00000, 5)
+            close_price = Price(1.0001, 5)
 
         position = TestStubs.position(number=number)
 

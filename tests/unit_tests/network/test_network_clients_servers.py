@@ -133,7 +133,7 @@ class MessageClientTests(unittest.TestCase):
         # Act
         self.client.send_string("hello")
 
-        time.sleep(0.1)
+        time.sleep(0.3)
 
         # Assert
         self.assertEqual(2, self.client.sent_count)
