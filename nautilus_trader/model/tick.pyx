@@ -53,7 +53,7 @@ cdef class Tick:
         :return bool.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef str to_string(self):
         """
@@ -62,7 +62,7 @@ cdef class Tick:
         :return: str.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef str to_serializable_string(self):
         """
@@ -71,7 +71,7 @@ cdef class Tick:
         :return: str.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     def __eq__(self, Tick other) -> bool:
         """

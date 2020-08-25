@@ -15,8 +15,8 @@
 
 import unittest
 
+from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.core.uuid import UUID
-from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.live.factories import LiveUUIDFactory
 
 

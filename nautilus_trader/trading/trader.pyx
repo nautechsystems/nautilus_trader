@@ -14,10 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.core.fsm cimport InvalidStateTransition
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
@@ -68,7 +72,8 @@ cdef class Trader:
 
         self.portfolio = self._exec_engine.portfolio
         self.analyzer = PerformanceAnalyzer()
-        self.is_running = False
+
+        self._fsm = create_component_fsm()
 
         self.strategies = []
         self.initialize_strategies(strategies)
@@ -85,13 +90,16 @@ cdef class Trader:
         Condition.not_empty(strategies, "strategies")
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
-        if self.is_running:
+        if self._fsm.state == ComponentState.RUNNING:
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
+        self._log.info(f"Initialized strategies...")
+
+        cdef TradingStrategy strategy
         for strategy in self.strategies:
             # Design assumption that no strategies are running
-            assert not strategy.is_running
+            assert not strategy.state() == ComponentState.RUNNING
 
         # Check strategy_ids are unique
         strategy_ids = set()
@@ -123,37 +131,47 @@ cdef class Trader:
         """
         Start the trader.
         """
-        if self.is_running:
-            self._log.error(f"Cannot start trader (already running).")
+        try:
+            self._fsm.trigger('START')
+        except InvalidStateTransition as ex:
+            self._log.exception(ex)
+            self.stop()  # Do not start trader in an invalid state
             return
+
+        self._log.info(f"{self._fsm.state_as_string()}...")
 
         if not self.strategies:
             self._log.error(f"Cannot start trader (no strategies loaded).")
             return
 
-        self._log.info("Starting...")
         self.account_inquiry()
 
         for strategy in self.strategies:
             strategy.start()
 
-        self.is_running = True
-        self._log.info("Running...")
+        self._fsm.trigger('RUNNING')
+        self._log.info(f"{self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
         """
         Stop the trader.
         """
-        if not self.is_running:
-            self._log.error(f"Cannot stop trader (already stopped).")
+        try:
+            self._fsm.trigger('STOP')
+        except InvalidStateTransition as ex:
+            self._log.exception(ex)
             return
 
-        self._log.debug("Stopping...")
-        for strategy in self.strategies:
-            strategy.stop()
+        self._log.info(f"{self._fsm.state_as_string()}...")
 
-        self.is_running = False
-        self._log.info("Stopped.")
+        for strategy in self.strategies:
+            if strategy.state() == ComponentState.RUNNING:
+                strategy.stop()
+            else:
+                self._log.warning(f"{strategy} already stopped.")
+
+        self._fsm.trigger('STOPPED')
+        self._log.info(f"{self._fsm.state_as_string()}.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -183,20 +201,22 @@ cdef class Trader:
 
         Note: The trader cannot be running otherwise an error is logged.
         """
-        if self.is_running:
-            self._log.error(f"Cannot reset trader (trader must be stopped to reset).")
+        try:
+            self._fsm.trigger('RESET')
+        except InvalidStateTransition as ex:
+            self._log.exception(ex)
             return
 
-        self._log.debug("Resetting...")
+        self._log.info(f"{self._fsm.state_as_string()}...")
 
         for strategy in self.strategies:
             strategy.reset()
 
         self.portfolio.reset()
         self.analyzer.reset()
-        self.is_running = False
 
-        self._log.info("Reset.")
+        self._fsm.trigger('RESET')
+        self._log.info(f"{self._fsm.state_as_string()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -204,11 +224,20 @@ cdef class Trader:
 
         Disposes all internally held strategies.
         """
-        self._log.debug("Disposing...")
+        try:
+            self._fsm.trigger('DISPOSE')
+        except InvalidStateTransition as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"{self._fsm.state_as_string()}...")
+
+        cdef TradingStrategy strategy
         for strategy in self.strategies:
             strategy.dispose()
 
-        self._log.info("Disposed.")
+        self._fsm.trigger('DISPOSED')
+        self._log.info(f"{self._fsm.state_as_string()}.")
 
     cpdef void account_inquiry(self) except *:
         """
@@ -222,7 +251,13 @@ cdef class Trader:
 
         self._exec_engine.execute_command(command)
 
-    cpdef dict strategy_status(self):
+    cpdef ComponentState state(self):
+        """
+        Return the traders state.
+        """
+        return self._fsm.state
+
+    cpdef dict strategy_states(self):
         """
         Return a dictionary containing the traders strategy status.
         The key is the strategy_id.
@@ -230,18 +265,15 @@ cdef class Trader:
 
         :return Dict[StrategyId, bool].
         """
-        cdef status = {}
+        cdef states = {}
         for strategy in self.strategies:
-            if strategy.is_running:
-                status[strategy.id] = True
-            else:
-                status[strategy.id] = False
+            states[strategy.id] = component_state_to_string(strategy.state())
 
-        return status
+        return states
 
     cpdef object generate_orders_report(self):
         """
-        Return an orders report dataframe.
+        Return an orders report.
 
         :return pd.DataFrame.
         """
@@ -249,7 +281,7 @@ cdef class Trader:
 
     cpdef object generate_order_fills_report(self):
         """
-        Return an order fills report dataframe.
+        Return an order fills report.
 
         :return pd.DataFrame.
         """
@@ -257,7 +289,7 @@ cdef class Trader:
 
     cpdef object generate_positions_report(self):
         """
-        Return a positions report dataframe.
+        Return a positions report.
 
         :return pd.DataFrame.
         """
@@ -265,7 +297,7 @@ cdef class Trader:
 
     cpdef object generate_account_report(self):
         """
-        Return an account report dataframe.
+        Return an account report.
 
         :return pd.DataFrame.
         """

@@ -13,17 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
 import unittest
 
-from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.core.message import Message, MessageType
+import numpy as np
+
 from nautilus_trader.core.functions import fast_mean
-from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.core.message import Message
+from nautilus_trader.core.message import MessageType
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
-
 
 _AUDUSD = Symbol("AUDUSD", Venue("IDEALPRO"))
 _TEST_LIST = [0.0, 1.1, 2.2, 3.3, 4.4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]

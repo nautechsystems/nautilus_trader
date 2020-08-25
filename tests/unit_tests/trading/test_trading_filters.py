@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-import unittest
 from datetime import datetime
-from pandas import Timestamp
+import unittest
 
-from nautilus_trader.trading.filters import ForexSession, ForexSessionFilter, EconomicNewsEventFilter
+from pandas import Timestamp
+import pytz
+
+from nautilus_trader.trading.filters import EconomicNewsEventFilter
+from nautilus_trader.trading.filters import ForexSession
+from nautilus_trader.trading.filters import ForexSessionFilter
 from tests.test_kit.stubs import UNIX_EPOCH
 
 

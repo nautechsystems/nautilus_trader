@@ -65,7 +65,7 @@ cdef class DictionarySerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict deserialize(self, bytes dictionary_bytes):
         """
@@ -75,7 +75,7 @@ cdef class DictionarySerializer(Serializer):
         :return Dict.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class DataSerializer(Serializer):
@@ -97,7 +97,7 @@ cdef class DataSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict deserialize(self, bytes data_bytes):
         """
@@ -107,7 +107,7 @@ cdef class DataSerializer(Serializer):
         :return Dict.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class InstrumentSerializer(Serializer):
@@ -129,7 +129,7 @@ cdef class InstrumentSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Instrument deserialize(self, bytes instrument_bytes):
         """
@@ -139,7 +139,7 @@ cdef class InstrumentSerializer(Serializer):
         :return Instrument.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class OrderSerializer(Serializer):
@@ -161,7 +161,7 @@ cdef class OrderSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
@@ -171,7 +171,7 @@ cdef class OrderSerializer(Serializer):
         :return Order.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass. ")
+        raise NotImplementedError("method must be implemented in the subclass ")
 
 
 cdef class CommandSerializer(Serializer):
@@ -193,7 +193,7 @@ cdef class CommandSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Command deserialize(self, bytes command_bytes):
         """
@@ -203,7 +203,7 @@ cdef class CommandSerializer(Serializer):
         :return Command.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class EventSerializer(Serializer):
@@ -225,7 +225,7 @@ cdef class EventSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Event deserialize(self, bytes event_bytes):
         """
@@ -235,7 +235,7 @@ cdef class EventSerializer(Serializer):
         :return Event.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class RequestSerializer(Serializer):
@@ -257,7 +257,7 @@ cdef class RequestSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Request deserialize(self, bytes request_bytes):
         """
@@ -267,7 +267,7 @@ cdef class RequestSerializer(Serializer):
         :return Request.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class ResponseSerializer(Serializer):
@@ -289,7 +289,7 @@ cdef class ResponseSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Response deserialize(self, bytes response_bytes):
         """
@@ -299,7 +299,7 @@ cdef class ResponseSerializer(Serializer):
         :return Response.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class LogSerializer(Serializer):
@@ -321,7 +321,7 @@ cdef class LogSerializer(Serializer):
         :return bytes.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef LogMessage deserialize(self, bytes message_bytes):
         """
@@ -331,4 +331,4 @@ cdef class LogSerializer(Serializer):
         :return LogMessage.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")

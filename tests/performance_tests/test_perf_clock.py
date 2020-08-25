@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 from datetime import timedelta
+import unittest
 
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.backtest.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -28,7 +28,7 @@ class TestClockTests:
     @staticmethod
     def advance_time():
         test_time = UNIX_EPOCH
-        for i in range(1000000):
+        for _i in range(1000000):
             test_time += timedelta(seconds=1)
         clock.advance_time(test_time)
 

@@ -13,14 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-import pandas as pd
+from datetime import datetime
+from datetime import timedelta
 import unittest
-from datetime import datetime, timedelta
 
+import pandas as pd
+import pytz
+
+from nautilus_trader.core.datetime import as_utc_index
+from nautilus_trader.core.datetime import as_utc_timestamp
+from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import is_datetime_utc
-from nautilus_trader.core.datetime import is_tz_aware, is_tz_naive, format_iso8601
-from nautilus_trader.core.datetime import as_utc_timestamp, as_utc_index
+from nautilus_trader.core.datetime import is_tz_aware
+from nautilus_trader.core.datetime import is_tz_naive
 from tests.test_kit.stubs import UNIX_EPOCH
 
 

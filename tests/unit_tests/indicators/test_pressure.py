@@ -56,7 +56,7 @@ class PressureTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        for i in range(10):
+        for _i in range(10):
             self.pressure.update(1.00000, 1.00000, 1.00000, 1000)
 
         # Act
@@ -109,7 +109,7 @@ class PressureTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(10):
+        for _i in range(10):
             self.pressure.update(1.00000, 1.00000, 1.00000, 1000)
 
         # Act

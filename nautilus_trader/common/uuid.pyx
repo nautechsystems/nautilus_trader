@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.uuid cimport UUID, uuid4
+from nautilus_trader.core.uuid cimport UUID
 
 
 cdef class UUIDFactory:
@@ -28,27 +28,4 @@ cdef class UUIDFactory:
         :return UUID.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-
-cdef class TestUUIDFactory(UUIDFactory):
-    """
-    Provides a fake UUID factory for testing purposes.
-    """
-    __test__ = False
-
-    def __init__(self):
-        """
-        Initialize a new instance of the TestGuidFactory class.
-        """
-        super().__init__()
-
-        self._uuid = uuid4()
-
-    cpdef UUID generate(self):
-        """
-        Return the single test UUID instance.
-
-        :return UUID.
-        """
-        return self._uuid
+        raise NotImplementedError("method must be implemented in the subclass")

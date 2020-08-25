@@ -55,7 +55,7 @@ class EfficiencyRatioTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         # Act
-        for i in range(10):
+        for _i in range(10):
             self.er.update(1.00000)
 
         # Assert
@@ -74,7 +74,7 @@ class EfficiencyRatioTests(unittest.TestCase):
         initial_price = 1.00000
 
         # Act
-        for i in range(10):
+        for _i in range(10):
             initial_price += 0.00001
             self.er.update(initial_price)
 
@@ -86,7 +86,7 @@ class EfficiencyRatioTests(unittest.TestCase):
         initial_price = 1.00000
 
         # Act
-        for i in range(10):
+        for _i in range(10):
             initial_price -= 0.00001
             self.er.update(initial_price)
 
@@ -133,7 +133,7 @@ class EfficiencyRatioTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(10):
+        for _i in range(10):
             self.er.update(1.00000)
 
         # Act

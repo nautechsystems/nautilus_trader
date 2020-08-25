@@ -15,21 +15,26 @@
 
 from datetime import timedelta
 
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.core.types import Label
-from nautilus_trader.model.identifiers import Symbol, PositionId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.bar import BarSpecification, BarType, Bar
-from nautilus_trader.model.c_enums.price_type import PriceType
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
-from nautilus_trader.model.c_enums.time_in_force import TimeInForce
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
+from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.c_enums.price_type import PriceType
+from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.analyzers import SpreadAnalyzer
-from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.sizing import FixedRiskSizer
+from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import ObjectStorer
 
 
@@ -57,7 +62,7 @@ class PyStrategy(TradingStrategy):
 
 class EmptyStrategy(TradingStrategy):
     """
-    An empty strategy which is does nothing.
+    An empty strategy which does nothing.
     """
 
     def __init__(self, order_id_tag):
@@ -66,7 +71,11 @@ class EmptyStrategy(TradingStrategy):
 
         :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
         """
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(
+            clock=TestClock(),
+            uuid_factory=TestUUIDFactory(),
+            logger=TestLogger(),
+            order_id_tag=order_id_tag)
 
 
 class TickTock(TradingStrategy):
@@ -76,7 +85,11 @@ class TickTock(TradingStrategy):
 
     def __init__(self, instrument, bar_type):
         """Initialize a new instance of the TickTock class."""
-        super().__init__(order_id_tag="000")
+        super().__init__(
+            clock=TestClock(),
+            uuid_factory=TestUUIDFactory(),
+            logger=TestLogger(),
+            order_id_tag="000")
 
         self.instrument = instrument
         self.bar_type = bar_type
@@ -122,7 +135,11 @@ class TestStrategy1(TradingStrategy):
 
     def __init__(self, bar_type, id_tag_strategy="001"):
         """Initialize a new instance of the TestStrategy1 class."""
-        super().__init__(order_id_tag=id_tag_strategy, clock=TestClock())
+        super().__init__(
+            clock=TestClock(),
+            uuid_factory=TestUUIDFactory(),
+            logger=TestLogger(),
+            order_id_tag=id_tag_strategy)
 
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
@@ -137,7 +154,6 @@ class TestStrategy1(TradingStrategy):
 
     def on_start(self):
         self.object_storer.store("custom start logic")
-        self.subscribe_bars(self.bar_type)
 
     def on_quote_tick(self, tick):
         self.object_storer.store(tick)
@@ -218,7 +234,11 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(
+            clock=TestClock(),
+            uuid_factory=TestUUIDFactory(),
+            logger=TestLogger(),
+            order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol

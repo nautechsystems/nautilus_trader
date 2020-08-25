@@ -19,16 +19,29 @@
 from __future__ import division
 
 import math
-import pandas as pd
-import numpy as np
 from math import pow
-from scipy import stats, optimize
-from six import iteritems
 from sys import float_info
 
-from .utils import nanmean, nanstd, nanmin, up, down, roll, rolling_window
-from .periods import ANNUALIZATION_FACTORS, APPROX_BDAYS_PER_YEAR
-from .periods import DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY
+import numpy as np
+import pandas as pd
+from scipy import optimize
+from scipy import stats
+from six import iteritems
+
+from .periods import ANNUALIZATION_FACTORS
+from .periods import APPROX_BDAYS_PER_YEAR
+from .periods import DAILY
+from .periods import MONTHLY
+from .periods import QUARTERLY
+from .periods import WEEKLY
+from .periods import YEARLY
+from .utils import down
+from .utils import nanmean
+from .utils import nanmin
+from .utils import nanstd
+from .utils import roll
+from .utils import rolling_window
+from .utils import up
 
 
 def _create_unary_vectorized_roll_function(function):

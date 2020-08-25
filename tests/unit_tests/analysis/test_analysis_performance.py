@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 from datetime import datetime
+import unittest
 
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Money
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

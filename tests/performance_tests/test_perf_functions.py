@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
 import unittest
 
-from nautilus_trader.core.functions import fast_mean, fast_std
+import numpy as np
+
+from nautilus_trader.core.functions import fast_mean
+from nautilus_trader.core.functions import fast_std
 from tests.test_kit.performance import PerformanceHarness
 
 

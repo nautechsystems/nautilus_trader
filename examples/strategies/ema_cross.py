@@ -15,13 +15,21 @@
 
 from datetime import timedelta
 
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import OrderPurpose
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.bar import Bar, BarType, BarSpecification
-from nautilus_trader.model.enums import PriceType, OrderSide, OrderPurpose, TimeInForce
-from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.trading.analyzers import SpreadAnalyzer
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -56,7 +64,11 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(
+            clock=TestClock(),
+            uuid_factory=TestUUIDFactory(),
+            logger=TestLogger(),
+            order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -78,7 +90,6 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        # Put custom code to be run on strategy start here (or pass)
         instrument = self.get_instrument(self.symbol)
 
         self.precision = instrument.price_precision

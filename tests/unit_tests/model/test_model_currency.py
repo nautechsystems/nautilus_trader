@@ -15,8 +15,9 @@
 
 import unittest
 
-from nautilus_trader.model.enums import Currency, PriceType
 from nautilus_trader.common.exchange import ExchangeRateCalculator
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import PriceType
 
 
 class ExchangeRateCalculatorTests(unittest.TestCase):

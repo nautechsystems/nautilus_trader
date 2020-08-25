@@ -49,7 +49,7 @@ cdef class Decimal64:
         ----------
         value : double
             The IEEE-754 double value for the decimal
-            (must have no more than 16 significands).
+            (must have no greater than 16 significands).
         precision : int
             The precision for the decimal [0, 9].
 
@@ -66,19 +66,17 @@ cdef class Decimal64:
         Condition.true(isfinite(value), "value is finite")
         Condition.in_range_int(precision, 0, 9, "precision")
 
-        cdef int power = 10 ** precision             # For zero precision then zero power rule 10^0 = 1
+        cdef int power = 10 ** precision             # When precision = 0 then zero power rule 10^0 = 1
         self._value = round(value * power) / power   # Rounding to nearest (bankers rounding)
         self._epsilon = _EPSILON_MAP[precision + 1]  # Choose epsilon for one digit more than precision
         self.precision = precision
 
     cdef bint _eq_eps_delta(self, double value1, double value2):
-        # The values are considered equal if their absolute difference is less
-        # than epsilon
+        # The values are considered equal if their absolute difference is < epsilon
         return fabs(value1 - value2) < self._epsilon
 
     cdef bint _ne_eps_delta(self, double value1, double value2):
-        # The values are considered NOT equal if their absolute difference is
-        # greater than OR equal to epsilon
+        # The values are considered NOT equal if their absolute difference is >= epsilon
         return fabs(value1 - value2) >= self._epsilon
 
     @staticmethod
@@ -124,7 +122,7 @@ cdef class Decimal64:
         """
         Condition.valid_string(value, "value")
 
-        return len(value.partition('.')[2])  # If does not contain "." then partition will be ""
+        return len(value.partition('.')[2])  # If does not contain "." then partition[2] will be ""
 
     cpdef int as_int(self):
         """

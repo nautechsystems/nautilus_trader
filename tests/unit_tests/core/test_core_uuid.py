@@ -15,7 +15,11 @@
 
 import unittest
 
-from nautilus_trader.core.uuid import UUID, uuid1, uuid3, uuid4, uuid5
+from nautilus_trader.core.uuid import UUID
+from nautilus_trader.core.uuid import uuid1
+from nautilus_trader.core.uuid import uuid3
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import uuid5
 
 
 class UUIDTests(unittest.TestCase):

@@ -13,32 +13,46 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-import unittest
+from datetime import datetime
+from datetime import timedelta
 import time
-from datetime import datetime, timedelta
+import unittest
 
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId, MatchId
-from nautilus_trader.model.position import Position
-from nautilus_trader.model.enums import OrderState, MarketPosition, Maker
-from nautilus_trader.model.tick import QuoteTick, TradeTick
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.common.data import DataClient
-from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
-from nautilus_trader.common.clock import TestClock
+import pytz
+
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.data import DataClient
+from nautilus_trader.common.execution import ExecutionEngine
+from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.enums import ComponentState
+from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import MarketPosition
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.identifiers import MatchId
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
+from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 from tests.test_kit.strategies import TestStrategy1
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
@@ -103,9 +117,23 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_equality(self):
         # Arrange
-        strategy1 = TradingStrategy(order_id_tag="001")
-        strategy2 = TradingStrategy(order_id_tag="AUD/USD-001")
-        strategy3 = TradingStrategy(order_id_tag="AUD/USD-002")
+        strategy1 = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
+
+        strategy2 = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="AUD/USD-001")
+
+        strategy3 = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="AUD/USD-002")
 
         # Act
         result1 = strategy1 == strategy1
@@ -125,7 +153,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_is_hashable(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         result = strategy.__hash__()
@@ -136,7 +168,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_str_and_repr(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="GBP/USD-MM")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="GBP/USD-MM")
 
         # Act
         result1 = str(strategy)
@@ -149,7 +185,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_strategy_id(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         # Assert
@@ -157,7 +197,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_current_time(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
 
         # Act
@@ -177,7 +221,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_tick_count_for_unknown_symbol_returns_zero(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         result = strategy.quote_tick_count(AUDUSD_FXCM)
@@ -187,7 +235,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_ticks_for_unknown_symbol_raises_exception(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         # Assert
@@ -195,7 +247,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
@@ -206,7 +262,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_bars_for_unknown_bar_type_raises_exception(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
@@ -215,7 +275,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_bars(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_data_client(self.data_client)
 
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -237,7 +301,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_getting_bar_for_unknown_bar_type_raises_exception(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         unknown_bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
@@ -246,7 +314,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_data_client(self.data_client)
 
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -265,7 +337,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(IndexError, strategy.bar, bar_type, -2)
 
     def test_can_get_bar(self):
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_data_client(self.data_client)
 
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -286,14 +362,22 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(bar, result)
 
     def test_getting_tick_with_unknown_tick_type_raises_exception(self):
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         # Assert
         self.assertRaises(ValueError, strategy.quote_tick, AUDUSD_FXCM, 0)
 
     def test_can_get_quote_tick(self):
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_data_client(self.data_client)
 
         tick = QuoteTick(
@@ -313,7 +397,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(tick, result)
 
     def test_can_get_trade_tick(self):
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_data_client(self.data_client)
 
         tick = TradeTick(
@@ -334,7 +422,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_getting_order_which_does_not_exist_returns_none(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -344,7 +436,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
@@ -364,7 +460,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_getting_position_which_does_not_exist_returns_none(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -374,7 +474,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_position(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
@@ -401,27 +505,30 @@ class TradeStrategyTests(unittest.TestCase):
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        result1 = strategy.is_running
+        result1 = strategy.state()
+
         # Act
         strategy.start()
-        result2 = strategy.is_running
+        result2 = strategy.state()
 
         # Assert
-        self.assertFalse(result1)
-        self.assertTrue(result2)
+        self.assertEqual(ComponentState.INITIALIZED, result1)
+        self.assertEqual(ComponentState.RUNNING, result2)
         self.assertTrue("custom start logic" in strategy.object_storer.get_store())
 
     def test_can_stop_strategy(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         # Act
+        strategy.start()
         strategy.stop()
 
         # Assert
-        self.assertFalse(strategy.is_running)
+        self.assertEqual(ComponentState.STOPPED, strategy.state())
         self.assertTrue("custom stop logic" in strategy.object_storer.get_store())
 
     def test_can_reset_strategy(self):
@@ -445,7 +552,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.reset()
 
         # Assert
-        self.assertFalse(strategy.is_running)
+        self.assertEqual(ComponentState.INITIALIZED, strategy.state())
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
         self.assertTrue("custom reset logic" in strategy.object_storer.get_store())
@@ -463,7 +570,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_register_strategy_with_exec_client(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -509,7 +620,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_generate_position_id(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001", clock=TestClock())
+        strategy = TradingStrategy(
+            clock=TestClock(),
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
 
         # Act
@@ -520,7 +635,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         result1 = strategy.get_opposite_side(OrderSide.BUY)
@@ -532,7 +651,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
 
         # Act
         result1 = strategy.get_flatten_side(MarketPosition.LONG)
@@ -545,7 +668,11 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_change_clock(self):
         # Arrange
         clock = TestClock()
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
 
         # Act
@@ -557,7 +684,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_can_submit_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
@@ -580,7 +711,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
@@ -606,7 +741,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_modify_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
@@ -633,7 +772,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_all_orders(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
@@ -667,7 +810,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_flatten_position(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 
@@ -693,7 +840,11 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_flatten_all_positions(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+            order_id_tag="001")
         strategy.register_trader(TraderId("TESTER", "000"))
         self.exec_engine.register_strategy(strategy)
 

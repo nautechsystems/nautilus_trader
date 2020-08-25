@@ -20,7 +20,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Message, MessageType
 from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
-from nautilus_trader.common.clock cimport Clock, TimeEvent
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
@@ -88,19 +89,19 @@ cdef class ClientNode:
 
     cpdef bint is_connected(self):
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void connect(self) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class MessageClient(ClientNode):

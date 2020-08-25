@@ -13,10 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 from base64 import b64encode
+import unittest
 
-from nautilus_trader.network.compression import BypassCompressor, LZ4Compressor
+from nautilus_trader.network.compression import BypassCompressor
+from nautilus_trader.network.compression import LZ4Compressor
 
 
 class CompressorTests(unittest.TestCase):

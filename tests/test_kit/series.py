@@ -6,10 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import sys
-import numpy as np
-
 from random import gauss
+import sys
+
+import numpy as np
 from scipy import signal
 
 EPSILON = sys.float_info.epsilon
@@ -71,7 +71,7 @@ class SeriesGenerator(object):
         :return: The horizontally asymptotic series.
         """
         series = [initial]
-        for i in range(length - 1):
+        for _i in range(length - 1):
             series.append(max(series[-1] * decay, EPSILON))
         return series
 
@@ -117,7 +117,7 @@ class SeriesGenerator(object):
         :param length: The number of elements in the returned series (> 0).
         :return: The white noise series.
         """
-        return np.array([gauss(mu, sigma) for i in range(length)], dtype=np.float64)
+        return np.array([gauss(mu, sigma) for _i in range(length)], dtype=np.float64)
 
     @staticmethod
     def random_walk(

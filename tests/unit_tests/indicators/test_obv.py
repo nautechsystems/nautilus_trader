@@ -55,7 +55,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        for i in range(100):
+        for _i in range(100):
             self.obv.update(1.00000, 1.00010, 10000)
 
         # Act
@@ -106,7 +106,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(100):
+        for _i in range(100):
             self.obv.update(1.00000, 1.00010, 10000)
 
         # Act
