@@ -55,7 +55,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Act
-        for i in range(10):
+        for _i in range(10):
             self.atr.update(1.00000, 1.00000, 1.00000)
 
         # Assert
@@ -63,7 +63,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
     def test_initialized_with_required_mid_inputs_returns_true(self):
         # Act
-        for i in range(10):
+        for _i in range(10):
             self.atr.update_mid(1.00000)
 
         # Assert
@@ -125,7 +125,7 @@ class AverageTrueRangeTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high += 0.00010
             low += 0.00010
             close = high
@@ -140,7 +140,7 @@ class AverageTrueRangeTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high -= 0.00010
             low -= 0.00010
             close = low
@@ -154,7 +154,7 @@ class AverageTrueRangeTests(unittest.TestCase):
         floor = 0.00005
         floored_atr = AverageTrueRange(10, value_floor=floor)
 
-        for i in range(20):
+        for _i in range(20):
             floored_atr.update(1.00000, 1.00000, 1.00000)
 
         # Act
@@ -170,7 +170,7 @@ class AverageTrueRangeTests(unittest.TestCase):
         low = 1.00000
         close = 1.00000
 
-        for i in range(20):
+        for _i in range(20):
             high -= (high - low) / 2
             floored_atr.update(high, low, close)
 
@@ -180,7 +180,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(1000):
+        for _i in range(1000):
             self.atr.update(1.00010, 1.00000, 1.00005)
 
         # Act

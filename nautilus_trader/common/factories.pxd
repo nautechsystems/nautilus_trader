@@ -16,6 +16,8 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.types cimport Label
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -23,8 +25,6 @@ from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.model.order cimport Order, BracketOrder
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
 
 
 cdef class OrderFactory:

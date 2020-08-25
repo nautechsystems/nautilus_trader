@@ -13,33 +13,39 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 import time
+import unittest
 
-from nautilus_trader.core.message import MessageType
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.commands import SubmitOrder, SubmitBracketOrder, CancelOrder, ModifyOrder
-from nautilus_trader.model.commands import AccountInquiry
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.execution import InMemoryExecutionDatabase
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.network.identifiers import ServerId
-from nautilus_trader.network.compression import BypassCompressor
-from nautilus_trader.network.encryption import EncryptionSettings
-from nautilus_trader.network.node_servers import MessageServer
-from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
-from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
+from nautilus_trader.core.message import MessageType
 from nautilus_trader.live.clock import LiveClock
+from nautilus_trader.live.execution_client import LiveExecClient
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.factories import LiveUUIDFactory
 from nautilus_trader.live.logging import LiveLogger
-from nautilus_trader.live.execution_engine import LiveExecutionEngine
-from nautilus_trader.live.execution_client import LiveExecClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.model.commands import AccountInquiry
+from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import ModifyOrder
+from nautilus_trader.model.commands import SubmitBracketOrder
+from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.network.compression import BypassCompressor
+from nautilus_trader.network.encryption import EncryptionSettings
+from nautilus_trader.network.identifiers import ServerId
+from nautilus_trader.network.node_servers import MessageServer
+from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
+from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
+from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from tests.test_kit.strategies import TestStrategy1
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

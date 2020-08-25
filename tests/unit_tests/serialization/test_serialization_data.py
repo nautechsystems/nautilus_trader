@@ -15,12 +15,15 @@
 
 import unittest
 
-from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.serialization.data import BsonDataSerializer, DataMapper
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.serialization.data import BsonDataSerializer
+from nautilus_trader.serialization.data import DataMapper
 from tests.test_kit.data import TestDataProvider
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

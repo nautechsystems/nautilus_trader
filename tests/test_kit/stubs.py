@@ -13,25 +13,45 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-from datetime import datetime, timedelta
+from datetime import datetime
+from datetime import timedelta
 
-from nautilus_trader.core.types import ValidString
-from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.model.enums import BarStructure, PriceType, Currency, AccountType, OrderSide
-from nautilus_trader.model.objects import Money, Price, Quantity
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.bar import BarSpecification, BarType, Bar
-from nautilus_trader.model.instrument import ForexInstrument
-from nautilus_trader.model.identifiers import Venue, Symbol, IdTag, TraderId, AccountId
-from nautilus_trader.model.identifiers import StrategyId, OrderIdBroker, ExecutionId, PositionIdBroker
-from nautilus_trader.model.generators import PositionIdGenerator
-from nautilus_trader.model.position import Position
-from nautilus_trader.model.events import AccountStateEvent, OrderWorking, OrderFilled
-from nautilus_trader.model.events import PositionOpened, PositionModified, PositionClosed
+import pytz
+
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.core.decimal import Decimal64
+from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionModified
+from nautilus_trader.model.events import PositionOpened
+from nautilus_trader.model.generators import PositionIdGenerator
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import OrderIdBroker
+from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instrument import ForexInstrument
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
+from nautilus_trader.model.tick import QuoteTick
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -133,21 +153,23 @@ class TestStubs:
 
     @staticmethod
     def bar_5decimal() -> Bar:
-        return Bar(Price(1.00002, 5),
-                   Price(1.00004, 5),
-                   Price(1.00001, 5),
-                   Price(1.00003, 5),
-                   Quantity(100000),
-                   UNIX_EPOCH)
+        return Bar(
+            Price(1.00002, 5),
+            Price(1.00004, 5),
+            Price(1.00001, 5),
+            Price(1.00003, 5),
+            Quantity(100000),
+            UNIX_EPOCH)
 
     @staticmethod
     def bar_3decimal() -> Bar:
-        return Bar(Price(90.002, 3),
-                   Price(90.004, 3),
-                   Price(90.001, 3),
-                   Price(90.003, 3),
-                   Quantity(100000),
-                   UNIX_EPOCH)
+        return Bar(
+            Price(90.002, 3),
+            Price(90.004, 3),
+            Price(90.001, 3),
+            Price(90.003, 3),
+            Quantity(100000),
+            UNIX_EPOCH)
 
     @staticmethod
     def quote_tick_3decimal(symbol) -> QuoteTick:
@@ -171,6 +193,7 @@ class TestStubs:
     def account_event(account_id=None) -> AccountStateEvent:
         if account_id is None:
             account_id = TestStubs.account_id()
+
         return AccountStateEvent(
             account_id,
             Currency.USD,
@@ -185,7 +208,10 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_filled(order, fill_price=Price(1.00000, 5)) -> OrderFilled:
+    def event_order_filled(order, fill_price=None) -> OrderFilled:
+        if fill_price is None:
+            fill_price = Price(1.00000, 5)
+
         return OrderFilled(
             TestStubs.account_id(),
             order.id,
@@ -201,7 +227,10 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_working(order, working_price=Price(1.00000, 5)) -> OrderWorking:
+    def event_order_working(order, working_price=None) -> OrderWorking:
+        if working_price is None:
+            working_price = Price(1.00000, 5)
+
         return OrderWorking(
             TestStubs.account_id(),
             order.id,
@@ -246,21 +275,20 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def position(number=1, entry_price=Price(1.00000, 5)) -> Position:
-        clock = TestClock()
+    def position(number=1, entry_price=None) -> Position:
+        if entry_price is None:
+            entry_price = Price(1.00000, 5)
 
         generator = PositionIdGenerator(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=clock)
+            id_tag_strategy=IdTag("001"))
 
-        for i in range(number - 1):
+        for _i in range(number - 1):
             generator.generate()
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=clock)
+            id_tag_strategy=IdTag("001"))
 
         order = order_factory.market(
             TestStubs.symbol_audusd_fxcm(),
@@ -275,15 +303,15 @@ class TestStubs:
         return position
 
     @staticmethod
-    def position_which_is_closed(number=1, close_price=Price(1.00010, 5)) -> Position:
-        clock = TestClock()
+    def position_which_is_closed(number=1, close_price=None) -> Position:
+        if close_price is None:
+            close_price = Price(1.0001, 5)
 
         position = TestStubs.position(number=number)
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=clock)
+            id_tag_strategy=IdTag("001"))
 
         order = order_factory.market(
             TestStubs.symbol_audusd_fxcm(),

@@ -14,18 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 import gc
-import sys
-import math
-import timeit
 import inspect
-
+import math
+import sys
+import timeit
 
 _MILLISECONDS_IN_SECOND = 1000
 _MICROSECONDS_IN_SECOND = 1000000
 
 
 def get_size_of(obj):
-
+    """
+    Return the size of the given object in memory.
+    """
     marked = {id(obj)}
     obj_q = [obj]
     size = 0

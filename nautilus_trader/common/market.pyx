@@ -26,7 +26,8 @@ from nautilus_trader.model.objects cimport Price, Quantity
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.bar cimport Bar, BarType, BarSpecification
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.common.clock cimport Clock, TestTimer
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -628,7 +629,7 @@ cdef class BarAggregator:
 
     cpdef void update(self, QuoteTick tick) except *:
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void _handle_bar(self, Bar bar) except *:
         self._handler.handle(self.bar_type, bar)
@@ -796,7 +797,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._log.info(f"Started timer {timer_name}.")
 
     cpdef void _build_bar(self, datetime at_time) except *:
-        cdef TestTimer timer = self._clock.get_timer(self.bar_type.to_string())
+        cdef Timer timer = self._clock.get_timer(self.bar_type.to_string())
         cdef TimeEvent event = timer.pop_next_event()
         self._build_event(event)
         self.next_close = timer.next_time

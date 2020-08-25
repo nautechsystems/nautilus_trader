@@ -15,7 +15,8 @@
 
 from pandas import DataFrame
 
-from nautilus_trader.backtest.loaders import CSVTickDataLoader, CSVBarDataLoader
+from nautilus_trader.backtest.loaders import CSVBarDataLoader
+from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from tests.test_kit import PACKAGE_ROOT
 
 

@@ -14,8 +14,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import zmq.auth
 from pathlib import Path
+
+import zmq.auth
 
 if __name__ == "__main__":
 

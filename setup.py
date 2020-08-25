@@ -14,13 +14,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from Cython.Build import build_ext
+from Cython.Build import cythonize
+from Cython.Compiler import Options
 import setuptools
 from setuptools import setup
-from Cython.Build import cythonize, build_ext
-from Cython.Compiler import Options
 
-from nautilus_trader import __author__, __version__
-from tools.packaging import parse_requirements, make_extensions
+from nautilus_trader import __author__
+from nautilus_trader import __version__
+from tools.packaging import make_extensions
+from tools.packaging import parse_requirements
 
 PACKAGE_NAME = "nautilus_trader"
 MAINTAINER = __author__

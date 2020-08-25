@@ -16,27 +16,36 @@
 import time
 import unittest
 
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.identifiers import Venue, TraderId
-from nautilus_trader.common.logging import LogLevel, LoggerAdapter
-from nautilus_trader.network.identifiers import ServerId
-from nautilus_trader.network.messages import DataResponse, DataRequest
-from nautilus_trader.network.encryption import EncryptionSettings
-from nautilus_trader.network.compression import BypassCompressor
-from nautilus_trader.network.node_servers import MessageServer, MessagePublisher
-from nautilus_trader.serialization.data import Utf8QuoteTickSerializer, DataMapper
-from nautilus_trader.serialization.data import BsonDataSerializer, BsonInstrumentSerializer
-from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
-from nautilus_trader.serialization.serializers import MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.clock import LiveClock
+from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.factories import LiveUUIDFactory
 from nautilus_trader.live.logging import LiveLogger
-from nautilus_trader.live.data import LiveDataClient
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.network.compression import BypassCompressor
+from nautilus_trader.network.encryption import EncryptionSettings
+from nautilus_trader.network.identifiers import ServerId
+from nautilus_trader.network.messages import DataRequest
+from nautilus_trader.network.messages import DataResponse
+from nautilus_trader.network.node_servers import MessagePublisher
+from nautilus_trader.network.node_servers import MessageServer
+from nautilus_trader.serialization.data import BsonDataSerializer
+from nautilus_trader.serialization.data import BsonInstrumentSerializer
+from nautilus_trader.serialization.data import DataMapper
+from nautilus_trader.serialization.data import Utf8QuoteTickSerializer
+from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
+from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
+from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from tests.test_kit.mocks import ObjectStorer
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()

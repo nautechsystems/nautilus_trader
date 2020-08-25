@@ -77,7 +77,7 @@ cdef class PositionSizer:
         :return Quantity.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cdef double _calculate_risk_ticks(self, double entry, double stop_loss):
         """

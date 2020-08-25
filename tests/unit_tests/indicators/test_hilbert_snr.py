@@ -55,7 +55,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Act
-        for i in range(10):
+        for _i in range(10):
             self.snr.update(1.00010, 1.00000)
 
         # Assert
@@ -68,7 +68,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
-        for i in range(100):
+        for _i in range(100):
             self.snr.update(sys.float_info.epsilon, sys.float_info.epsilon)
 
         # Act
@@ -77,7 +77,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
     def test_value_with_ones_inputs_returns_expected_value(self):
         # Arrange
-        for i in range(100):
+        for _i in range(100):
             self.snr.update(1.00000, 1.00000)
 
         # Act
@@ -90,7 +90,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(9):
+        for _i in range(9):
             high += 0.00010
             low += 0.00010
             self.snr.update(high, low)
@@ -104,7 +104,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high += 0.00010
             low += 0.00010
             self.snr.update(high, low)
@@ -118,7 +118,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high -= 0.00010
             low -= 0.00010
             self.snr.update(high, low)
@@ -128,7 +128,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(1000):
+        for _i in range(1000):
             self.snr.update(1.00000, 1.00000)
 
         # Act

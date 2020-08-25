@@ -17,15 +17,14 @@ import unittest
 
 from nautilus_trader.core.types import Identifier
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.identifiers import (
-    Symbol,
-    Venue,
-    Brokerage,
-    AccountId,
-    TraderId,
-    StrategyId,
-    OrderId,
-    PositionId)
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Brokerage
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 
 
 class IdentifierTests(unittest.TestCase):

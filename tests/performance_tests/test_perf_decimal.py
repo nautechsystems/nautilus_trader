@@ -20,7 +20,6 @@ from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.model.objects import Price
 from tests.test_kit.performance import PerformanceHarness
 
-
 _PRECISION_5_CONTEXT = decimal.Context(prec=5)
 _BUILTIN_DECIMAL1 = decimal.Decimal("1.00000")
 _BUILTIN_DECIMAL2 = decimal.Decimal("1.00001")

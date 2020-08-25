@@ -15,9 +15,11 @@
 
 import unittest
 
-from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.trading.analyzers import SpreadAnalyzer
 from tests.test_kit.stubs import UNIX_EPOCH
 

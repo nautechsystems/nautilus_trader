@@ -15,14 +15,16 @@
 
 import unittest
 
+from nautilus_trader.common.account import Account
+from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Money
 from nautilus_trader.model.events import AccountStateEvent
-from nautilus_trader.model.identifiers import Brokerage, AccountNumber, AccountId
-from nautilus_trader.common.account import Account
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import AccountNumber
+from nautilus_trader.model.identifiers import Brokerage
+from nautilus_trader.model.objects import Money
 from tests.test_kit.stubs import UNIX_EPOCH
 
 

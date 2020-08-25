@@ -16,7 +16,9 @@
 import unittest
 
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Quantity, Price, Money
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from tests.test_kit.stubs import TestStubs
 

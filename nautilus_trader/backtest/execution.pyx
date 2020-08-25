@@ -19,6 +19,9 @@
 import pytz
 from cpython.datetime cimport datetime
 
+from nautilus_trader.backtest.clock cimport TestClock
+from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -43,9 +46,6 @@ from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitB
 from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
-from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.uuid cimport TestUUIDFactory
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
 from nautilus_trader.backtest.config cimport BacktestConfig
@@ -70,7 +70,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  FillModel fill_model not None,
                  TestClock clock not None,
                  TestUUIDFactory uuid_factory not None,
-                 Logger logger not None):
+                 TestLogger logger not None):
         """
         Initialize a new instance of the BacktestExecClient class.
 

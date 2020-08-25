@@ -17,6 +17,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.events cimport Event, OrderRejected
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -35,6 +36,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
@@ -60,9 +62,10 @@ cdef class TradingStrategy:
     cdef DataClient _data
     cdef ExecutionEngine _exec
 
-    cdef readonly bint is_running
+    cdef FiniteStateMachine _fsm
 
     cpdef bint equals(self, TradingStrategy other)
+    cpdef ComponentState state(self)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------#
     cpdef void on_start(self) except *
@@ -72,6 +75,7 @@ cdef class TradingStrategy:
     cpdef void on_data(self, object data) except *
     cpdef void on_event(self, Event event) except *
     cpdef void on_stop(self) except *
+    cpdef void on_resume(self) except *
     cpdef void on_reset(self) except *
     cpdef dict on_save(self)
     cpdef void on_load(self, dict state) except *
@@ -165,10 +169,11 @@ cdef class TradingStrategy:
 # -- COMMANDS -------------------------------------------------------------------------------------#
     cpdef void start(self) except *
     cpdef void stop(self) except *
+    cpdef void resume(self) except *
     cpdef void reset(self) except *
+    cpdef void dispose(self) except *
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
-    cpdef void dispose(self) except *
     cpdef void account_inquiry(self) except *
     cpdef void submit_order(self, Order order, PositionId position_id) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, PositionId position_id) except *

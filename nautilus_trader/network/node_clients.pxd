@@ -15,7 +15,8 @@
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport MessageType, Message, Request
-from nautilus_trader.common.clock cimport Clock, TimeEvent
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.identifiers cimport ClientId, SessionId

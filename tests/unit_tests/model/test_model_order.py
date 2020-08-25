@@ -15,24 +15,41 @@
 
 import unittest
 
-from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.core.types import ValidString, Label
-from nautilus_trader.model.enums import OrderSide, OrderType, OrderState, OrderPurpose
-from nautilus_trader.model.enums import TimeInForce, Currency
-from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted
-from nautilus_trader.model.events import OrderRejected, OrderWorking, OrderExpired
-from nautilus_trader.model.events import OrderModified, OrderCancelled, OrderCancelReject
-from nautilus_trader.model.events import OrderFilled, OrderPartiallyFilled
-from nautilus_trader.model.identifiers import IdTag, OrderId, OrderIdBroker
-from nautilus_trader.model.identifiers import BracketOrderId, ExecutionId, PositionIdBroker
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.order import Order
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.clock import TestClock
-from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
-
+from nautilus_trader.core.decimal import Decimal64
+from nautilus_trader.core.types import Label
+from nautilus_trader.core.types import ValidString
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import OrderPurpose
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCancelReject
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModified
+from nautilus_trader.model.events import OrderPartiallyFilled
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.identifiers import BracketOrderId
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import OrderIdBroker
+from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order import Order
+from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
