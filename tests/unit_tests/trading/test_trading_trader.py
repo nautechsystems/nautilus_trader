@@ -28,6 +28,7 @@ from nautilus_trader.common.execution import ExecutionEngine
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
@@ -113,19 +114,19 @@ class TraderTests(unittest.TestCase):
         # Assert
         self.assertEqual(TraderId("TESTER", "000"), trader_id)
         self.assertEqual(IdTag("000"), trader_id.order_id_tag)
-        self.assertFalse(self.trader.is_running)
-        self.assertEqual(2, len(self.trader.strategy_status()))
+        self.assertEqual(ComponentState.INITIALIZED, self.trader.state())
+        self.assertEqual(2, len(self.trader.strategy_states()))
 
     def test_can_get_strategy_status(self):
         # Arrange
         # Act
-        status = self.trader.strategy_status()
+        status = self.trader.strategy_states()
 
         # Assert
         self.assertTrue(StrategyId("EmptyStrategy", "001") in status)
         self.assertTrue(StrategyId("EmptyStrategy", "002") in status)
-        self.assertFalse(status[StrategyId("EmptyStrategy", "001")])
-        self.assertFalse(status[StrategyId("EmptyStrategy", "002")])
+        self.assertEqual('INITIALIZED', status[StrategyId("EmptyStrategy", "001")])
+        self.assertEqual('INITIALIZED', status[StrategyId("EmptyStrategy", "002")])
         self.assertEqual(2, len(status))
 
     def test_can_change_strategies(self):
@@ -137,9 +138,9 @@ class TraderTests(unittest.TestCase):
         self.trader.initialize_strategies(strategies)
 
         # Assert
-        self.assertTrue(strategies[0].id in self.trader.strategy_status())
-        self.assertTrue(strategies[1].id in self.trader.strategy_status())
-        self.assertEqual(2, len(self.trader.strategy_status()))
+        self.assertTrue(strategies[0].id in self.trader.strategy_states())
+        self.assertTrue(strategies[1].id in self.trader.strategy_states())
+        self.assertEqual(2, len(self.trader.strategy_states()))
 
     def test_trader_detects_none_unique_identifiers(self):
         # Arrange
@@ -154,12 +155,12 @@ class TraderTests(unittest.TestCase):
         # Act
         self.trader.start()
 
+        strategy_states = self.trader.strategy_states()
+
         # Assert
-        self.assertTrue(self.trader.is_running)
-        self.assertTrue(StrategyId("EmptyStrategy", "001") in self.trader.strategy_status())
-        self.assertTrue(StrategyId("EmptyStrategy", "002") in self.trader.strategy_status())
-        self.assertTrue(self.trader.strategy_status()[StrategyId("EmptyStrategy", "001")])
-        self.assertTrue(self.trader.strategy_status()[StrategyId("EmptyStrategy", "002")])
+        self.assertEqual(ComponentState.RUNNING, self.trader.state())
+        self.assertEqual('RUNNING', strategy_states[StrategyId("EmptyStrategy", "001")])
+        self.assertEqual('RUNNING', strategy_states[StrategyId("EmptyStrategy", "002")])
 
     def test_can_stop_a_running_trader(self):
         # Arrange
@@ -168,9 +169,9 @@ class TraderTests(unittest.TestCase):
         # Act
         self.trader.stop()
 
+        strategy_states = self.trader.strategy_states()
+
         # Assert
-        self.assertFalse(self.trader.is_running)
-        self.assertTrue(StrategyId("EmptyStrategy", "001") in self.trader.strategy_status())
-        self.assertTrue(StrategyId("EmptyStrategy", "002") in self.trader.strategy_status())
-        self.assertFalse(self.trader.strategy_status()[StrategyId("EmptyStrategy", "001")])
-        self.assertFalse(self.trader.strategy_status()[StrategyId("EmptyStrategy", "002")])
+        self.assertEqual(ComponentState.STOPPED, self.trader.state())
+        self.assertEqual('STOPPED', strategy_states[StrategyId("EmptyStrategy", "001")])
+        self.assertEqual('STOPPED', strategy_states[StrategyId("EmptyStrategy", "002")])

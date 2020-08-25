@@ -18,11 +18,13 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, Label
+from nautilus_trader.core.fsm cimport InvalidStateTransition
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
 from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
@@ -33,6 +35,7 @@ from nautilus_trader.model.tick cimport QuoteTick, TradeTick
 from nautilus_trader.model.bar cimport BarType, Bar
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order, BracketOrder
+from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
@@ -101,7 +104,7 @@ cdef class TradingStrategy:
         self._data = None  # Initialized when registered with the data client
         self._exec = None  # Initialized when registered with the execution engine
 
-        self.is_running = False
+        self._fsm = create_component_fsm()
 
     cpdef bint equals(self, TradingStrategy other):
         """
@@ -111,6 +114,12 @@ cdef class TradingStrategy:
         :return bool.
         """
         return self.id.equals(other.id)
+
+    cpdef ComponentState state(self):
+        """
+        Return the trading strategies state.
+        """
+        return self._fsm.state
 
     def __eq__(self, TradingStrategy other) -> bool:
         """
@@ -162,7 +171,7 @@ cdef class TradingStrategy:
         """
         Actions to be performed on strategy start.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
@@ -170,7 +179,7 @@ cdef class TradingStrategy:
 
         :param tick: The tick received.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:
         """
@@ -178,7 +187,7 @@ cdef class TradingStrategy:
 
         :param tick: The tick received.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
@@ -187,7 +196,7 @@ cdef class TradingStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef void on_data(self, object data) except *:
         """
@@ -195,7 +204,7 @@ cdef class TradingStrategy:
 
         :param data: The data object received.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef void on_event(self, Event event) except *:
         """
@@ -203,19 +212,25 @@ cdef class TradingStrategy:
 
         :param event: The event received.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef void on_stop(self) except *:
         """
         Actions to be performed when the strategy is stopped.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
+
+    cpdef void on_resume(self) except *:
+        """
+        Actions to be performed when the strategy is stopped.
+        """
+        pass  # Optionally override in subclass
 
     cpdef void on_reset(self) except *:
         """
         Actions to be performed when the strategy is reset.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef dict on_save(self):
         """
@@ -226,7 +241,7 @@ cdef class TradingStrategy:
         Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
         the returned state dictionary.
         """
-        return {}  # Optionally override in implementation
+        return {}  # Optionally override in subclass
 
     cpdef void on_load(self, dict state) except *:
         """
@@ -234,7 +249,7 @@ cdef class TradingStrategy:
 
         Saved state values will be contained in the give state dictionary.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
     cpdef void on_dispose(self) except *:
         """
@@ -242,7 +257,7 @@ cdef class TradingStrategy:
 
         Cleanup any resources used by the strategy here.
         """
-        pass  # Optionally override in implementation
+        pass  # Optionally override in subclass
 
 
 # -- REGISTRATION METHODS --------------------------------------------------------------------------
@@ -349,7 +364,7 @@ cdef class TradingStrategy:
         if is_historical:
             return  # Don't pass to on_tick()
 
-        if self.is_running:
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_quote_tick(tick)
             except Exception as ex:
@@ -389,7 +404,7 @@ cdef class TradingStrategy:
         if is_historical:
             return  # Don't pass to on_tick()
 
-        if self.is_running:
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_trade_tick(tick)
             except Exception as ex:
@@ -438,7 +453,7 @@ cdef class TradingStrategy:
         if is_historical:
             return  # Don't pass to on_bar()
 
-        if self.is_running:
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
@@ -471,7 +486,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(data, "data")
 
-        if self.is_running:
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_data(data)
             except Exception as ex:
@@ -496,7 +511,7 @@ cdef class TradingStrategy:
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
 
-        if self.is_running:
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_event(event)
             except Exception as ex:
@@ -1268,9 +1283,18 @@ cdef class TradingStrategy:
 
     cpdef void start(self) except *:
         """
-        Start the trade strategy and call on_start().
+        Start the trading strategy.
+
+        Calls on_start().
         """
-        self.log.debug(f"Starting...")
+        try:
+            self._fsm.trigger('START')
+        except InvalidStateTransition as ex:
+            self.log.exception(ex)
+            self.stop()  # Do not start strategy in an invalid state
+            return
+
+        self.log.info(f"{self._fsm.state_as_string()}...")
 
         if self._data is None:
             self.log.error("Cannot start strategy (the data client is not registered).")
@@ -1280,24 +1304,29 @@ cdef class TradingStrategy:
             self.log.error("Cannot start strategy (the execution engine is not registered).")
             return
 
-        self.is_running = True
-
         try:
             self.on_start()
         except Exception as ex:
             self.log.exception(ex)
+            self.stop()
+            return
 
-        self.log.info(f"Running...")
+        self._fsm.trigger('RUNNING')
+        self.log.info(f"{self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
         """
-        Stop the trade strategy and call on_stop().
+        Stop the trading strategy.
+
+        Calls on_stop().
         """
-        if not self.is_running:
-            self.log.error(f"Cannot stop a strategy which isn't running.")
+        try:
+            self._fsm.trigger('STOP')
+        except InvalidStateTransition as ex:
+            self.log.exception(ex)
             return
 
-        self.log.debug(f"Stopping...")
+        self.log.info(f"{self._fsm.state_as_string()}...")
 
         # Clean up clock
         cdef list timer_names = self.clock.get_timer_names()
@@ -1309,8 +1338,7 @@ cdef class TradingStrategy:
 
         # Flatten open positions
         if self.flatten_on_stop:
-            if not self.is_flat():
-                self.flatten_all_positions()
+            self.flatten_all_positions("STOPPING STRATEGY")
 
         # Cancel working orders
         if self.cancel_all_orders_on_stop:
@@ -1321,22 +1349,48 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self.is_running = False
-        self.log.info(f"Stopped.")
+        self._fsm.trigger('STOPPED')
+        self.log.info(f"{self._fsm.state_as_string()}.")
+
+    cpdef void resume(self) except *:
+        """
+        Resume the trading strategy.
+
+        Calls on_resume().
+        """
+        try:
+            self._fsm.trigger('RESUME')
+        except InvalidStateTransition as ex:
+            self.log.exception(ex)
+            self.stop()  # Do not start strategy in an invalid state
+            return
+
+        self.log.info(f"{self._fsm.state_as_string()}...")
+
+        try:
+            self.on_resume()
+        except Exception as ex:
+            self.log.exception(ex)
+            self.stop()
+            return
+
+        self._fsm.trigger('RUNNING')
+        self.log.info(f"{self._fsm.state_as_string()}.")
 
     cpdef void reset(self) except *:
         """
-        Reset the strategy.
+        Reset the trading strategy.
 
-        All stateful values are reset to their initial value, on_reset() is then
-        called.
-        Note: The strategy cannot be running otherwise an error is logged.
+        Calls on_reset().
+        All stateful values are reset to their initial value.
         """
-        if self.is_running:
-            self.log.error(f"Cannot reset (cannot reset a running strategy).")
+        try:
+            self._fsm.trigger('RESET')
+        except InvalidStateTransition as ex:
+            self.log.exception(ex)
             return
 
-        self.log.debug(f"Resetting...")
+        self.log.info(f"{self._fsm.state_as_string()}...")
 
         if self.order_factory is not None:
             self.order_factory.reset()
@@ -1354,7 +1408,28 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self.log.info(f"Reset.")
+        self._fsm.trigger('RESET')
+        self.log.info(f"{self._fsm.state_as_string()}.")
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the trading strategy.
+        """
+        try:
+            self._fsm.trigger('DISPOSE')
+        except InvalidStateTransition as ex:
+            self.log.exception(ex)
+            return
+
+        self.log.info(f"{self._fsm.state_as_string()}...")
+
+        try:
+            self.on_dispose()
+        except Exception as ex:
+            self.log.exception(ex)
+
+        self._fsm.trigger('DISPOSED')
+        self.log.info(f"{self._fsm.state_as_string()}.")
 
     cpdef dict save(self):
         """
@@ -1396,19 +1471,6 @@ cdef class TradingStrategy:
             self.on_load(state)
         except Exception as ex:
             self.log.exception(ex)
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the strategy to release system resources.
-        """
-        self.log.debug(f"Disposing...")
-
-        try:
-            self.on_dispose()
-        except Exception as ex:
-            self.log.exception(ex)
-
-        self.log.info(f"Disposed.")
 
     cpdef void account_inquiry(self) except *:
         """
@@ -1579,10 +1641,10 @@ cdef class TradingStrategy:
         cdef dict working_orders = self._exec.database.get_orders_working(self.id)
         cdef int working_orders_count = len(working_orders)
         if working_orders_count == 0:
-            self.log.info("cancel_all_orders(): No working orders to cancel.")
+            self.log.info("No working orders to cancel.")
             return
 
-        self.log.info(f"cancel_all_orders(): Cancelling {working_orders_count} working order(s)...")
+        self.log.info(f"Cancelling {working_orders_count} working order(s)...")
         cdef OrderId order_id
         cdef Order order
         cdef CancelOrder command
@@ -1651,10 +1713,10 @@ cdef class TradingStrategy:
         cdef dict positions = self._exec.database.get_positions_open(self.id)
         cdef int open_positions_count = len(positions)
         if open_positions_count == 0:
-            self.log.info("FLATTEN_ALL_POSITIONS: No open positions to flatten.")
+            self.log.info("No open positions to flatten.")
             return
 
-        self.log.info(f"FLATTEN_ALL_POSITIONS: Flattening {open_positions_count} open position(s)...")
+        self.log.info(f"Flattening {open_positions_count} open position(s)...")
 
         cdef PositionId position_id
         cdef Position position

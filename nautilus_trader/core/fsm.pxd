@@ -13,22 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
 
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+cdef class InvalidStateTransition(Exception):
+    pass
 
 
-__author__ = "Nautech Systems"
+cdef class FiniteStateMachine:
+    cdef dict _state_transition_table
+    cdef object _state_parser
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 48
-_PATCH_VERSION = 0
-_PRE_RELEASE = ''
+    cdef readonly object state
 
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+    cpdef void trigger(self, str trigger) except *
+    cpdef void force_set(self, object state) except *
+    cpdef str state_as_string(self)

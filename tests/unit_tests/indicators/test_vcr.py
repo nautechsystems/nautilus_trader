@@ -50,7 +50,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Act
-        for i in range(100):
+        for _i in range(100):
             self.vcr.update(1.00000, 1.00000, 1.00000)
 
         # Assert
@@ -58,7 +58,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
     def test_initialized_with_required_mid_inputs_returns_true(self):
         # Act
-        for i in range(100):
+        for _i in range(100):
             self.vcr.update_mid(1.00000)
 
         # Assert
@@ -121,7 +121,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         factor = 0.0
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high += 0.00010 + factor
             low += 0.00010 + factor
             factor += 0.00001
@@ -138,7 +138,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         factor = 0.0
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high -= 0.00010 + factor
             low -= 0.00010 + factor
             factor -= 0.00002
@@ -150,7 +150,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(1000):
+        for _i in range(1000):
             self.vcr.update(1.00010, 1.00000, 1.00005)
 
         # Act

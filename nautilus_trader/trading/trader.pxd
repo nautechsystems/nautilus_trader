@@ -19,8 +19,10 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.model.identifiers cimport TraderId, AccountId
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.analysis.reports cimport ReportProvider
 
 
@@ -31,13 +33,13 @@ cdef class Trader:
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
+    cdef FiniteStateMachine _fsm
 
     cdef readonly TraderId id
     cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
     cdef readonly list strategies
-    cdef readonly bint is_running
 
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *
@@ -50,7 +52,8 @@ cdef class Trader:
 
     cpdef void account_inquiry(self) except *
 
-    cpdef dict strategy_status(self)
+    cpdef ComponentState state(self)
+    cpdef dict strategy_states(self)
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)
     cpdef object generate_positions_report(self)

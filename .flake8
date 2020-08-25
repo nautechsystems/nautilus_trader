@@ -19,7 +19,7 @@ docstring_style=numpy
 [flake8]
 filename = *.py, *.pyx, *.pxd
 exclude = .eggs, *.egg, build, stats.py, utils.py
-ignore = E225, E252, E999, D100, D101, D104, D102, D200, D400, S322
+ignore = E225, E252, E999, D100, D101, D104, D102, D200, D201, D400, S322
 max-complexity = 10
 max-line-length = 150
 
@@ -36,4 +36,5 @@ max-line-length = 150
 # D101 Missing docstring in public class
 # D104 Missing docstring in public package
 # D200 One-line docstring should fit on one line with quotes (conflicts with Codacy)
+# D201 Missing "Returns" in Docstring
 # D400 First line should end with a period

@@ -32,6 +32,7 @@ from nautilus_trader.common.execution import ExecutionEngine
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import MarketPosition
 from nautilus_trader.model.enums import OrderSide
@@ -504,14 +505,15 @@ class TradeStrategyTests(unittest.TestCase):
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        result1 = strategy.is_running
+        result1 = strategy.state()
+
         # Act
         strategy.start()
-        result2 = strategy.is_running
+        result2 = strategy.state()
 
         # Assert
-        self.assertFalse(result1)
-        self.assertTrue(result2)
+        self.assertEqual(ComponentState.INITIALIZED, result1)
+        self.assertEqual(ComponentState.RUNNING, result2)
         self.assertTrue("custom start logic" in strategy.object_storer.get_store())
 
     def test_can_stop_strategy(self):
@@ -526,7 +528,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertFalse(strategy.is_running)
+        self.assertEqual(ComponentState.STOPPED, strategy.state())
         self.assertTrue("custom stop logic" in strategy.object_storer.get_store())
 
     def test_can_reset_strategy(self):
@@ -550,7 +552,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.reset()
 
         # Assert
-        self.assertFalse(strategy.is_running)
+        self.assertEqual(ComponentState.INITIALIZED, strategy.state())
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
         self.assertTrue("custom reset logic" in strategy.object_storer.get_store())
