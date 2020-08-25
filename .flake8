@@ -18,14 +18,13 @@ docstring_style=numpy
 
 [flake8]
 filename = *.py, *.pyx, *.pxd
-exclude = .eggs, *.egg, build, stats.py, utils.py
+exclude = .eggs, *.egg, build
 ignore = E225, E252, E999, D100, D101, D104, D102, D200, D201, D400, S322
 max-complexity = 10
 max-line-length = 150
 
 # Ignores justification
 # ---------------------
-# Excluded stats.py and utils.py is temporary third-party code
 # E225 missing whitespace around operator (picks up cython casting)
 # E252 spaces around default argument assignment (incorrect syntax)
 # E999 SyntaxError: invalid syntax (cimport seen as invalid syntax)
