@@ -13,11 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport date, datetime
+
 import numpy as np
 import pandas as pd
-from cpython.datetime cimport date, datetime
 from numpy import float64
 from scipy.stats import kurtosis, skew
+from empyrical import annual_return, cum_returns_final, annual_volatility
+from empyrical import sharpe_ratio, calmar_ratio, sortino_ratio, omega_ratio
+from empyrical import stability_of_timeseries, max_drawdown, alpha, beta
+from empyrical import tail_ratio
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
@@ -25,10 +30,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.analysis.stats import annual_return, cum_returns_final, annual_volatility
-from nautilus_trader.analysis.stats import sharpe_ratio, calmar_ratio, sortino_ratio, omega_ratio
-from nautilus_trader.analysis.stats import stability_of_timeseries, max_drawdown, alpha, beta
-from nautilus_trader.analysis.stats import tail_ratio
 
 
 cdef class PerformanceAnalyzer:
