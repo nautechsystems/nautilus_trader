@@ -95,7 +95,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(1000):
+        for _i in range(1000):
             self.ema.update(1.00000)
 
         # Act

@@ -90,12 +90,6 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        if self.symbol not in self.instrument_symbols():
-            self.log.error(f"Could not find instrument {self.symbol}")
-            self.log.error("Stopping...")
-            self.stop()
-            return
-
         instrument = self.get_instrument(self.symbol)
 
         self.precision = instrument.price_precision

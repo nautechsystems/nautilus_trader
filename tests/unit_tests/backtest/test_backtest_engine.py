@@ -51,7 +51,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_initialization(self):
-        self.assertEqual(1, len(self.engine.trader.strategy_status()))
+        self.assertEqual(1, len(self.engine.trader.strategy_states()))
 
     def test_timer_and_alert_sequencing_with_bar_execution(self):
         # Arrange

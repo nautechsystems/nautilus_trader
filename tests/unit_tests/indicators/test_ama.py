@@ -55,7 +55,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         # Act
-        for i in range(10):
+        for _i in range(10):
             self.ama.update(1.00000)
 
         # Assert
@@ -81,7 +81,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(1000):
+        for _i in range(1000):
             self.ama.update(1.00000)
 
         # Act

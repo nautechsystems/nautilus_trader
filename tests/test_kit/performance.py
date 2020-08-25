@@ -24,7 +24,9 @@ _MICROSECONDS_IN_SECOND = 1000000
 
 
 def get_size_of(obj):
-
+    """
+    Return the size of the given object in memory.
+    """
     marked = {id(obj)}
     obj_q = [obj]
     size = 0

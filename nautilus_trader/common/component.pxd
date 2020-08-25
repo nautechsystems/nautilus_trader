@@ -13,22 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
-
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 
 
-__author__ = "Nautech Systems"
-
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 48
-_PATCH_VERSION = 0
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+cpdef dict generate_state_transition_table()
+cpdef FiniteStateMachine create_component_fsm()

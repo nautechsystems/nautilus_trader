@@ -62,7 +62,7 @@ class PyStrategy(TradingStrategy):
 
 class EmptyStrategy(TradingStrategy):
     """
-    An empty strategy which is does nothing.
+    An empty strategy which does nothing.
     """
 
     def __init__(self, order_id_tag):
@@ -154,7 +154,6 @@ class TestStrategy1(TradingStrategy):
 
     def on_start(self):
         self.object_storer.store("custom start logic")
-        self.subscribe_bars(self.bar_type)
 
     def on_quote_tick(self, tick):
         self.object_storer.store(tick)

@@ -55,7 +55,7 @@ class HilbertTransformTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Act
-        for i in range(10):
+        for _i in range(10):
             self.ht.update(1.00000)
 
         # Assert
@@ -69,7 +69,7 @@ class HilbertTransformTests(unittest.TestCase):
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
-        for i in range(100):
+        for _i in range(100):
             self.ht.update(sys.float_info.epsilon)
 
         # Act
@@ -79,7 +79,7 @@ class HilbertTransformTests(unittest.TestCase):
 
     def test_value_with_ones_inputs_returns_expected_value(self):
         # Arrange
-        for i in range(100):
+        for _i in range(100):
             self.ht.update(1.00000)
 
         # Act
@@ -93,7 +93,7 @@ class HilbertTransformTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(9):
+        for _i in range(9):
             high += 0.00010
             low += 0.00010
             self.ht.update((high + low) / 2)
@@ -108,7 +108,7 @@ class HilbertTransformTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high += 0.00010
             low += 0.00010
             self.ht.update((high + low) / 2)
@@ -123,7 +123,7 @@ class HilbertTransformTests(unittest.TestCase):
         low = 1.00000
 
         # Act
-        for i in range(1000):
+        for _i in range(1000):
             high -= 0.00010
             low -= 0.00010
             self.ht.update((high + low) / 2)
@@ -134,7 +134,7 @@ class HilbertTransformTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for i in range(1000):
+        for _i in range(1000):
             self.ht.update(1.00000)
 
         # Act
