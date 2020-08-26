@@ -13,22 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
+import uuid
+import unittest
 
-import os
+from nautilus_trader.core.uuid import uuid4
+from tests.test_kit.performance import PerformanceHarness
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+class UUIDTests:
+
+    @staticmethod
+    def make_builtin_uuid():
+        uuid.uuid4()
+
+    @staticmethod
+    def make_nautilus_uuid():
+        uuid4()
 
 
-__author__ = "Nautech Systems"
+class UUIDPerformanceTests(unittest.TestCase):
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 48
-_PATCH_VERSION = 2
-_PRE_RELEASE = ''
+    def test_make_builtin_uuid(self):
+        result = PerformanceHarness.profile_function(UUIDTests.make_builtin_uuid, 3, 100000)
+        # ~279ms (279583μs) minimum of 3 runs @ 100,000 iterations each run.
+        self.assertTrue(result < 1.2)
 
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+    def test_make_nautilus_uuid(self):
+        result = PerformanceHarness.profile_function(UUIDTests.make_nautilus_uuid, 3, 100000)
+        # ~235ms (235752μs) minimum of 3 runs @ 100,000 iterations each run.
+        self.assertTrue(result < 1.2)
