@@ -68,7 +68,7 @@ cdef class BypassCompressor(Compressor):
 
 cdef class LZ4Compressor(Compressor):
     """
-    Provides a compressor for the LZ4 block specification.
+    Provides a compressor for the LZ4 frame specification.
     """
 
     cpdef bytes compress(self, bytes data):
