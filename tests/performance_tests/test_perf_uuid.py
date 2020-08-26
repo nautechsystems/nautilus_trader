@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import uuid
 import unittest
+import uuid
 
 from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.performance import PerformanceHarness
