@@ -28,7 +28,6 @@ cdef class Compressor:
         :param data: The data to compress.
         :return bytes.
         """
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bytes decompress(self, bytes data):
@@ -38,7 +37,6 @@ cdef class Compressor:
         :param data: The data to decompress.
         :return bytes.
         """
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
 
