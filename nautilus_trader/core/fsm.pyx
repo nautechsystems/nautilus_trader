@@ -40,16 +40,22 @@ cdef class FiniteStateMachine:
         state_transition_table : dict of tuples and states
             The state transition table for the FSM consisting of a tuple of
             starting state and trigger as keys, and resulting states as values.
+        initial_state : object
+            The initial state for the FSM.
+        state_parser : callable (optional)
+            The optional state parser is required to convert C enum ints into strings.
 
         Raises
         ------
         ValueError
             If state_transition_table is empty.
             If state_transition_table contains a key of type other than tuple.
+            If state_parser is not of type Callable or None.
 
         """
         Condition.not_empty(state_transition_table, "state_transition_table")
         Condition.dict_types(state_transition_table, tuple, object, "state_transition_table")
+        Condition.callable_or_none(state_parser, "state_parser")
 
         self._state_transition_table = state_transition_table
         self.state = initial_state
@@ -57,11 +63,19 @@ cdef class FiniteStateMachine:
 
     cpdef void trigger(self, str trigger) except *:
         """
-        Process the FSM with the given trigger.
+        Process the FSM with the given trigger. The trigger must be valid for
+        the FSMs current state.
 
         Parameters
         ----------
         trigger : str
+            The trigger to combine with the current state providing the key for
+            the transition table lookup.
+
+        Raises
+        ------
+        InvalidStateTransition
+            If the state and trigger combination is not found in the transition table.
 
         """
         Condition.valid_string(trigger, "trigger")
@@ -94,4 +108,6 @@ cdef class FiniteStateMachine:
         str
 
         """
+        if self._state_parser is None:
+            return self.state
         return self._state_parser(self.state)
