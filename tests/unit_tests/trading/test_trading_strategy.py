@@ -58,7 +58,7 @@ USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
 
 
-class TradeStrategyTests(unittest.TestCase):
+class TradingStrategyTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
