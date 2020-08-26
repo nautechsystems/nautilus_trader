@@ -78,11 +78,9 @@ cdef class Socket:
             self._log.warning(f"No encryption setup for socket at {self.network_address}")
 
     cpdef void connect(self) except *:
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
