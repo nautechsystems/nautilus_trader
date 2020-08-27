@@ -16,7 +16,6 @@
 import pytz
 from cpython.datetime cimport datetime, timedelta
 
-
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport Timer

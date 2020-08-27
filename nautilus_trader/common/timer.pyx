@@ -254,7 +254,6 @@ cdef class Timer:
         """
         Cancels the timer (the timer will not raise an event).
         """
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     def __hash__(self) -> int:

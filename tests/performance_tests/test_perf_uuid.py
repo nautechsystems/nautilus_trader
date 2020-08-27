@@ -13,33 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
 import unittest
+import uuid
 
-from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.core.uuid import uuid4
-from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.performance import PerformanceHarness
 
 
-class TimeEventTests(unittest.TestCase):
+class UUIDTests:
 
-    def test_can_hash_time_event(self):
-        # Arrange
-        event = TimeEvent("123", uuid4(), UNIX_EPOCH)
+    @staticmethod
+    def make_builtin_uuid():
+        uuid.uuid4()
 
-        # Act
-        result = hash(event)
+    @staticmethod
+    def make_nautilus_uuid():
+        uuid4()
 
-        # Assert
-        self.assertEqual(int, type(result))  # No assertions raised
 
-    def test_can_sort_time_events(self):
-        # Arrange
-        event1 = TimeEvent("123", uuid4(), UNIX_EPOCH)
-        event2 = TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1))
+class UUIDPerformanceTests(unittest.TestCase):
 
-        # Act
-        result = sorted([event2, event1])
+    def test_make_builtin_uuid(self):
+        result = PerformanceHarness.profile_function(UUIDTests.make_builtin_uuid, 3, 100000)
+        # ~279ms (279583μs) minimum of 3 runs @ 100,000 iterations each run.
+        self.assertTrue(result < 1.2)
 
-        # Assert
-        self.assertEqual([event1, event2], result)
+    def test_make_nautilus_uuid(self):
+        result = PerformanceHarness.profile_function(UUIDTests.make_nautilus_uuid, 3, 100000)
+        # ~235ms (235752μs) minimum of 3 runs @ 100,000 iterations each run.
+        self.assertTrue(result < 1.2)

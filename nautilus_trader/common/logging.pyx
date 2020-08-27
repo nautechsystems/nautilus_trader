@@ -170,7 +170,6 @@ cdef class Logger:
 
         :param message: The log message to log.
         """
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list get_log_store(self):

@@ -19,8 +19,8 @@ from datetime import timedelta
 import pytz
 
 from nautilus_trader.backtest.clock import TestClock
-from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
