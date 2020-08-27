@@ -310,6 +310,8 @@ cdef class TradingNode:
         self._data_client.dispose()
         self._exec_client.dispose()
 
+        self._log.info("Disposed.")
+
     cdef void _log_header(self) except *:
         nautilus_header(self._log)
         self._log.info(f"redis {redis.__version__}")
