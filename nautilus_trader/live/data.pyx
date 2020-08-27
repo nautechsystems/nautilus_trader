@@ -552,7 +552,7 @@ cdef class LiveDataClient(DataClient):
                 handler(data)
         elif data_type == BAR_ARRAY:
             metadata = data_package[METADATA]
-            bar_type = self._cached_bar_types.get(metadata[SYMBOL] + "-" + metadata[SPECIFICATION])
+            bar_type = self._cached_bar_types.get(f"{metadata[SYMBOL]}-{metadata[SPECIFICATION]}")
             data = Utf8BarSerializer.deserialize_bytes_list(data_package[DATA])
             self.handle_bars(bar_type, data)
             if handler is not None:

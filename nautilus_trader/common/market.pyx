@@ -628,7 +628,6 @@ cdef class BarAggregator:
             use_previous_close=use_previous_close)
 
     cpdef void update(self, QuoteTick tick) except *:
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void _handle_bar(self, Bar bar) except *:

@@ -52,7 +52,6 @@ cdef class Clock:
 
         :return datetime.
         """
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef timedelta get_delta(self, datetime time):
@@ -201,6 +200,8 @@ cdef class Clock:
         """
         cdef str name
         for name in self.get_timer_names():
+            # Using a list of timer names as cancel_timer handles the clean
+            # removal of both the handler and timer.
             self.cancel_timer(name)
 
     cdef Timer _get_timer(
@@ -211,7 +212,6 @@ cdef class Clock:
             datetime now,
             datetime start_time,
             datetime stop_time):
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef void _add_timer(self, Timer timer, handler) except *:

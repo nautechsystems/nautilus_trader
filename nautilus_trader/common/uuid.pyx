@@ -23,9 +23,11 @@ cdef class UUIDFactory:
 
     cpdef UUID generate(self):
         """
-        Return a generated UUID.
+        Generate a new UUID.
 
-        :return UUID.
+        Return
+        ------
+        UUID
+
         """
-        # Raise exception if not overridden in implementation
         raise NotImplementedError("method must be implemented in the subclass")

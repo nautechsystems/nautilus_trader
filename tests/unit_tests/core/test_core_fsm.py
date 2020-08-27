@@ -15,9 +15,10 @@
 
 import unittest
 
-from nautilus_trader.core.fsm import FiniteStateMachine, InvalidStateTransition
-from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.common.component import generate_state_transition_table
+from nautilus_trader.core.fsm import FiniteStateMachine
+from nautilus_trader.core.fsm import InvalidStateTransition
+from nautilus_trader.model.enums import ComponentState
 
 
 class FiniteStateMachineTests(unittest.TestCase):
