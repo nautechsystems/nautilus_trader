@@ -18,6 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.types cimport Label
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -33,6 +34,7 @@ from nautilus_trader.model.identifiers cimport PositionIdBroker
 cdef class Order:
     cdef set _execution_ids
     cdef list _events
+    cdef FiniteStateMachine _fsm
 
     cdef readonly OrderId id
     cdef readonly OrderIdBroker id_broker
@@ -73,7 +75,6 @@ cdef class Order:
     cpdef void apply(self, OrderEvent event) except *
     cdef void _set_is_working_true(self) except *
     cdef void _set_is_completed_true(self) except *
-    cdef void _set_filled_state(self) except *
     cdef void _set_slippage(self) except *
 
 

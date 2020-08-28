@@ -20,7 +20,6 @@ from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.types import Label
-from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderPurpose
@@ -28,17 +27,10 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelled
-from nautilus_trader.model.events import OrderCancelReject
-from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderPartiallyFilled
-from nautilus_trader.model.events import OrderRejected
-from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
@@ -438,20 +430,15 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        event = OrderSubmitted(
-            self.account_id,
-            order.id,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        submitted = TestStubs.event_order_submitted(order)
 
         # Act
-        order.apply(event)
+        order.apply(submitted)
 
         # Assert
         self.assertEqual(OrderState.SUBMITTED, order.state)
         self.assertEqual(2, order.event_count)
-        self.assertEqual(event, order.last_event)
+        self.assertEqual(submitted, order.last_event)
         self.assertFalse(order.is_completed)
 
     def test_can_apply_order_accepted_event_to_order(self):
@@ -461,17 +448,13 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        event = OrderAccepted(
-            self.account_id,
-            order.id,
-            OrderIdBroker("B" + order.id.value),
-            Label("E"),
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+
+        order.apply(submitted)
 
         # Act
-        order.apply(event)
+        order.apply(accepted)
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -484,16 +467,13 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        event = OrderRejected(
-            self.account_id,
-            order.id,
-            UNIX_EPOCH,
-            ValidString("ORDER ID INVALID"),
-            uuid4(),
-            UNIX_EPOCH)
+        submitted = TestStubs.event_order_submitted(order)
+        rejected = TestStubs.event_order_rejected(order)
+
+        order.apply(submitted)
 
         # Act
-        order.apply(event)
+        order.apply(rejected)
 
         # Assert
         self.assertEqual(OrderState.REJECTED, order.state)
@@ -506,29 +486,20 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        event = OrderWorking(
-            self.account_id,
-            order.id,
-            OrderIdBroker("SOME_BROKER_ID"),
-            order.symbol,
-            order.label,
-            order.side,
-            order.type,
-            order.quantity,
-            Price(1.0, 1),
-            order.time_in_force,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH,
-            order.expire_time)
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+        working = TestStubs.event_order_working(order)
+
+        order.apply(submitted)
+        order.apply(accepted)
 
         # Act
-        order.apply(event)
+        order.apply(working)
 
         # Assert
         # print(order)
         self.assertEqual(OrderState.WORKING, order.state)
-        self.assertEqual(OrderIdBroker("SOME_BROKER_ID"), order.id_broker)
+        self.assertEqual(OrderIdBroker("B-O-19700101-000000-001-001-1"), order.id_broker)
         self.assertFalse(order.is_completed)
         self.assertTrue(order.is_working)
         self.assertEqual(None, order.filled_timestamp)
@@ -540,15 +511,17 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        event = OrderExpired(
-            self.account_id,
-            order.id,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+        working = TestStubs.event_order_working(order)
+        expired = TestStubs.event_order_expired(order)
+
+        order.apply(submitted)
+        order.apply(accepted)
+        order.apply(working)
 
         # Act
-        order.apply(event)
+        order.apply(expired)
 
         # Assert
         self.assertEqual(OrderState.EXPIRED, order.state)
@@ -561,41 +534,47 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        event = OrderCancelled(
-            self.account_id,
-            order.id,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+        cancelled = TestStubs.event_order_cancelled(order)
+
+        order.apply(submitted)
+        order.apply(accepted)
 
         # Act
-        order.apply(event)
+        order.apply(cancelled)
 
         # Assert
         self.assertEqual(OrderState.CANCELLED, order.state)
         self.assertTrue(order.is_completed)
 
-    def test_can_apply_order_cancel_reject_event_to_order(self):
-        # Arrange
-        order = self.order_factory.market(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        event = OrderCancelReject(
-            self.account_id,
-            order.id,
-            UNIX_EPOCH,
-            ValidString("REJECT_RESPONSE"),
-            ValidString("ORDER DOES NOT EXIST"),
-            uuid4(),
-            UNIX_EPOCH)
-
-        # Act
-        order.apply(event)
-
-        # Assert
-        self.assertEqual(OrderState.INITIALIZED, order.state)
+    # TODO: Remove
+    # def test_can_apply_order_cancel_reject_event_to_order(self):
+    #     # Arrange
+    #     order = self.order_factory.market(
+    #         AUDUSD_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000))
+    #
+    #     submitted = TestStubs.event_order_submitted(order)
+    #     accepted = TestStubs.event_order_accepted(order)
+    #
+    #     event = OrderCancelReject(
+    #         self.account_id,
+    #         order.id,
+    #         UNIX_EPOCH,
+    #         ValidString("REJECT_RESPONSE"),
+    #         ValidString("ORDER DOES NOT EXIST"),
+    #         uuid4(),
+    #         UNIX_EPOCH)
+    #
+    #     # Act
+    #     order.apply(submitted)
+    #     order.apply(accepted)
+    #     order.apply(event)
+    #
+    #     # Assert
+    #     self.assertEqual(OrderState.INITIALIZED, order.state)
 
     def test_can_apply_order_modified_event_to_order(self):
         # Arrange
@@ -604,23 +583,11 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_working = OrderWorking(
-            self.account_id,
-            order.id,
-            OrderIdBroker("SOME_BROKER_ID_1"),
-            order.symbol,
-            order.label,
-            order.side,
-            order.type,
-            order.quantity,
-            Price(1.00000, 5),
-            order.time_in_force,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH,
-            order.expire_time)
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+        working = TestStubs.event_order_working(order)
 
-        order_modified = OrderModified(
+        modified = OrderModified(
             self.account_id,
             order.id,
             OrderIdBroker("SOME_BROKER_ID_2"),
@@ -630,10 +597,12 @@ class OrderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH)
 
-        order.apply(order_working)
+        order.apply(submitted)
+        order.apply(accepted)
+        order.apply(working)
 
         # Act
-        order.apply(order_modified)
+        order.apply(modified)
 
         # Assert
         self.assertEqual(OrderState.WORKING, order.state)
@@ -642,7 +611,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price(1.00001, 5), order.price)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(3, order.event_count)
+        self.assertEqual(5, order.event_count)
 
     def test_can_apply_order_filled_event_to_market_order(self):
         # Arrange
@@ -651,7 +620,11 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        event = OrderFilled(
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+        working = TestStubs.event_order_working(order)
+
+        filled = OrderFilled(
             self.account_id,
             order.id,
             ExecutionId("SOME_EXEC_ID_1"),
@@ -665,8 +638,12 @@ class OrderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH)
 
+        order.apply(submitted)
+        order.apply(accepted)
+        order.apply(working)
+
         # Act
-        order.apply(event)
+        order.apply(filled)
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
@@ -683,7 +660,11 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        event = OrderFilled(
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+        working = TestStubs.event_order_working(order)
+
+        filled = OrderFilled(
             self.account_id,
             order.id,
             ExecutionId("SOME_EXEC_ID_1"),
@@ -697,8 +678,12 @@ class OrderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH)
 
+        order.apply(submitted)
+        order.apply(accepted)
+        order.apply(working)
+
         # Act
-        order.apply(event)
+        order.apply(filled)
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
@@ -717,7 +702,11 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        event = OrderPartiallyFilled(
+        submitted = TestStubs.event_order_submitted(order)
+        accepted = TestStubs.event_order_accepted(order)
+        working = TestStubs.event_order_working(order)
+
+        partially = OrderPartiallyFilled(
             self.account_id,
             order.id,
             ExecutionId("SOME_EXEC_ID_1"),
@@ -732,8 +721,12 @@ class OrderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH)
 
+        order.apply(submitted)
+        order.apply(accepted)
+        order.apply(working)
+
         # Act
-        order.apply(event)
+        order.apply(partially)
 
         # Assert
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
@@ -741,36 +734,5 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price(1.00000, 5), order.price)
         self.assertEqual(Price(0.999999, 6), order.average_price)
         self.assertEqual(Decimal64(-0.000001, 6), order.slippage)
-        self.assertFalse(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
-
-    def test_can_apply_order_overfilled_event_to_buy_limit_order(self):
-        # Arrange
-        order = self.order_factory.limit(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(1.00000, 5))
-
-        event = OrderFilled(
-            self.account_id,
-            order.id,
-            ExecutionId("SOME_EXEC_ID_1"),
-            PositionIdBroker("SOME_EXEC_TICKET_1"),
-            order.symbol,
-            order.side,
-            Quantity(150000),
-            Price(0.99999, 5),
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
-
-        # Act
-        order.apply(event)
-
-        # Assert
-        self.assertEqual(OrderState.OVER_FILLED, order.state)
-        self.assertEqual(Quantity(150000), order.filled_quantity)
         self.assertFalse(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
