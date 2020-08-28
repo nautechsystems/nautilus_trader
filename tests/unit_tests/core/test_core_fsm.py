@@ -17,7 +17,7 @@ import unittest
 
 from nautilus_trader.common.component import get_state_transition_table
 from nautilus_trader.core.fsm import FiniteStateMachine
-from nautilus_trader.core.fsm import InvalidStateTransition
+from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.model.enums import ComponentState
 
 
@@ -65,7 +65,7 @@ class FiniteStateMachineTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(InvalidStateTransition, self.fsm.trigger, 'RUNNING')
+        self.assertRaises(InvalidStateTrigger, self.fsm.trigger, 'RUNNING')
 
     def test_trigger_with_valid_transition_results_in_expected_state(self):
         # Arrange

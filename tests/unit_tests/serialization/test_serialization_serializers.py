@@ -624,7 +624,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderWorking(
             self.account_id,
             OrderId("O-123456"),
-            OrderIdBroker("BO-123456"),
+            OrderIdBroker("B-123456"),
             AUDUSD_FXCM,
             Label("PT"),
             OrderSide.SELL,
@@ -683,7 +683,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderModified(
             self.account_id,
             OrderId("O-123456"),
-            OrderIdBroker("BO-123456"),
+            OrderIdBroker("B-123456"),
             Quantity(100000),
             Price(0.80010, 5),
             UNIX_EPOCH,

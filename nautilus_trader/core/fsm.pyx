@@ -16,7 +16,7 @@
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef class InvalidStateTransition(Exception):
+cdef class InvalidStateTrigger(Exception):
     """
     Represents an invalid trigger for the current state.
     """
@@ -74,7 +74,7 @@ cdef class FiniteStateMachine:
 
         Raises
         ------
-        InvalidStateTransition
+        InvalidStateTrigger
             If the state and trigger combination is not found in the transition table.
 
         """
@@ -82,7 +82,7 @@ cdef class FiniteStateMachine:
 
         next_state = self._state_transition_table.get((self.state, trigger))
         if next_state is None:
-            raise InvalidStateTransition(f"{self.state_as_string()} -> {trigger}")
+            raise InvalidStateTrigger(f"{self.state_as_string()} -> {trigger}")
 
         self.state = next_state
 

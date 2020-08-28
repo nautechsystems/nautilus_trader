@@ -56,7 +56,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly RolloverInterestCalculator rollover_calculator
-    cdef readonly object tz_us_est
     cdef readonly double rollover_spread
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover

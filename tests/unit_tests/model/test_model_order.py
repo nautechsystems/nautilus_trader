@@ -499,7 +499,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         # print(order)
         self.assertEqual(OrderState.WORKING, order.state)
-        self.assertEqual(OrderIdBroker("B-O-19700101-000000-001-001-1"), order.id_broker)
+        self.assertEqual(OrderIdBroker("B-19700101-000000-001-001-1"), order.id_broker)
         self.assertFalse(order.is_completed)
         self.assertTrue(order.is_working)
         self.assertEqual(None, order.filled_timestamp)
