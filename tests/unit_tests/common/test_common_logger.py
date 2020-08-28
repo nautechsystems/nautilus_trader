@@ -15,9 +15,10 @@
 
 import unittest
 
+from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LoggerAdapter
 
 
 class TestLoggerTests(unittest.TestCase):
@@ -27,7 +28,7 @@ class TestLoggerTests(unittest.TestCase):
 
     def test_can_log_verbose_messages_to_console(self):
         # Arrange
-        logger = TestLogger(level_console=LogLevel.VERBOSE)
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.VERBOSE)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -38,7 +39,7 @@ class TestLoggerTests(unittest.TestCase):
 
     def test_can_log_debug_messages_to_console(self):
         # Arrange
-        logger = TestLogger(level_console=LogLevel.DEBUG)
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.DEBUG)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -49,7 +50,7 @@ class TestLoggerTests(unittest.TestCase):
 
     def test_can_log_info_messages_to_console(self):
         # Arrange
-        logger = TestLogger(level_console=LogLevel.INFO)
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -60,7 +61,7 @@ class TestLoggerTests(unittest.TestCase):
 
     def test_can_log_warning_messages_to_console(self):
         # Arrange
-        logger = TestLogger(level_console=LogLevel.WARNING)
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.WARNING)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -71,7 +72,7 @@ class TestLoggerTests(unittest.TestCase):
 
     def test_can_log_error_messages_to_console(self):
         # Arrange
-        logger = TestLogger(level_console=LogLevel.ERROR)
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.ERROR)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -82,7 +83,7 @@ class TestLoggerTests(unittest.TestCase):
 
     def test_can_log_critical_messages_to_console(self):
         # Arrange
-        logger = TestLogger(level_console=LogLevel.CRITICAL)
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.CRITICAL)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act

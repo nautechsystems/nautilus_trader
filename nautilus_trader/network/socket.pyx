@@ -14,15 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+
 import zmq
 import zmq.auth
-from cpython.datetime cimport datetime, timedelta
 
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
+
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.network.identifiers cimport ClientId, ServerId
 from nautilus_trader.network.encryption cimport EncryptionSettings
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.identifiers cimport ServerId
+
 
 cdef str _UTF8 = 'utf-8'
 

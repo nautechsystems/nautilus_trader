@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport IdTag, OrderId, PositionId
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.model.identifiers cimport IdTag
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
 
 
 cdef class IdentifierGenerator:

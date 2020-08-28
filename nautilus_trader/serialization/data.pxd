@@ -13,10 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.tick cimport QuoteTick, TradeTick
-from nautilus_trader.model.bar cimport Bar, BarType
-from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.serialization.base cimport DataSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 
 
 cdef class Utf8QuoteTickSerializer:

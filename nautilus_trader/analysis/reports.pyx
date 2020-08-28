@@ -14,15 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
-from nautilus_trader.model.identifiers cimport OrderId, PositionId
 from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 

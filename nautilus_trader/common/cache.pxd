@@ -14,7 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.model.identifiers cimport TraderId, AccountId, StrategyId, Symbol
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef class IdentifierCache:

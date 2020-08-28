@@ -13,12 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-import numpy as np
 from collections import deque
 
-from nautilus_trader.indicators.base.indicator cimport Indicator
+import cython
+import numpy as np
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class HilbertSignalNoiseRatio(Indicator):

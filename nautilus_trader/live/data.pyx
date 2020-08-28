@@ -14,31 +14,42 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
+
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
-from nautilus_trader.serialization.base cimport DictionarySerializer
-from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer
-from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
-from nautilus_trader.serialization.data cimport Utf8QuoteTickSerializer, Utf8TradeTickSerializer
-from nautilus_trader.serialization.data cimport Utf8BarSerializer
-from nautilus_trader.serialization.constants cimport *
+from nautilus_trader.core.cache cimport ObjectCache
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
-from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.network.messages cimport Response, MessageReceived, MessageRejected
-from nautilus_trader.network.messages cimport DataRequest, DataResponse, QueryFailure
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.messages cimport DataRequest
+from nautilus_trader.network.messages cimport DataResponse
+from nautilus_trader.network.messages cimport MessageReceived
+from nautilus_trader.network.messages cimport MessageRejected
+from nautilus_trader.network.messages cimport QueryFailure
+from nautilus_trader.network.messages cimport Response
+from nautilus_trader.network.node_clients cimport MessageClient
+from nautilus_trader.network.node_clients cimport MessageSubscriber
+from nautilus_trader.serialization.base cimport DataSerializer
+from nautilus_trader.serialization.base cimport DictionarySerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport RequestSerializer
+from nautilus_trader.serialization.base cimport ResponseSerializer
+from nautilus_trader.serialization.constants cimport *
+from nautilus_trader.serialization.data cimport Utf8BarSerializer
+from nautilus_trader.serialization.data cimport Utf8QuoteTickSerializer
+from nautilus_trader.serialization.data cimport Utf8TradeTickSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 

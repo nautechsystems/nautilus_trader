@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.keltner_channel cimport KeltnerChannel
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.indicators.keltner_channel cimport KeltnerChannel
 
 
 cdef class KeltnerPosition(Indicator):

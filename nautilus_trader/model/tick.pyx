@@ -14,13 +14,18 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytz
+
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.maker cimport Maker, maker_from_string, maker_to_string
-from nautilus_trader.model.objects cimport Price, Quantity
-from nautilus_trader.model.identifiers cimport Symbol, MatchId
+from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.model.c_enums.maker cimport Maker
+from nautilus_trader.model.c_enums.maker cimport maker_from_string
+from nautilus_trader.model.c_enums.maker cimport maker_to_string
+from nautilus_trader.model.identifiers cimport MatchId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Tick:

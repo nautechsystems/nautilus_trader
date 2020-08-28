@@ -41,8 +41,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
@@ -50,7 +50,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 class TickDataWranglerTests(unittest.TestCase):
 
     def setUp(self):
-        pass
+        self.clock = TestClock()
 
     def test_tick_data(self):
         # Arrange
@@ -453,7 +453,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         symbol = TestStubs.symbol_audusd_fxcm()
         bar_spec = BarSpecification(3, BarStructure.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger())
+        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -497,12 +497,13 @@ class TimeBarAggregatorTests(unittest.TestCase):
 
     def test_update_timed_with_test_clock_sends_single_bar_to_handler(self):
         # Arrange
+        clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store_2
         symbol = TestStubs.symbol_audusd_fxcm()
         bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
-        aggregator = TimeBarAggregator(bar_type, handler, True, TestClock(), TestLogger())
+        aggregator = TimeBarAggregator(bar_type, handler, True, TestClock(), TestLogger(clock))
 
         stop_time = UNIX_EPOCH + timedelta(minutes=2)
 

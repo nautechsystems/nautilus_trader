@@ -13,19 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
 import pandas as pd
+import pytz
 
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal64
+
 from nautilus_trader.model.enums import Currency  # Do not remove
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
+
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class CSVTickDataLoader:

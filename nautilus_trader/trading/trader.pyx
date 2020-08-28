@@ -13,18 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTransition
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter
-from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.execution cimport ExecutionEngine
-from nautilus_trader.common.component cimport create_component_fsm
-from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
-from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class Trader:
@@ -133,12 +134,12 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('START')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             self.stop()  # Do not start trader in an invalid state
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         if not self.strategies:
             self._log.error(f"Cannot start trader (no strategies loaded).")
@@ -150,7 +151,7 @@ cdef class Trader:
             strategy.start()
 
         self._fsm.trigger('RUNNING')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
         """
@@ -158,11 +159,11 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('STOP')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         for strategy in self.strategies:
             if strategy.state() == ComponentState.RUNNING:
@@ -171,7 +172,7 @@ cdef class Trader:
                 self._log.warning(f"{strategy} already stopped.")
 
         self._fsm.trigger('STOPPED')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -203,11 +204,11 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('RESET')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         for strategy in self.strategies:
             strategy.reset()
@@ -216,7 +217,7 @@ cdef class Trader:
         self.analyzer.reset()
 
         self._fsm.trigger('RESET')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -226,18 +227,18 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('DISPOSE')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         cdef TradingStrategy strategy
         for strategy in self.strategies:
             strategy.dispose()
 
         self._fsm.trigger('DISPOSED')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void account_inquiry(self) except *:
         """

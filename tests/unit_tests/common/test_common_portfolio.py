@@ -40,7 +40,7 @@ class PortfolioTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         uuid_factor = TestUUIDFactory()
-        logger = TestLogger()
+        logger = TestLogger(self.clock)
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),

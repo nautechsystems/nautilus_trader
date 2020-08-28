@@ -66,7 +66,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         clock = LiveClock()
         uuid_factory = LiveUUIDFactory()
-        logger = LiveLogger()
+        logger = LiveLogger(clock)
 
         self.command_server = MessageServer(
             server_id=ServerId("CommandServer-001"),

@@ -16,8 +16,8 @@
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
+from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
 
 
 cdef class Symbol(Identifier):

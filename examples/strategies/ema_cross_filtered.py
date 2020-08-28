@@ -78,10 +78,11 @@ class EMACrossFiltered(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
+        clock = TestClock()
         super().__init__(
-            clock=TestClock(),
+            clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(),
+            logger=TestLogger(clock),
             order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         if news_currencies is None:

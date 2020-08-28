@@ -19,8 +19,11 @@ from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountStateEvent
-from nautilus_trader.model.identifiers cimport Brokerage, AccountNumber, AccountId
-from nautilus_trader.model.objects cimport Decimal64, Money
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport AccountNumber
+from nautilus_trader.model.identifiers cimport Brokerage
+from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Money
 
 
 cdef class Account:

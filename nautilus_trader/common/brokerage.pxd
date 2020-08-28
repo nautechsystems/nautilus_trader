@@ -15,10 +15,12 @@
 
 from cpython.datetime cimport date
 
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.objects cimport Money, Quantity, Price
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class CommissionCalculator:

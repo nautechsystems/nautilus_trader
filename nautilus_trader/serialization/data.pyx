@@ -17,17 +17,24 @@ from bson import BSON
 from bson.raw_bson import RawBSONDocument
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal64, Quantity, Price
-from nautilus_trader.model.tick cimport QuoteTick, TradeTick
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.instrument cimport Instrument, ForexInstrument
-from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
+from nautilus_trader.model.c_enums.currency cimport currency_from_string
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.c_enums.security_type cimport security_type_to_string, security_type_from_string
-from nautilus_trader.serialization.constants cimport *
+from nautilus_trader.model.c_enums.security_type cimport security_type_from_string
+from nautilus_trader.model.c_enums.security_type cimport security_type_to_string
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.instrument cimport ForexInstrument
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.serialization.base cimport InstrumentSerializer
-from nautilus_trader.serialization.common cimport convert_datetime_to_string, convert_string_to_datetime
+from nautilus_trader.serialization.common cimport convert_datetime_to_string
+from nautilus_trader.serialization.common cimport convert_string_to_datetime
+from nautilus_trader.serialization.constants cimport *
 
 
 cdef class Utf8QuoteTickSerializer:

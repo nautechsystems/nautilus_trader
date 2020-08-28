@@ -13,11 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.clock cimport TestClock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.common.logging cimport LogMessage
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -28,6 +27,7 @@ cdef class TestLogger(Logger):
     __test__ = False
 
     def __init__(self,
+                 Clock clock not None,
                  str name=None,
                  bint bypass_logging=False,
                  LogLevel level_console=LogLevel.DEBUG,
@@ -36,11 +36,11 @@ cdef class TestLogger(Logger):
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path not None="log/",
-                 Clock clock=None):
+                 str log_file_path not None="log/"):
         """
         Initialize a new instance of the TestLogger class.
 
+        :param clock: The clock for the logger.
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -49,15 +49,13 @@ cdef class TestLogger(Logger):
         :param log_thread: If log messages should include the thread.
         :param log_to_file: If log messages should write to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :param clock: The clock for the logger.
         :raises ValueError: If name is not a valid string.
         :raises ValueError: If log_file_path is not a valid string.
         """
         if log_file_path is "":
             log_file_path = "log/"
-        if clock is None:
-            clock = TestClock()
-        super().__init__(name,
+        super().__init__(clock,
+                         name,
                          bypass_logging,
                          level_console,
                          level_file,
@@ -65,8 +63,7 @@ cdef class TestLogger(Logger):
                          console_prints,
                          log_thread,
                          log_to_file,
-                         log_file_path,
-                         clock)
+                         log_file_path)
 
     cpdef void log(self, LogMessage message) except *:
         """

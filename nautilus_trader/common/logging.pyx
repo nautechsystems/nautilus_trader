@@ -13,26 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-import sys
-import traceback
-import threading
-import cython
-import numpy as np
-import scipy
-import pandas as pd
 import logging
-import psutil
+import os
 import platform
 from platform import python_version
+import sys
+import threading
+import traceback
+
+import cython
+import numpy as np
+import pandas as pd
+import psutil
+import scipy
+
 from nautilus_trader import __version__
+
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LogLevel
-from nautilus_trader.live.clock cimport LiveClock
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
+
 
 # Private constants
 cdef str _HEADER = "\033[95m"
@@ -96,6 +99,7 @@ cdef class Logger:
     """
 
     def __init__(self,
+                 Clock clock not None,
                  str name=None,
                  bint bypass_logging=False,
                  LogLevel level_console=LogLevel.INFO,
@@ -104,11 +108,11 @@ cdef class Logger:
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path not None="log/",
-                 Clock clock not None=LiveClock()):
+                 str log_file_path not None="log/"):
         """
         Initialize a new instance of the Logger class.
 
+        :param clock: The clock for the logger.
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -117,7 +121,6 @@ cdef class Logger:
         :param log_thread: If log messages should include the thread.
         :param log_to_file: If log messages should be written to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :param clock: The clock for the logger.
         :raises ValueError: If name is not a valid string.
         :raises ValueError: If log_file_path is not a valid string.
         """

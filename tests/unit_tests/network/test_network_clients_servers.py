@@ -63,7 +63,7 @@ class MessageClientTests(unittest.TestCase):
         # Fixture Setup
         clock = LiveClock()
         uuid_factory = LiveUUIDFactory()
-        logger = LiveLogger()
+        logger = LiveLogger(clock)
         self.context = zmq.Context()
         self.client_sink = []
         self.server_sink = []
@@ -180,7 +180,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         # Fixture Setup
         clock = LiveClock()
         uuid_factory = LiveUUIDFactory()
-        logger = LiveLogger()
+        logger = LiveLogger(clock)
         self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
 

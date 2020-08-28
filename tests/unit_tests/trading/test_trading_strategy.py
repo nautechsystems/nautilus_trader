@@ -51,8 +51,8 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.strategies import TestStrategy1
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
@@ -64,7 +64,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = TestUUIDFactory()
-        self.logger = TestLogger()
+        self.logger = TestLogger(self.clock)
 
         self.data_client = DataClient(
             tick_capacity=1000,

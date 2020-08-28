@@ -13,19 +13,31 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.events cimport Event, OrderEvent, OrderCancelReject, OrderFillEvent
-from nautilus_trader.model.events cimport AccountStateEvent, PositionEvent
-from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId
-from nautilus_trader.model.identifiers cimport OrderId, PositionId, PositionIdBroker
-from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.commands cimport Command, AccountInquiry, SubmitOrder, SubmitBracketOrder
-from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.account cimport Account
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport Command
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderEvent
+from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport PositionEvent
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class InvalidStateTransition(Exception):
+cdef class InvalidStateTrigger(Exception):
     pass
 
 

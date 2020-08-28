@@ -15,21 +15,26 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.common.account cimport Account
+from nautilus_trader.common.brokerage cimport CommissionCalculator
+from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.execution cimport ExecutionDatabase
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
-from nautilus_trader.model.objects cimport Price, Money, Quantity
-from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
-from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionClient
-from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -51,7 +56,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly RolloverInterestCalculator rollover_calculator
-    cdef readonly object tz_us_est
     cdef readonly double rollover_spread
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover

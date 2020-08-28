@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
 import numpy as np
-from cpython.datetime cimport datetime, timedelta
+import pytz
+
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.core.correctness cimport Condition
 

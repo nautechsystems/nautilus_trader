@@ -14,11 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import cython
+
 from libc.math cimport fabs
+
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_mean, fast_std_with_mean
+from nautilus_trader.core.functions cimport fast_mean
+from nautilus_trader.core.functions cimport fast_std_with_mean
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
 from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection

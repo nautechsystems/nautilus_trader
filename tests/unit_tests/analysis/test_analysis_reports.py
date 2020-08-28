@@ -30,8 +30,8 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = Symbol("AUD/USD", Venue('FXCM'))
 GBPUSD_FXCM = Symbol("GBP/USD", Venue('FXCM'))
@@ -56,11 +56,19 @@ class ReportProviderTests(unittest.TestCase):
             Quantity(1500000),
             Price(0.80010, 5))
 
+        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestStubs.event_order_working(order1))
+
         order2 = self.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(1500000),
             Price(0.80000, 5))
+
+        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestStubs.event_order_working(order2))
 
         event = OrderFilled(
             self.account_id,
@@ -98,11 +106,16 @@ class ReportProviderTests(unittest.TestCase):
     def test_generate_order_fills_report(self):
         # Arrange
         report_provider = ReportProvider()
+
         order1 = self.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(1500000),
             Price(0.80010, 5))
+
+        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestStubs.event_order_working(order1))
 
         order2 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -110,7 +123,15 @@ class ReportProviderTests(unittest.TestCase):
             Quantity(1500000),
             Price(0.80000, 5))
 
-        event = OrderFilled(
+        submitted2 = TestStubs.event_order_submitted(order2)
+        accepted2 = TestStubs.event_order_accepted(order2)
+        working2 = TestStubs.event_order_working(order2)
+
+        order2.apply(submitted2)
+        order2.apply(accepted2)
+        order2.apply(working2)
+
+        filled = OrderFilled(
             self.account_id,
             order1.id,
             ExecutionId("SOME_EXEC_ID_1"),
@@ -124,7 +145,7 @@ class ReportProviderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH)
 
-        order1.apply(event)
+        order1.apply(filled)
 
         orders = {order1.id: order1,
                   order2.id: order2}
