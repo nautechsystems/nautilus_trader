@@ -31,13 +31,10 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountStateEvent
-from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import PositionIdBroker
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -122,8 +119,13 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order, self.strategy.id, position_id)
 
-        order_working = TestStubs.event_order_working(order)
-        order.apply(order_working)
+        order.apply(TestStubs.event_order_submitted(order))
+        self.database.update_order(order)
+
+        order.apply(TestStubs.event_order_accepted(order))
+        self.database.update_order(order)
+
+        order.apply(TestStubs.event_order_working(order))
 
         # Act
         self.database.update_order(order)
@@ -145,9 +147,13 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000))
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order, self.strategy.id, position_id)
+        order.apply(TestStubs.event_order_submitted(order))
+        self.database.update_order(order)
 
-        order_filled = TestStubs.event_order_filled(order, fill_price=Price(1.00001, 5))
-        order.apply(order_filled)
+        order.apply(TestStubs.event_order_accepted(order))
+        self.database.update_order(order)
+
+        order.apply(TestStubs.event_order_filled(order, fill_price=Price(1.00001, 5)))
 
         # Act
         self.database.update_order(order)
@@ -169,16 +175,25 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000))
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position_id)
+        order1.apply(TestStubs.event_order_submitted(order1))
+        self.database.update_order(order1)
 
+        order1.apply(TestStubs.event_order_accepted(order1))
+        self.database.update_order(order1)
         order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00001, 5))
-        order1.apply(order1_filled)
-        position = Position(position_id, order1.last_event)
+
+        position = Position(position_id, order1_filled)
         self.database.add_position(position, self.strategy.id)
 
         order2 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
+        order2.apply(TestStubs.event_order_submitted(order2))
+        self.database.update_order(order2)
+
+        order2.apply(TestStubs.event_order_accepted(order2))
+        self.database.update_order(order2)
         order2_filled = TestStubs.event_order_filled(order2, fill_price=Price(1.00001, 5))
         position.apply(order2_filled)
 
@@ -261,6 +276,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position1_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position1_id)
 
+        order1.apply(TestStubs.event_order_submitted(order1))
+        self.database.update_order(order1)
+
+        order1.apply(TestStubs.event_order_accepted(order1))
+        self.database.update_order(order1)
+
         order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00000, 5))
         position1 = Position(position1_id, order1_filled)
         self.database.update_order(order1)
@@ -272,9 +293,14 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000))
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
-        order2_working = TestStubs.event_order_working(order2)
-        order2.apply(order2_working)
 
+        order2.apply(TestStubs.event_order_submitted(order2))
+        self.database.update_order(order2)
+
+        order2.apply(TestStubs.event_order_accepted(order2))
+        self.database.update_order(order2)
+
+        order2.apply(TestStubs.event_order_working(order2))
         self.database.update_order(order2)
 
         # Act
@@ -291,6 +317,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position1_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position1_id)
 
+        order1.apply(TestStubs.event_order_submitted(order1))
+        self.database.update_order(order1)
+
+        order1.apply(TestStubs.event_order_accepted(order1))
+        self.database.update_order(order1)
+
         order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00000, 5))
         position1 = Position(position1_id, order1_filled)
         self.database.update_order(order1)
@@ -302,8 +334,15 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000))
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
-        order2_working = TestStubs.event_order_working(order2)
-        order2.apply(order2_working)
+
+        order2.apply(TestStubs.event_order_submitted(order2))
+        self.database.update_order(order2)
+
+        order2.apply(TestStubs.event_order_accepted(order2))
+        self.database.update_order(order2)
+
+        order2.apply(TestStubs.event_order_working(order2))
+        self.database.update_order(order2)
 
         self.database.update_order(order2)
 
@@ -324,6 +363,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position1_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position1_id)
 
+        order1.apply(TestStubs.event_order_submitted(order1))
+        self.database.update_order(order1)
+
+        order1.apply(TestStubs.event_order_accepted(order1))
+        self.database.update_order(order1)
+
         order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00000, 5))
         position1 = Position(position1_id, order1_filled)
         self.database.update_order(order1)
@@ -335,9 +380,13 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000))
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
-        order2_working = TestStubs.event_order_working(order2)
-        order2.apply(order2_working)
+        order2.apply(TestStubs.event_order_submitted(order2))
+        self.database.update_order(order2)
 
+        order2.apply(TestStubs.event_order_accepted(order2))
+        self.database.update_order(order2)
+
+        order2.apply(TestStubs.event_order_working(order2))
         self.database.update_order(order2)
 
         # Act
@@ -576,10 +625,9 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.execute_command(submit_order)
 
-        order_filled = TestStubs.event_order_filled(order)
-
         # Act
-        self.exec_engine.handle_event(order_filled)
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -615,6 +663,7 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
+
         order2 = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -641,12 +690,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
 
-        order1_filled = TestStubs.event_order_filled(order1)
-        order2_filled = TestStubs.event_order_filled(order2)
-
         # Act
-        self.exec_engine.handle_event(order1_filled)
-        self.exec_engine.handle_event(order2_filled)
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -709,12 +759,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
 
-        order1_filled = TestStubs.event_order_filled(order1)
-        order2_filled = TestStubs.event_order_filled(order2)
-
         # Act
-        self.exec_engine.handle_event(order1_filled)
-        self.exec_engine.handle_event(order2_filled)
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
 
         # # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -784,14 +835,15 @@ class ExecutionEngineTests(unittest.TestCase):
             self.uuid_factory.generate(),
             self.clock.time_now())
 
-        order1_filled = TestStubs.event_order_filled(order1)
-        order2_filled = TestStubs.event_order_filled(order2)
-
         # Act
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
-        self.exec_engine.handle_event(order1_filled)
-        self.exec_engine.handle_event(order2_filled)
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position1_id))
@@ -890,30 +942,19 @@ class ExecutionEngineTests(unittest.TestCase):
             self.uuid_factory.generate(),
             self.clock.time_now())
 
-        order1_filled = TestStubs.event_order_filled(order1)
-        order2_filled = TestStubs.event_order_filled(order2)
-
-        order3_filled = OrderFilled(
-            self.account_id,
-            order3.id,
-            ExecutionId("E3"),
-            PositionIdBroker("T3"),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(1.00000, 5),
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
-
         # Act
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
         self.exec_engine.execute_command(submit_order3)
-        self.exec_engine.handle_event(order1_filled)
-        self.exec_engine.handle_event(order2_filled)
-        self.exec_engine.handle_event(order3_filled)
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order3))
+        self.exec_engine.handle_event(TestStubs.event_order_accepted(order3))
+        self.exec_engine.handle_event(TestStubs.event_order_filled(order3))
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above

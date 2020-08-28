@@ -25,6 +25,7 @@ from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.fsm cimport InvalidStateTransition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
@@ -35,7 +36,7 @@ from nautilus_trader.model.identifiers cimport Symbol, OrderId, ExecutionId
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized, OrderInvalid, OrderDenied
 from nautilus_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderCancelled, OrderModified
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderPartiallyFilled, OrderFilled
 
 # Order types which require a price to be valid
 cdef set PRICED_ORDER_TYPES = {
@@ -43,6 +44,31 @@ cdef set PRICED_ORDER_TYPES = {
     OrderType.STOP,
     OrderType.STOP_LIMIT,
     OrderType.MIT
+}
+
+cdef dict _ORDER_STATE_TABLE = {
+    (OrderState.INITIALIZED, OrderCancelled.__name__): OrderState.CANCELLED,
+    (OrderState.INITIALIZED, OrderInvalid.__name__): OrderState.INVALID,
+    (OrderState.INITIALIZED, OrderDenied.__name__): OrderState.DENIED,
+    (OrderState.INITIALIZED, OrderSubmitted.__name__): OrderState.SUBMITTED,
+    (OrderState.INITIALIZED, OrderAccepted.__name__): OrderState.ACCEPTED,  # TODO: Backtest engine not submitting market orders??
+    (OrderState.SUBMITTED, OrderCancelled.__name__): OrderState.CANCELLED,
+    (OrderState.SUBMITTED, OrderRejected.__name__): OrderState.REJECTED,
+    (OrderState.SUBMITTED, OrderAccepted.__name__): OrderState.ACCEPTED,
+    (OrderState.SUBMITTED, OrderWorking.__name__): OrderState.WORKING,
+    (OrderState.REJECTED, OrderRejected.__name__): OrderState.REJECTED,
+    (OrderState.ACCEPTED, OrderCancelled.__name__): OrderState.CANCELLED,
+    (OrderState.ACCEPTED, OrderWorking.__name__): OrderState.WORKING,
+    (OrderState.ACCEPTED, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.ACCEPTED, OrderFilled.__name__): OrderState.FILLED,
+    (OrderState.WORKING, OrderCancelled.__name__): OrderState.CANCELLED,
+    (OrderState.WORKING, OrderModified.__name__): OrderState.WORKING,
+    (OrderState.WORKING, OrderExpired.__name__): OrderState.EXPIRED,
+    (OrderState.WORKING, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.WORKING, OrderFilled.__name__): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderCancelled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderFilled.__name__): OrderState.FILLED,
 }
 
 
@@ -130,6 +156,11 @@ cdef class Order:
 
         self._execution_ids = set()         # type: {ExecutionId}
         self._events = []                   # type: [OrderEvent]
+        self._fsm = FiniteStateMachine(
+            state_transition_table=_ORDER_STATE_TABLE,
+            initial_state=OrderState.INITIALIZED,
+            state_parser=order_state_to_string
+        )
 
         self.id = order_id
         self.id_broker = None               # Can be None
@@ -275,7 +306,7 @@ cdef class Order:
 
         :return str.
         """
-        return order_state_to_string(self.state)
+        return self._fsm.state_as_string()
 
     cpdef list get_execution_ids(self):
         """
@@ -319,36 +350,36 @@ cdef class Order:
         self.last_event = event
         self.event_count += 1
 
+        try:
+            self._fsm.trigger(event.__class__.__name__)
+        except InvalidStateTransition as ex:
+            raise ex
+
+        self.state = self._fsm.state
+
         # Handle event
         if isinstance(event, OrderInvalid):
-            self.state = OrderState.INVALID
             self._set_is_completed_true()
         elif isinstance(event, OrderDenied):
-            self.state = OrderState.DENIED
             self._set_is_completed_true()
         elif isinstance(event, OrderSubmitted):
-            self.state = OrderState.SUBMITTED
             self.account_id = event.account_id
         elif isinstance(event, OrderRejected):
-            self.state = OrderState.REJECTED
             self._set_is_completed_true()
         elif isinstance(event, OrderAccepted):
-            self.state = OrderState.ACCEPTED
+            pass
         elif isinstance(event, OrderWorking):
-            self.state = OrderState.WORKING
             self.id_broker = event.order_id_broker
             self._set_is_working_true()
         elif isinstance(event, OrderCancelled):
-            self.state = OrderState.CANCELLED
             self._set_is_completed_true()
         elif isinstance(event, OrderExpired):
-            self.state = OrderState.EXPIRED
             self._set_is_completed_true()
         elif isinstance(event, OrderModified):
             self.id_broker = event.order_id_broker
             self.quantity = event.modified_quantity
             self.price = event.modified_price
-        elif isinstance(event, OrderFillEvent):
+        elif isinstance(event, OrderPartiallyFilled):
             self.position_id_broker = event.position_id_broker
             self._execution_ids.add(event.execution_id)
             self.execution_id = event.execution_id
@@ -356,9 +387,15 @@ cdef class Order:
             self.filled_timestamp = event.timestamp
             self.average_price = event.average_price
             self._set_slippage()
-            self._set_filled_state()
-            if self.state == OrderState.FILLED:
-                self._set_is_completed_true()
+        elif isinstance(event, OrderFilled):
+            self.position_id_broker = event.position_id_broker
+            self._execution_ids.add(event.execution_id)
+            self.execution_id = event.execution_id
+            self.filled_quantity = event.filled_quantity
+            self.filled_timestamp = event.timestamp
+            self.average_price = event.average_price
+            self._set_slippage()
+            self.is_completed = True
 
     cdef void _set_is_working_true(self) except *:
         self.is_working = True
@@ -367,14 +404,6 @@ cdef class Order:
     cdef void _set_is_completed_true(self) except *:
         self.is_working = False
         self.is_completed = True
-
-    cdef void _set_filled_state(self) except *:
-        if self.filled_quantity < self.quantity:
-            self.state = OrderState.PARTIALLY_FILLED
-        elif self.filled_quantity == self.quantity:
-            self.state = OrderState.FILLED
-        elif self.filled_quantity > self.quantity:
-            self.state = OrderState.OVER_FILLED
 
     cdef void _set_slippage(self) except *:
         if self.type not in PRICED_ORDER_TYPES:

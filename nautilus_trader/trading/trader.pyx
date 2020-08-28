@@ -138,7 +138,7 @@ cdef class Trader:
             self.stop()  # Do not start trader in an invalid state
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         if not self.strategies:
             self._log.error(f"Cannot start trader (no strategies loaded).")
@@ -150,7 +150,7 @@ cdef class Trader:
             strategy.start()
 
         self._fsm.trigger('RUNNING')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
         """
@@ -162,7 +162,7 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         for strategy in self.strategies:
             if strategy.state() == ComponentState.RUNNING:
@@ -171,7 +171,7 @@ cdef class Trader:
                 self._log.warning(f"{strategy} already stopped.")
 
         self._fsm.trigger('STOPPED')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -207,7 +207,7 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         for strategy in self.strategies:
             strategy.reset()
@@ -216,7 +216,7 @@ cdef class Trader:
         self.analyzer.reset()
 
         self._fsm.trigger('RESET')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -230,14 +230,14 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"{self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_as_string()}...")
 
         cdef TradingStrategy strategy
         for strategy in self.strategies:
             strategy.dispose()
 
         self._fsm.trigger('DISPOSED')
-        self._log.info(f"{self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void account_inquiry(self) except *:
         """

@@ -25,9 +25,8 @@ cpdef enum OrderState:
     WORKING = 7,
     CANCELLED = 8,
     EXPIRED = 9,
-    OVER_FILLED = 10,
-    PARTIALLY_FILLED = 11,
-    FILLED = 12,
+    PARTIALLY_FILLED = 10,
+    FILLED = 11,
 
 
 cdef inline str order_state_to_string(int value):
@@ -50,10 +49,8 @@ cdef inline str order_state_to_string(int value):
     elif value == 9:
         return 'EXPIRED'
     elif value == 10:
-        return 'OVER_FILLED'
-    elif value == 11:
         return 'PARTIALLY_FILLED'
-    elif value == 12:
+    elif value == 11:
         return 'FILLED'
     else:
         return 'UNDEFINED'
@@ -78,8 +75,6 @@ cdef inline OrderState order_state_from_string(str value):
         return OrderState.CANCELLED
     elif value == 'EXPIRED':
         return OrderState.EXPIRED
-    elif value == 'OVER_FILLED':
-        return OrderState.OVER_FILLED
     elif value == 'PARTIALLY_FILLED':
         return OrderState.PARTIALLY_FILLED
     elif value == 'FILLED':

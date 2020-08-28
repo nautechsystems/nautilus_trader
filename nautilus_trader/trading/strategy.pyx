@@ -1294,7 +1294,7 @@ cdef class TradingStrategy:
             self.stop()  # Do not start strategy in an invalid state
             return
 
-        self.log.info(f"{self._fsm.state_as_string()}...")
+        self.log.info(f"state={self._fsm.state_as_string()}...")
 
         if self._data is None:
             self.log.error("Cannot start strategy (the data client is not registered).")
@@ -1312,7 +1312,7 @@ cdef class TradingStrategy:
             return
 
         self._fsm.trigger('RUNNING')
-        self.log.info(f"{self._fsm.state_as_string()}.")
+        self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
         """
@@ -1326,7 +1326,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
             return
 
-        self.log.info(f"{self._fsm.state_as_string()}...")
+        self.log.info(f"state={self._fsm.state_as_string()}...")
 
         # Clean up clock
         cdef list timer_names = self.clock.get_timer_names()
@@ -1350,7 +1350,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self._fsm.trigger('STOPPED')
-        self.log.info(f"{self._fsm.state_as_string()}.")
+        self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void resume(self) except *:
         """
@@ -1365,7 +1365,7 @@ cdef class TradingStrategy:
             self.stop()  # Do not start strategy in an invalid state
             return
 
-        self.log.info(f"{self._fsm.state_as_string()}...")
+        self.log.info(f"state={self._fsm.state_as_string()}...")
 
         try:
             self.on_resume()
@@ -1375,7 +1375,7 @@ cdef class TradingStrategy:
             return
 
         self._fsm.trigger('RUNNING')
-        self.log.info(f"{self._fsm.state_as_string()}.")
+        self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void reset(self) except *:
         """
@@ -1390,7 +1390,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
             return
 
-        self.log.info(f"{self._fsm.state_as_string()}...")
+        self.log.info(f"state={self._fsm.state_as_string()}...")
 
         if self.order_factory is not None:
             self.order_factory.reset()
@@ -1409,7 +1409,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self._fsm.trigger('RESET')
-        self.log.info(f"{self._fsm.state_as_string()}.")
+        self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -1421,7 +1421,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
             return
 
-        self.log.info(f"{self._fsm.state_as_string()}...")
+        self.log.info(f"state={self._fsm.state_as_string()}...")
 
         try:
             self.on_dispose()
@@ -1429,7 +1429,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self._fsm.trigger('DISPOSED')
-        self.log.info(f"{self._fsm.state_as_string()}.")
+        self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef dict save(self):
         """

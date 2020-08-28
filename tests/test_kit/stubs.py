@@ -31,7 +31,12 @@ from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionModified
@@ -208,6 +213,36 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
+    def event_order_submitted(order) -> OrderSubmitted:
+        return OrderSubmitted(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_accepted(order) -> OrderAccepted:
+        return OrderAccepted(
+            TestStubs.account_id(),
+            order.id,
+            OrderIdBroker("B-" + order.id.value),
+            order.label,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_rejected(order) -> OrderRejected:
+        return OrderRejected(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            ValidString("ORDER_REJECTED!"),
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
     def event_order_filled(order, fill_price=None) -> OrderFilled:
         if fill_price is None:
             fill_price = Price(1.00000, 5)
@@ -246,6 +281,24 @@ class TestStubs:
             uuid4(),
             UNIX_EPOCH,
             order.expire_time)
+
+    @staticmethod
+    def event_order_cancelled(order) -> OrderCancelled:
+        return OrderCancelled(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_expired(order) -> OrderExpired:
+        return OrderExpired(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
 
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
