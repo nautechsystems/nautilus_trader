@@ -59,7 +59,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.clock = TestClock()
         self.uuid_factory = TestUUIDFactory()
-        self.logger = TestLogger()
+        self.logger = TestLogger(self.clock)
 
         self.data_client = DataClient(
             tick_capacity=1000,
@@ -96,9 +96,9 @@ class BacktestExecClientTests(unittest.TestCase):
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
-            clock=TestClock(),
+            clock=self.clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger())
+            logger=TestLogger(self.clock))
         self.exec_engine.register_client(self.exec_client)
 
     def test_can_account_collateral_inquiry(self):

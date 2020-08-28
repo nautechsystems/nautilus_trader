@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
 

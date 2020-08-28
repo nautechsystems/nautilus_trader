@@ -42,8 +42,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -54,7 +54,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
-        logger = TestLogger()
+        logger = TestLogger(clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
@@ -465,7 +465,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = TestUUIDFactory()
-        self.logger = TestLogger()
+        self.logger = TestLogger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()

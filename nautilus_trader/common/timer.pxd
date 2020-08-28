@@ -13,10 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID
 
 
 cdef class TimeEvent(Event):

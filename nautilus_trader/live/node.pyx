@@ -13,37 +13,50 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 import os
 import time
-import json
+
+import lz4
+import msgpack
 import pymongo
 import redis
-import msgpack
-import lz4
 import zmq
 
+from nautilus_trader.common.execution cimport ExecutionDatabase
+from nautilus_trader.common.execution cimport InMemoryExecutionDatabase
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
-from nautilus_trader.model.identifiers cimport Venue, AccountId, TraderId
 from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, ExecutionDatabase
-from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.logging cimport LoggerAdapter, nautilus_header
-from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.network.compression cimport BypassCompressor, LZ4Compressor
-from nautilus_trader.network.encryption cimport EncryptionSettings
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
+
+from nautilus_trader.common.logging import LogLevel  # import for parsing config
+
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.trading.trader cimport Trader
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
-from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
-from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport nautilus_header
+from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.factories cimport LiveUUIDFactory
-from nautilus_trader.live.logging cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
-from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase, LiveExecutionEngine
 from nautilus_trader.live.execution_client cimport LiveExecClient
+from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase
+from nautilus_trader.live.factories cimport LiveUUIDFactory
+from nautilus_trader.live.logging cimport LiveLogger
+from nautilus_trader.live.logging cimport LogStore
+from nautilus_trader.network.compression cimport BypassCompressor
+from nautilus_trader.network.compression cimport LZ4Compressor
+from nautilus_trader.network.encryption cimport EncryptionSettings
+from nautilus_trader.serialization.data cimport BsonDataSerializer
+from nautilus_trader.serialization.data cimport BsonInstrumentSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
+from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackResponseSerializer
+from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class TradingNode:
@@ -118,6 +131,7 @@ cdef class TradingNode:
         self._log_store = LogStore(trader_id=self.trader_id)
 
         self._logger = LiveLogger(
+            clock=self._clock,
             name=self.trader_id.value,
             level_console=LogLevel[config_log["log_level_console"]],
             level_file=LogLevel[config_log["log_level_file"]],
@@ -125,7 +139,6 @@ cdef class TradingNode:
             log_thread=True,
             log_to_file=config_log["log_to_file"],
             log_file_path=config_log["log_file_path"],
-            clock=self._clock,
             store=self._log_store)
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
         self._log_header()

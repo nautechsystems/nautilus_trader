@@ -14,7 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import decimal
-from libc.math cimport isnan, isfinite, fabs, round
+
+from libc.math cimport fabs
+from libc.math cimport isfinite
+from libc.math cimport isnan
+from libc.math cimport round
 
 from nautilus_trader.core.correctness cimport Condition
 

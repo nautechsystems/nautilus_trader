@@ -16,34 +16,53 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport ValidString, Label
-from nautilus_trader.core.fsm cimport InvalidStateTransition
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
-from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId, PositionId
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
-from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
-from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Quantity, Price
-from nautilus_trader.model.tick cimport QuoteTick, TradeTick
-from nautilus_trader.model.bar cimport BarType, Bar
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.order cimport Order, BracketOrder
-from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
-from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.market cimport IndicatorUpdater
+from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.factories cimport OrderFactory
+from nautilus_trader.common.logging cimport CMD
+from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.logging cimport SENT
+from nautilus_trader.common.market cimport IndicatorUpdater
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fsm cimport InvalidStateTransition
+from nautilus_trader.core.types cimport Label
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.generators cimport PositionIdGenerator
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class TradingStrategy:

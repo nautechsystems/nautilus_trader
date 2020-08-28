@@ -19,8 +19,8 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()

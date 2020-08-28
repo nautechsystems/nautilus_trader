@@ -21,22 +21,39 @@ and an OrderFactory for more convenient creation of order objects.
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal64
+from nautilus_trader.core.fsm cimport InvalidStateTransition
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.fsm cimport InvalidStateTransition
-from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
-from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
-from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
-from nautilus_trader.model.objects cimport Quantity, Price
-from nautilus_trader.model.identifiers cimport Symbol, OrderId, ExecutionId
-from nautilus_trader.model.events cimport OrderEvent, OrderInitialized, OrderInvalid, OrderDenied
-from nautilus_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected
-from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderCancelled, OrderModified
-from nautilus_trader.model.events cimport OrderPartiallyFilled, OrderFilled
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_state cimport order_state_to_string
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.events cimport OrderEvent
+from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderPartiallyFilled
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderWorking
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+
 
 # Order types which require a price to be valid
 cdef set PRICED_ORDER_TYPES = {

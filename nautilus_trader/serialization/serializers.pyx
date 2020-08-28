@@ -14,40 +14,86 @@
 # -------------------------------------------------------------------------------------------------
 
 import msgpack
+
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string, time_in_force_from_string
-from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, order_side_from_string
-from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
-from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string, order_purpose_from_string
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string, currency_from_string
-from nautilus_trader.model.identifiers cimport Symbol, OrderId, OrderIdBroker, ExecutionId
-from nautilus_trader.model.identifiers cimport PositionId, PositionIdBroker
-from nautilus_trader.model.objects cimport Quantity, Decimal64, Money
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
-from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
-from nautilus_trader.model.events cimport AccountStateEvent, OrderInitialized, OrderInvalid
-from nautilus_trader.model.events cimport OrderDenied, OrderSubmitted, OrderAccepted, OrderRejected
-from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
-from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.model.order cimport Order, BracketOrder
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.common.logging cimport LogMessage, log_level_from_string
+from nautilus_trader.common.logging cimport LogMessage
+from nautilus_trader.common.logging cimport log_level_from_string
+from nautilus_trader.core.cache cimport ObjectCache
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.message cimport Request
+from nautilus_trader.core.message cimport Response
+from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport currency_from_string
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_from_string
+from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string
+from nautilus_trader.model.c_enums.order_side cimport order_side_from_string
+from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_type cimport order_type_from_string
+from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
+from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_from_string
+from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderPartiallyFilled
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderWorking
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport OrderIdBroker
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.identifiers cimport ServerId
+from nautilus_trader.network.identifiers cimport SessionId
+from nautilus_trader.network.messages cimport Connect
+from nautilus_trader.network.messages cimport Connected
+from nautilus_trader.network.messages cimport DataRequest
+from nautilus_trader.network.messages cimport DataResponse
+from nautilus_trader.network.messages cimport Disconnect
+from nautilus_trader.network.messages cimport Disconnected
+from nautilus_trader.network.messages cimport MessageReceived
+from nautilus_trader.network.messages cimport MessageRejected
+from nautilus_trader.network.messages cimport QueryFailure
+from nautilus_trader.serialization.base cimport CommandSerializer
+from nautilus_trader.serialization.base cimport EventSerializer
+from nautilus_trader.serialization.base cimport LogSerializer
+from nautilus_trader.serialization.base cimport OrderSerializer
+from nautilus_trader.serialization.base cimport RequestSerializer
+from nautilus_trader.serialization.base cimport ResponseSerializer
+from nautilus_trader.serialization.common cimport convert_datetime_to_string
+from nautilus_trader.serialization.common cimport convert_label_to_string
+from nautilus_trader.serialization.common cimport convert_price_to_string
+from nautilus_trader.serialization.common cimport convert_string_to_datetime
+from nautilus_trader.serialization.common cimport convert_string_to_label
+from nautilus_trader.serialization.common cimport convert_string_to_price
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.base cimport OrderSerializer, CommandSerializer, EventSerializer
-from nautilus_trader.serialization.base cimport RequestSerializer, ResponseSerializer, LogSerializer
-from nautilus_trader.serialization.common cimport convert_string_to_price, convert_price_to_string
-from nautilus_trader.serialization.common cimport convert_string_to_label, convert_label_to_string
-from nautilus_trader.serialization.common cimport convert_string_to_datetime, convert_datetime_to_string
-from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
-from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
-from nautilus_trader.network.messages cimport MessageReceived, MessageRejected, QueryFailure
-from nautilus_trader.network.messages cimport DataRequest, DataResponse
 
 
 cdef class MsgPackSerializer:

@@ -15,20 +15,32 @@
 
 import zmq
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Message, MessageType
-from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Message
+from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.message cimport message_type_from_string
+from nautilus_trader.core.message cimport message_type_to_string
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
-from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
-from nautilus_trader.network.queue cimport MessageQueueInbound, MessageQueueOutbound
-from nautilus_trader.network.messages cimport Request, Response, MessageReceived, MessageRejected
-from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.identifiers cimport ServerId
+from nautilus_trader.network.identifiers cimport SessionId
+from nautilus_trader.network.messages cimport Connect
+from nautilus_trader.network.messages cimport Connected
+from nautilus_trader.network.messages cimport Disconnect
+from nautilus_trader.network.messages cimport Disconnected
+from nautilus_trader.network.messages cimport MessageReceived
+from nautilus_trader.network.messages cimport MessageRejected
+from nautilus_trader.network.messages cimport Request
+from nautilus_trader.network.messages cimport Response
+from nautilus_trader.network.queue cimport MessageQueueInbound
+from nautilus_trader.network.queue cimport MessageQueueOutbound
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.constants cimport UTF8
+
 
 cdef bytes _STRING = message_type_to_string(MessageType.STRING).title().encode(UTF8)
 cdef str _TYPE_UTF8 = 'UTF8'

@@ -14,23 +14,35 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-from cpython.datetime cimport datetime, timedelta
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.message cimport Message, MessageType
-from nautilus_trader.core.message cimport message_type_to_string, message_type_from_string
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Message
+from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.message cimport message_type_from_string
+from nautilus_trader.core.message cimport message_type_to_string
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
-from nautilus_trader.network.messages cimport Connect, Connected, Disconnect, Disconnected
-from nautilus_trader.network.messages cimport Request, Response
-from nautilus_trader.network.queue cimport MessageQueueInbound, MessageQueueOutbound
+from nautilus_trader.network.messages cimport Connect
+from nautilus_trader.network.messages cimport Connected
+from nautilus_trader.network.messages cimport Disconnect
+from nautilus_trader.network.messages cimport Disconnected
+from nautilus_trader.network.messages cimport Request
+from nautilus_trader.network.messages cimport Response
+from nautilus_trader.network.queue cimport MessageQueueInbound
+from nautilus_trader.network.queue cimport MessageQueueOutbound
 from nautilus_trader.network.socket cimport ClientSocket
-from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
+from nautilus_trader.serialization.base cimport DictionarySerializer
+from nautilus_trader.serialization.base cimport RequestSerializer
+from nautilus_trader.serialization.base cimport ResponseSerializer
 from nautilus_trader.serialization.constants cimport *
+
 
 cdef str _IS_CONNECTED = "_is_connected?"
 cdef str _IS_DISCONNECTED = "_is_disconnected?"

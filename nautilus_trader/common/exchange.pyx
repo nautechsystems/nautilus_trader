@@ -16,8 +16,10 @@
 from itertools import permutations
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
-from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 
 
 cdef class ExchangeRateCalculator:

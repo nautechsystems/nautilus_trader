@@ -13,17 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
+from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.model.identifiers cimport TraderId, AccountId
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef class Trader:

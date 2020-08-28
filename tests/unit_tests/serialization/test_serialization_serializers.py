@@ -43,8 +43,8 @@ from nautilus_trader.model.enums import SecurityType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderCancelReject
+from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
@@ -87,8 +87,8 @@ from nautilus_trader.serialization.serializers import MsgPackLogSerializer
 from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
 from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

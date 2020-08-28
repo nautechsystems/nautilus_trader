@@ -17,20 +17,29 @@
 # cython: wraparound=False
 
 from cpython.datetime cimport datetime
+
 from collections import deque
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.identifiers cimport Symbol, Venue
-from nautilus_trader.model.tick cimport QuoteTick, TradeTick
-from nautilus_trader.model.bar cimport BarType, Bar
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.handlers cimport BarHandler
+from nautilus_trader.common.handlers cimport InstrumentHandler
+from nautilus_trader.common.handlers cimport QuoteTickHandler
+from nautilus_trader.common.handlers cimport TradeTickHandler
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.market cimport BarAggregator
+from nautilus_trader.common.market cimport TickBarAggregator
+from nautilus_trader.common.market cimport TimeBarAggregator
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter
-from nautilus_trader.common.handlers cimport QuoteTickHandler, TradeTickHandler
-from nautilus_trader.common.handlers cimport BarHandler, InstrumentHandler
-from nautilus_trader.common.market cimport BarAggregator, TickBarAggregator, TimeBarAggregator
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 

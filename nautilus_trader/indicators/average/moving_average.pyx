@@ -13,10 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from enum import Enum, unique
+from enum import Enum
+from enum import unique
 
-from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 @unique

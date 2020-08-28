@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
+
 from threading import Timer as TimerThread
 
 import pytz
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 
 

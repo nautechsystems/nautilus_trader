@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.average.moving_average import MovingAverage, MovingAverageType
 from nautilus_trader.indicators.average.ama import AdaptiveMovingAverage
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators.average.hma import HullMovingAverage
+from nautilus_trader.indicators.average.moving_average import MovingAverage
+from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
-from nautilus_trader.indicators.average.hma import HullMovingAverage
+
 from nautilus_trader.core.correctness cimport Condition
 
 
