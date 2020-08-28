@@ -71,7 +71,6 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 
-
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 # Stop order types
