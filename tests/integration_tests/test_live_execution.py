@@ -46,7 +46,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
-        logger = TestLogger()
+        logger = TestLogger(clock)
 
         self.trader_id = TraderId("TESTER", "000")
 

@@ -22,8 +22,8 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.serialization.data import BsonDataSerializer
 from nautilus_trader.serialization.data import DataMapper
 from tests.test_kit.data import TestDataProvider
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

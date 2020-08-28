@@ -35,8 +35,8 @@ from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionModified

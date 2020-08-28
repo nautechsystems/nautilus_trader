@@ -17,39 +17,60 @@
 # cython: wraparound=False
 
 import pytz
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.clock cimport TestClock
-from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.logging cimport TestLogger
+from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.common.account cimport Account
+from nautilus_trader.common.brokerage cimport CommissionCalculator
+from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
+from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
-from nautilus_trader.model.identifiers cimport Symbol, OrderIdBroker
-from nautilus_trader.model.objects cimport Decimal64, Price, Money, Quantity
-from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderWorking
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport OrderIdBroker
+from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent, OrderSubmitted
-from nautilus_trader.model.events cimport OrderAccepted, OrderRejected, OrderWorking, OrderExpired
-from nautilus_trader.model.events cimport OrderModified, OrderCancelled, OrderCancelReject
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
-from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitBracketOrder
-from nautilus_trader.model.commands cimport ModifyOrder, CancelOrder
-from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.brokerage cimport CommissionCalculator, RolloverInterestCalculator
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
-from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.model.tick cimport QuoteTick
+
 
 # Stop order types
 cdef set STOP_ORDER_TYPES = {

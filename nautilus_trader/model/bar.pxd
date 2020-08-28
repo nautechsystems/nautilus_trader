@@ -17,8 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.objects cimport Price, Quantity
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BarSpecification:

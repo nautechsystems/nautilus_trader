@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.tick cimport QuoteTick, TradeTick
-from nautilus_trader.model.bar cimport BarType, Bar
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class Handler:

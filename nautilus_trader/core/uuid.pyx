@@ -60,6 +60,7 @@ Typical usage:
 import os
 import platform
 
+
 # The recognized platforms - known behaviors
 cdef bint _AIX     = platform.system() == 'AIX'      # noqa (E221 multiple spaces before operator)
 cdef bint _DARWIN  = platform.system() == 'Darwin'   # noqa (E221 multiple spaces before operator)

@@ -16,12 +16,14 @@
 import queue
 import threading
 
+from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.common.logging cimport LogMessage
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.common.logging cimport LogLevel, LogMessage, Logger
 from nautilus_trader.serialization.base cimport LogSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackLogSerializer
-from nautilus_trader.live.clock cimport LiveClock
 
 
 cdef class LogStore:
@@ -65,6 +67,7 @@ cdef class LiveLogger(Logger):
     """
 
     def __init__(self,
+                 LiveClock clock not None,
                  str name=None,
                  bint bypass_logging=False,
                  LogLevel level_console=LogLevel.INFO,
@@ -74,11 +77,11 @@ cdef class LiveLogger(Logger):
                  bint log_thread=False,
                  bint log_to_file=False,
                  str log_file_path not None="logs/",
-                 LiveClock clock not None=LiveClock(),
                  LogStore store=None):
         """
         Initialize a new instance of the LiveLogger class.
 
+        :param clock: The clock for the logger.
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -87,11 +90,11 @@ cdef class LiveLogger(Logger):
         :param log_thread: If log messages should include the thread.
         :param log_to_file: If log messages should write to the log file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :param clock: The clock for the logger.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
         """
-        super().__init__(name,
+        super().__init__(clock,
+                         name,
                          bypass_logging,
                          level_console,
                          level_file,
@@ -99,8 +102,7 @@ cdef class LiveLogger(Logger):
                          console_prints,
                          log_thread,
                          log_to_file,
-                         log_file_path,
-                         clock)
+                         log_file_path)
 
         self._store = store
         self._queue = queue.Queue()

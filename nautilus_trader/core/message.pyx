@@ -16,8 +16,8 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.uuid cimport UUID
 
 
 cdef class Message:

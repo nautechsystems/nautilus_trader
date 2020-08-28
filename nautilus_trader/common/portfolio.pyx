@@ -13,14 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.events cimport PositionEvent, PositionOpened, PositionModified
-from nautilus_trader.model.events cimport PositionClosed, OrderFillEvent
+from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport PositionClosed
+from nautilus_trader.model.events cimport PositionEvent
+from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionOpened
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.identifiers cimport Symbol, PositionId
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter
 
 
 cdef class Portfolio:

@@ -13,16 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.objects cimport Quantity, Money
-from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.identifiers cimport Symbol, PositionId, OrderId
-from nautilus_trader.model.identifiers cimport AccountId, ExecutionId, PositionIdBroker
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport Tick
 
 
 cdef class Position:

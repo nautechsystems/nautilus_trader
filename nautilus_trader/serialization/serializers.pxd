@@ -13,11 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.serialization.base cimport DictionarySerializer, OrderSerializer, EventSerializer
-from nautilus_trader.serialization.base cimport CommandSerializer, RequestSerializer, ResponseSerializer
+from nautilus_trader.core.cache cimport ObjectCache
+from nautilus_trader.serialization.base cimport CommandSerializer
+from nautilus_trader.serialization.base cimport DictionarySerializer
+from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport LogSerializer
+from nautilus_trader.serialization.base cimport OrderSerializer
+from nautilus_trader.serialization.base cimport RequestSerializer
+from nautilus_trader.serialization.base cimport ResponseSerializer
 
 
 cdef class MsgPackDictionarySerializer(DictionarySerializer):

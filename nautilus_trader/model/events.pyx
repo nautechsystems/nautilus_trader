@@ -16,18 +16,28 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.types cimport ValidString, Label
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
-from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
-from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.types cimport Label
+from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
-from nautilus_trader.model.identifiers cimport Symbol, AccountId, StrategyId
-from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, PositionIdBroker
-from nautilus_trader.model.objects cimport Quantity, Price
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
 

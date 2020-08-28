@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytz
-from cpython.datetime cimport datetime, timedelta
 
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
+
+from nautilus_trader.backtest.clock cimport Clock
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport Timer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport TimeEventHandler

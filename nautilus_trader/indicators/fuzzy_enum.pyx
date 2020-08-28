@@ -13,7 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.fuzzy_enums.candle_body import CandleBodySize        # noqa F401 (being used)
-from nautilus_trader.indicators.fuzzy_enums.candle_direction import CandleDirection  # noqa F401 (being used)
-from nautilus_trader.indicators.fuzzy_enums.candle_size import CandleSize            # noqa F401 (being used)
-from nautilus_trader.indicators.fuzzy_enums.candle_wick import CandleWickSize        # noqa F401 (being used)
+from nautilus_trader.indicators.fuzzy_enums.candle_body import (
+    CandleBodySize,  # noqa F401 (being used)
+)
+from nautilus_trader.indicators.fuzzy_enums.candle_direction import (
+    CandleDirection,  # noqa F401 (being used)
+)
+from nautilus_trader.indicators.fuzzy_enums.candle_size import (
+    CandleSize,  # noqa F401 (being used)
+)
+from nautilus_trader.indicators.fuzzy_enums.candle_wick import (
+    CandleWickSize,  # noqa F401 (being used)
+)

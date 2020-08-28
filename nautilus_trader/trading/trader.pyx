@@ -13,18 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTransition
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter
-from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.execution cimport ExecutionEngine
-from nautilus_trader.common.component cimport create_component_fsm
-from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
-from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fsm cimport InvalidStateTransition
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class Trader:

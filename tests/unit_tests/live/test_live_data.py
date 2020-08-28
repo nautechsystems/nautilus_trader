@@ -16,8 +16,8 @@
 import time
 import unittest
 
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.live.data import LiveDataClient
@@ -44,8 +44,8 @@ from nautilus_trader.serialization.serializers import MsgPackDictionarySerialize
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
 from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from tests.test_kit.mocks import ObjectStorer
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -70,7 +70,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.encryption = EncryptionSettings()
         self.clock = LiveClock()
         self.uuid_factory = LiveUUIDFactory()
-        self.logger = LiveLogger(level_console=LogLevel.VERBOSE)
+        self.logger = LiveLogger(self.clock, level_console=LogLevel.VERBOSE)
 
         self.data_server = MessageServer(
             server_id=ServerId('DataServer-001'),

@@ -13,31 +13,40 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.events cimport Event, OrderRejected
-from nautilus_trader.model.identifiers cimport Symbol, TraderId, StrategyId, OrderId
-from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport Quantity, Price
-from nautilus_trader.model.tick cimport QuoteTick, TradeTick
-from nautilus_trader.model.bar cimport Bar, BarType
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.order cimport Order, BracketOrder
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter
-from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.execution cimport ExecutionEngine
-from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.factories cimport OrderFactory
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.generators cimport PositionIdGenerator
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class TradingStrategy:

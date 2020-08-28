@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.uuid cimport UUID, uuid4
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport uuid4
 
 
 cdef class TestUUIDFactory(UUIDFactory):

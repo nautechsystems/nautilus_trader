@@ -16,8 +16,9 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-import pytz
 import pandas as pd
+import pytz
+
 from cpython.datetime cimport datetime
 from cpython.unicode cimport PyUnicode_Contains
 

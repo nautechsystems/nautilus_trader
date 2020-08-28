@@ -53,7 +53,7 @@ class TraderTests(unittest.TestCase):
 
         clock = TestClock()
         uuid_factory = TestUUIDFactory()
-        logger = TestLogger()
+        logger = TestLogger(clock)
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 

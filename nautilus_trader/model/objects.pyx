@@ -17,7 +17,8 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal64
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
 
 
 cdef Quantity _QUANTITY_ZERO = Quantity()
