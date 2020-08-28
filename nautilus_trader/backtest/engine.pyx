@@ -92,7 +92,7 @@ cdef class BacktestEngine:
         self.test_clock.set_time(self.clock.time_now())
         self.uuid_factory = TestUUIDFactory()
 
-        self.logger = LiveLogger(
+        self.logger = TestLogger(
             clock=LiveClock(),
             name=self.trader_id.value,
             bypass_logging=False,

@@ -412,7 +412,7 @@ cdef class Order:
             self.filled_timestamp = event.timestamp
             self.average_price = event.average_price
             self._set_slippage()
-            self.is_completed = True
+            self._set_is_completed_true()
 
     cdef void _set_is_working_true(self) except *:
         self.is_working = True
