@@ -23,7 +23,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal64
-from nautilus_trader.core.fsm cimport InvalidStateTransition
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
@@ -367,11 +366,7 @@ cdef class Order:
         self.last_event = event
         self.event_count += 1
 
-        try:
-            self._fsm.trigger(event.__class__.__name__)
-        except InvalidStateTransition as ex:
-            raise ex
-
+        self._fsm.trigger(event.__class__.__name__)  # Raises InvalidStateTrigger if trigger invalid
         self.state = self._fsm.state
 
         # Handle event
@@ -450,7 +445,7 @@ cdef class BracketOrder:
         :param stop_loss: The stop-loss (SL) 'child' order.
         :param take_profit: The optional take-profit (TP) 'child' order.
         """
-        self.id = BracketOrderId("B" + entry.id.value)
+        self.id = BracketOrderId(f"B{entry.id.value}")
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit

@@ -208,7 +208,7 @@ class TestStubs:
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
             uuid4(),
             UNIX_EPOCH)
 
@@ -226,7 +226,7 @@ class TestStubs:
         return OrderAccepted(
             TestStubs.account_id(),
             order.id,
-            OrderIdBroker("B-" + order.id.value),
+            OrderIdBroker(order.id.value.replace('O', 'B')),
             order.label,
             UNIX_EPOCH,
             uuid4(),
@@ -238,7 +238,7 @@ class TestStubs:
             TestStubs.account_id(),
             order.id,
             UNIX_EPOCH,
-            ValidString("ORDER_REJECTED!"),
+            ValidString("ORDER_REJECTED"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -250,8 +250,8 @@ class TestStubs:
         return OrderFilled(
             TestStubs.account_id(),
             order.id,
-            ExecutionId("E-" + order.id.value),
-            PositionIdBroker("T-" + order.id.value),
+            ExecutionId(order.id.value.replace('O', 'E')),
+            PositionIdBroker(order.id.value.replace('P', 'T')),
             order.symbol,
             order.side,
             order.quantity,
@@ -269,7 +269,7 @@ class TestStubs:
         return OrderWorking(
             TestStubs.account_id(),
             order.id,
-            OrderIdBroker("B-" + order.id.value),
+            OrderIdBroker(order.id.value.replace('O', 'B')),
             order.symbol,
             order.label,
             order.side,
@@ -374,8 +374,8 @@ class TestStubs:
         order_filled = OrderFilled(
             TestStubs.account_id(),
             order.id,
-            ExecutionId("E-" + order.id.value),
-            PositionIdBroker("T-" + position.id.value),
+            ExecutionId(order.id.value.replace('O', 'E')),
+            PositionIdBroker(position.id.value.replace('P', 'T')),
             order.symbol,
             order.side,
             order.quantity,

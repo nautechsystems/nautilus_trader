@@ -72,6 +72,8 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 
 
+_TZ_US_EAST = pytz.timezone("US/Eastern")
+
 # Stop order types
 cdef set STOP_ORDER_TYPES = {
     OrderType.STOP,
@@ -125,7 +127,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._account = Account(self.reset_account_event())
         self.exec_db = exec_engine.database
         self.exchange_calculator = ExchangeRateCalculator()
-        self.tz_us_est = pytz.timezone("US/Eastern")
         self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0  # Bank + Broker spread markup
@@ -286,6 +287,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         cdef datetime time_now = self._clock.time_now()
 
+        cdef datetime rollover_local
         if self.day_number != time_now.day:
             # Set account statistics for new day
             self.day_number = time_now.day
@@ -293,8 +295,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_activity_day = Money(0, self.account_currency)
             self.rollover_applied = False
 
-            rollover_local = time_now.astimezone(self.tz_us_est)
-            self.rollover_time = self.tz_us_est.localize(datetime(
+            rollover_local = time_now.astimezone(_TZ_US_EAST)
+            self.rollover_time = _TZ_US_EAST.localize(datetime(
                 rollover_local.year,
                 rollover_local.month,
                 rollover_local.day,

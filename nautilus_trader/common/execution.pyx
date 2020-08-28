@@ -25,7 +25,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTransition
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
@@ -1179,7 +1179,7 @@ cdef class ExecutionEngine:
         else:
             try:
                 order.apply(event)
-            except InvalidStateTransition as ex:
+            except InvalidStateTrigger as ex:
                 self._log.exception(ex)
 
             self.database.update_order(order)

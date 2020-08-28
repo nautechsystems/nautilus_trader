@@ -21,7 +21,7 @@ from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTransition
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.commands cimport AccountInquiry
@@ -134,7 +134,7 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('START')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             self.stop()  # Do not start trader in an invalid state
             return
@@ -159,7 +159,7 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('STOP')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
 
@@ -204,7 +204,7 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('RESET')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
 
@@ -227,7 +227,7 @@ cdef class Trader:
         """
         try:
             self._fsm.trigger('DISPOSE')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
 

@@ -45,7 +45,6 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase
-from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -298,8 +297,8 @@ cdef class BacktestEngine:
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: [TimeEventHandler]
         for strategy in self.trader.strategies:
-            time_events += strategy.clock.advance_time(timestamp)
-        for event_handler in sorted(time_events):
+            time_events += sorted(strategy.clock.advance_time(timestamp))
+        for event_handler in time_events:
             self.test_clock.set_time(event_handler.event.timestamp)
             event_handler.handle()
         self.test_clock.set_time(timestamp)

@@ -30,7 +30,7 @@ from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTransition
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -1308,7 +1308,7 @@ cdef class TradingStrategy:
         """
         try:
             self._fsm.trigger('START')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self.log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
             return
@@ -1341,7 +1341,7 @@ cdef class TradingStrategy:
         """
         try:
             self._fsm.trigger('STOP')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
 
@@ -1379,7 +1379,7 @@ cdef class TradingStrategy:
         """
         try:
             self._fsm.trigger('RESUME')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self.log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
             return
@@ -1405,7 +1405,7 @@ cdef class TradingStrategy:
         """
         try:
             self._fsm.trigger('RESET')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
 
@@ -1436,7 +1436,7 @@ cdef class TradingStrategy:
         """
         try:
             self._fsm.trigger('DISPOSE')
-        except InvalidStateTransition as ex:
+        except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
 
