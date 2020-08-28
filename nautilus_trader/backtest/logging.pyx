@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.clock cimport TestClock
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
@@ -27,7 +27,7 @@ cdef class TestLogger(Logger):
     __test__ = False
 
     def __init__(self,
-                 TestClock clock not None,
+                 Clock clock not None,
                  str name=None,
                  bint bypass_logging=False,
                  LogLevel level_console=LogLevel.DEBUG,
@@ -54,8 +54,6 @@ cdef class TestLogger(Logger):
         """
         if log_file_path is "":
             log_file_path = "log/"
-        if clock is None:
-            clock = TestClock()
         super().__init__(clock,
                          name,
                          bypass_logging,
