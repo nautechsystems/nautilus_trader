@@ -13,12 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-from math import log
 from collections import deque
+from math import log
 
-from nautilus_trader.indicators.base.indicator cimport Indicator
+import cython
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class RateOfChange(Indicator):

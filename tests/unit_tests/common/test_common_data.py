@@ -35,13 +35,14 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class DataClientTests(unittest.TestCase):
 
     def setUp(self):
+        clock = TestClock()
         self.client = DataClient(
             tick_capacity=1000,
             bar_capacity=1000,
             use_previous_close=False,
-            clock=TestClock(),
+            clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger())
+            logger=TestLogger(clock))
 
     def test_get_exchange_rate_returns_correct_rate(self):
         # Arrange

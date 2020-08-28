@@ -16,32 +16,42 @@
 # cython: boundscheck=False
 # cython: wraparound=False
 
-import pytz
 import psutil
+import pytz
+
 from cpython.datetime cimport datetime
 
-from nautilus_trader.backtest.clock cimport TestClock
-from nautilus_trader.backtest.uuid cimport TestUUIDFactory
-from nautilus_trader.backtest.logging cimport TestLogger
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport as_utc_timestamp, format_iso8601
-from nautilus_trader.core.functions cimport format_bytes, pad_string, get_size_of
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.identifiers cimport TraderId, AccountId
-from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.logging cimport LogLevel, LoggerAdapter, nautilus_header
-from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.backtest.clock cimport TestClock
 from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.data cimport BacktestDataContainer, BacktestDataClient
+from nautilus_trader.backtest.data cimport BacktestDataClient
+from nautilus_trader.backtest.data cimport BacktestDataContainer
 from nautilus_trader.backtest.execution cimport BacktestExecClient
+from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.execution cimport InMemoryExecutionDatabase
+from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport nautilus_header
+from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.timer cimport TimeEventHandler
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport as_utc_timestamp
+from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.functions cimport format_bytes
+from nautilus_trader.core.functions cimport get_size_of
+from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class BacktestEngine:
@@ -82,6 +92,7 @@ cdef class BacktestEngine:
         self.uuid_factory = TestUUIDFactory()
 
         self.logger = TestLogger(
+            clock=LiveClock(),
             name=self.trader_id.value,
             bypass_logging=False,
             level_console=LogLevel.INFO,
@@ -90,12 +101,12 @@ cdef class BacktestEngine:
             console_prints=True,
             log_thread=config.log_thread,
             log_to_file=config.log_to_file,
-            log_file_path=config.log_file_path,
-            clock=LiveClock())
+            log_file_path=config.log_file_path)
 
         self.log = LoggerAdapter(component_name=self.__class__.__name__, logger=self.logger)
 
         self.test_logger = TestLogger(
+            clock=self.test_clock,
             name=self.trader_id.value,
             bypass_logging=config.bypass_logging,
             level_console=config.level_console,
@@ -104,8 +115,7 @@ cdef class BacktestEngine:
             console_prints=config.console_prints,
             log_thread=config.log_thread,
             log_to_file=config.log_to_file,
-            log_file_path=config.log_file_path,
-            clock=self.test_clock)
+            log_file_path=config.log_file_path)
 
         nautilus_header(self.log)
         self.log.info("=================================================================")
@@ -287,8 +297,8 @@ cdef class BacktestEngine:
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: [TimeEventHandler]
         for strategy in self.trader.strategies:
-            time_events += strategy.clock.advance_time(timestamp)
-        for event_handler in sorted(time_events):
+            time_events += sorted(strategy.clock.advance_time(timestamp))
+        for event_handler in time_events:
             self.test_clock.set_time(event_handler.event.timestamp)
             event_handler.handle()
         self.test_clock.set_time(timestamp)

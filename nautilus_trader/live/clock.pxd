@@ -16,8 +16,8 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.common.timer cimport Timer
 
 
 cdef class LiveTimer(Timer):

@@ -16,8 +16,10 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.maker cimport Maker
-from nautilus_trader.model.objects cimport Price, Quantity
-from nautilus_trader.model.identifiers cimport Symbol, MatchId
+from nautilus_trader.model.identifiers cimport MatchId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Tick:

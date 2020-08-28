@@ -14,14 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+
 import pandas as pd
 
+from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_from_string
-from nautilus_trader.model.objects cimport Decimal64, Money, Quantity, Price
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+
 from nautilus_trader import PACKAGE_ROOT
 
 

@@ -15,25 +15,36 @@
 
 import queue
 import threading
+
 import redis
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport MessageType, Message
-from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId
-from nautilus_trader.model.identifiers cimport OrderId, PositionId, PositionIdBroker
-from nautilus_trader.model.commands cimport Command
-from nautilus_trader.model.events cimport Event, AccountStateEvent, OrderFillEvent, OrderInitialized
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.common.execution cimport ExecutionDatabase
+from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Message
+from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.model.commands cimport Command
+from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
 
 cdef str _UTF8 = 'utf-8'
 

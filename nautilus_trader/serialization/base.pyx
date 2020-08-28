@@ -15,9 +15,12 @@
 
 import re
 
-from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.message cimport Request
+from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.order cimport Order
 
 
 cdef class Serializer:

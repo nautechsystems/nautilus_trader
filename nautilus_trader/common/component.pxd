@@ -16,5 +16,5 @@
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 
 
-cpdef dict generate_state_transition_table()
+cpdef dict get_state_transition_table()
 cpdef FiniteStateMachine create_component_fsm()

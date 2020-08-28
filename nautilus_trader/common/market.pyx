@@ -14,23 +14,32 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-import pandas as pd
-from cpython.object cimport PyObject_GetAttr
-from cpython.datetime cimport datetime, timedelta
 
+import pandas as pd
+
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
+from cpython.object cimport PyObject_GetAttr
+
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.handlers cimport BarHandler
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
-from nautilus_trader.model.c_enums.price_type cimport PriceType, price_type_to_string
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure, bar_structure_to_string
-from nautilus_trader.model.objects cimport Price, Quantity
-from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.bar cimport Bar, BarType, BarSpecification
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.timer cimport Timer
-from nautilus_trader.common.logging cimport Logger, LoggerAdapter
-from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarSpecification
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport Tick
 
 
 cdef class TickDataWrangler:

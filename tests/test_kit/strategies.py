@@ -71,10 +71,11 @@ class EmptyStrategy(TradingStrategy):
 
         :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
         """
+        clock = TestClock()
         super().__init__(
-            clock=TestClock(),
+            clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(),
+            logger=TestLogger(clock),
             order_id_tag=order_id_tag)
 
 
@@ -85,10 +86,11 @@ class TickTock(TradingStrategy):
 
     def __init__(self, instrument, bar_type):
         """Initialize a new instance of the TickTock class."""
+        clock = TestClock()
         super().__init__(
-            clock=TestClock(),
+            clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(),
+            logger=TestLogger(clock),
             order_id_tag="000")
 
         self.instrument = instrument
@@ -135,10 +137,11 @@ class TestStrategy1(TradingStrategy):
 
     def __init__(self, bar_type, id_tag_strategy="001"):
         """Initialize a new instance of the TestStrategy1 class."""
+        clock = TestClock()
         super().__init__(
-            clock=TestClock(),
+            clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(),
+            logger=TestLogger(clock),
             order_id_tag=id_tag_strategy)
 
         self.object_storer = ObjectStorer()
@@ -234,10 +237,11 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
+        clock = TestClock()
         super().__init__(
-            clock=TestClock(),
+            clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(),
+            logger=TestLogger(clock),
             order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         # Custom strategy variables

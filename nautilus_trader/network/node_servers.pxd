@@ -13,18 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.message cimport Message, MessageType
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.network.identifiers cimport ClientId, ServerId
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.message cimport Message
+from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.network.compression cimport Compressor
-from nautilus_trader.network.socket cimport ServerSocket
-from nautilus_trader.network.queue cimport MessageQueueInbound, MessageQueueOutbound
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.identifiers cimport ServerId
+from nautilus_trader.network.messages cimport Connect
+from nautilus_trader.network.messages cimport Disconnect
 from nautilus_trader.network.messages cimport Response
-from nautilus_trader.network.messages cimport Connect, Disconnect
-from nautilus_trader.serialization.base cimport DictionarySerializer, RequestSerializer, ResponseSerializer
+from nautilus_trader.network.queue cimport MessageQueueInbound
+from nautilus_trader.network.queue cimport MessageQueueOutbound
+from nautilus_trader.network.socket cimport ServerSocket
+from nautilus_trader.serialization.base cimport DictionarySerializer
+from nautilus_trader.serialization.base cimport RequestSerializer
+from nautilus_trader.serialization.base cimport ResponseSerializer
 
 
 cdef class ServerNode:

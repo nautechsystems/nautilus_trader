@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Request, Response
-from nautilus_trader.network.identifiers cimport ClientId, ServerId, SessionId
+from nautilus_trader.core.message cimport Request
+from nautilus_trader.core.message cimport Response
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.identifiers cimport ServerId
+from nautilus_trader.network.identifiers cimport SessionId
 
 
 cdef class Connect(Request):

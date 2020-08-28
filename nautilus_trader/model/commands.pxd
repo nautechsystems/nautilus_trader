@@ -13,11 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.message cimport Command
-from nautilus_trader.model.identifiers cimport OrderId, TraderId, StrategyId, PositionId, AccountId
-from nautilus_trader.model.objects cimport Price, Quantity
-from nautilus_trader.model.order cimport Order, BracketOrder
+from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport Order
 
 
 cdef class AccountInquiry(Command):

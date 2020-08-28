@@ -15,8 +15,8 @@
 
 from zmq.backend.cython.socket cimport Socket as ZMQSocket
 
-from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.types cimport Identifier
 
 
 cdef class Socket:

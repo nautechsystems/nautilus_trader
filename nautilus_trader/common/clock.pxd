@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class Clock:

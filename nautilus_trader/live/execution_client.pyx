@@ -13,20 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.commands cimport Command, AccountInquiry
-from nautilus_trader.model.commands cimport SubmitOrder, SubmitBracketOrder, ModifyOrder, CancelOrder
-from nautilus_trader.model.events cimport Event
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
-from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.network.node_clients cimport MessageClient, MessageSubscriber
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport Command
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.events cimport Event
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.node_clients cimport MessageClient
+from nautilus_trader.network.node_clients cimport MessageSubscriber
+from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport DictionarySerializer
-from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, RequestSerializer
+from nautilus_trader.serialization.base cimport RequestSerializer
+from nautilus_trader.serialization.base cimport ResponseSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer
 
 

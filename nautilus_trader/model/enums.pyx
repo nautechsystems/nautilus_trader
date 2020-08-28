@@ -13,6 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+Provides the C enums as Python enums for external use.
+
+isort:skip_file
+"""
+
 from nautilus_trader.model.c_enums.account_type import AccountType        # noqa F401 (being used)
 from nautilus_trader.model.c_enums.bar_structure import BarStructure      # noqa F401 (being used)
 from nautilus_trader.model.c_enums.component_state import ComponentState  # noqa F401 (being used)

@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logging cimport LogMessage, Logger
+from nautilus_trader.common.logging cimport LogMessage
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.serialization.base cimport LogSerializer
 
 

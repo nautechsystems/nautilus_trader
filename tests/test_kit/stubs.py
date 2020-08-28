@@ -31,7 +31,12 @@ from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionModified
@@ -203,7 +208,37 @@ class TestStubs:
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_submitted(order) -> OrderSubmitted:
+        return OrderSubmitted(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_accepted(order) -> OrderAccepted:
+        return OrderAccepted(
+            TestStubs.account_id(),
+            order.id,
+            OrderIdBroker(order.id.value.replace('O', 'B')),
+            order.label,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_rejected(order) -> OrderRejected:
+        return OrderRejected(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            ValidString("ORDER_REJECTED"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -215,8 +250,8 @@ class TestStubs:
         return OrderFilled(
             TestStubs.account_id(),
             order.id,
-            ExecutionId("E-" + order.id.value),
-            PositionIdBroker("T-" + order.id.value),
+            ExecutionId(order.id.value.replace('O', 'E')),
+            PositionIdBroker(order.id.value.replace('P', 'T')),
             order.symbol,
             order.side,
             order.quantity,
@@ -234,7 +269,7 @@ class TestStubs:
         return OrderWorking(
             TestStubs.account_id(),
             order.id,
-            OrderIdBroker("B-" + order.id.value),
+            OrderIdBroker(order.id.value.replace('O', 'B')),
             order.symbol,
             order.label,
             order.side,
@@ -246,6 +281,24 @@ class TestStubs:
             uuid4(),
             UNIX_EPOCH,
             order.expire_time)
+
+    @staticmethod
+    def event_order_cancelled(order) -> OrderCancelled:
+        return OrderCancelled(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_expired(order) -> OrderExpired:
+        return OrderExpired(
+            TestStubs.account_id(),
+            order.id,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH)
 
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
@@ -321,8 +374,8 @@ class TestStubs:
         order_filled = OrderFilled(
             TestStubs.account_id(),
             order.id,
-            ExecutionId("E-" + order.id.value),
-            PositionIdBroker("T-" + position.id.value),
+            ExecutionId(order.id.value.replace('O', 'E')),
+            PositionIdBroker(position.id.value.replace('P', 'T')),
             order.symbol,
             order.side,
             order.quantity,
