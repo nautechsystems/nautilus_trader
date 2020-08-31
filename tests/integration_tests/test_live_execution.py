@@ -229,7 +229,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
 
         # Act
-        position = Position(position_id, order1.last_event)
+        position = Position(position_id, order1.last_event())
         self.database.add_position(position, self.strategy.id)
 
         order2 = self.strategy.order_factory.market(
@@ -411,7 +411,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_working(order1))
         order1.apply(TestStubs.event_order_filled(order1, fill_price=Price(1.00001, 5)))
 
-        position = Position(position_id, order1.last_event)
+        position = Position(position_id, order1.last_event())
         self.database.add_position(position, self.strategy.id)
 
         # Act

@@ -395,10 +395,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(order, "order")
 
-        if order.is_working:
+        if order.is_working():
             self._index_orders_working.add(order.id)
             self._index_orders_completed.discard(order.id)
-        elif order.is_completed:
+        elif order.is_completed():
             self._index_orders_completed.add(order.id)
             self._index_orders_working.discard(order.id)
 

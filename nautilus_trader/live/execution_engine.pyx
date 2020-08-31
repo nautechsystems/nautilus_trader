@@ -249,14 +249,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event))  # 0
-        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)        # 1
-        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)        # 2
-        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)  # 3
-        pipe.sadd(self.key_index_orders, order.id.value)                                                  # 4
-        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)                     # 5
-        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)                     # 6
-        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)               # 7
+        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event())) # 0
+        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)         # 1
+        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)         # 2
+        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)   # 3
+        pipe.sadd(self.key_index_orders, order.id.value)                                                   # 4
+        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)                      # 5
+        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)                      # 6
+        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)                # 7
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -352,11 +352,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event))
-        if order.is_working:
+        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event()))
+        if order.is_working():
             pipe.sadd(self.key_index_orders_working, order.id.value)
             pipe.srem(self.key_index_orders_completed, order.id.value)
-        elif order.is_completed:
+        elif order.is_completed():
             pipe.sadd(self.key_index_orders_completed, order.id.value)
             pipe.srem(self.key_index_orders_working, order.id.value)
         cdef list reply = pipe.execute()
@@ -679,7 +679,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef dict orders = {}
         cdef Order order
         for order in cached_orders.values():
-            if order.is_working:
+            if order.is_working():
                 orders[order.id] = order
             else:
                 self._log.error(f"Order indexed as working found not working, "
@@ -705,7 +705,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef dict orders = {}
         cdef Order order
         for order in cached_orders.values():
-            if order.is_completed:
+            if order.is_completed():
                 orders[order.id] = order
             else:
                 self._log.error(f"Order indexed as completed found not completed, "

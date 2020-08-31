@@ -41,7 +41,7 @@ class AccountTests(unittest.TestCase):
             Money(0, Currency.AUD),
             Money(0, Currency.AUD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
             uuid4(),
             UNIX_EPOCH)
 
@@ -57,7 +57,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(0, Currency.AUD), account.margin_used_liquidation)
         self.assertEqual(Money(0, Currency.AUD), account.margin_used_maintenance)
         self.assertEqual(Decimal64(0), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
     def test_can_calculate_free_equity_when_greater_than_zero(self):
@@ -71,7 +71,7 @@ class AccountTests(unittest.TestCase):
             Money(1000, Currency.AUD),
             Money(2000, Currency.AUD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
             uuid4(),
             UNIX_EPOCH)
 
@@ -89,7 +89,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(1000, Currency.AUD), account.margin_used_liquidation)
         self.assertEqual(Money(2000, Currency.AUD), account.margin_used_maintenance)
         self.assertEqual(Decimal64(0), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
     def test_can_calculate_free_equity_when_zero(self):
@@ -103,7 +103,7 @@ class AccountTests(unittest.TestCase):
             Money(0, Currency.AUD),
             Money(20000, Currency.AUD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
             uuid4(),
             UNIX_EPOCH)
 
@@ -121,7 +121,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(0, Currency.AUD), account.margin_used_liquidation)
         self.assertEqual(Money(20000, Currency.AUD), account.margin_used_maintenance)
         self.assertEqual(Decimal64(0), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
     def test_can_calculate_free_equity_when_negative(self):
@@ -135,7 +135,7 @@ class AccountTests(unittest.TestCase):
             Money(10000, Currency.AUD),
             Money(20000, Currency.AUD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
             uuid4(),
             UNIX_EPOCH)
 
@@ -153,5 +153,5 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(10000, Currency.AUD), account.margin_used_liquidation)
         self.assertEqual(Money(20000, Currency.AUD), account.margin_used_maintenance)
         self.assertEqual(Decimal64(0), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status.value)
+        self.assertEqual('N', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)

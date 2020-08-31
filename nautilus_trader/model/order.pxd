@@ -19,6 +19,7 @@ from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -38,7 +39,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Order:
-    cdef set _execution_ids
+    cdef list _execution_ids
     cdef list _events
     cdef FiniteStateMachine _fsm
 
@@ -50,7 +51,6 @@ cdef class Order:
     cdef readonly Symbol symbol
     cdef readonly OrderSide side
     cdef readonly OrderType type
-    cdef readonly OrderState state
     cdef readonly Quantity quantity
     cdef readonly datetime timestamp
     cdef readonly Price price
@@ -63,24 +63,22 @@ cdef class Order:
     cdef readonly Price average_price
     cdef readonly Decimal64 slippage
     cdef readonly UUID init_id
-    cdef readonly OrderEvent last_event
-    cdef readonly int event_count
-    cdef readonly bint is_buy
-    cdef readonly bint is_sell
-    cdef readonly bint is_working
-    cdef readonly bint is_completed
 
     @staticmethod
     cdef Order create(OrderInitialized event)
     cpdef bint equals(self, Order other)
-    cpdef str status_string(self)
-    cpdef str state_as_string(self)
+    cpdef OrderState state(self)
+    cpdef Event last_event(self)
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
-    cpdef datetime last_event_time(self)
+    cpdef int event_count(self)
+    cpdef bint is_buy(self)
+    cpdef bint is_sell(self)
+    cpdef bint is_working(self)
+    cpdef bint is_completed(self)
+    cpdef str status_string(self)
+    cpdef str state_as_string(self)
     cpdef void apply(self, OrderEvent event) except *
-    cdef void _set_is_working_true(self) except *
-    cdef void _set_is_completed_true(self) except *
     cdef void _set_slippage(self) except *
 
 

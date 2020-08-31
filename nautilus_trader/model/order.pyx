@@ -23,6 +23,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal64
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
@@ -55,11 +56,22 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 # Order types which require a price to be valid
-cdef set PRICED_ORDER_TYPES = {
+cdef set _PRICED_ORDER_TYPES = {
     OrderType.LIMIT,
     OrderType.STOP,
     OrderType.STOP_LIMIT,
     OrderType.MIT
+}
+
+
+# Order states which determine if the order is completed
+cdef set _COMPLETED_STATES = {
+    OrderState.INVALID,
+    OrderState.DENIED,
+    OrderState.REJECTED,
+    OrderState.CANCELLED,
+    OrderState.EXPIRED,
+    OrderState.FILLED
 }
 
 cdef dict _ORDER_STATE_TABLE = {
@@ -160,7 +172,7 @@ cdef class Order:
         Condition.positive(quantity.as_double(), "quantity")
 
         # For orders which require a price
-        if order_type in PRICED_ORDER_TYPES:
+        if order_type in _PRICED_ORDER_TYPES:
             Condition.not_none(price, "price")
         # For orders which require no price
         else:
@@ -170,13 +182,12 @@ cdef class Order:
             # Must have an expire time
             Condition.not_none(expire_time, "expire_time")
 
-        self._execution_ids = set()         # type: {ExecutionId}
-        self._events = []                   # type: [OrderEvent]
+        self._execution_ids = []  # type: [ExecutionId]
+        self._events = []         # type: [OrderEvent]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
-            state_parser=order_state_to_string
-        )
+            state_parser=order_state_to_string)
 
         self.id = order_id
         self.id_broker = None               # Can be None
@@ -197,12 +208,7 @@ cdef class Order:
         self.filled_timestamp = None        # Can be None
         self.average_price = None           # Can be None
         self.slippage = Decimal64()
-        self.state = OrderState.INITIALIZED
         self.init_id = init_id
-        self.is_buy = self.side == OrderSide.BUY
-        self.is_sell = self.side == OrderSide.SELL
-        self.is_working = False
-        self.is_completed = False
 
         cdef OrderInitialized initialized = OrderInitialized(
             order_id=order_id,
@@ -220,8 +226,6 @@ cdef class Order:
 
         # Update events
         self._events.append(initialized)
-        self.last_event = initialized
-        self.event_count = 1
 
     @staticmethod
     cdef Order create(OrderInitialized event):
@@ -255,6 +259,99 @@ cdef class Order:
         :return bool.
         """
         return self.id.equals(other.id)
+
+    cpdef OrderState state(self):
+        """
+        Return the orders current state.
+
+        Returns
+        -------
+        OrderState
+
+        """
+        return self._fsm.state
+
+    cpdef Event last_event(self):
+        """
+        Return the last event applied to the order.
+
+        Returns
+        -------
+        OrderEvent
+
+        """
+        return self._events[-1]
+
+    cpdef list get_execution_ids(self):
+        """
+        Return a sorted list of execution identifiers.
+
+        :return List[ExecutionId].
+        """
+        return sorted(self._execution_ids)
+
+    cpdef list get_events(self):
+        """
+        Return a list or order events.
+
+        :return List[OrderEvent].
+        """
+        return self._events.copy()
+
+    cpdef int event_count(self):
+        """
+        Return the count of events received by the order.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self._events)
+
+    cpdef bint is_buy(self):
+        """
+        Return a value indicating whether the order side is buy.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.side == OrderSide.BUY
+
+    cpdef bint is_sell(self):
+        """
+        Return a value indicating whether the order side is sell.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.side == OrderSide.SELL
+
+    cpdef bint is_working(self):
+        """
+        Return a value indicating whether the order is working.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._fsm.state == OrderState.WORKING
+
+    cpdef bint is_completed(self):
+        """
+        Return a value indicating whether the order is completed.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._fsm.state in _COMPLETED_STATES
 
     def __eq__(self, Order other) -> bool:
         """
@@ -291,7 +388,7 @@ cdef class Order:
         cdef str label = "" if self.label is None else f"label={self.label}, "
         return (f"Order("
                 f"id={self.id.value}, "
-                f"state={order_state_to_string(self.state)}, "
+                f"state={self._fsm.state_as_string()}, "
                 f"{label}"
                 f"{self.status_string()})")
 
@@ -324,30 +421,6 @@ cdef class Order:
         """
         return self._fsm.state_as_string()
 
-    cpdef list get_execution_ids(self):
-        """
-        Return a sorted list of execution identifiers.
-
-        :return List[ExecutionId].
-        """
-        return sorted(self._execution_ids)
-
-    cpdef list get_events(self):
-        """
-        Return a list or order events.
-
-        :return List[OrderEvent].
-        """
-        return self._events.copy()
-
-    cpdef datetime last_event_time(self):
-        """
-        Return the last event time for the order.
-
-        :return datetime.
-        """
-        return self._events[-1].timestamp
-
     cpdef void apply(self, OrderEvent event) except *:
         """
         Apply the given order event to the order.
@@ -363,37 +436,35 @@ cdef class Order:
 
         # Update events
         self._events.append(event)
-        self.last_event = event
-        self.event_count += 1
 
-        self._fsm.trigger(event.__class__.__name__)  # Raises InvalidStateTrigger if trigger invalid
-        self.state = self._fsm.state
+        # Update FSM
+        # Raises InvalidStateTrigger if trigger invalid
+        self._fsm.trigger(event.__class__.__name__)
 
         # Handle event
         if isinstance(event, OrderInvalid):
-            self._set_is_completed_true()
+            pass
         elif isinstance(event, OrderDenied):
-            self._set_is_completed_true()
+            pass
         elif isinstance(event, OrderSubmitted):
             self.account_id = event.account_id
         elif isinstance(event, OrderRejected):
-            self._set_is_completed_true()
+            pass
         elif isinstance(event, OrderAccepted):
             pass
         elif isinstance(event, OrderWorking):
             self.id_broker = event.order_id_broker
-            self._set_is_working_true()
         elif isinstance(event, OrderCancelled):
-            self._set_is_completed_true()
+            pass
         elif isinstance(event, OrderExpired):
-            self._set_is_completed_true()
+            pass
         elif isinstance(event, OrderModified):
             self.id_broker = event.order_id_broker
             self.quantity = event.modified_quantity
             self.price = event.modified_price
         elif isinstance(event, OrderPartiallyFilled):
             self.position_id_broker = event.position_id_broker
-            self._execution_ids.add(event.execution_id)
+            self._execution_ids.append(event.execution_id)
             self.execution_id = event.execution_id
             self.filled_quantity = event.filled_quantity
             self.filled_timestamp = event.timestamp
@@ -401,24 +472,15 @@ cdef class Order:
             self._set_slippage()
         elif isinstance(event, OrderFilled):
             self.position_id_broker = event.position_id_broker
-            self._execution_ids.add(event.execution_id)
+            self._execution_ids.append(event.execution_id)
             self.execution_id = event.execution_id
             self.filled_quantity = event.filled_quantity
             self.filled_timestamp = event.timestamp
             self.average_price = event.average_price
             self._set_slippage()
-            self._set_is_completed_true()
-
-    cdef void _set_is_working_true(self) except *:
-        self.is_working = True
-        self.is_completed = False
-
-    cdef void _set_is_completed_true(self) except *:
-        self.is_working = False
-        self.is_completed = True
 
     cdef void _set_slippage(self) except *:
-        if self.type not in PRICED_ORDER_TYPES:
+        if self.type not in _PRICED_ORDER_TYPES:
             # Slippage only applicable to priced order types
             return
 

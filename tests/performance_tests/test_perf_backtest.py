@@ -239,6 +239,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 10/07/20 22711531 function calls (22335763 primitive calls) in 21.568 seconds (more accurate bar aggregation)
         # 18/07/20 14032223 function calls (13918578 primitive calls) in 14.440 seconds (rewrite data handling)
         # 28/08/20 6909192 function calls (6859890 primitive calls) in 9.271 seconds (changes to strategy / orders being processed?)
+        # 31/08/20 6919645 function calls (6870343 primitive calls) in 9.251 seconds (refactor order)
 
         # 10/02/20 Profiling Mission: (Profile_Hooks = True)
         # -----------------------------------------------------------------------------------------------------------------------------------------
