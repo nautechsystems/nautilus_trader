@@ -421,12 +421,12 @@ class EMACrossFiltered(TradingStrategy):
         for working_order in self.orders_working().values():
             if working_order.purpose == OrderPurpose.STOP_LOSS:
                 # SELL SIDE ORDERS
-                if working_order.is_sell:
+                if working_order.is_sell():
                     temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
                     if temp_price.gt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)
                 # BUY SIDE ORDERS
-                elif working_order.is_buy:
+                elif working_order.is_buy():
                     temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
                     if temp_price.lt(working_order.price):
                         self.modify_order(working_order, working_order.quantity, temp_price)

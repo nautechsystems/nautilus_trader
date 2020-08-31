@@ -30,33 +30,33 @@ cpdef enum MessageType:
 
 cdef inline str message_type_to_string(int value):
     if value == 1:
-        return "STRING"
+        return 'STRING'
     elif value == 2:
-        return "COMMAND"
+        return 'COMMAND'
     elif value == 3:
-        return "DOCUMENT"
+        return 'DOCUMENT'
     elif value == 4:
-        return "EVENT"
+        return 'EVENT'
     elif value == 5:
-        return "REQUEST"
+        return 'REQUEST'
     elif value == 6:
-        return "RESPONSE"
+        return 'RESPONSE'
     else:
-        return "UNDEFINED"
+        return 'UNDEFINED'
 
 
 cdef inline MessageType message_type_from_string(str value):
-    if value == "STRING":
+    if value == 'STRING':
         return MessageType.STRING
-    elif value == "COMMAND":
+    elif value == 'COMMAND':
         return MessageType.COMMAND
-    elif value == "DOCUMENT":
+    elif value == 'DOCUMENT':
         return MessageType.DOCUMENT
-    elif value == "EVENT":
+    elif value == 'EVENT':
         return MessageType.EVENT
-    elif value == "REQUEST":
+    elif value == 'REQUEST':
         return MessageType.REQUEST
-    elif value == "RESPONSE":
+    elif value == 'RESPONSE':
         return MessageType.RESPONSE
     else:
         return MessageType.UNDEFINED

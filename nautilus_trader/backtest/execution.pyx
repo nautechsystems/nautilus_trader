@@ -236,7 +236,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money(0, self.account_currency),
             Money(0, self.account_currency),
             Decimal64(),
-            ValidString("N"),
+            ValidString('N'),
             self._uuid_factory.generate(),
             self._clock.time_now())
 
@@ -317,7 +317,7 @@ cdef class BacktestExecClient(ExecutionClient):
         for order in self._working_orders.copy().values():  # Copies list to avoid resize during loop
             if not order.symbol.equals(tick.symbol):
                 continue  # Order is for a different symbol
-            if order.state != OrderState.WORKING:
+            if not order.is_working():
                 continue  # Orders state has changed since the loop commenced
 
             instrument = self.instruments[order.symbol]
@@ -410,7 +410,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal64(),
-                margin_call_status=ValidString("N"),
+                margin_call_status=ValidString('N'),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
@@ -498,7 +498,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal64(),
-                margin_call_status=ValidString("N"),
+                margin_call_status=ValidString('N'),
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
@@ -603,8 +603,8 @@ cdef class BacktestExecClient(ExecutionClient):
                 f"modified quantity {command.modified_quantity} invalid")
             return  # Cannot modify order
 
-        if not self._check_valid_price(order, self._market[order.symbol], reject=True):
-            return  # Cannot accept order
+        if not self._check_valid_price(order, self._market[order.symbol], reject=False):
+            return  # Cannot modify order
 
         # Generate event
         cdef OrderModified modified = OrderModified(
@@ -794,7 +794,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderWorking working = OrderWorking(
             self._account.id,
             order.id,
-            OrderIdBroker("B" + order.id.value),
+            OrderIdBroker(order.id.value.replace('O', 'B')),
             order.symbol,
             order.label,
             order.side,
@@ -836,7 +836,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Work any bracket child orders
         if order.id in self._child_orders:
             for child_order in self._child_orders[order.id]:
-                if not child_order.is_completed:  # The order may already be cancelled or rejected
+                if not child_order.is_completed():  # The order may already be cancelled or rejected
                     self._process_order(child_order)
             del self._child_orders[order.id]
 

@@ -221,7 +221,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
             uuid4(),
             UNIX_EPOCH)
 
@@ -244,7 +244,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal64(0),
-            ValidString("N"),
+            ValidString('N'),
             uuid4(),
             UNIX_EPOCH)
 
