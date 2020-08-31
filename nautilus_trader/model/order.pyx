@@ -164,6 +164,7 @@ cdef class Order:
             If the order_type should not have a price and the price is not None.
             If the order_type should have a price and the price is None.
             If the time_in_force is GTD and the expire_time is None.
+
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
@@ -288,7 +289,7 @@ cdef class Order:
 
         :return List[ExecutionId].
         """
-        return sorted(self._execution_ids)
+        return self._execution_ids.copy()
 
     cpdef list get_events(self):
         """
