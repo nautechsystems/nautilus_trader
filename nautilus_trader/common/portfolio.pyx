@@ -194,7 +194,7 @@ cdef class Portfolio:
 
     cdef void _handle_position_modified(self, PositionModified event) except *:
         cdef Position position = event.position
-        cdef OrderFillEvent fill_event = position.last_event
+        cdef OrderFillEvent fill_event = position.last_event()
 
         if position.entry_direction != fill_event.order_side:
             # Increment PNL

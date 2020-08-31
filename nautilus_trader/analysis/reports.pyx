@@ -85,7 +85,7 @@ cdef class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed]
+        cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed()]
 
         return pd.DataFrame(data=trades).set_index("position_id")
 

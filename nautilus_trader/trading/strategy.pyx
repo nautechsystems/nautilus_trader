@@ -1701,7 +1701,7 @@ cdef class TradingStrategy:
             self.log.error(f"Cannot flatten position (cannot find {position_id} in cached positions.")
             return
 
-        if position.is_closed:
+        if position.is_closed():
             self.log.warning(f"Cannot flatten position (the position {position_id} was already closed).")
             return
 
@@ -1741,7 +1741,7 @@ cdef class TradingStrategy:
         cdef Position position
         cdef Order order
         for position_id, position in positions.items():
-            if position.is_closed:
+            if position.is_closed():
                 self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT.")
                 continue
 

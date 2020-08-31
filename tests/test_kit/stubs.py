@@ -305,7 +305,7 @@ class TestStubs:
         return PositionOpened(
             position,
             StrategyId("SCALPER", "001"),
-            position.last_event,
+            position.last_event(),
             uuid4(),
             UNIX_EPOCH)
 
@@ -314,7 +314,7 @@ class TestStubs:
         return PositionModified(
             position,
             StrategyId("SCALPER", "001"),
-            position.last_event,
+            position.last_event(),
             uuid4(),
             UNIX_EPOCH)
 
@@ -323,7 +323,7 @@ class TestStubs:
         return PositionClosed(
             position,
             StrategyId("SCALPER", "001"),
-            position.last_event,
+            position.last_event(),
             uuid4(),
             UNIX_EPOCH)
 

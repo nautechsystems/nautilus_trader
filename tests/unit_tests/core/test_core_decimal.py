@@ -200,6 +200,14 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(2.00002, result0)
         self.assertEqual(1.500015, result1)
 
+    def test_is_zero_with_various_values_returns_expected_result(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertTrue(Decimal64(0).is_zero())
+        self.assertTrue(Decimal64(-0).is_zero())
+        self.assertFalse(Decimal64(0.1, 1).is_zero())
+
     def test_equality_with_various_values_returns_expected_result(self):
         # Arrange
         # Act

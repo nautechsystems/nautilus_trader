@@ -42,7 +42,7 @@ cdef class FiniteStateMachine:
             starting state and trigger as keys, and resulting states as values.
         initial_state : object
             The initial state for the FSM.
-        state_parser : callable (optional)
+        state_parser : callable, optional
             The optional state parser is required to convert C enum ints into strings.
 
         Raises

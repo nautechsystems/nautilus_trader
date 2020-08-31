@@ -75,7 +75,7 @@ cdef class PerformanceAnalyzer:
 
         cdef Position position
         for position in positions.values():
-            if position.is_closed:
+            if position.is_closed():
                 self.add_return(position.closed_time, position.realized_return)
 
     cpdef void add_transaction(self, AccountStateEvent event) except *:

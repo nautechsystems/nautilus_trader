@@ -410,7 +410,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        if position.is_closed:
+        if position.is_closed():
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
@@ -1220,7 +1220,7 @@ cdef class ExecutionEngine:
             # Position exists - apply event
             position.apply(event)
             self.database.update_position(position)
-            if position.is_closed:
+            if position.is_closed():
                 self._position_closed(position, strategy_id, event)
             else:
                 self._position_modified(position, strategy_id, event)
