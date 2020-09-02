@@ -128,6 +128,31 @@ cdef class Decimal64:
 
         return len(value.partition('.')[2])  # If does not contain "." then partition[2] will be ""
 
+    cpdef str to_string(self, bint format_commas=False):
+        """
+        Return the formatted string representation of this object.
+
+        Parameters
+        ----------
+        format_commas : bool
+            If the string should be formatted with commas separating thousands.
+
+        Returns
+        -------
+        str
+
+        """
+        if format_commas:
+            if self.precision == 0:
+                return f"{int(self._value):,}"
+            else:
+                return f"{self._value:,.{self.precision}f}"
+        else:
+            if self.precision == 0:
+                return f"{int(self._value)}"
+            else:
+                return f"{self._value:.{self.precision}f}"
+
     cpdef int as_int(self):
         """
         Return the internal value as an integer.
@@ -161,30 +186,16 @@ cdef class Decimal64:
         """
         return decimal.Decimal(f"{self._value:.{self.precision}f}")
 
-    cpdef str to_string(self, bint format_commas=False):
+    cpdef bint is_zero(self):
         """
-        Return the formatted string representation of this object.
-
-        Parameters
-        ----------
-        format_commas : bool
-            If the string should be formatted with commas separating thousands.
+        Return a value indicating whether the value of the decimal is equal to zero.
 
         Returns
         -------
-        str
+        bool
 
         """
-        if format_commas:
-            if self.precision == 0:
-                return f"{int(self._value):,}"
-            else:
-                return f"{self._value:,.{self.precision}f}"
-        else:
-            if self.precision == 0:
-                return f"{int(self._value)}"
-            else:
-                return f"{self._value:.{self.precision}f}"
+        return self._eq_eps_delta(self._value, 0.0)
 
     cpdef bint eq(self, Decimal64 other):
         """

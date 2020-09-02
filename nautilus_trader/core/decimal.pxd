@@ -33,6 +33,7 @@ cdef class Decimal64:
     cpdef int as_int(self)
     cpdef double as_double(self)
     cpdef object as_decimal(self)
+    cpdef bint is_zero(self)
     cpdef bint eq(self, Decimal64 other)
     cpdef bint ne(self, Decimal64 other)
     cpdef bint lt(self, Decimal64 other)

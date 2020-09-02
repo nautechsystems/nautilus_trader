@@ -161,7 +161,7 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.3)
+        time.sleep(0.5)
         # # Assert
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(2, self.command_server.recv_count)
@@ -170,16 +170,19 @@ class LiveExecutionTests(unittest.TestCase):
 
     def test_can_send_submit_bracket_order(self):
         # Arrange
-        bracket_order = self.strategy.order_factory.bracket_market(
+        entry_order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000),
-            Price(0.99900, 5))
+            Quantity(100000))
+
+        bracket_order = self.strategy.order_factory.bracket(
+            entry_order,
+            stop_loss=Price(0.99900, 5))
 
         # Act
         self.strategy.submit_bracket_order(bracket_order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.3)
+        time.sleep(0.5)
         # Assert
         self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.id))
         self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.id))
@@ -196,9 +199,9 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
-        self.strategy.cancel_order(order, "SIGNAL_GONE")
+        self.strategy.cancel_order(order)
 
-        time.sleep(0.3)
+        time.sleep(1.0)
         # Assert
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(3, self.command_server.recv_count)
@@ -218,7 +221,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
         self.strategy.modify_order(order, Quantity(110000), Price(1.00001, 5))
 
-        time.sleep(0.3)
+        time.sleep(1.0)
         # Assert
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(3, self.command_server.recv_count)
@@ -231,7 +234,7 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.account_inquiry()
 
-        time.sleep(0.3)
+        time.sleep(0.5)
         # Assert
         self.assertEqual(2, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)

@@ -17,16 +17,18 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.types cimport Label
-from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport MarketOrder
+from nautilus_trader.model.order cimport LimitOrder
+from nautilus_trader.model.order cimport StopOrder
+from nautilus_trader.model.order cimport StopLimitOrder
 
 
 cdef class OrderFactory:
@@ -38,110 +40,42 @@ cdef class OrderFactory:
     cpdef void set_count(self, int count) except *
     cpdef void reset(self) except *
 
-    cpdef Order market(
+    cpdef MarketOrder market(
         self,
         Symbol symbol,
         OrderSide order_side,
         Quantity quantity,
-        Label label=*,
-        OrderPurpose order_purpose=*)
+        TimeInForce time_in_force=*)
 
-    cpdef Order limit(
-        self,
-        Symbol symbol,
-        OrderSide order_side,
-        Quantity quantity,
-        Price price,
-        Label label=*,
-        OrderPurpose order_purpose=*,
-        TimeInForce time_in_force=*,
-        datetime expire_time=*)
-
-    cpdef Order stop(
+    cpdef LimitOrder limit(
         self,
         Symbol symbol,
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        Label label=*,
-        OrderPurpose order_purpose=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*)
 
-    cpdef Order stop_limit(
+    cpdef StopOrder stop(
         self,
         Symbol symbol,
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        Label label=*,
-        OrderPurpose order_purpose=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*)
 
-    cpdef Order market_if_touched(
+    cpdef StopLimitOrder stop_limit(
         self,
         Symbol symbol,
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        Label label=*,
-        OrderPurpose order_purpose=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*)
 
-    cpdef Order fill_or_kill(
-        self,
-        Symbol symbol,
-        OrderSide order_side,
-        Quantity quantity,
-        Label label=*,
-        OrderPurpose order_purpose=*,)
-
-    cpdef Order immediate_or_cancel(
-        self,
-        Symbol symbol,
-        OrderSide order_side,
-        Quantity quantity,
-        Label label=*,
-        OrderPurpose order_purpose=*)
-
-    cpdef BracketOrder bracket_market(
-        self,
-        Symbol symbol,
-        OrderSide order_side,
-        Quantity quantity,
-        Price stop_loss,
-        Price take_profit=*,
-        Label label=*)
-
-    cpdef BracketOrder bracket_limit(
-        self,
-        Symbol symbol,
-        OrderSide order_side,
-        Quantity quantity,
-        Price entry,
-        Price stop_loss,
-        Price take_profit=*,
-        Label label=*,
-        TimeInForce time_in_force=*,
-        datetime expire_time=*)
-
-    cpdef BracketOrder bracket_stop(
-        self,
-        Symbol symbol,
-        OrderSide order_side,
-        Quantity quantity,
-        Price entry,
-        Price stop_loss,
-        Price take_profit=*,
-        Label label=*,
-        TimeInForce time_in_force=*,
-        datetime expire_time=*)
-
-    cdef BracketOrder _create_bracket_order(
+    cpdef BracketOrder bracket(
         self,
         Order entry_order,
         Price stop_loss,
-        Price take_profit,
-        Label original_label)
+        Price take_profit=*)

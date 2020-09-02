@@ -155,10 +155,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_order_for_working_order(self):
         # Arrange
-        order = self.strategy.order_factory.market(
+        order = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order, self.strategy.id, position_id)
 
@@ -229,7 +231,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
 
         # Act
-        position = Position(position_id, order1.last_event)
+        position = Position(position_id, order1.last_event())
         self.database.add_position(position, self.strategy.id)
 
         order2 = self.strategy.order_factory.market(
@@ -380,6 +382,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
+
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order, self.strategy.id, position_id)
 
@@ -399,10 +402,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_load_positions_cache_when_one_position_in_database(self):
         # Arrange
-        order1 = self.strategy.order_factory.market(
+        order1 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position_id)
 
@@ -411,7 +416,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_working(order1))
         order1.apply(TestStubs.event_order_filled(order1, fill_price=Price(1.00001, 5)))
 
-        position = Position(position_id, order1.last_event)
+        position = Position(position_id, order1.last_event())
         self.database.add_position(position, self.strategy.id)
 
         # Act
@@ -430,10 +435,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_check_residuals(self):
         # Arrange
-        order1 = self.strategy.order_factory.market(
+        order1 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position1_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order1, self.strategy.id, position1_id)
 
@@ -449,10 +456,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
 
-        order2 = self.strategy.order_factory.market(
+        order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
 
@@ -482,9 +491,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
         self.database.update_order(order1)
 
-        order1.apply(TestStubs.event_order_working(order1))
-        self.database.update_order(order1)
-
         filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00001, 5))
 
         order1.apply(filled)
@@ -493,10 +499,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
 
-        order2 = self.strategy.order_factory.market(
+        order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
 
@@ -532,10 +540,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
 
-        order2 = self.strategy.order_factory.market(
+        order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
 

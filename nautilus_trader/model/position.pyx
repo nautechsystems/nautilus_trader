@@ -22,7 +22,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Position:
@@ -34,24 +34,25 @@ cdef class Position:
         """
         Initialize a new instance of the Position class.
 
-        :param position_id: The positions identifier.
-        :param event: The order fill event which opened the position.
+        Parameters
+        ----------
+        position_id : PositionId
+            The positions identifier.
+        event : OrderFillEvent
+            The order fill event which opened the position.
+
         """
         self._order_ids = {event.order_id}          # type: {OrderId}
-        self._execution_ids = {event.execution_id}  # type: {ExecutionId}
+        self._execution_ids = [event.execution_id]  # type: [ExecutionId]
         self._events = [event]                      # type: [OrderFillEvent]
         self._fill_prices = {}                      # type: {OrderId, Price}
         self._buy_quantities = {}                   # type: {OrderId, Quantity}
         self._sell_quantities = {}                  # type: {OrderId, Quantity}
-        self.last_event = event
-        self.event_count = 1
 
         self.id = position_id
         self.id_broker = event.position_id_broker
         self.account_id = event.account_id
         self.from_order_id = event.order_id
-        self.last_order_id = event.order_id
-        self.last_execution_id = event.execution_id
         self.symbol = event.symbol
         self.quote_currency = event.quote_currency
         self.entry_direction = event.order_side
@@ -66,13 +67,13 @@ cdef class Position:
         self.realized_pnl = Money(0, event.quote_currency)
         self.realized_pnl_last = Money(0, event.quote_currency)
 
-        self.quantity = Quantity.zero()             # Initialized in _update()
-        self.peak_quantity = Quantity.zero()        # Initialized in _update()
-        self._buy_quantity = Quantity.zero()        # Initialized in _update()
-        self._sell_quantity = Quantity.zero()       # Initialized in _update()
-        self._relative_quantity = 0.0               # Initialized in _update()
+        self.quantity = Quantity.zero()                  # Initialized in _update()
+        self.peak_quantity = Quantity.zero()             # Initialized in _update()
+        self._buy_quantity = Quantity.zero()             # Initialized in _update()
+        self._sell_quantity = Quantity.zero()            # Initialized in _update()
+        self._relative_quantity = 0.0                    # Initialized in _update()
         self._precision = event.filled_quantity.precision
-        self.market_position = MarketPosition.FLAT  # Initialized in _update()
+        self.market_position = MarketPosition.UNDEFINED  # Initialized in _update()
 
         self._update(event)
 
@@ -147,46 +148,132 @@ cdef class Position:
 
     cpdef list get_order_ids(self):
         """
-        Return a list of all order_ids.
+        Return a list of all order identifiers.
 
-        :return List[OrderId].
+        Returns
+        -------
+        List[OrderId]
+
         """
-        return sorted(self._order_ids)
+        return sorted(list(self._order_ids))
 
     cpdef list get_execution_ids(self):
         """
         Return a list of all execution identifiers.
 
-        :return List[ExecutionId].
+        Returns
+        -------
+        List[ExecutionId]
+
         """
-        return sorted(self._execution_ids)
+        return self._execution_ids.copy()
 
     cpdef list get_events(self):
         """
         Return a list of all order fill events.
 
-        :return List[Event].
+        Returns
+        -------
+        List[Event]
+
         """
         return self._events.copy()
+
+    cpdef OrderFillEvent last_event(self):
+        """
+        Return the count of events.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._events[-1]
+
+    cpdef ExecutionId last_execution_id(self):
+        """
+        Return the last execution identifier for the position.
+
+        Returns
+        -------
+        ExecutionId
+
+        """
+        return self._execution_ids[-1]
+
+    cpdef int event_count(self):
+        """
+        Return the count of order fill events.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self._events)
+
+    cpdef bint is_open(self):
+        """
+        Return a value indicating whether the position is open.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.market_position != MarketPosition.FLAT
+
+    cpdef bint is_closed(self):
+        """
+        Return a value indicating whether the position is closed.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.market_position == MarketPosition.FLAT
+
+    cpdef bint is_long(self):
+        """
+        Return a value indicating whether the position is long.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.market_position == MarketPosition.LONG
+
+    cpdef bint is_short(self):
+        """
+        Return a value indicating whether the position is short.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.market_position == MarketPosition.SHORT
 
     cpdef void apply(self, OrderFillEvent event) except *:
         """
         Applies the given order fill event to the position.
 
-        :param event: The order fill event to apply.
+        Parameters
+        ----------
+        event : OrderFillEvent
+            The order fill event to apply.
+
         """
         Condition.not_none(event, "event")
 
         # Update events
         self._events.append(event)
-        self.last_event = event
-        self.event_count += 1
 
         # Update identifiers
         self._order_ids.add(event.order_id)
-        self._execution_ids.add(event.execution_id)
-        self.last_order_id = event.order_id
-        self.last_execution_id = event.execution_id
+        self._execution_ids.append(event.execution_id)
 
         # Apply event
         self._update(event)
@@ -195,16 +282,28 @@ cdef class Position:
         """
         Return the relative quantity of the position.
 
-        :return float.
+        With positive values for long, negative values for short.
+
+        Returns
+        -------
+        double
+
         """
         return self._relative_quantity
 
-    cpdef double unrealized_points(self, Tick last):
+    cpdef double unrealized_points(self, QuoteTick last):
         """
         Return the calculated unrealized points for the position from the given current price.
 
-        :param last: The position symbols last tick.
-        :return Decimal.
+        Parameters
+        ----------
+        last : QuoteTick
+            The position symbols last tick.
+
+        Returns
+        -------
+        double
+
         """
         Condition.not_none(last, "last")
         Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
@@ -216,24 +315,38 @@ cdef class Position:
         else:
             return 0.0
 
-    cpdef double total_points(self, Tick last):
+    cpdef double total_points(self, QuoteTick last):
         """
         Return the calculated unrealized points for the position from the given current price.
 
-        :param last: The position symbols last tick.
-        :return Decimal.
+        Parameters
+        ----------
+        last : QuoteTick
+            The position symbols last tick.
+
+        Returns
+        -------
+        double
+
         """
         Condition.not_none(last, "last")
         Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         return self.realized_points + self.unrealized_points(last)
 
-    cpdef double unrealized_return(self, Tick last):
+    cpdef double unrealized_return(self, QuoteTick last):
         """
         Return the calculated unrealized return for the position from the given current price.
 
-        :param last: The position symbols last tick.
-        :return double.
+        Parameters
+        ----------
+        last : QuoteTick
+            The position symbols last tick.
+
+        Returns
+        -------
+        double
+
         """
         Condition.not_none(last, "last")
         Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
@@ -245,24 +358,38 @@ cdef class Position:
         else:
             return 0.0
 
-    cpdef double total_return(self, Tick last):
+    cpdef double total_return(self, QuoteTick last):
         """
         Return the calculated unrealized return for the position from the given current price.
 
-        :param last: The position symbols last tick.
-        :return double.
+        Parameters
+        ----------
+        last : QuoteTick
+            The position symbols last tick.
+
+        Returns
+        -------
+        double
+
         """
         Condition.not_none(last, "last")
         Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         return self.realized_return + self.unrealized_return(last)
 
-    cpdef Money unrealized_pnl(self, Tick last):
+    cpdef Money unrealized_pnl(self, QuoteTick last):
         """
         Return the calculated unrealized return for the position from the given current price.
 
-        :param last: The position symbols last tick.
-        :return Money.
+        Parameters
+        ----------
+        last : QuoteTick
+            The position symbols last tick.
+
+        Returns
+        -------
+        Money
+
         """
         Condition.not_none(last, "last")
         Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
@@ -274,12 +401,19 @@ cdef class Position:
         else:
             return Money(0, self.quote_currency)
 
-    cpdef Money total_pnl(self, Tick last):
+    cpdef Money total_pnl(self, QuoteTick last):
         """
         Return the calculated unrealized return for the position from the given current price.
 
-        :param last: The position symbols last tick.
-        :return Money.
+        Parameters
+        ----------
+        last : QuoteTick
+            The position symbols last tick.
+
+        Returns
+        -------
+        Money
+
         """
         Condition.not_none(last, "last")
         Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
@@ -297,31 +431,19 @@ cdef class Position:
 
         # Set quantities
         self._relative_quantity = self._buy_quantity.as_double() - self._sell_quantity.as_double()
-        self.quantity = Quantity(abs(self._relative_quantity), self._precision)
+        self.quantity = Quantity(abs(self._relative_quantity), precision=self._precision)
         if self.quantity.gt(self.peak_quantity):
             self.peak_quantity = self.quantity
 
         # Set state
         if self._relative_quantity > 0.0:
             self.market_position = MarketPosition.LONG
-            self.is_open = True
-            self.is_long = True
-            self.is_closed = False
-            self.is_short = False
         elif self._relative_quantity < 0.0:
             self.market_position = MarketPosition.SHORT
-            self.is_open = True
-            self.is_short = True
-            self.is_closed = False
-            self.is_long = False
         else:
             self.market_position = MarketPosition.FLAT
             self.closed_time = event.execution_time
             self.open_duration = self.closed_time - self.opened_time
-            self.is_closed = True
-            self.is_open = False
-            self.is_long = False
-            self.is_short = False
 
     cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *:
         self._buy_quantities[event.order_id] = event.filled_quantity
