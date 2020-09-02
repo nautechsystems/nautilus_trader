@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -59,4 +58,3 @@ cdef class CancelOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly OrderId order_id
-    cdef readonly ValidString cancel_reason

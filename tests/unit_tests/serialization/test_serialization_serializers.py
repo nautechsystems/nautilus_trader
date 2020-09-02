@@ -25,8 +25,6 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogMessage
 from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.core.types import Label
-from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import AccountInquiry
@@ -36,7 +34,6 @@ from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.enums import OrderPurpose
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import SecurityType
@@ -68,7 +65,9 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order import Order
+from nautilus_trader.model.order import LimitOrder
+from nautilus_trader.model.order import StopLimitOrder
+from nautilus_trader.model.order import StopOrder
 from nautilus_trader.network.identifiers import ClientId
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.identifiers import SessionId
@@ -162,8 +161,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000),
-            Label("U1_E"),)
+            Quantity(100000))
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -181,7 +179,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5),
-            Label("S1_SL"),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -196,14 +193,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
         # Arrange
-        order = Order(
+        order = LimitOrder(
             OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
-            OrderType.LIMIT,
             Quantity(100000),
             price=Price(1.00000, 5),
-            label=None,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
@@ -220,14 +215,14 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_stop_limit_orders(self):
         # Arrange
-        order = Order(
+        order = StopLimitOrder(
             OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
-            OrderType.STOP_LIMIT,
             Quantity(100000),
             price=Price(1.00000, 5),
-            label=Label("S1_SL"),
+            time_in_force=TimeInForce.GTC,
+            expire_time=None,
             init_id=uuid4(),
             timestamp=UNIX_EPOCH)
 
@@ -240,16 +235,14 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(order)
 
-    def test_can_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
+    def test_can_serialize_and_deserialize_stop_orders_with_expire_time(self):
         # Arrange
-        order = Order(
+        order = StopOrder(
             OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
-            OrderType.STOP_LIMIT,
             Quantity(100000),
             price=Price(1.00000, 5),
-            label=None,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
@@ -361,11 +354,14 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(self):
         # Arrange
-        bracket_order = self.order_factory.bracket_market(
+        entry_order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000),
-            Price(0.99900, 5))
+            Quantity(100000))
+
+        bracket_order = self.order_factory.bracket(
+            entry_order,
+            stop_loss=Price(0.99900, 5))
 
         command = SubmitBracketOrder(
             self.trader_id,
@@ -416,13 +412,16 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(self):
         # Arrange
-        bracket_order = self.order_factory.bracket_limit(
+        entry_order = self.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(0.99900, 5),
-            Price(1.00000, 5),
-            Price(1.00010, 5))
+            Price(1.00000, 5))
+
+        bracket_order = self.order_factory.bracket(
+            entry_order,
+            stop_loss=Price(0.99900, 5),
+            take_profit=Price(1.00010, 5))
 
         command = SubmitBracketOrder(
             self.trader_id,
@@ -469,7 +468,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             OrderId("O-123456"),
-            ValidString("EXPIRED"),
             uuid4(),
             UNIX_EPOCH)
 
@@ -495,12 +493,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderInitialized(
             OrderId("O-123456"),
             AUDUSD_FXCM,
-            None,
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
             Price(1.50000, 5),
-            OrderPurpose.NONE,
             TimeInForce.DAY,
             None,
             uuid4(),
@@ -565,7 +561,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             OrderId("O-123456"),
             OrderIdBroker("B-123456"),
-            Label("E"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -583,7 +578,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             OrderId("O-123456"),
             UNIX_EPOCH,
-            ValidString("ORDER_ID_INVALID"),
+            "ORDER_ID_INVALID",
             uuid4(),
             UNIX_EPOCH)
 
@@ -601,16 +596,15 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("O-123456"),
             OrderIdBroker("B-123456"),
             AUDUSD_FXCM,
-            Label("PT"),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
             Price(1.50000, 5),
             TimeInForce.DAY,
+            None,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH,
-            expire_time=None)
+            UNIX_EPOCH)
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -626,16 +620,15 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("O-123456"),
             OrderIdBroker("B-123456"),
             AUDUSD_FXCM,
-            Label("PT"),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
             Price(1.50000, 5),
             TimeInForce.DAY,
             UNIX_EPOCH,
-            uuid4(),
             UNIX_EPOCH,
-            expire_time=UNIX_EPOCH)
+            uuid4(),
+            UNIX_EPOCH)
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -666,8 +659,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             OrderId("O-123456"),
             UNIX_EPOCH,
-            ValidString("RESPONSE"),
-            ValidString("ORDER_DOES_NOT_EXIST"),
+            "RESPONSE",
+            "ORDER_DOES_NOT_EXIST",
             uuid4(),
             UNIX_EPOCH)
 
@@ -862,7 +855,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
-        self.assertEqual(Label("TEST_ORDER"), result.label)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.accepted_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
@@ -885,7 +877,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderRejected))
         self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.rejected_time)
-        self.assertEqual("INVALID_ORDER", result.rejected_reason.value)
+        self.assertEqual("INVALID_ORDER", result.rejected_reason)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
@@ -912,7 +904,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
         self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
-        self.assertEqual(Label("E"), result.label)
         self.assertEqual(OrderType.STOP, result.order_type)
         self.assertEqual(Quantity(100000), result.quantity)
         self.assertEqual(Price(1, 1), result.price)
@@ -945,7 +936,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderIdBroker("BO-123456"), result.order_id_broker)
         self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
         self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
-        self.assertEqual(Label("E"), result.label)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(OrderType.STOP, result.order_type)
         self.assertEqual(Quantity(100000), result.quantity)
@@ -981,12 +971,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_order_cancel_reject_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = "iKRUeXBlsU9yZGVyQ2FuY2VsUmVqZWN0oklk2SQ5YTFlYzgyZi04NDZkLTQ" \
-                 "3YzctODJlOS1lYzIwNGQ4MzFmOWKpVGltZXN0YW1wuDE5NzAtMDEtMDFUMD" \
-                 "A6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZLJGWENNL" \
-                 "TAyODUxOTA4LURFTU+sUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6" \
-                 "MDAuMDAwWrJSZWplY3RlZFJlc3BvbnNlVG+wUkVKRUNUX1JFU1BPTlNFP65" \
-                 "SZWplY3RlZFJlYXNvbq9PUkRFUl9OT1RfRk9VTkQ="
+        base64 = "iKRUeXBlxBFPcmRlckNhbmNlbFJlamVjdKJJZMQkOGMxYTdmZWYtOWM1ZS0" \
+                 "0MTk4LWE5NjctYmZjZTkzMmQ4N2VlqVRpbWVzdGFtcMQYMTk3MC0wMS0wMV" \
+                 "QwMDowMDowMC4wMDBaqUFjY291bnRJZMQSRlhDTS0wMjg1MTkwOC1ERU1Pp" \
+                 "09yZGVySWTECE8tMTIzNDU2rFJlamVjdGVkVGltZcQYMTk3MC0wMS0wMVQw" \
+                 "MDowMDowMC4wMDBaslJlamVjdGVkUmVzcG9uc2VUb8QQUkVKRUNUX1JFU1B" \
+                 "PTlNFP65SZWplY3RlZFJlYXNvbsQPT1JERVJfTk9UX0ZPVU5E"
 
         body = b64decode(base64)
 
@@ -997,8 +987,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(OrderId("O-123456"), result.order_id)
         self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
-        self.assertEqual("REJECT_RESPONSE?", result.rejected_response_to.value)
-        self.assertEqual("ORDER_NOT_FOUND", result.rejected_reason.value)
+        self.assertEqual("REJECT_RESPONSE?", result.rejected_response_to)
+        self.assertEqual("ORDER_NOT_FOUND", result.rejected_reason)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.rejected_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)

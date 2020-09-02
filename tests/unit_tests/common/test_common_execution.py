@@ -25,7 +25,6 @@ from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import Currency
@@ -112,10 +111,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_order_for_working_order(self):
         # Arrange
-        order = self.strategy.order_factory.market(
+        order = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order, self.strategy.id, position_id)
 
@@ -221,7 +222,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal64(0),
-            ValidString("N"),
+            'N',
             uuid4(),
             UNIX_EPOCH)
 
@@ -244,7 +245,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal64(0),
-            ValidString("N"),
+            'N',
             uuid4(),
             UNIX_EPOCH)
 
@@ -287,10 +288,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
 
-        order2 = self.strategy.order_factory.market(
+        order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.0000, 5))
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
 
@@ -328,10 +330,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
 
-        order2 = self.strategy.order_factory.market(
+        order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
 
@@ -374,10 +378,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1, self.strategy.id)
 
-        order2 = self.strategy.order_factory.market(
+        order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
+
         position2_id = self.strategy.position_id_generator.generate()
         self.database.add_order(order2, self.strategy.id, position2_id)
         order2.apply(TestStubs.event_order_submitted(order2))

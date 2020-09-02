@@ -17,12 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.factories cimport LiveUUIDFactory
-from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.model.identifiers cimport IdTag
@@ -31,6 +28,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 
 
 cdef class OrderFactory:
@@ -88,46 +86,37 @@ cdef class OrderFactory:
         """
         self._id_generator.reset()
 
-    cpdef Order market(
+    cpdef MarketOrder market(
             self,
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Label label=None,
-            OrderPurpose order_purpose=OrderPurpose.NONE):
+            TimeInForce time_in_force=TimeInForce.DAY):
         """
         Return a market order.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The orders specified purpose (default=None).
+        :param time_in_force: The orders time in force (default=DAY).
         :raises ValueError: If quantity is not positive (> 0).
         :return Order.
         """
-        return Order(
+        return MarketOrder(
             self._id_generator.generate(),
             symbol,
             order_side,
-            OrderType.MARKET,
             quantity,
-            price=None,
-            label=label,
-            order_purpose=order_purpose,
-            time_in_force=TimeInForce.DAY,
-            expire_time=None,
+            time_in_force,
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
-    cpdef Order limit(
+    cpdef LimitOrder limit(
             self,
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
             Price price,
-            Label label=None,
-            OrderPurpose order_purpose=OrderPurpose.NONE,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -138,36 +127,29 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The orders specified purpose (default=NONE).
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ValueError: If quantity is not positive (> 0).
         :raises ValueError: If time_in_force is GTD and the expire_time is None.
         :return Order.
         """
-        return Order(
+        return LimitOrder(
             self._id_generator.generate(),
             symbol,
             order_side,
-            OrderType.LIMIT,
             quantity,
             price=price,
-            label=label,
-            order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
-    cpdef Order stop(
+    cpdef StopOrder stop(
             self,
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
             Price price,
-            Label label=None,
-            OrderPurpose order_purpose=OrderPurpose.NONE,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -178,36 +160,29 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The orders specified purpose (default=NONE).
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ValueError: If quantity is not positive (> 0).
         :raises ValueError: If time_in_force is GTD and the expire_time is None.
         :return Order.
         """
-        return Order(
+        return StopOrder(
             self._id_generator.generate(),
             symbol,
             order_side,
-            OrderType.STOP,
             quantity,
             price=price,
-            label=label,
-            order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
-    cpdef Order stop_limit(
+    cpdef StopLimitOrder stop_limit(
             self,
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
             Price price,
-            Label label=None,
-            OrderPurpose order_purpose=OrderPurpose.NONE,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -218,285 +193,56 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The orders specified purpose (default=NONE).
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
         :raises ValueError: If quantity is not positive (> 0).
         :raises ValueError: If time_in_force is GTD and the expire_time is None.
         :return Order.
         """
-        return Order(
+        return StopLimitOrder(
             self._id_generator.generate(),
             symbol,
             order_side,
-            OrderType.STOP_LIMIT,
             quantity,
             price=price,
-            label=label,
-            order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
-    cpdef Order market_if_touched(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            Label label=None,
-            OrderPurpose order_purpose=OrderPurpose.NONE,
-            TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None):
-        """
-        Return a market-if-touched order.
-        Note: If the time in force is GTD then a valid expire time must be given.
 
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param price: The orders price.
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The orders specified purpose (default=NONE).
-        :param time_in_force: The orders time in force (default=DAY).
-        :param expire_time: The optional order expire time (for GTD orders).
-        :raises ValueError: If quantity is not positive (> 0).
-        :raises ValueError: If time_in_force is GTD and the expire_time is None.
-        :return Order.
-        """
-        return Order(
-            self._id_generator.generate(),
-            symbol,
-            order_side,
-            OrderType.MIT,
-            quantity,
-            price=price,
-            label=label,
-            order_purpose=order_purpose,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
-
-    cpdef Order fill_or_kill(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Label label=None,
-            OrderPurpose order_purpose=OrderPurpose.NONE):
-        """
-        Return a fill-or-kill order.
-
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The orders specified purpose (default=NONE).
-        :raises ValueError: If quantity is not positive (> 0).
-        :return Order.
-        """
-        return Order(
-            self._id_generator.generate(),
-            symbol,
-            order_side,
-            OrderType.MARKET,
-            quantity,
-            price=None,
-            label=label,
-            order_purpose=order_purpose,
-            time_in_force=TimeInForce.FOC,
-            expire_time=None,
-            init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
-
-    cpdef Order immediate_or_cancel(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Label label=None,
-            OrderPurpose order_purpose=OrderPurpose.NONE):
-        """
-        Return an immediate-or-cancel order.
-
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param label: The optional order label / secondary identifier.
-        :param order_purpose: The orders specified purpose (default=NONE).
-        :raises ValueError: If quantity is not positive (> 0).
-        :return Order.
-        """
-        return Order(
-            self._id_generator.generate(),
-            symbol,
-            order_side,
-            OrderType.MARKET,
-            quantity,
-            price=None,
-            label=label,
-            order_purpose=order_purpose,
-            time_in_force=TimeInForce.IOC,
-            expire_time=None,
-            init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
-
-    cpdef BracketOrder bracket_market(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price stop_loss,
-            Price take_profit=None,
-            Label label=None):
-        """
-        Return a bracket order with a market entry.
-
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param stop_loss: The stop-loss order price.
-        :param take_profit: The optional take-profit order price.
-        :param label: The optional order label / secondary identifier.
-        :raises ValueError: If quantity is not positive (> 0).
-        :return BracketOrder.
-        """
-        cdef Label entry_label = None
-        if label is not None:
-            entry_label = Label(label.value + "_E")
-
-        cdef Order entry_order = self.market(
-            symbol,
-            order_side,
-            quantity,
-            entry_label,
-            OrderPurpose.ENTRY)
-
-        return self._create_bracket_order(
-            entry_order,
-            stop_loss,
-            take_profit,
-            label)
-
-    cpdef BracketOrder bracket_limit(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price entry,
-            Price stop_loss,
-            Price take_profit=None,
-            Label label=None,
-            TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None):
-        """
-        Return a bracket order with a limit entry.
-
-
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param entry: The parent orders entry price.
-        :param stop_loss: The stop-loss order price.
-        :param take_profit: The optional take-profit order price.
-        :param label: The optional order label / secondary identifier.
-        :param time_in_force: The orders time in force (default=DAY).
-        :param expire_time: The optional order expire time (for GTD orders).
-        :raises ValueError: If quantity is not positive (> 0).
-        :raises ValueError: If time_in_force is GTD and the expire_time is None.
-        :return BracketOrder.
-        """
-        cdef Label entry_label = None
-        if label is not None:
-            entry_label = Label(label.value + "_E")
-
-        cdef Order entry_order = self.limit(
-            symbol,
-            order_side,
-            quantity,
-            entry,
-            label,
-            OrderPurpose.ENTRY,
-            time_in_force,
-            expire_time)
-
-        return self._create_bracket_order(
-            entry_order,
-            stop_loss,
-            take_profit,
-            label)
-
-    cpdef BracketOrder bracket_stop(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price entry,
-            Price stop_loss,
-            Price take_profit=None,
-            Label label=None,
-            TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None):
-        """
-        Return a bracket order with a stop entry.
-
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param entry: The parent orders entry price.
-        :param stop_loss: The stop-loss order price.
-        :param take_profit: The optional take-profit order price.
-        :param label: The orders The optional order label / secondary identifier.
-        :param time_in_force: The orders time in force (default=DAY).
-        :param expire_time: The optional order expire time (for GTD orders).
-        :raises ValueError: If quantity is not positive (> 0).
-        :raises ValueError: If time_in_force is GTD and the expire_time is None.
-        :return BracketOrder.
-        """
-        cdef Label entry_label = None
-        if label is not None:
-            entry_label = Label(label.value + "_E")
-
-        cdef Order entry_order = self.stop(
-            symbol,
-            order_side,
-            quantity,
-            entry,
-            label,
-            OrderPurpose.ENTRY,
-            time_in_force,
-            expire_time)
-
-        return self._create_bracket_order(
-            entry_order,
-            stop_loss,
-            take_profit,
-            label)
-
-    cdef BracketOrder _create_bracket_order(
+    cpdef BracketOrder bracket(
             self,
             Order entry_order,
             Price stop_loss,
-            Price take_profit,
-            Label original_label):
-        cdef OrderSide child_order_side = OrderSide.BUY if entry_order.side == OrderSide.SELL else OrderSide.SELL
+            Price take_profit=None):
+        """
+        Return a bracket order from the given entry.
 
-        cdef Label label_stop_loss = None
-        cdef Label label_take_profit = None
-        if original_label is not None:
-            label_stop_loss = Label(original_label.value + "_SL")
-            label_take_profit = Label(original_label.value + "_TP")
+        :param entry_order: The entry order for the bracket.
+        :param stop_loss: The stop-loss order price.
+        :param take_profit: The optional take-profit order price.
+        :return BracketOrder.
+        """
+        # Validate prices
+        if entry_order.side == OrderSide.BUY:
+            Condition.true(take_profit is None or stop_loss.lt(take_profit), "stop_loss < take_profit")
+            if isinstance(entry_order, PassiveOrder):
+                Condition.true(entry_order.price.gt(stop_loss), "entry_order.price > stop_loss")
+                Condition.true(take_profit is None or entry_order.price.lt(take_profit), "entry_order.price < take_profit")
+        else:  # entry_order.side == OrderSide.SELL
+            Condition.true(take_profit is None or stop_loss.gt(take_profit), "stop_loss > take_profit")
+            if isinstance(entry_order, PassiveOrder):
+                Condition.true(entry_order.price.lt(stop_loss), "entry_order.price < stop_loss")
+                Condition.true(take_profit is None or entry_order.price.gt(take_profit), "entry_order.price > take_profit")
+
+        cdef OrderSide child_order_side = OrderSide.BUY if entry_order.side == OrderSide.SELL else OrderSide.SELL
 
         cdef Order stop_loss_order = self.stop(
             entry_order.symbol,
             child_order_side,
             entry_order.quantity,
             stop_loss,
-            label_stop_loss,
-            OrderPurpose.STOP_LOSS,
             TimeInForce.GTC,
             expire_time=None)
 
@@ -507,8 +253,6 @@ cdef class OrderFactory:
                 child_order_side,
                 entry_order.quantity,
                 take_profit,
-                label_take_profit,
-                OrderPurpose.TAKE_PROFIT,
                 TimeInForce.GTC,
                 expire_time=None)
 

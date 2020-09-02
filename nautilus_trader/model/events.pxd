@@ -16,10 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.types cimport Label
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -50,7 +47,7 @@ cdef class AccountStateEvent(Event):
     cdef readonly Money margin_used_liquidation
     cdef readonly Money margin_used_maintenance
     cdef readonly Decimal64 margin_ratio
-    cdef readonly ValidString margin_call_status
+    cdef readonly str margin_call_status
 
 
 cdef class OrderEvent(Event):
@@ -71,12 +68,10 @@ cdef class OrderFillEvent(OrderEvent):
 
 cdef class OrderInitialized(OrderEvent):
     cdef readonly Symbol symbol
-    cdef readonly Label label
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
     cdef readonly Quantity quantity
     cdef readonly Price price
-    cdef readonly OrderPurpose order_purpose
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
 
@@ -97,35 +92,33 @@ cdef class OrderSubmitted(OrderEvent):
 cdef class OrderRejected(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
-    cdef readonly ValidString rejected_reason
+    cdef readonly str rejected_reason
 
 
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly OrderIdBroker order_id_broker
     cdef readonly datetime accepted_time
-    cdef readonly Label label
 
 
 cdef class OrderWorking(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly OrderIdBroker order_id_broker
     cdef readonly Symbol symbol
-    cdef readonly Label label
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
     cdef readonly Quantity quantity
     cdef readonly Price price
     cdef readonly TimeInForce time_in_force
-    cdef readonly datetime working_time
     cdef readonly datetime expire_time
+    cdef readonly datetime working_time
 
 
 cdef class OrderCancelReject(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
-    cdef readonly ValidString rejected_response_to
-    cdef readonly ValidString rejected_reason
+    cdef readonly str rejected_response_to
+    cdef readonly str rejected_reason
 
 
 cdef class OrderCancelled(OrderEvent):

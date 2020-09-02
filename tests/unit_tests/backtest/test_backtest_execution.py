@@ -163,10 +163,14 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        bracket_order = strategy.order_factory.bracket_market(
+
+        entry_order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity(100000))
+
+        bracket_order = strategy.order_factory.bracket(
+            entry_order,
             Price(80.000, 3))
 
         # Act
@@ -185,13 +189,17 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        bracket_order = strategy.order_factory.bracket_stop(
+
+        entry_order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(97.000, 3),
-            Price(96.710, 3),
-            Price(86.000, 3))
+            Price(96.710, 3))
+
+        bracket_order = strategy.order_factory.bracket(
+            entry_order,
+            stop_loss=Price(86.000, 3),
+            take_profit=Price(97.000, 3))
 
         # Act
         strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
@@ -232,11 +240,15 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
-        bracket_order = strategy.order_factory.bracket_market(
+
+        entry_order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            Quantity(100000),
-            Price(85.000, 3))
+            Quantity(100000))
+
+        bracket_order = strategy.order_factory.bracket(
+            entry_order,
+            stop_loss=Price(85.000, 3))
 
         strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
 

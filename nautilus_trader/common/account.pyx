@@ -27,13 +27,15 @@ cdef class Account:
         """
         Initialize a new instance of the Account class.
 
-        :param: event: The initial account state event.
+        Parameters
+        ----------
+        event : AccountStateEvent
+            The initial account state event.
+
         """
         Condition.not_none(event, "event")
 
         self._events = [event]
-        self.event_count = 1
-        self.last_event = event
 
         self.id = event.account_id
         self.broker = self.id.broker
@@ -48,8 +50,6 @@ cdef class Account:
         self.margin_ratio = event.margin_ratio
         self.margin_call_status = event.margin_call_status
         self.free_equity = self._calculate_free_equity()
-
-        self.last_updated = event.timestamp
 
     def __eq__(self, Account other) -> bool:
         """
@@ -104,18 +104,42 @@ cdef class Account:
         """
         return self._events.copy()
 
+    cpdef AccountStateEvent last_event(self):
+        """
+        Return the last event.
+
+        Returns
+        -------
+        AccountStateEvent
+
+        """
+        return self._events[-1]
+
+    cpdef int event_count(self):
+        """
+        Return the count of events.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self._events)
+
     cpdef void apply(self, AccountStateEvent event) except *:
         """
         Applies the given account event to the account.
 
-        :param event: The account event to apply.
+        Parameters
+        ----------
+        event : AccountStateEvent
+            The account event to apply.
+
         """
         Condition.not_none(event, "event")
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
-        self.event_count += 1
-        self.last_event = event
 
         self.cash_balance = event.cash_balance
         self.cash_start_day = event.cash_start_day
@@ -125,8 +149,6 @@ cdef class Account:
         self.margin_ratio = event.margin_ratio
         self.margin_call_status = event.margin_call_status
         self.free_equity = self._calculate_free_equity()
-
-        self.last_updated = event.timestamp
 
     cdef Money _calculate_free_equity(self):
         cdef double margin = self.margin_used_maintenance.as_double() + self.margin_used_liquidation.as_double()

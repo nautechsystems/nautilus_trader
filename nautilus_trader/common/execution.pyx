@@ -395,10 +395,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(order, "order")
 
-        if order.is_working:
+        if order.is_working():
             self._index_orders_working.add(order.id)
             self._index_orders_completed.discard(order.id)
-        elif order.is_completed:
+        elif order.is_completed():
             self._index_orders_completed.add(order.id)
             self._index_orders_working.discard(order.id)
 
@@ -410,7 +410,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        if position.is_closed:
+        if position.is_closed():
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
@@ -1220,7 +1220,7 @@ cdef class ExecutionEngine:
             # Position exists - apply event
             position.apply(event)
             self.database.update_position(position)
-            if position.is_closed:
+            if position.is_closed():
                 self._position_closed(position, strategy_id, event)
             else:
                 self._position_modified(position, strategy_id, event)

@@ -44,6 +44,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -64,6 +65,8 @@ cdef class TradingStrategy:
 
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
+    cdef dict _stop_loss_orders
+    cdef dict _take_profit_orders
 
     cdef list _indicators
     cdef dict _indicator_updaters
@@ -95,6 +98,8 @@ cdef class TradingStrategy:
     cpdef void register_data_client(self, DataClient client) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_indicator(self, data_source, Indicator indicator, update_method=*) except *
+    cpdef void register_stop_loss(self, PassiveOrder order)
+    cpdef void register_take_profit(self, PassiveOrder order)
 
 # -- HANDLER METHODS ------------------------------------------------------------------------------#
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
@@ -155,6 +160,8 @@ cdef class TradingStrategy:
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)
+    cpdef dict orders_stop_loss(self)
+    cpdef dict orders_take_profit(self)
     cpdef dict orders_completed(self)
     cpdef Position position(self, PositionId position_id)
     cpdef Position position_for_order(self, OrderId order_id)
@@ -163,6 +170,8 @@ cdef class TradingStrategy:
     cpdef dict positions_closed(self)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef bint order_exists(self, OrderId order_id)
+    cpdef bint is_stop_loss(self, OrderId order_id)
+    cpdef bint is_take_profit(self, OrderId order_id)
     cpdef bint is_order_working(self, OrderId order_id)
     cpdef bint is_order_completed(self, OrderId order_id)
     cpdef bint is_position_open(self, PositionId position_id)
@@ -185,12 +194,12 @@ cdef class TradingStrategy:
     cpdef void load(self, dict state) except *
     cpdef void account_inquiry(self) except *
     cpdef void submit_order(self, Order order, PositionId position_id) except *
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order, PositionId position_id) except *
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order, PositionId position_id, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
-    cpdef void cancel_order(self, Order order, str cancel_reason=*) except *
-    cpdef void cancel_all_orders(self, str cancel_reason=*) except *
-    cpdef void flatten_position(self, PositionId position_id, str order_label=*) except *
-    cpdef void flatten_all_positions(self, str order_label=*) except *
+    cpdef void cancel_order(self, Order order) except *
+    cpdef void cancel_all_orders(self) except *
+    cpdef void flatten_position(self, PositionId position_id) except *
+    cpdef void flatten_all_positions(self) except *
 
     cdef void _flatten_on_sl_reject(self, OrderRejected event) except *
 

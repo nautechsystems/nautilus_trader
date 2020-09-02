@@ -28,12 +28,12 @@ from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Position:
     cdef set _order_ids
-    cdef set _execution_ids
+    cdef list _execution_ids
     cdef list _events
     cdef dict _fill_prices
     cdef dict _buy_quantities
@@ -46,10 +46,8 @@ cdef class Position:
     cdef readonly PositionId id
     cdef readonly PositionIdBroker id_broker
     cdef readonly AccountId account_id
-    cdef readonly ExecutionId last_execution_id
 
     cdef readonly OrderId from_order_id
-    cdef readonly OrderId last_order_id
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
     cdef readonly Currency quote_currency
@@ -63,31 +61,32 @@ cdef class Position:
     cdef readonly double realized_return
     cdef readonly Money realized_pnl
     cdef readonly Money realized_pnl_last
-    cdef readonly OrderFillEvent last_event
-    cdef readonly int event_count
     cdef readonly Quantity quantity
     cdef readonly Quantity peak_quantity
     cdef readonly MarketPosition market_position
-    cdef readonly bint is_open
-    cdef readonly bint is_closed
-    cdef readonly bint is_long
-    cdef readonly bint is_short
 
     cpdef bint equals(self, Position other)
     cpdef str to_string(self)
     cpdef str market_position_as_string(self)
     cpdef str status_string(self)
+    cpdef OrderFillEvent last_event(self)
+    cpdef ExecutionId last_execution_id(self)
     cpdef list get_order_ids(self)
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
+    cpdef int event_count(self)
+    cpdef bint is_open(self)
+    cpdef bint is_closed(self)
+    cpdef bint is_long(self)
+    cpdef bint is_short(self)
     cpdef void apply(self, OrderFillEvent event) except *
     cpdef double relative_quantity(self)
-    cpdef double unrealized_points(self, Tick last)
-    cpdef double total_points(self, Tick last)
-    cpdef double unrealized_return(self, Tick last)
-    cpdef double total_return(self, Tick last)
-    cpdef Money unrealized_pnl(self, Tick last)
-    cpdef Money total_pnl(self, Tick last)
+    cpdef double unrealized_points(self, QuoteTick last)
+    cpdef double total_points(self, QuoteTick last)
+    cpdef double unrealized_return(self, QuoteTick last)
+    cpdef double total_return(self, QuoteTick last)
+    cpdef Money unrealized_pnl(self, QuoteTick last)
+    cpdef Money total_pnl(self, QuoteTick last)
 
     cdef void _update(self, OrderFillEvent event) except *
     cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *

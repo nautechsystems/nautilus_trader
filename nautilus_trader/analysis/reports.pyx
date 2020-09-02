@@ -68,7 +68,7 @@ cdef class ReportProvider:
             return pd.DataFrame()
 
         cdef list filled_orders = [
-            self._order_to_dict(o) for o in orders.values() if o.state == OrderState.FILLED
+            self._order_to_dict(o) for o in orders.values() if o.state() == OrderState.FILLED
         ]
 
         return pd.DataFrame(data=filled_orders).set_index("order_id")
@@ -85,7 +85,7 @@ cdef class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed]
+        cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed()]
 
         return pd.DataFrame(data=trades).set_index("position_id")
 
@@ -122,7 +122,7 @@ cdef class ReportProvider:
                 "avg_price": "None" if order.average_price is None
                 else order.average_price.as_double(),
                 "slippage": order.slippage.as_double(),
-                "timestamp": order.last_event.timestamp}
+                "timestamp": order.last_event().timestamp}
 
     cdef dict _position_to_dict(self, Position position):
         return {"position_id": position.id.value,

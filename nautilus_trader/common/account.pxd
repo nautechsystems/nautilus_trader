@@ -28,8 +28,6 @@ from nautilus_trader.model.objects cimport Money
 
 cdef class Account:
     cdef list _events
-    cdef readonly AccountStateEvent last_event
-    cdef readonly int event_count
 
     cdef readonly AccountId id
     cdef readonly Brokerage broker
@@ -42,12 +40,12 @@ cdef class Account:
     cdef readonly Money margin_used_liquidation
     cdef readonly Money margin_used_maintenance
     cdef readonly Decimal64 margin_ratio
-    cdef readonly ValidString margin_call_status
+    cdef readonly str margin_call_status
     cdef readonly free_equity
 
-    cdef readonly datetime last_updated
-
     cpdef list get_events(self)
+    cpdef AccountStateEvent last_event(self)
+    cpdef int event_count(self)
     cpdef void apply(self, AccountStateEvent event) except *
 
     cdef Money _calculate_free_equity(self)
