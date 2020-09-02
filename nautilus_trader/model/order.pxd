@@ -17,16 +17,24 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
+from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport BracketOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -53,11 +61,7 @@ cdef class Order:
     cdef readonly OrderType type
     cdef readonly Quantity quantity
     cdef readonly datetime timestamp
-    cdef readonly Price price
-    cdef readonly Label label
-    cdef readonly OrderPurpose purpose
     cdef readonly TimeInForce time_in_force
-    cdef readonly datetime expire_time
     cdef readonly Quantity filled_quantity
     cdef readonly datetime filled_timestamp
     cdef readonly Price average_price
@@ -79,14 +83,50 @@ cdef class Order:
     cpdef str status_string(self)
     cpdef str state_as_string(self)
     cpdef void apply(self, OrderEvent event) except *
+    cdef void _invalid(self, OrderInvalid event) except *
+    cdef void _denied(self, OrderDenied event) except *
+    cdef void _submitted(self, OrderSubmitted event) except *
+    cdef void _rejected(self, OrderRejected event) except *
+    cdef void _accepted(self, OrderAccepted event) except *
+    cdef void _working(self, OrderWorking event) except *
+    cdef void _cancelled(self, OrderCancelled event) except *
+    cdef void _expired(self, OrderExpired event) except *
+    cdef void _modified(self, OrderModified event) except *
+    cdef void _filled(self, OrderFillEvent event) except *
+
+
+cdef class PassiveOrder(Order):
+    cdef readonly Price price
+    cdef readonly datetime expire_time
+
     cdef void _set_slippage(self) except *
+
+
+cdef class MarketOrder(Order):
+    @staticmethod
+    cdef MarketOrder create(OrderInitialized event)
+
+
+cdef class StopOrder(PassiveOrder):
+    @staticmethod
+    cdef StopOrder create(OrderInitialized event)
+
+
+cdef class StopLimitOrder(PassiveOrder):
+    @staticmethod
+    cdef StopLimitOrder create(OrderInitialized event)
+
+
+cdef class LimitOrder(PassiveOrder):
+    @staticmethod
+    cdef LimitOrder create(OrderInitialized event)
 
 
 cdef class BracketOrder:
     cdef readonly BracketOrderId id
     cdef readonly Order entry
-    cdef readonly Order stop_loss
-    cdef readonly Order take_profit
+    cdef readonly StopOrder stop_loss
+    cdef readonly PassiveOrder take_profit
     cdef readonly bint has_take_profit
     cdef readonly datetime timestamp
 

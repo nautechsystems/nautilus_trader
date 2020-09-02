@@ -32,9 +32,10 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -69,6 +70,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef dict _working_orders
     cdef dict _child_orders
     cdef dict _oco_orders
+    cdef dict _position_oco_orders
 
     cdef void _set_slippages(self) except *
     cdef void _set_min_distances(self) except *
@@ -87,7 +89,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
-    cdef bint _check_valid_price(self, Order order, QuoteTick current_market, bint reject=*)
+    cdef bint _check_valid_price(self, PassiveOrder order, QuoteTick current_market, bint reject=*)
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)
@@ -95,10 +97,11 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _accept_order(self, Order order) except *
     cdef void _reject_order(self, Order order, str reason) except *
     cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason) except *
-    cdef void _expire_order(self, Order order) except *
+    cdef void _expire_order(self, PassiveOrder order) except *
     cdef void _process_order(self, Order order) except *
     cdef void _fill_order(self, Order order, Price fill_price) except *
     cdef void _clean_up_child_orders(self, OrderId order_id) except *
     cdef void _check_oco_order(self, OrderId order_id) except *
-    cdef void _reject_oco_order(self, Order order, OrderId oco_order_id) except *
-    cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id) except *
+    cdef void _reject_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *
+    cdef void _cancel_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *
+    cdef void _cancel_order(self, PassiveOrder order) except *

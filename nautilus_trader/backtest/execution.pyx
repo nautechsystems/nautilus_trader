@@ -32,12 +32,10 @@ from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -60,6 +58,7 @@ from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport OrderIdBroker
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
@@ -67,17 +66,14 @@ from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 # Stop order types
-cdef set STOP_ORDER_TYPES = {
-    OrderType.STOP,
-    OrderType.STOP_LIMIT,
-    OrderType.MIT}
+cdef set _STOP_ORDER_TYPES = {OrderType.STOP, OrderType.STOP_LIMIT}
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -137,6 +133,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._working_orders = {}       # type: {OrderId, Order}
         self._child_orders = {}         # type: {OrderId, [Order]}
         self._oco_orders = {}           # type: {OrderId, OrderId}
+        self._position_oco_orders = {}  # type: {PositionId, [OrderId]}
 
         self._set_slippages()
         self._set_min_distances()
@@ -211,9 +208,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self.total_rollover = Money(0, self.account_currency)
 
         self._market = {}               # type: {Symbol, QuoteTick}
-        self._working_orders = {}       # type: {OrderId, Order}
-        self._child_orders = {}  # type: {OrderId, [Order]}
+        self._working_orders = {}       # type: {OrderId, PassiveOrder}
+        self._child_orders = {}         # type: {OrderId, [PassiveOrder]}
         self._oco_orders = {}           # type: {OrderId, OrderId}
+        self._position_oco_orders = {}  # type: {PositionId, [OrderId]}
 
         self._log.info("Reset.")
 
@@ -236,7 +234,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money(0, self.account_currency),
             Money(0, self.account_currency),
             Decimal64(),
-            ValidString('N'),
+            'N',
             self._uuid_factory.generate(),
             self._clock.time_now())
 
@@ -324,7 +322,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
             # Check for order fill
             if order.side == OrderSide.BUY:
-                if order.type in STOP_ORDER_TYPES:
+                if order.type in _STOP_ORDER_TYPES:
                     if tick.ask.ge(order.price) or self._is_marginal_buy_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -338,7 +336,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         self._fill_order(order, order.price)
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
-                if order.type in STOP_ORDER_TYPES:
+                if order.type in _STOP_ORDER_TYPES:
                     if tick.bid.le(order.price) or self._is_marginal_sell_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -410,7 +408,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal64(),
-                margin_call_status=ValidString('N'),
+                margin_call_status='N',
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
@@ -498,7 +496,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
                 margin_ratio=Decimal64(),
-                margin_call_status=ValidString('N'),
+                margin_call_status='N',
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.time_now())
 
@@ -544,12 +542,15 @@ cdef class BacktestExecClient(ExecutionClient):
         Condition.not_none(command, "command")
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
+        self._position_oco_orders[command.position_id] = []
         if command.bracket_order.has_take_profit:
             bracket_orders.append(command.bracket_order.take_profit)
             self._oco_orders[command.bracket_order.take_profit.id] = command.bracket_order.stop_loss.id
             self._oco_orders[command.bracket_order.stop_loss.id] = command.bracket_order.take_profit.id
+            self._position_oco_orders[command.position_id].append(command.bracket_order.take_profit)
 
         self._child_orders[command.bracket_order.entry.id] = bracket_orders
+        self._position_oco_orders[command.position_id].append(command.bracket_order.stop_loss)
 
         # Generate command
         cdef SubmitOrder submit_order = SubmitOrder(
@@ -622,10 +623,10 @@ cdef class BacktestExecClient(ExecutionClient):
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef bint _check_valid_price(self, Order order, QuoteTick current_market, bint reject=True):
+    cdef bint _check_valid_price(self, PassiveOrder order, QuoteTick current_market, bint reject=True):
         # Check order price is valid and reject if not
         if order.side == OrderSide.BUY:
-            if order.type in STOP_ORDER_TYPES:
+            if order.type in _STOP_ORDER_TYPES:
                 if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
                     if reject:
                         self._reject_order(order, f"BUY STOP order price of {order.price} is too "
@@ -638,7 +639,7 @@ cdef class BacktestExecClient(ExecutionClient):
                                                   f"far from the market, ask={current_market.ask}")
                     return False  # Invalid price
         elif order.side == OrderSide.SELL:
-            if order.type in STOP_ORDER_TYPES:
+            if order.type in _STOP_ORDER_TYPES:
                 if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
                     if reject:
                         self._reject_order(order, f"SELL STOP order price of {order.price} is too "
@@ -671,7 +672,6 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             order.id,
             OrderIdBroker("B" + order.id.value),
-            order.label,
             self._clock.time_now(),
             self._uuid_factory.generate(),
             self._clock.time_now())
@@ -684,7 +684,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             order.id,
             self._clock.time_now(),
-            ValidString(reason),
+            reason,
             self._uuid_factory.generate(),
             self._clock.time_now())
 
@@ -702,14 +702,14 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             order_id,
             self._clock.time_now(),
-            ValidString(response),
-            ValidString(reason),
+            response,
+            reason,
             self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(cancel_reject)
 
-    cdef void _expire_order(self, Order order) except *:
+    cdef void _expire_order(self, PassiveOrder order) except *:
         # Generate event
         cdef OrderExpired expired = OrderExpired(
             self._account.id,
@@ -758,10 +758,6 @@ cdef class BacktestExecClient(ExecutionClient):
             self._reject_order(order, f"no market for {order.symbol}")
             return  # Cannot accept order
 
-        # Check order price is valid or reject
-        if not self._check_valid_price(order, current_market, reject=True):
-            return  # Cannot accept order
-
         # Check if market order and accept and fill immediately
         if order.type == OrderType.MARKET:
             self._accept_order(order)
@@ -783,6 +779,10 @@ cdef class BacktestExecClient(ExecutionClient):
                 else:
                     self._fill_order(order, current_market.bid)
                 return  # Market order filled - nothing further to process
+        else:
+            # Check order price is valid or reject
+            if not self._check_valid_price(order, current_market, reject=True):
+                return  # Cannot accept order
 
         # Order is valid and accepted
         self._accept_order(order)
@@ -796,16 +796,15 @@ cdef class BacktestExecClient(ExecutionClient):
             order.id,
             OrderIdBroker(order.id.value.replace('O', 'B')),
             order.symbol,
-            order.label,
             order.side,
             order.type,
             order.quantity,
             order.price,
             order.time_in_force,
+            order.expire_time,
             self._clock.time_now(),
             self._uuid_factory.generate(),
-            self._clock.time_now(),
-            order.expire_time)
+            self._clock.time_now())
 
         self._exec_engine.handle_event(working)
 
@@ -840,6 +839,14 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._process_order(child_order)
             del self._child_orders[order.id]
 
+        if position is not None and position.is_closed():
+            oco_orders = self._position_oco_orders.get(position.id)
+            if oco_orders is not None:
+                for order in self._position_oco_orders[position.id]:
+                    if order.is_working():
+                        self._cancel_order(order)
+                del self._position_oco_orders[position.id]
+
     cdef void _clean_up_child_orders(self, OrderId order_id) except *:
         # Clean up any residual child orders from the completed order associated
         # with the given identifier.
@@ -868,7 +875,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 self._cancel_oco_order(self._working_orders[oco_order_id], order_id)
                 del self._working_orders[oco_order_id]
 
-    cdef void _reject_oco_order(self, Order order, OrderId oco_order_id) except *:
+    cdef void _reject_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
 
@@ -877,13 +884,13 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             order.id,
             self._clock.time_now(),
-            ValidString(f"OCO order rejected from {oco_order_id}"),
+            f"OCO order rejected from {oco_order_id}",
             self._uuid_factory.generate(),
             self._clock.time_now())
 
         self._exec_engine.handle_event(event)
 
-    cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id) except *:
+    cdef void _cancel_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
 
@@ -895,5 +902,17 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.time_now())
 
-        self._log.debug(f"OCO order cancelled from {oco_order_id}.")
+        self._log.debug(f"Cancelling {order.id} OCO order from {oco_order_id}.")
+        self._exec_engine.handle_event(event)
+
+    cdef void _cancel_order(self, PassiveOrder order) except *:
+        # Generate event
+        cdef OrderCancelled event = OrderCancelled(
+            self._account.id,
+            order.id,
+            self._clock.time_now(),
+            self._uuid_factory.generate(),
+            self._clock.time_now())
+
+        self._log.debug(f"Cancelling {order.id} as linked position closed.")
         self._exec_engine.handle_event(event)

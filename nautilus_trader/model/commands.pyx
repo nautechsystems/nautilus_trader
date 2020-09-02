@@ -15,7 +15,6 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -207,7 +206,6 @@ cdef class CancelOrder(Command):
                  TraderId trader_id not None,
                  AccountId account_id not None,
                  OrderId order_id not None,
-                 ValidString cancel_reason not None,
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """
@@ -216,7 +214,6 @@ cdef class CancelOrder(Command):
         :param trader_id: The trader_id for the command.
         :param account_id: The account_id for the command.
         :param order_id: The order_id.
-        :param cancel_reason: The reason for cancellation.
         :param command_id: The command identifier.
         :param command_timestamp: The command timestamp.
         """
@@ -225,7 +222,6 @@ cdef class CancelOrder(Command):
         self.trader_id = trader_id
         self.account_id = account_id
         self.order_id = order_id
-        self.cancel_reason = cancel_reason
 
     def __str__(self) -> str:
         """
@@ -236,5 +232,4 @@ cdef class CancelOrder(Command):
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"order_id={self.order_id.value}, "
-                f"cancel_reason={self.cancel_reason})")
+                f"order_id={self.order_id.value})")

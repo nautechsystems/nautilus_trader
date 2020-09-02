@@ -19,10 +19,8 @@ from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.core.types import Label
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.enums import OrderPurpose
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
@@ -39,7 +37,8 @@ from nautilus_trader.model.identifiers import OrderIdBroker
 from nautilus_trader.model.identifiers import PositionIdBroker
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order import Order
+from nautilus_trader.model.order import MarketOrder
+from nautilus_trader.model.order import StopOrder
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -63,77 +62,44 @@ class OrderTests(unittest.TestCase):
         # Act
         self.assertRaises(
             ValueError,
-            Order,
+            MarketOrder,
             OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
-            OrderType.MARKET,
-            Quantity(),
+            Quantity(0),
+            TimeInForce.DAY,
             uuid4(),
             UNIX_EPOCH)
 
-    def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(  # noqa: N802
-        self
-    ):
+    def test_market_order_with_invalid_tif_raises_exception(self):
         # Arrange
         # Act
         self.assertRaises(
             ValueError,
-            Order,
+            MarketOrder,
             OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
-            OrderType.LIMIT,
-            Quantity(100000),
+            Quantity(100),
+            TimeInForce.GTD,
             uuid4(),
-            UNIX_EPOCH,
+            UNIX_EPOCH)
+
+    def test_stop_order_with_gtd_and_expire_time_none_raises_exception(self):
+        # Arrange
+        # Act
+        self.assertRaises(
+            ValueError,
+            StopOrder,
+            OrderId("O-123456"),
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
             price=Price(1.00000, 5),
+            init_id=uuid4(),
+            timestamp=UNIX_EPOCH,
             time_in_force=TimeInForce.GTD,
             expire_time=None)
-
-    def test_market_order_with_price_input_raises_exception(self):
-        # Arrange
-        # Act
-        self.assertRaises(
-            ValueError,
-            Order,
-            OrderId("O-123456"),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            OrderType.MARKET,
-            Quantity(100000),
-            uuid4(),
-            UNIX_EPOCH,
-            price=Price(1.00000, 5))
-
-    def test_stop_order_with_no_price_input_raises_exception(self):
-        # Arrange
-        # Act
-        self.assertRaises(
-            ValueError,
-            Order,
-            OrderId("O-123456"),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            OrderType.STOP,
-            Quantity(100000),
-            uuid4(),
-            UNIX_EPOCH)
-
-    def test_stop_order_with_zero_price_input_raises_exception(self):
-        # Arrange
-        # Act
-        self.assertRaises(
-            ValueError,
-            Order,
-            OrderId("O-123456"),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            OrderType.STOP,
-            Quantity(100000),
-            uuid4(),
-            UNIX_EPOCH,
-            price=None)
 
     def test_can_reset_order_factory(self):
         # Arrange
@@ -235,8 +201,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         # Assert
-        self.assertEqual("Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
-        self.assertTrue(repr(order).startswith("<Order(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at"))  # noqa
+        self.assertEqual("MarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
+        self.assertTrue(repr(order).startswith("<MarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at"))  # noqa
 
     def test_can_initialize_limit_order(self):
         # Arrange
@@ -261,8 +227,6 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             Price(1.00000, 5),
-            Label("U1_TP"),
-            OrderPurpose.NONE,
             TimeInForce.GTD,
             UNIX_EPOCH)
 
@@ -304,56 +268,15 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.INITIALIZED, order.state())
         self.assertFalse(order.is_completed())
 
-    def test_can_initialize_market_if_touched_order(self):
+    def test_can_initialize_bracket_order_market_with_no_take_profit(self):
         # Arrange
-        # Act
-        order = self.order_factory.market_if_touched(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(1.00000, 5))
-
-        # Assert
-        self.assertEqual(OrderType.MIT, order.type)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
-        self.assertFalse(order.is_completed())
-
-    def test_can_initialize_fill_or_kill_order(self):
-        # Arrange
-        # Act
-        order = self.order_factory.fill_or_kill(
+        entry_order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
 
-        # Assert
-        self.assertEqual(OrderType.MARKET, order.type)
-        self.assertEqual(TimeInForce.FOC, order.time_in_force)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
-        self.assertFalse(order.is_completed())
-
-    def test_can_initialize_immediate_or_cancel_order(self):
-        # Arrange
         # Act
-        order = self.order_factory.immediate_or_cancel(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        # Assert
-        self.assertEqual(OrderType.MARKET, order.type)
-        self.assertEqual(TimeInForce.IOC, order.time_in_force)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
-        self.assertFalse(order.is_completed())
-
-    def test_can_initialize_bracket_order_market_with_no_take_profit_or_label(self):
-        # Arrange
-        # Act
-        bracket_order = self.order_factory.bracket_market(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(0.99990, 5))
+        bracket_order = self.order_factory.bracket(entry_order, Price(0.99990, 5))
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
@@ -364,24 +287,24 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), bracket_order.entry.quantity)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
         self.assertEqual(Price(0.99990, 5), bracket_order.stop_loss.price)
-        self.assertEqual(None, bracket_order.entry.label)
-        self.assertEqual(None, bracket_order.stop_loss.label)
         self.assertEqual(TimeInForce.GTC, bracket_order.stop_loss.time_in_force)
-        self.assertEqual(None, bracket_order.entry.expire_time)
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
         self.assertEqual(BracketOrderId("BO-19700101-000000-001-001-1"), bracket_order.id)
         self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
 
-    def test_can_initialize_bracket_order_market_with_take_profit_and_label(self):
+    def test_can_initialize_bracket_order_stop_with_take_profit(self):
         # Arrange
-        # Act
-        bracket_order = self.order_factory.bracket_market(
+        entry_order = self.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
+            Price(0.99995, 5))
+
+        # Act
+        bracket_order = self.order_factory.bracket(
+            entry_order,
             Price(0.99990, 5),
-            Price(1.00010, 5),
-            Label("U1"))
+            Price(1.00010, 5))
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
@@ -396,9 +319,6 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), bracket_order.take_profit.quantity)
         self.assertEqual(Price(0.99990, 5), bracket_order.stop_loss.price)
         self.assertEqual(Price(1.00010, 5), bracket_order.take_profit.price)
-        self.assertEqual(Label("U1_E"), bracket_order.entry.label)
-        self.assertEqual(Label("U1_SL"), bracket_order.stop_loss.label)
-        self.assertEqual(Label("U1_TP"), bracket_order.take_profit.label)
         self.assertEqual(TimeInForce.GTC, bracket_order.stop_loss.time_in_force)
         self.assertEqual(TimeInForce.GTC, bracket_order.take_profit.time_in_force)
         self.assertEqual(None, bracket_order.entry.expire_time)
@@ -410,17 +330,19 @@ class OrderTests(unittest.TestCase):
     def test_bracket_order_str_and_repr(self):
         # Arrange
         # Act
-        bracket_order = self.order_factory.bracket_market(
+        entry_order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity(100000))
+
+        bracket_order = self.order_factory.bracket(
+            entry_order,
             Price(0.99990, 5),
-            Price(1.00010, 5),
-            Label("U1"))
+            Price(1.00010, 5))
 
         # Assert
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
-        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
+        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
         self.assertTrue(repr(bracket_order).endswith(">"))
 
     def test_can_apply_order_submitted_event_to_order(self):
@@ -479,12 +401,13 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.REJECTED, order.state())
         self.assertTrue(order.is_completed())
 
-    def test_can_apply_order_working_event_to_order(self):
+    def test_can_apply_order_working_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.market(
+        order = self.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -504,12 +427,15 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working())
         self.assertEqual(None, order.filled_timestamp)
 
-    def test_can_apply_order_expired_event_to_order(self):
+    def test_can_apply_order_expired_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.market(
+        order = self.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(0.99990, 5),
+            TimeInForce.GTD,
+            UNIX_EPOCH)
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -576,12 +502,13 @@ class OrderTests(unittest.TestCase):
     #     # Assert
     #     self.assertEqual(OrderState.INITIALIZED, order.state())
 
-    def test_can_apply_order_modified_event_to_order(self):
+    def test_can_apply_order_modified_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.market(
+        order = self.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+            Price(1.00000, 5))
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -622,7 +549,6 @@ class OrderTests(unittest.TestCase):
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
-        working = TestStubs.event_order_working(order)
 
         filled = OrderFilled(
             self.account_id,
@@ -640,7 +566,6 @@ class OrderTests(unittest.TestCase):
 
         order.apply(submitted)
         order.apply(accepted)
-        order.apply(working)
 
         # Act
         order.apply(filled)

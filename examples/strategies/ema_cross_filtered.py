@@ -27,7 +27,6 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.enums import OrderPurpose
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
@@ -357,20 +356,25 @@ class EMACrossFiltered(TradingStrategy):
             hard_limit=20000000,
             units=1,
             unit_batch_size=10000)
-        if position_size > 0:
-            bracket_order = self.order_factory.bracket_stop(
-                symbol=self.symbol,
-                order_side=OrderSide.BUY,
-                quantity=position_size,
-                entry=price_entry,
-                stop_loss=price_stop_loss,
-                take_profit=price_take_profit,
-                time_in_force=TimeInForce.GTD,
-                expire_time=bar.timestamp + timedelta(minutes=1))
 
-            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
-        else:
+        if position_size == 0:
             self.log.info("Insufficient equity for BUY signal.")
+            return
+
+        entry_order = self.order_factory.stop(
+            symbol=self.symbol,
+            order_side=OrderSide.BUY,
+            quantity=position_size,
+            price=price_entry,
+            time_in_force=TimeInForce.GTD,
+            expire_time=bar.timestamp + timedelta(minutes=1))
+
+        bracket_order = self.order_factory.bracket(
+            entry_order=entry_order,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit)
+
+        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
     def _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         price_entry = Price(bar.low.as_double() - self.entry_buffer, self.precision)
@@ -402,34 +406,40 @@ class EMACrossFiltered(TradingStrategy):
             units=1,
             unit_batch_size=10000)
 
-        if position_size > 0:  # Sufficient equity for a position
-            bracket_order = self.order_factory.bracket_stop(
-                symbol=self.symbol,
-                order_side=OrderSide.SELL,
-                quantity=position_size,
-                entry=price_entry,
-                stop_loss=price_stop_loss,
-                take_profit=price_take_profit,
-                time_in_force=TimeInForce.GTD,
-                expire_time=bar.timestamp + timedelta(minutes=1))
-
-            self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
-        else:
+        if position_size == 0:
             self.log.info("Insufficient equity for SELL signal.")
+            return
+
+        entry_order = self.order_factory.stop(
+            symbol=self.symbol,
+            order_side=OrderSide.SELL,
+            quantity=position_size,
+            price=price_entry,
+            time_in_force=TimeInForce.GTD,
+            expire_time=bar.timestamp + timedelta(minutes=1))
+
+        bracket_order = self.order_factory.bracket(
+            entry_order=entry_order,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit)
+
+        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        for working_order in self.orders_working().values():
-            if working_order.purpose == OrderPurpose.STOP_LOSS:
-                # SELL SIDE ORDERS
-                if working_order.is_sell():
-                    temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
-                    if temp_price.gt(working_order.price):
-                        self.modify_order(working_order, working_order.quantity, temp_price)
-                # BUY SIDE ORDERS
-                elif working_order.is_buy():
-                    temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
-                    if temp_price.lt(working_order.price):
-                        self.modify_order(working_order, working_order.quantity, temp_price)
+        for order in self.orders_working().values():
+            if not self.is_stop_loss(order.id):
+                return
+
+            # SELL SIDE ORDERS
+            if order.is_sell():
+                temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
+                if temp_price.gt(order.price):
+                    self.modify_order(order, order.quantity, temp_price)
+            # BUY SIDE ORDERS
+            elif order.is_buy():
+                temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+                if temp_price.lt(order.price):
+                    self.modify_order(order, order.quantity, temp_price)
 
     def _update_session_times(self):
         time_now = self.clock.time_now()
@@ -463,8 +473,8 @@ class EMACrossFiltered(TradingStrategy):
 
     def _done_for_day(self):
         self.log.info("Done for day - commencing trading end flatten...")
-        self.flatten_all_positions(order_label=DONE_FOR_DAY)
-        self.cancel_all_orders(cancel_reason=DONE_FOR_DAY)
+        self.flatten_all_positions()
+        self.cancel_all_orders()
         self.log.info("Done for day...")
 
     def _update_news_event(self):
@@ -498,6 +508,6 @@ class EMACrossFiltered(TradingStrategy):
 
     def _news_flatten(self):
         self.log.info("Within trading pause window - commencing news flatten...")
-        self.flatten_all_positions(order_label=NEWS_FLATTEN)
-        self.cancel_all_orders(cancel_reason=NEWS_FLATTEN)
+        self.flatten_all_positions()
+        self.cancel_all_orders()
         self.log.info("Trading paused...")
