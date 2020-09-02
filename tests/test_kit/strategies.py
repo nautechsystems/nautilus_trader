@@ -24,7 +24,6 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.c_enums.order_purpose import OrderPurpose
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
@@ -264,7 +263,6 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        # Put custom code to be run on strategy start here (or pass)
         instrument = self.get_instrument(self.symbol)
 
         self.precision = instrument.price_precision
@@ -336,7 +334,7 @@ class EMACross(TradingStrategy):
 
         # Check liquidity
         liquidity_ratio = self.atr.value / average_spread
-        if liquidity_ratio >= 1.0:
+        if liquidity_ratio >= 2.0:
             self._check_signal(bar, sl_buffer, spread_buffer)
         else:
             self.log.info(f"liquidity_ratio == {liquidity_ratio} (low liquidity).")
@@ -386,15 +384,18 @@ class EMACross(TradingStrategy):
             self.log.info("Insufficient equity for BUY signal.")
             return
 
-        bracket_order = self.order_factory.bracket_stop(
+        entry_order = self.order_factory.stop(
             symbol=self.symbol,
             order_side=OrderSide.BUY,
             quantity=position_size,
-            entry=price_entry,
-            stop_loss=price_stop_loss,
-            take_profit=price_take_profit,
+            price=price_entry,
             time_in_force=TimeInForce.GTD,
             expire_time=bar.timestamp + timedelta(minutes=1))
+
+        bracket_order = self.order_factory.bracket(
+            entry_order=entry_order,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit)
 
         self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
@@ -432,31 +433,36 @@ class EMACross(TradingStrategy):
             self.log.info("Insufficient equity for SELL signal.")
             return
 
-        bracket_order = self.order_factory.bracket_stop(
+        entry_order = self.order_factory.stop(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
             quantity=position_size,
-            entry=price_entry,
-            stop_loss=price_stop_loss,
-            take_profit=price_take_profit,
+            price=price_entry,
             time_in_force=TimeInForce.GTD,
             expire_time=bar.timestamp + timedelta(minutes=1))
+
+        bracket_order = self.order_factory.bracket(
+            entry_order=entry_order,
+            stop_loss=price_stop_loss,
+            take_profit=price_take_profit)
 
         self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        for working_order in self.orders_working().values():
-            if working_order.purpose == OrderPurpose.STOP_LOSS:
-                # SELL SIDE ORDERS
-                if working_order.is_sell():
-                    temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
-                    if temp_price.gt(working_order.price):
-                        self.modify_order(working_order, working_order.quantity, temp_price)
-                # BUY SIDE ORDERS
-                elif working_order.is_buy():
-                    temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
-                    if temp_price.lt(working_order.price):
-                        self.modify_order(working_order, working_order.quantity, temp_price)
+        for order in self.orders_working().values():
+            if not self.is_stop_loss(order.id):
+                return
+
+            # SELL SIDE ORDERS
+            if order.is_sell():
+                temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
+                if temp_price.gt(order.price):
+                    self.modify_order(order, order.quantity, temp_price)
+            # BUY SIDE ORDERS
+            elif order.is_buy():
+                temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+                if temp_price.lt(order.price):
+                    self.modify_order(order, order.quantity, temp_price)
 
     def on_data(self, data):
         """

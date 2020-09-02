@@ -28,6 +28,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.events cimport Event
@@ -39,7 +40,11 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport LimitOrder
+from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport StopLimitOrder
+from nautilus_trader.model.order cimport StopOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer
@@ -446,7 +451,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return None
 
         cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
-        cdef Order order = Order.create(event=initial)
+
+        cdef Order order
+        if initial.order_type == OrderType.MARKET:
+            order = MarketOrder.create(event=initial)
+        elif initial.order_type == OrderType.LIMIT:
+            order = LimitOrder.create(event=initial)
+        elif initial.order_type == OrderType.STOP:
+            order = StopOrder.create(event=initial)
+        elif initial.order_type == OrderType.STOP_LIMIT:
+            order = StopLimitOrder.create(event=initial)
+        else:
+            raise RuntimeError("Invalid order type")
 
         cdef bytes event_bytes
         for event_bytes in events:

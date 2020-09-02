@@ -18,12 +18,9 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.types cimport Label
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -55,7 +52,7 @@ cdef class AccountStateEvent(Event):
                  Money margin_used_liquidation not None,
                  Money margin_used_maintenance not None,
                  Decimal64 margin_ratio not None,
-                 ValidString margin_call_status not None,
+                 str margin_call_status not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -75,6 +72,7 @@ cdef class AccountStateEvent(Event):
         """
         Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
         Condition.not_negative(margin_ratio.as_double(), "margin_ratio")
+        Condition.valid_string(margin_call_status, "margin_call_status")
         super().__init__(event_id, event_timestamp)
 
         self.account_id = account_id
@@ -182,6 +180,8 @@ cdef class OrderFillEvent(OrderEvent):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
@@ -205,43 +205,40 @@ cdef class OrderInitialized(OrderEvent):
     def __init__(self,
                  OrderId order_id not None,
                  Symbol symbol not None,
-                 Label label,  # Can be None
                  OrderSide order_side,
                  OrderType order_type,
                  Quantity quantity not None,
                  Price price,  # Can be None
-                 OrderPurpose order_purpose,
                  TimeInForce time_in_force,
                  datetime expire_time,  # Can be None
                  UUID event_id not None,
-                 datetime event_timestamp not None):
+                 datetime event_timestamp):
         """
         Initialize a new instance of the OrderInitialized class.
 
         :param order_id: The event order_id.
         :param symbol: The event order symbol.
-        :param label: The event order label.
         :param order_side: The event order side.
         :param order_type: The event order type.
         :param quantity: The event order quantity.
         :param price: The event order price.
-        :param order_purpose: The event order purpose.
         :param time_in_force: The event order time in force.
         :param expire_time: The event order expire time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
+        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
 
         self.symbol = symbol
-        self.label = label
         self.order_side = order_side
         self.order_type = order_type
         self.quantity = quantity
         self.price = price
-        self.order_purpose = order_purpose
         self.time_in_force = time_in_force
         self.expire_time = expire_time
 
@@ -363,7 +360,7 @@ cdef class OrderRejected(OrderEvent):
                  AccountId account_id not None,
                  OrderId order_id not None,
                  datetime rejected_time not None,
-                 ValidString rejected_reason not None,
+                 str rejected_reason not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -376,6 +373,7 @@ cdef class OrderRejected(OrderEvent):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        Condition.valid_string(rejected_reason, "rejected_reason")
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
@@ -405,7 +403,6 @@ cdef class OrderAccepted(OrderEvent):
                  AccountId account_id not None,
                  OrderId order_id not None,
                  OrderIdBroker order_id_broker not None,
-                 Label label,  # Can be None
                  datetime accepted_time not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
@@ -415,7 +412,6 @@ cdef class OrderAccepted(OrderEvent):
         :param account_id: The event account_id.
         :param order_id: The event order_id.
         :param order_id_broker: The event broker order_id.
-        :param label: The event order label.
         :param accepted_time: The event order accepted time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -426,7 +422,6 @@ cdef class OrderAccepted(OrderEvent):
 
         self.account_id = account_id
         self.order_id_broker = order_id_broker
-        self.label = label
         self.accepted_time = accepted_time
 
     def __str__(self) -> str:
@@ -437,8 +432,7 @@ cdef class OrderAccepted(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"order_id={self.order_id}, "
-                f"label={self.label})")
+                f"order_id={self.order_id})")
 
 
 cdef class OrderWorking(OrderEvent):
@@ -451,16 +445,15 @@ cdef class OrderWorking(OrderEvent):
                  OrderId order_id not None,
                  OrderIdBroker order_id_broker not None,
                  Symbol symbol not None,
-                 Label label,  # Can be None
                  OrderSide order_side,
                  OrderType order_type,
                  Quantity quantity not None,
                  Price price not None,
                  TimeInForce time_in_force,
+                 datetime expire_time,  # Can be None
                  datetime working_time not None,
                  UUID event_id not None,
-                 datetime event_timestamp not None,
-                 datetime expire_time=None):
+                 datetime event_timestamp not None):
         """
         Initialize a new instance of the OrderWorking class.
 
@@ -468,19 +461,19 @@ cdef class OrderWorking(OrderEvent):
         :param order_id: The event order_id.
         :param order_id_broker: The event broker order_id.
         :param symbol: The event order symbol.
-        :param label: The event order label.
         :param order_side: The event order side.
         :param order_type: The event order type.
         :param quantity: The event order quantity.
         :param price: The event order price.
         :param time_in_force: The event order time in force.
+        :param expire_time: The event order expire time (for GTD orders), optional.
         :param working_time: The event order working time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
-        :param expire_time: The optional event order expire time (for GTD orders).
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
+        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         Condition.type_or_none(expire_time, datetime, "expire_time")
 
         super().__init__(order_id,
@@ -490,14 +483,13 @@ cdef class OrderWorking(OrderEvent):
         self.account_id = account_id
         self.order_id_broker = order_id_broker
         self.symbol = symbol
-        self.label = label
         self.order_side = order_side
         self.order_type = order_type
         self.quantity = quantity
         self.price = price
         self.time_in_force = time_in_force
-        self.working_time = working_time
         self.expire_time = expire_time
+        self.working_time = working_time
 
     def __str__(self) -> str:
         """
@@ -509,7 +501,6 @@ cdef class OrderWorking(OrderEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
-                f"label={self.label}, "
                 f"{order_side_to_string(self.order_side)} {self.quantity.to_string_formatted()} "
                 f"{self.symbol} {order_type_to_string(self.order_type)} @ "
                 f"{self.price} {time_in_force_to_string(self.time_in_force)}{expire_time})")
@@ -524,8 +515,8 @@ cdef class OrderCancelReject(OrderEvent):
                  AccountId account_id not None,
                  OrderId order_id not None,
                  datetime rejected_time not None,
-                 ValidString rejected_response_to not None,
-                 ValidString rejected_reason not None,
+                 str rejected_response_to not None,
+                 str rejected_reason not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -539,6 +530,8 @@ cdef class OrderCancelReject(OrderEvent):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        Condition.valid_string(rejected_response_to, "rejected_response_to")
+        Condition.valid_string(rejected_reason, "rejected_reason")
         super().__init__(order_id,
                          event_id,
                          event_timestamp)

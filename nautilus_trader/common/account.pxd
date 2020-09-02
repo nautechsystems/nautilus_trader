@@ -40,7 +40,7 @@ cdef class Account:
     cdef readonly Money margin_used_liquidation
     cdef readonly Money margin_used_maintenance
     cdef readonly Decimal64 margin_ratio
-    cdef readonly ValidString margin_call_status
+    cdef readonly str margin_call_status
     cdef readonly free_equity
 
     cpdef list get_events(self)

@@ -20,7 +20,6 @@ import pytz
 
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal64
-from nautilus_trader.core.types import ValidString
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
@@ -208,7 +207,7 @@ class TestStubs:
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Decimal64(0),
-            ValidString('N'),
+            'N',
             uuid4(),
             UNIX_EPOCH)
 
@@ -227,7 +226,6 @@ class TestStubs:
             TestStubs.account_id(),
             order.id,
             OrderIdBroker(order.id.value.replace('O', 'B')),
-            order.label,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -238,7 +236,7 @@ class TestStubs:
             TestStubs.account_id(),
             order.id,
             UNIX_EPOCH,
-            ValidString("ORDER_REJECTED"),
+            "ORDER_REJECTED",
             uuid4(),
             UNIX_EPOCH)
 
@@ -271,16 +269,15 @@ class TestStubs:
             order.id,
             OrderIdBroker(order.id.value.replace('O', 'B')),
             order.symbol,
-            order.label,
             order.side,
             order.type,
             order.quantity,
             order.price if working_price is None else working_price,
             order.time_in_force,
+            order.expire_time,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH,
-            order.expire_time)
+            UNIX_EPOCH)
 
     @staticmethod
     def event_order_cancelled(order) -> OrderCancelled:
