@@ -68,8 +68,6 @@ cdef class Order:
     cdef readonly Decimal64 slippage
     cdef readonly UUID init_id
 
-    @staticmethod
-    cdef Order create(OrderInitialized event)
     cpdef bint equals(self, Order other)
     cpdef OrderState state(self)
     cpdef Event last_event(self)

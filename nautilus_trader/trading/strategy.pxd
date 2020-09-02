@@ -65,11 +65,11 @@ cdef class TradingStrategy:
 
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
+    cdef dict _stop_loss_orders
+    cdef dict _take_profit_orders
 
     cdef list _indicators
     cdef dict _indicator_updaters
-    cdef dict _stop_loss_orders
-    cdef dict _take_profit_orders
 
     cdef DataClient _data
     cdef ExecutionEngine _exec
