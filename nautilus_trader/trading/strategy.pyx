@@ -94,9 +94,9 @@ cdef class TradingStrategy:
         """
         Initialize a new instance of the TradingStrategy class.
 
-        :param clock: The clock for the strategy (can be None, default=LiveClock).
-        :param uuid_factory: The UUID factory for the strategy (can be None, default=LiveUUIDFactory).
-        :param logger: The logger for the strategy (can be None).
+        :param clock: The clock for the strategy.
+        :param uuid_factory: The UUID factory for the strategy.
+        :param logger: The logger for the strategy.
         :param order_id_tag: The order_id tag for the strategy (must be unique at trader level).
         :param flatten_on_stop: If all strategy positions should be flattened on stop.
         :param flatten_on_sl_reject: If open positions should be flattened on SL reject.

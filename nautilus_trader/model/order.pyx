@@ -131,16 +131,6 @@ cdef class Order:
 
         self._events.append(event)
 
-    @staticmethod
-    cdef Order create(OrderInitialized event):
-        """
-        Return an order from the given initialized event.
-
-        :param event: The event to initialize with.
-        :return Order.
-        """
-        NotImplemented("method must be implemented in the subclass")
-
     cpdef bint equals(self, Order other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -291,7 +281,7 @@ cdef class Order:
 
     cpdef str status_string(self):
         """
-        Return the positions status as a string.
+        Return the orders status as a string.
 
         :return str.
         """
@@ -409,7 +399,7 @@ cdef class PassiveOrder(Order):
             The order type.
         quantity : Quantity
             The order quantity (> 0).
-        price : Price, optional
+        price : Price
             The order price.
         time_in_force : TimeInForce
             The order time in force.
@@ -458,7 +448,7 @@ cdef class PassiveOrder(Order):
 
     cpdef str status_string(self):
         """
-        Return the positions status as a string.
+        Return the orders status as a string.
 
         :return str.
         """
@@ -622,14 +612,12 @@ cdef class LimitOrder(PassiveOrder):
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).
-        price : Price, optional
-            The order price - must be None for non-priced orders.
-            (default=None).
-        time_in_force : TimeInForce, optional
+        price : Price
+            The order price.
+        time_in_force : TimeInForce
             The order time in force.
         expire_time : datetime, optional
-            The order expiry time with the broker - for GTD orders only.
-            (default=None).
+            The order expiry time.
         init_id : UUID
             The order initialization event identifier.
         timestamp : datetime
@@ -705,15 +693,12 @@ cdef class StopOrder(PassiveOrder):
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).
-        price : Price, optional
-            The order price - must be None for non-priced orders.
-            (default=None).
-        time_in_force : TimeInForce, optional
+        price : Price
+            The order price.
+        time_in_force : TimeInForce
             The order time in force.
-            (default=TimeInForce.DAY).
         expire_time : datetime, optional
-            The order expiry time with the broker - for GTD orders only.
-            (default=None).
+            The order expiry time.
         init_id : UUID
             The order initialization event identifier.
         timestamp : datetime
@@ -789,15 +774,12 @@ cdef class StopLimitOrder(PassiveOrder):
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).
-        price : Price, optional
-            The order price - must be None for non-priced orders.
-            (default=None).
-        time_in_force : TimeInForce, optional
+        price : Price
+            The order price.
+        time_in_force : TimeInForce
             The order time in force.
-            (default=TimeInForce.DAY).
         expire_time : datetime, optional
-            The order expiry time with the broker - for GTD orders only.
-            (default=None).
+            The order expiry time.
         init_id : UUID
             The order initialization event identifier.
         timestamp : datetime
