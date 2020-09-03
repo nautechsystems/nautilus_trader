@@ -41,6 +41,7 @@ cdef class Trader:
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
     cdef readonly list strategies
+    cdef readonly set strategy_ids
 
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *

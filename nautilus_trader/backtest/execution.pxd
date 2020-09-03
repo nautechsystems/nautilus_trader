@@ -94,6 +94,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market)
+    cdef void _submit_order(self, Order order) except *
     cdef void _accept_order(self, Order order) except *
     cdef void _reject_order(self, Order order, str reason) except *
     cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason) except *

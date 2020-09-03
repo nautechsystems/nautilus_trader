@@ -69,7 +69,6 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.INITIALIZED, OrderInvalid.__name__): OrderState.INVALID,
     (OrderState.INITIALIZED, OrderDenied.__name__): OrderState.DENIED,
     (OrderState.INITIALIZED, OrderSubmitted.__name__): OrderState.SUBMITTED,
-    (OrderState.INITIALIZED, OrderAccepted.__name__): OrderState.ACCEPTED,  # TODO: Backtest engine not submitting market orders??
     (OrderState.SUBMITTED, OrderCancelled.__name__): OrderState.CANCELLED,
     (OrderState.SUBMITTED, OrderRejected.__name__): OrderState.REJECTED,
     (OrderState.SUBMITTED, OrderAccepted.__name__): OrderState.ACCEPTED,
@@ -747,87 +746,6 @@ cdef class StopOrder(PassiveOrder):
             timestamp=event.timestamp)
 
 
-cdef class StopLimitOrder(PassiveOrder):
-    """
-    Represents a stop limit order.
-    """
-    def __init__(self,
-                 OrderId order_id not None,
-                 Symbol symbol not None,
-                 OrderSide order_side,
-                 Quantity quantity not None,
-                 Price price not None,
-                 TimeInForce time_in_force,
-                 datetime expire_time,  # Can be None
-                 UUID init_id not None,
-                 datetime timestamp not None):
-        """
-        Initialize a new instance of the StopLimitOrder class.
-
-        Parameters
-        ----------
-        order_id : OrderId
-            The order unique identifier.
-        symbol : Symbol
-            The order symbol identifier.
-        order_side : OrderSide (enum)
-            The order side (BUY or SELL).
-        quantity : Quantity
-            The order quantity (> 0).
-        price : Price
-            The order price.
-        time_in_force : TimeInForce
-            The order time in force.
-        expire_time : datetime, optional
-            The order expiry time.
-        init_id : UUID
-            The order initialization event identifier.
-        timestamp : datetime
-            The order initialization timestamp.
-
-        Raises
-        ------
-        ValueError
-            If the quantities value is not positive (> 0).
-            If the order_side is UNDEFINED.
-            If the time_in_force is UNDEFINED.
-            If the time_in_force is GTD and the expire_time is None.
-
-        """
-        super().__init__(
-            order_id,
-            symbol,
-            order_side,
-            OrderType.STOP_LIMIT,
-            quantity,
-            price,
-            time_in_force,
-            expire_time,
-            init_id,
-            timestamp)
-
-    @staticmethod
-    cdef StopLimitOrder create(OrderInitialized event):
-        """
-        Return a stop limit order from the given initialized event.
-
-        :param event: The event to initialize with.
-        :return Order.
-        """
-        Condition.not_none(event, "event")
-
-        return StopLimitOrder(
-            order_id=event.order_id,
-            symbol=event.symbol,
-            order_side=event.order_side,
-            quantity=event.quantity,
-            price=event.price,
-            time_in_force=event.time_in_force,
-            expire_time=event.expire_time,
-            init_id=event.id,
-            timestamp=event.timestamp)
-
-
 cdef class BracketOrder:
     """
     Represents an order for a financial market instrument consisting of a 'parent'
@@ -837,7 +755,7 @@ cdef class BracketOrder:
     def __init__(self,
                  Order entry not None,
                  StopOrder stop_loss not None,
-                 PassiveOrder take_profit=None):
+                 LimitOrder take_profit=None):
         """
         Initialize a new instance of the BracketOrder class.
 
@@ -847,7 +765,7 @@ cdef class BracketOrder:
             The entry 'parent' order.
         stop_loss : StopOrder
             The stop-loss (SL) 'child' order.
-        take_profit : PassiveOrder, optional
+        take_profit : LimitOrder, optional
             The take-profit (TP) 'child' order.
 
         """
