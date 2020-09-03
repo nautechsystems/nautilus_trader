@@ -59,14 +59,15 @@ cdef class TradingStrategy:
     cdef readonly TraderId trader_id
 
     cdef readonly bint flatten_on_stop
-    cdef readonly bint flatten_on_sl_reject
+    cdef readonly bint flatten_on_reject
     cdef readonly bint cancel_all_orders_on_stop
     cdef readonly bint reraise_exceptions
 
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
-    cdef dict _stop_loss_orders
-    cdef dict _take_profit_orders
+    cdef set _flattening_ids
+    cdef set _stop_loss_ids
+    cdef set _take_profit_ids
 
     cdef list _indicators
     cdef dict _indicator_updaters
@@ -94,7 +95,7 @@ cdef class TradingStrategy:
     cpdef void on_dispose(self) except *
 
 # -- REGISTRATION METHODS -------------------------------------------------------------------------#
-    cpdef void register_trader(self, TraderId trader_id) except *
+    cpdef void register_trader(self, TraderId trader_id, Clock clock, UUIDFactory uuid_factory, Logger logger) except *
     cpdef void register_data_client(self, DataClient client) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_indicator(self, data_source, Indicator indicator, update_method=*) except *
@@ -160,8 +161,8 @@ cdef class TradingStrategy:
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)
-    cpdef dict orders_stop_loss(self)
-    cpdef dict orders_take_profit(self)
+    cpdef set stop_loss_ids(self)
+    cpdef set take_profit_ids(self)
     cpdef dict orders_completed(self)
     cpdef Position position(self, PositionId position_id)
     cpdef Position position_for_order(self, OrderId order_id)
@@ -201,9 +202,4 @@ cdef class TradingStrategy:
     cpdef void flatten_position(self, PositionId position_id) except *
     cpdef void flatten_all_positions(self) except *
 
-    cdef void _flatten_on_sl_reject(self, OrderRejected event) except *
-
-# -- BACKTEST METHODS -----------------------------------------------------------------------------#
-    cpdef void change_clock(self, Clock clock) except *
-    cpdef void change_uuid_factory(self, UUIDFactory uuid_factory) except *
-    cpdef void change_logger(self, Logger logger) except *
+    cdef void _flatten_on_reject(self, OrderRejected event) except *

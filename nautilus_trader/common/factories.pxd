@@ -28,7 +28,6 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport StopOrder
-from nautilus_trader.model.order cimport StopLimitOrder
 
 
 cdef class OrderFactory:
@@ -57,15 +56,6 @@ cdef class OrderFactory:
         datetime expire_time=*)
 
     cpdef StopOrder stop(
-        self,
-        Symbol symbol,
-        OrderSide order_side,
-        Quantity quantity,
-        Price price,
-        TimeInForce time_in_force=*,
-        datetime expire_time=*)
-
-    cpdef StopLimitOrder stop_limit(
         self,
         Symbol symbol,
         OrderSide order_side,

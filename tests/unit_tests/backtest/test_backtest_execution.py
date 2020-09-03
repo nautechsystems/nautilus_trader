@@ -76,14 +76,14 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
         self.exec_db = InMemoryExecutionDatabase(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             logger=self.logger)
         self.exec_engine = ExecutionEngine(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
@@ -104,6 +104,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_account_collateral_inquiry(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -115,6 +120,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -136,6 +146,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_limit_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -158,6 +173,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_bracket_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -177,13 +197,18 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
 
         # Assert
-        self.assertEqual(7, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
+        self.assertEqual(8, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderFilled))
         self.assertEqual(Price(80.000, 3), bracket_order.stop_loss.price)
 
     def test_can_submit_bracket_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -205,12 +230,18 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
 
         # Assert
-        self.assertEqual(4, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
+        self.assertEqual(6, strategy.object_storer.count)
+        print(strategy.object_storer.get_store())
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[5], OrderWorking))
 
     def test_can_modify_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -235,6 +266,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_modify_bracket_order_working_stop_loss(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -257,8 +293,8 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Price(85.100, 3), strategy.order(bracket_order.stop_loss.id).price)
-        self.assertEqual(8, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderModified))
+        self.assertEqual(9, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 
     # TODO: Fix failing test - market not updating inside BacktestExecution Client
     # def test_submit_market_order_with_slippage_fill_model_slips_order(self):
@@ -302,6 +338,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_order_with_no_market_rejects_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -322,6 +363,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_order_with_invalid_price_gets_rejected(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
         self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()

@@ -184,7 +184,6 @@ cdef class BacktestEngine:
             uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
-        self._change_clocks_and_loggers(strategies)
         self.test_clock.set_time(self.clock.time_now())  # For logging consistency
 
         self.iteration = 0
@@ -264,7 +263,6 @@ cdef class BacktestEngine:
         # Setup new strategies
         if strategies is not None:
             self.trader.initialize_strategies(strategies)
-            self._change_clocks_and_loggers(strategies)
 
         # Run the backtest
         self.log.info(f"Running backtest...")
@@ -435,11 +433,3 @@ cdef class BacktestEngine:
 
         for statistic in self.analyzer.get_performance_stats_formatted(self.exec_engine.account.currency):
             self.log.info(statistic)
-
-    cdef void _change_clocks_and_loggers(self, list strategies) except *:
-        # Replace the clocks and loggers for every strategy in the given list
-        for strategy in strategies:
-            # Separate test clocks to iterate independently
-            strategy.change_clock(TestClock(initial_time=self.test_clock.time_now()))
-            # Replace the strategies logger with the engines test logger
-            strategy.change_logger(self.test_logger)

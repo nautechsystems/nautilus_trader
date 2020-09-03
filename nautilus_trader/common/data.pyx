@@ -186,7 +186,7 @@ cdef class DataClient:
 
         strategy.register_data_client(self)
 
-        self._log.debug(f"Registered {strategy}.")
+        self._log.info(f"Registered {strategy}.")
 
 
 # -- HANDLER METHODS ----------------------------------------------------------------------------- #

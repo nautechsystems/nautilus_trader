@@ -254,20 +254,6 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed())
 
-    def test_can_initialize_stop_limit_order(self):
-        # Arrange
-        # Act
-        order = self.order_factory.stop_limit(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(1.00000, 5))
-
-        # Assert
-        self.assertEqual(OrderType.STOP_LIMIT, order.type)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
-        self.assertFalse(order.is_completed())
-
     def test_can_initialize_bracket_order_market_with_no_take_profit(self):
         # Arrange
         entry_order = self.order_factory.market(

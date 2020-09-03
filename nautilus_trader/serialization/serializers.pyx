@@ -72,7 +72,6 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.order cimport StopLimitOrder
 from nautilus_trader.model.order cimport StopOrder
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.identifiers cimport ServerId
@@ -257,18 +256,6 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.STOP:
             return StopOrder(
-                order_id=order_id,
-                symbol=symbol,
-                order_side=order_side,
-                quantity=quantity,
-                price=convert_string_to_price(unpacked[PRICE].decode(UTF8)),
-                time_in_force=time_in_force,
-                expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
-                init_id=init_id,
-                timestamp=timestamp)
-
-        if order_type == OrderType.STOP_LIMIT:
-            return StopLimitOrder(
                 order_id=order_id,
                 symbol=symbol,
                 order_side=order_side,

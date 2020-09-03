@@ -66,7 +66,6 @@ from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import LimitOrder
-from nautilus_trader.model.order import StopLimitOrder
 from nautilus_trader.model.order import StopOrder
 from nautilus_trader.network.identifiers import ClientId
 from nautilus_trader.network.identifiers import ServerId
@@ -201,28 +200,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             price=Price(1.00000, 5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
-            init_id=uuid4(),
-            timestamp=UNIX_EPOCH)
-
-        # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        self.assertEqual(order, deserialized)
-        print(b64encode(serialized))
-        print(order)
-
-    def test_can_serialize_and_deserialize_stop_limit_orders(self):
-        # Arrange
-        order = StopLimitOrder(
-            OrderId("O-123456"),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            price=Price(1.00000, 5),
-            time_in_force=TimeInForce.GTC,
-            expire_time=None,
             init_id=uuid4(),
             timestamp=UNIX_EPOCH)
 
@@ -494,7 +471,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP_LIMIT,
+            OrderType.STOP,
             Quantity(100000),
             Price(1.50000, 5),
             TimeInForce.DAY,
@@ -597,7 +574,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderIdBroker("B-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP_LIMIT,
+            OrderType.STOP,
             Quantity(100000),
             Price(1.50000, 5),
             TimeInForce.DAY,
@@ -621,7 +598,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderIdBroker("B-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP_LIMIT,
+            OrderType.STOP,
             Quantity(100000),
             Price(1.50000, 5),
             TimeInForce.DAY,

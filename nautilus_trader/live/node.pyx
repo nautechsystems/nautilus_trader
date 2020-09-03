@@ -249,10 +249,6 @@ cdef class TradingNode:
             uuid_factory=self._uuid_factory,
             logger=self._logger)
 
-        for strategy in self.trader.strategies:
-            if not isinstance(strategy.clock, LiveClock):
-                strategy.change_clock(LiveClock())
-
         Condition.equal(self.trader_id, self.trader.id, "trader_id", "trader.id")
 
         self._check_residuals_delay = 2.0  # Hard coded delay to await system spool up (refactor)
