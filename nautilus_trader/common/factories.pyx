@@ -177,40 +177,6 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.time_now())
 
-    cpdef StopLimitOrder stop_limit(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None):
-        """
-        Return a stop-limit order.
-        Note: If the time in force is GTD then a valid expire time must be given.
-
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param price: The orders price.
-        :param time_in_force: The orders time in force (default=DAY).
-        :param expire_time: The optional order expire time (for GTD orders).
-        :raises ValueError: If quantity is not positive (> 0).
-        :raises ValueError: If time_in_force is GTD and the expire_time is None.
-        :return Order.
-        """
-        return StopLimitOrder(
-            self._id_generator.generate(),
-            symbol,
-            order_side,
-            quantity,
-            price=price,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
-
-
     cpdef BracketOrder bracket(
             self,
             Order entry_order,

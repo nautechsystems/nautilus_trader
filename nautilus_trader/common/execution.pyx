@@ -1038,9 +1038,8 @@ cdef class ExecutionEngine:
         Condition.not_none(strategy, "strategy")
         Condition.not_in(strategy.id, self._registered_strategies, "strategy.id", "registered_strategies")
 
-        self._registered_strategies[strategy.id] = strategy
-        strategy.register_trader(self.trader_id)
         strategy.register_execution_engine(self)
+        self._registered_strategies[strategy.id] = strategy
         self._log.info(f"Registered strategy {strategy}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:

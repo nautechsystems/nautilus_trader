@@ -46,7 +46,7 @@ cdef class Trader:
         Initialize a new instance of the Trader class.
 
         :param trader_id: The trader_id for the trader.
-        :param trader_id: The account_id for the trader.
+        :param account_id: The account_id for the trader.
         :param strategies: The initial strategies for the trader.
         :param data_client: The data client to register the traders strategies with.
         :param exec_engine: The execution engine to register the traders strategies with trader.
@@ -77,6 +77,7 @@ cdef class Trader:
         self._fsm = create_component_fsm()
 
         self.strategies = []
+        self.strategy_ids = set()
         self.initialize_strategies(strategies)
 
     cpdef void initialize_strategies(self, list strategies: [TradingStrategy]) except *:
@@ -95,21 +96,12 @@ cdef class Trader:
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
-        self._log.info(f"Initialized strategies...")
+        self._log.info(f"Initializing strategies...")
 
         cdef TradingStrategy strategy
         for strategy in self.strategies:
             # Design assumption that no strategies are running
             assert not strategy.state() == ComponentState.RUNNING
-
-        # Check strategy_ids are unique
-        strategy_ids = set()
-        for strategy in strategies:
-            if strategy.id not in strategy_ids:
-                strategy_ids.add(strategy.id)
-            else:
-                raise ValueError(f"The strategy_id {strategy.id} was not unique "
-                                 f"(duplicate strategy_ids).")
 
         # Dispose of current strategies
         for strategy in self.strategies:
@@ -117,15 +109,33 @@ cdef class Trader:
             strategy.dispose()
 
         self.strategies.clear()
+        self.strategy_ids.clear()
 
         # Initialize strategies
         for strategy in strategies:
-            strategy.change_logger(self._log.get_logger())
+            # Check strategy_ids are unique
+            if strategy.id not in self.strategy_ids:
+                self.strategy_ids.add(strategy.id)
+            else:
+                raise ValueError(f"The strategy_id {strategy.id} was not unique "
+                                 f"(duplicate strategy_ids).")
+
+            # Wire strategy into trader
+            strategy.register_trader(
+                self.id,
+                self._clock.__class__(),  # Clock per strategy
+                self._uuid_factory,
+                self._log.get_logger())
+
+            # Wire strategy into data client
+            self._data_client.register_strategy(strategy)
+
+            # Wire strategy into execution engine
+            self._exec_engine.register_strategy(strategy)
+
+            # Add to internal strategies
             self.strategies.append(strategy)
 
-        for strategy in self.strategies:
-            self._data_client.register_strategy(strategy)
-            self._exec_engine.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
 
     cpdef void start(self) except *:
@@ -233,7 +243,6 @@ cdef class Trader:
 
         self._log.info(f"state={self._fsm.state_as_string()}...")
 
-        cdef TradingStrategy strategy
         for strategy in self.strategies:
             strategy.dispose()
 
