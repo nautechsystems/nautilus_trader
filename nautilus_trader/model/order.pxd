@@ -110,11 +110,6 @@ cdef class StopOrder(PassiveOrder):
     cdef StopOrder create(OrderInitialized event)
 
 
-cdef class StopLimitOrder(PassiveOrder):
-    @staticmethod
-    cdef StopLimitOrder create(OrderInitialized event)
-
-
 cdef class LimitOrder(PassiveOrder):
     @staticmethod
     cdef LimitOrder create(OrderInitialized event)

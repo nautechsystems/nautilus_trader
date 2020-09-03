@@ -19,7 +19,6 @@ cpdef enum OrderType:
     MARKET = 1,
     LIMIT = 2,
     STOP = 3,
-    STOP_LIMIT = 4,
 
 
 cdef inline str order_type_to_string(int value):
@@ -29,8 +28,6 @@ cdef inline str order_type_to_string(int value):
         return 'LIMIT'
     elif value == 3:
         return 'STOP'
-    elif value == 4:
-        return 'STOP_LIMIT'
     else:
         return 'UNDEFINED'
 
@@ -42,7 +39,5 @@ cdef inline OrderType order_type_from_string(str value):
         return OrderType.LIMIT
     elif value == 'STOP':
         return OrderType.STOP
-    elif value == 'STOP_LIMIT':
-        return OrderType.STOP_LIMIT
     else:
         return OrderType.UNDEFINED

@@ -15,9 +15,6 @@
 
 from datetime import timedelta
 
-from nautilus_trader.backtest.clock import TestClock
-from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.core.types import Label
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -70,12 +67,7 @@ class EmptyStrategy(TradingStrategy):
 
         :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
         """
-        clock = TestClock()
-        super().__init__(
-            clock=clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(clock),
-            order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag)
 
 
 class TickTock(TradingStrategy):
@@ -85,12 +77,7 @@ class TickTock(TradingStrategy):
 
     def __init__(self, instrument, bar_type):
         """Initialize a new instance of the TickTock class."""
-        clock = TestClock()
-        super().__init__(
-            clock=clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(clock),
-            order_id_tag="000")
+        super().__init__(order_id_tag="000")
 
         self.instrument = instrument
         self.bar_type = bar_type
@@ -136,12 +123,7 @@ class TestStrategy1(TradingStrategy):
 
     def __init__(self, bar_type, id_tag_strategy="001"):
         """Initialize a new instance of the TestStrategy1 class."""
-        clock = TestClock()
-        super().__init__(
-            clock=clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(clock),
-            order_id_tag=id_tag_strategy)
+        super().__init__(order_id_tag=id_tag_strategy)
 
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
@@ -236,12 +218,7 @@ class EMACross(TradingStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param extra_id_tag: An optional extra tag to append to order ids.
         """
-        clock = TestClock()
-        super().__init__(
-            clock=clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(clock),
-            order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -517,7 +494,6 @@ class EMACross(TradingStrategy):
 
         Cleanup any resources used by the strategy here.
         """
-        # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.symbol)

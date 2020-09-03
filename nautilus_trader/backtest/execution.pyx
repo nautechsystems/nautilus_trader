@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -71,9 +72,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
-
-# Stop order types
-cdef set _STOP_ORDER_TYPES = {OrderType.STOP, OrderType.STOP_LIMIT}
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -322,7 +320,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
             # Check for order fill
             if order.side == OrderSide.BUY:
-                if order.type in _STOP_ORDER_TYPES:
+                if order.type == OrderType.STOP:
                     if tick.ask.ge(order.price) or self._is_marginal_buy_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -336,7 +334,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         self._fill_order(order, order.price)
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
-                if order.type in _STOP_ORDER_TYPES:
+                if order.type == OrderType.STOP:
                     if tick.bid.le(order.price) or self._is_marginal_sell_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -527,15 +525,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
-        # Generate event
-        cdef OrderSubmitted submitted = OrderSubmitted(
-            command.account_id,
-            command.order.id,
-            self._clock.time_now(),
-            self._uuid_factory.generate(),
-            self._clock.time_now())
-
-        self._exec_engine.handle_event(submitted)
+        self._submit_order(command.order)
         self._process_order(command.order)
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
@@ -562,7 +552,12 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.time_now())
 
-        self.submit_order(submit_order)
+        self._submit_order(command.bracket_order.entry)
+        self._submit_order(command.bracket_order.stop_loss)
+        if command.bracket_order.has_take_profit:
+            self._submit_order(command.bracket_order.take_profit)
+
+        self._process_order(command.bracket_order.entry)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         Condition.not_none(command, "command")
@@ -626,7 +621,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef bint _check_valid_price(self, PassiveOrder order, QuoteTick current_market, bint reject=True):
         # Check order price is valid and reject if not
         if order.side == OrderSide.BUY:
-            if order.type in _STOP_ORDER_TYPES:
+            if order.type == OrderType.STOP:
                 if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
                     if reject:
                         self._reject_order(order, f"BUY STOP order price of {order.price} is too "
@@ -639,7 +634,7 @@ cdef class BacktestExecClient(ExecutionClient):
                                                   f"far from the market, ask={current_market.ask}")
                     return False  # Invalid price
         elif order.side == OrderSide.SELL:
-            if order.type in _STOP_ORDER_TYPES:
+            if order.type == OrderType.STOP:
                 if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
                     if reject:
                         self._reject_order(order, f"SELL STOP order price of {order.price} is too "
@@ -666,6 +661,17 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market):
         return current_market.bid.eq(order_price) and self.fill_model.is_limit_filled()
 
+    cdef void _submit_order(self, Order order) except *:
+        # Generate event
+        cdef OrderSubmitted submitted = OrderSubmitted(
+            self._account.id,
+            order.id,
+            self._clock.time_now(),
+            self._uuid_factory.generate(),
+            self._clock.time_now())
+
+        self._exec_engine.handle_event(submitted)
+
     cdef void _accept_order(self, Order order) except *:
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
@@ -679,6 +685,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exec_engine.handle_event(accepted)
 
     cdef void _reject_order(self, Order order, str reason) except *:
+        if order.state() != OrderState.SUBMITTED:
+            self._log.error(f"Cannot reject order, state was {order.state_as_string()}.")
+            return
+
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
             self._account.id,
@@ -867,7 +877,7 @@ cdef class BacktestExecClient(ExecutionClient):
             # Reject any latent bracket child orders
             for bracket_order_id, child_orders in self._child_orders.items():
                 for order in child_orders:
-                    if oco_order.equals(order):
+                    if oco_order.equals(order) and order.state() != OrderState.WORKING:
                         self._reject_oco_order(order, order_id)
 
             # Cancel any working OCO orders
@@ -878,6 +888,10 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _reject_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
+
+        if order.state() != OrderState.WORKING:
+            self._log.debug(f"Cannot reject order, state was already {order.state_as_string()}.")
+            return
 
         # Generate event
         cdef OrderRejected event = OrderRejected(
@@ -893,6 +907,9 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _cancel_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
+        if order.state() != OrderState.WORKING:
+            self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
+            return
 
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
@@ -906,6 +923,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exec_engine.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
+        if order.state() != OrderState.WORKING:
+            self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
+            return
+
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
             self._account.id,

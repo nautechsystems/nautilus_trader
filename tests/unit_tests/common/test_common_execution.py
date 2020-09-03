@@ -58,14 +58,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
 
-        self.strategy = TradingStrategy(
+        self.strategy = TradingStrategy(order_id_tag="001")
+        self.strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=logger,
-            order_id_tag="001")
-        self.strategy.register_trader(TraderId("TESTER", "000"))
-        self.strategy.change_clock(clock)
-        self.strategy.change_logger(logger)
+            logger=logger)
 
         self.database = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
 
@@ -505,11 +503,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_register_strategy(self):
         # Arrange
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -519,11 +518,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_deregister_strategy(self):
         # Arrange
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy)
 
@@ -535,11 +535,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_is_flat_when_strategy_registered_returns_true(self):
         # Arrange
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -555,11 +556,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_engine.is_flat())
 
     def test_can_reset_execution_engine(self):
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy)  # Also registers with portfolio
 
@@ -571,14 +573,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_submit_order(self):
         # Arrange
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy)
-        strategy.change_clock(self.clock)
 
         position_id = strategy.position_id_generator.generate()
         order = strategy.order_factory.market(
@@ -605,14 +607,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_handle_order_fill_event(self):
         # Arrange
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy)
-        strategy.change_clock(self.clock)
 
         position_id = strategy.position_id_generator.generate()
         order = strategy.order_factory.market(
@@ -632,6 +634,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute_command(submit_order)
 
         # Act
+        self.exec_engine.handle_event(TestStubs.event_order_submitted(order))
         self.exec_engine.handle_event(TestStubs.event_order_accepted(order))
         self.exec_engine.handle_event(TestStubs.event_order_filled(order))
 
@@ -655,14 +658,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_add_to_existing_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy)
-        strategy.change_clock(self.clock)
 
         position_id = strategy.position_id_generator.generate()
         order1 = strategy.order_factory.market(
@@ -721,14 +724,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_close_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy)
-        strategy.change_clock(self.clock)
 
         position_id = strategy.position_id_generator.generate()
 
@@ -794,17 +797,19 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
-        strategy1 = TradingStrategy(
+        strategy1 = TradingStrategy(order_id_tag="001")
+        strategy1.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
-        strategy2 = TradingStrategy(
+        strategy2 = TradingStrategy(order_id_tag="002")
+        strategy2.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="002")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
@@ -886,17 +891,19 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
-        strategy1 = TradingStrategy(
+        strategy1 = TradingStrategy(order_id_tag="001")
+        strategy1.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="001")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
-        strategy2 = TradingStrategy(
+        strategy2 = TradingStrategy(order_id_tag="002")
+        strategy2.register_trader(
+            TraderId("TESTER", "000"),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-            order_id_tag="002")
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
 
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
