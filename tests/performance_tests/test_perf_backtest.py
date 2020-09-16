@@ -24,7 +24,7 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EMACross
@@ -42,8 +42,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EmptyStrategy("001")]
 
@@ -85,8 +85,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EMACross(
             symbol=usdjpy.symbol,
@@ -124,8 +124,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EMACross(
             symbol=usdjpy.symbol,
@@ -240,6 +240,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 18/07/20 14032223 function calls (13918578 primitive calls) in 14.440 seconds (rewrite data handling)
         # 28/08/20 6909192 function calls (6859890 primitive calls) in 9.271 seconds (changes to strategy / orders being processed?)
         # 31/08/20 6919645 function calls (6870343 primitive calls) in 9.251 seconds (refactor order)
+        # 16/09/20 1889296 function calls (1885341 primitive calls) in 5.610 seconds (refactor indicator)
 
         # 10/02/20 Profiling Mission: (Profile_Hooks = True)
         # -----------------------------------------------------------------------------------------------------------------------------------------

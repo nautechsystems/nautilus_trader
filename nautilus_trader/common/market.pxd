@@ -24,7 +24,7 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -38,7 +38,7 @@ cdef class TickDataWrangler:
 
     cdef readonly Instrument instrument
     cdef readonly tick_data
-    cdef readonly BarStructure resolution
+    cdef readonly BarAggregation resolution
 
     cpdef void build(self, int symbol_indexer) except *
     cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp)

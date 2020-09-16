@@ -36,8 +36,8 @@ from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_to_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -59,8 +59,8 @@ cdef class BacktestDataContainer:
         self.symbols = set()   # type: {Instrument}
         self.instruments = {}  # type: {Symbol, Instrument}
         self.ticks = {}        # type: {Symbol, pd.DataFrame}
-        self.bars_bid = {}     # type: {Symbol, {BarStructure, pd.DataFrame}}
-        self.bars_ask = {}     # type: {Symbol, {BarStructure, pd.DataFrame}}
+        self.bars_bid = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
+        self.bars_ask = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
@@ -89,12 +89,12 @@ cdef class BacktestDataContainer:
         self.ticks[symbol] = data
         self.ticks = dict(sorted(self.ticks.items()))
 
-    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data: pd.DataFrame) except *:
+    cpdef void add_bars(self, Symbol symbol, BarAggregation aggregation, PriceType price_type, data: pd.DataFrame) except *:
         """
         Add the bar data to the container.
 
         :param symbol: The symbol for the bar data.
-        :param structure: The bar structure of the data.
+        :param aggregation: The bar aggregation of the data.
         :param price_type: The price type of the data.
         :param data: The bar data to add.
         :raises TypeError: If data is a type other than DataFrame.
@@ -109,14 +109,14 @@ cdef class BacktestDataContainer:
             if symbol not in self.bars_bid:
                 self.bars_bid[symbol] = {}
                 self.bars_bid = dict(sorted(self.bars_bid.items()))
-            self.bars_bid[symbol][structure] = data
+            self.bars_bid[symbol][aggregation] = data
             self.bars_bid[symbol] = dict(sorted(self.bars_bid[symbol].items()))
 
         if price_type == PriceType.ASK:
             if symbol not in self.bars_ask:
                 self.bars_ask[symbol] = {}
                 self.bars_ask = dict(sorted(self.bars_ask.items()))
-            self.bars_ask[symbol][structure] = data
+            self.bars_ask[symbol][aggregation] = data
             self.bars_ask[symbol] = dict(sorted(self.bars_ask[symbol].items()))
 
     cpdef void check_integrity(self) except *:
@@ -130,20 +130,20 @@ cdef class BacktestDataContainer:
             assert(symbol in self.instruments, f"The needed instrument {symbol} was not provided.")
 
         # Check that all bar DataFrames for each symbol are of the same shape and index
-        cdef dict shapes = {}  # type: {BarStructure, tuple}
-        cdef dict indexs = {}  # type: {BarStructure, DatetimeIndex}
+        cdef dict shapes = {}  # type: {BarAggregation, tuple}
+        cdef dict indexs = {}  # type: {BarAggregation, DatetimeIndex}
         for symbol, data in self.bars_bid.items():
-            for structure, dataframe in data.items():
-                if structure not in shapes:
-                    shapes[structure] = dataframe.shape
-                if structure not in indexs:
-                    indexs[structure] = dataframe.index
-                assert(dataframe.shape == shapes[structure], f"{dataframe} shape is not equal.")
-                assert(dataframe.index == indexs[structure], f"{dataframe} index is not equal.")
+            for aggregation, dataframe in data.items():
+                if aggregation not in shapes:
+                    shapes[aggregation] = dataframe.shape
+                if aggregation not in indexs:
+                    indexs[aggregation] = dataframe.index
+                assert(dataframe.shape == shapes[aggregation], f"{dataframe} shape is not equal.")
+                assert(dataframe.index == indexs[aggregation], f"{dataframe} index is not equal.")
         for symbol, data in self.bars_ask.items():
-            for structure, dataframe in data.items():
-                assert(dataframe.shape == shapes[structure], f"{dataframe} shape is not equal.")
-                assert(dataframe.index == indexs[structure], f"{dataframe} index is not equal.")
+            for aggregation, dataframe in data.items():
+                assert(dataframe.shape == shapes[aggregation], f"{dataframe} shape is not equal.")
+                assert(dataframe.index == indexs[aggregation], f"{dataframe} index is not equal.")
 
     cpdef long total_data_size(self):
         cdef long size = 0
@@ -223,7 +223,7 @@ cdef class BacktestDataClient(DataClient):
             tick_frames.append(wrangler.tick_data)
             counter += 1
 
-            self.execution_resolutions.append(f"{symbol.to_string()}={bar_structure_to_string(wrangler.resolution)}")
+            self.execution_resolutions.append(f"{symbol.to_string()}={bar_aggregation_to_string(wrangler.resolution)}")
             self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
                            f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 
