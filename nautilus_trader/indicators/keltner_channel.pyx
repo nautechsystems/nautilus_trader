@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
@@ -39,8 +37,7 @@ cdef class KeltnerChannel(Indicator):
                  ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
                  ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
                  bint use_previous=True,
-                 double atr_floor=0.0,
-                 bint check_inputs=False):
+                 double atr_floor=0.0):
         """
         Initialize a new instance of the KeltnerChannel class.
 
@@ -50,7 +47,6 @@ cdef class KeltnerChannel(Indicator):
         :param ma_type_atr: The moving average type for the internal ATR (cannot be None).
         :param use_previous: The boolean flag indicating whether previous price values should be used.
         :param atr_floor: The ATR floor (minimum) output value for the indicator (>= 0).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
         Condition.positive(k_multiplier, "k_multiplier")
@@ -60,8 +56,7 @@ cdef class KeltnerChannel(Indicator):
                                  ma_type.name,
                                  ma_type_atr.name,
                                  use_previous,
-                                 atr_floor],
-                         check_inputs=check_inputs)
+                                 atr_floor])
         self.period = period
         self.k_multiplier = k_multiplier
         self._moving_average = MovingAverageFactory.create(self.period, ma_type)
@@ -70,31 +65,32 @@ cdef class KeltnerChannel(Indicator):
         self.value_middle_band = 0.0
         self.value_lower_band = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
-            self,
-            double high,
-            double low,
-            double close) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given bar.
 
-        :param high: The high price (> 0).
-        :param low: The low price (> 0).
-        :param close: The close price (> 0).
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.positive(close, "close")
-            Condition.true(high >= low, "high >= low")
-            Condition.true(high >= close, "high >= close")
-            Condition.true(low <= close, "low <= close")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(
+            bar.high.as_double(),
+            bar.low.as_double(),
+            bar.close.as_double()
+        )
+
+    cpdef void update_raw(self, double high, double low, double close) except *:
+        """
+        Update the indicator with the given raw value.
+
+        :param high: The high price.
+        :param low: The low price.
+        :param close: The close price.
+        """
         cdef double typical_price = (high + low + close) / 3.0
 
-        self._moving_average.update(typical_price)
-        self._atr.update(high, low, close)
+        self._moving_average.update_raw(typical_price)
+        self._atr.update_raw(high, low, close)
 
         self.value_upper_band = self._moving_average.value + (self._atr.value * self.k_multiplier)
         self.value_middle_band = self._moving_average.value

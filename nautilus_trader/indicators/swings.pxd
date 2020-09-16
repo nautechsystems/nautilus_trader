@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
@@ -39,7 +40,7 @@ cdef class Swings(Indicator):
     cdef readonly int since_high
     cdef readonly int since_low
 
-    cpdef void update(self, double high, double low, datetime timestamp) except *
-    cdef void _calculate_swing_logic(self, double high, double low, datetime timestamp) except *
+    cpdef void update(self, Bar bar) except *
+    cpdef void update_raw(self, double high, double low, datetime timestamp) except *
     cdef void _swing_changed(self) except *
     cpdef void reset(self) except *

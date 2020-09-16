@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
@@ -43,32 +42,41 @@ cdef class RelativeStrengthIndex(Indicator):
         self._rsi_max = 1.0
         self._average_gain = MovingAverageFactory.create(self.period, ma_type)
         self._average_loss = MovingAverageFactory.create(self.period, ma_type)
-        self._last_point = 0.0
+        self._last_value = 0.0
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double point) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given point value.
+        Update the indicator with the given bar.
 
-        :param point: The point value.
+        :param bar: The update bar.
+        """
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double value) except *:
+        """
+        Update the indicator with the given value.
+
+        :param value: The update value.
         """
         # Check if first input
         if not self.has_inputs:
-            self._last_point = point
+            self._last_value = value
             self._set_has_inputs(True)
 
-        cdef double gain = point - self._last_point
+        cdef double gain = value - self._last_value
 
         if gain > 0.0:
-            self._average_gain.update(gain)
-            self._average_loss.update(0.0)
+            self._average_gain.update_raw(gain)
+            self._average_loss.update_raw(0.0)
         elif gain < 0.0:
-            self._average_loss.update(-gain)
-            self._average_gain.update(0.0)
+            self._average_loss.update_raw(-gain)
+            self._average_gain.update_raw(0.0)
         else:
-            self._average_gain.update(0.0)
-            self._average_loss.update(0.0)
+            self._average_gain.update_raw(0.0)
+            self._average_loss.update_raw(0.0)
 
         # Initialization logic
         if not self.initialized:
@@ -82,7 +90,7 @@ cdef class RelativeStrengthIndex(Indicator):
         cdef double rs = self._average_gain.value / self._average_loss.value
 
         self.value = self._rsi_max - (self._rsi_max / (1.0 + rs))
-        self._last_point = point
+        self._last_value = value
 
     cpdef void reset(self) except *:
         """
@@ -91,5 +99,5 @@ cdef class RelativeStrengthIndex(Indicator):
         self._reset_base()
         self._average_gain.reset()
         self._average_loss.reset()
-        self._last_point = 0.0
+        self._last_value = 0.0
         self.value = 0.0

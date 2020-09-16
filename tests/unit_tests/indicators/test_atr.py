@@ -56,15 +56,7 @@ class AverageTrueRangeTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Act
         for _i in range(10):
-            self.atr.update(1.00000, 1.00000, 1.00000)
-
-        # Assert
-        self.assertEqual(True, self.atr.initialized)
-
-    def test_initialized_with_required_mid_inputs_returns_true(self):
-        # Act
-        for _i in range(10):
-            self.atr.update_mid(1.00000)
+            self.atr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Assert
         self.assertEqual(True, self.atr.initialized)
@@ -77,7 +69,7 @@ class AverageTrueRangeTests(unittest.TestCase):
     def test_value_with_epsilon_input(self):
         # Arrange
         epsilon = sys.float_info.epsilon
-        self.atr.update(epsilon, epsilon, epsilon)
+        self.atr.update_raw(epsilon, epsilon, epsilon)
 
         # Act
         # Assert
@@ -85,7 +77,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
     def test_value_with_one_ones_input(self):
         # Arrange
-        self.atr.update(1.00000, 1.00000, 1.00000)
+        self.atr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act
         # Assert
@@ -93,7 +85,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
     def test_value_with_one_input(self):
         # Arrange
-        self.atr.update(1.00020, 1.00000, 1.00010)
+        self.atr.update_raw(1.00020, 1.00000, 1.00010)
 
         # Act
         # Assert
@@ -101,23 +93,13 @@ class AverageTrueRangeTests(unittest.TestCase):
 
     def test_value_with_three_inputs(self):
         # Arrange
-        self.atr.update(1.00020, 1.00000, 1.00010)
-        self.atr.update(1.00020, 1.00000, 1.00010)
-        self.atr.update(1.00020, 1.00000, 1.00010)
+        self.atr.update_raw(1.00020, 1.00000, 1.00010)
+        self.atr.update_raw(1.00020, 1.00000, 1.00010)
+        self.atr.update_raw(1.00020, 1.00000, 1.00010)
 
         # Act
         # Assert
         self.assertAlmostEqual(0.00020, self.atr.value)
-
-    def test_value_with_three_mid_inputs(self):
-        # Arrange
-        self.atr.update_mid(1.00000)
-        self.atr.update_mid(1.00020)
-        self.atr.update_mid(1.00040)
-
-        # Act
-        # Assert
-        self.assertAlmostEqual(0.00013333333333331865, self.atr.value)
 
     def test_value_with_close_on_high(self):
         # Arrange
@@ -129,7 +111,7 @@ class AverageTrueRangeTests(unittest.TestCase):
             high += 0.00010
             low += 0.00010
             close = high
-            self.atr.update(high, low, close)
+            self.atr.update_raw(high, low, close)
 
         # Assert
         self.assertAlmostEqual(0.00010, self.atr.value, 2)
@@ -144,7 +126,7 @@ class AverageTrueRangeTests(unittest.TestCase):
             high -= 0.00010
             low -= 0.00010
             close = low
-            self.atr.update(high, low, close)
+            self.atr.update_raw(high, low, close)
 
         # Assert
         self.assertAlmostEqual(0.00010, self.atr.value)
@@ -155,7 +137,7 @@ class AverageTrueRangeTests(unittest.TestCase):
         floored_atr = AverageTrueRange(10, value_floor=floor)
 
         for _i in range(20):
-            floored_atr.update(1.00000, 1.00000, 1.00000)
+            floored_atr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act
         # Assert
@@ -172,7 +154,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         for _i in range(20):
             high -= (high - low) / 2
-            floored_atr.update(high, low, close)
+            floored_atr.update_raw(high, low, close)
 
         # Act
         # Assert
@@ -181,7 +163,7 @@ class AverageTrueRangeTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(1000):
-            self.atr.update(1.00010, 1.00000, 1.00005)
+            self.atr.update_raw(1.00010, 1.00000, 1.00005)
 
         # Act
         self.atr.reset()
@@ -196,7 +178,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Act
         for point in BatterySeries.create():
-            self.atr.update(point, sys.float_info.epsilon, sys.float_info.epsilon)
+            self.atr.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
             output.append(self.atr.value)
 
         # Assert

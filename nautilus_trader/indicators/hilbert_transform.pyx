@@ -15,8 +15,6 @@
 
 from collections import deque
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
@@ -30,15 +28,14 @@ cdef class HilbertTransform(Indicator):
     and imaginary (quadrature) parts.
     """
 
-    def __init__(self, int period=7, bint check_inputs=False):
+    def __init__(self, int period=7):
         """
         Initialize a new instance of the HilbertTransform class.
 
         :param period: The rolling window period for the indicator (> 0).
-        :param check: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
-        super().__init__(params=[period], check_inputs=check_inputs)
+        super().__init__(params=[period])
 
         self.period = period
         self._i_mult = 0.635
@@ -50,16 +47,22 @@ cdef class HilbertTransform(Indicator):
         self.value_in_phase = 0.0  # The last in-phase value (real part of complex number) held
         self.value_quad = 0.0      # The last quadrature value (imaginary part of complex number) held
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double price) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given point value (mid price).
+        Update the indicator with the given bar.
 
-        :param price: The price value (> 0).
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(price, "price")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double price) except *:
+        """
+        Update the indicator with the given raw value.
+
+        :param price: The price.
+        """
         self._inputs.append(price)
 
         # Initialization logic

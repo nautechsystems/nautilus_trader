@@ -57,14 +57,14 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
     def test_wma_factory_kwargs(self):
         for i in range(1, 12):
-            self.wma_factory.update(float(i))
+            self.wma_factory.update_raw(float(i))
 
         self.assertEqual(8.0, self.wma_factory.value)
         self.assertEqual(self.w, self.wma_factory.weights)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.wma.update(1.00000)
+        self.wma.update_raw(1.00000)
 
         # Act
         # Assert
@@ -72,8 +72,8 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
     def test_value_with_two_input_returns_expected_value(self):
         # Arrange
-        self.wma.update(1.00000)
-        self.wma.update(10.00000)
+        self.wma.update_raw(1.00000)
+        self.wma.update_raw(10.00000)
 
         # 10 * 1.0, 1 * 0.9
 
@@ -83,8 +83,8 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
     def test_value_with_no_weights(self):
         # Arrange
-        self.wma_noweights.update(1.00000)
-        self.wma_noweights.update(2.00000)
+        self.wma_noweights.update_raw(1.00000)
+        self.wma_noweights.update_raw(2.00000)
 
         # Act
         # Assert
@@ -92,16 +92,16 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
-        self.wma.update(1.00000)
-        self.wma.update(2.00000)
-        self.wma.update(3.00000)
-        self.wma.update(4.00000)
-        self.wma.update(5.00000)
-        self.wma.update(6.00000)
-        self.wma.update(7.00000)
-        self.wma.update(8.00000)
-        self.wma.update(9.00000)
-        self.wma.update(10.00000)
+        self.wma.update_raw(1.00000)
+        self.wma.update_raw(2.00000)
+        self.wma.update_raw(3.00000)
+        self.wma.update_raw(4.00000)
+        self.wma.update_raw(5.00000)
+        self.wma.update_raw(6.00000)
+        self.wma.update_raw(7.00000)
+        self.wma.update_raw(8.00000)
+        self.wma.update_raw(9.00000)
+        self.wma.update_raw(10.00000)
 
         # Act
         # Assert
@@ -109,17 +109,17 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
     def test_value_at_returns_expected_value(self):
         # Arrange
-        self.wma.update(1.00000)
-        self.wma.update(2.00000)
-        self.wma.update(3.00000)
-        self.wma.update(4.00000)
-        self.wma.update(5.00000)
-        self.wma.update(6.00000)
-        self.wma.update(7.00000)
-        self.wma.update(8.00000)
-        self.wma.update(9.00000)
-        self.wma.update(10.00000)
-        self.wma.update(11.00000)
+        self.wma.update_raw(1.00000)
+        self.wma.update_raw(2.00000)
+        self.wma.update_raw(3.00000)
+        self.wma.update_raw(4.00000)
+        self.wma.update_raw(5.00000)
+        self.wma.update_raw(6.00000)
+        self.wma.update_raw(7.00000)
+        self.wma.update_raw(8.00000)
+        self.wma.update_raw(9.00000)
+        self.wma.update_raw(10.00000)
+        self.wma.update_raw(11.00000)
 
         # Act
         # Assert
@@ -132,7 +132,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.wma.update(point)
+            self.wma.update_raw(point)
             output.append(self.wma.value)
 
         # Assert

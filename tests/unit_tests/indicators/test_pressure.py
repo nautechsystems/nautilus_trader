@@ -57,7 +57,7 @@ class PressureTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         for _i in range(10):
-            self.pressure.update(1.00000, 1.00000, 1.00000, 1000)
+            self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
         # Act
         # Assert
@@ -65,7 +65,7 @@ class PressureTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.pressure.update(1.00000, 1.00000, 1.00000, 1000)
+        self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
         # Act
         # Assert
@@ -73,16 +73,16 @@ class PressureTests(unittest.TestCase):
 
     def test_values_with_higher_inputs_returns_expected_value(self):
         # Arrange
-        self.pressure.update(1.00010, 1.00000, 1.00010, 1000)
-        self.pressure.update(1.00020, 1.00000, 1.00020, 1000)
-        self.pressure.update(1.00030, 1.00000, 1.00030, 1000)
-        self.pressure.update(1.00040, 1.00000, 1.00040, 1000)
-        self.pressure.update(1.00050, 1.00000, 1.00050, 1000)
-        self.pressure.update(1.00060, 1.00000, 1.00060, 1000)
-        self.pressure.update(1.00070, 1.00000, 1.00070, 1000)
-        self.pressure.update(1.00080, 1.00000, 1.00080, 1000)
-        self.pressure.update(1.00090, 1.00000, 1.00090, 1000)
-        self.pressure.update(1.00100, 1.00000, 1.00100, 1000)
+        self.pressure.update_raw(1.00010, 1.00000, 1.00010, 1000)
+        self.pressure.update_raw(1.00020, 1.00000, 1.00020, 1000)
+        self.pressure.update_raw(1.00030, 1.00000, 1.00030, 1000)
+        self.pressure.update_raw(1.00040, 1.00000, 1.00040, 1000)
+        self.pressure.update_raw(1.00050, 1.00000, 1.00050, 1000)
+        self.pressure.update_raw(1.00060, 1.00000, 1.00060, 1000)
+        self.pressure.update_raw(1.00070, 1.00000, 1.00070, 1000)
+        self.pressure.update_raw(1.00080, 1.00000, 1.00080, 1000)
+        self.pressure.update_raw(1.00090, 1.00000, 1.00090, 1000)
+        self.pressure.update_raw(1.00100, 1.00000, 1.00100, 1000)
 
         # Act
         # Assert
@@ -91,16 +91,16 @@ class PressureTests(unittest.TestCase):
 
     def test_values_with_all_lower_inputs_returns_expected_value(self):
         # Arrange
-        self.pressure.update(1.00000, 0.99990, 0.99990, 1000)
-        self.pressure.update(1.00000, 0.99980, 0.99980, 1000)
-        self.pressure.update(1.00000, 0.99970, 0.99970, 1000)
-        self.pressure.update(1.00000, 0.99960, 0.99960, 1000)
-        self.pressure.update(1.00000, 0.99950, 0.99950, 1000)
-        self.pressure.update(1.00000, 0.99940, 0.99940, 1000)
-        self.pressure.update(1.00000, 0.99930, 0.99930, 1000)
-        self.pressure.update(1.00000, 0.99920, 0.99920, 1000)
-        self.pressure.update(1.00000, 0.99910, 0.99910, 1000)
-        self.pressure.update(1.00000, 0.99900, 0.99900, 1000)
+        self.pressure.update_raw(1.00000, 0.99990, 0.99990, 1000)
+        self.pressure.update_raw(1.00000, 0.99980, 0.99980, 1000)
+        self.pressure.update_raw(1.00000, 0.99970, 0.99970, 1000)
+        self.pressure.update_raw(1.00000, 0.99960, 0.99960, 1000)
+        self.pressure.update_raw(1.00000, 0.99950, 0.99950, 1000)
+        self.pressure.update_raw(1.00000, 0.99940, 0.99940, 1000)
+        self.pressure.update_raw(1.00000, 0.99930, 0.99930, 1000)
+        self.pressure.update_raw(1.00000, 0.99920, 0.99920, 1000)
+        self.pressure.update_raw(1.00000, 0.99910, 0.99910, 1000)
+        self.pressure.update_raw(1.00000, 0.99900, 0.99900, 1000)
 
         # Act
         # Assert
@@ -110,7 +110,7 @@ class PressureTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(10):
-            self.pressure.update(1.00000, 1.00000, 1.00000, 1000)
+            self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
         # Act
         self.pressure.reset()  # No assertion errors.
@@ -122,7 +122,7 @@ class PressureTests(unittest.TestCase):
 
         # Act
         for point in BatterySeries.create():
-            self.pressure.update(point, sys.float_info.epsilon, sys.float_info.epsilon, point)
+            self.pressure.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon, point)
             output.append(self.pressure.value)
 
         # Assert

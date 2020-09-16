@@ -24,14 +24,9 @@ from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.market import BarBuilder
 from nautilus_trader.common.market import BarDataWrangler
-from nautilus_trader.common.market import IndicatorUpdater
 from nautilus_trader.common.market import TickBarAggregator
 from nautilus_trader.common.market import TickDataWrangler
 from nautilus_trader.common.market import TimeBarAggregator
-from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
-from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarStructure
@@ -157,101 +152,6 @@ class BarDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(500, len(bars))
-
-
-class IndicatorUpdaterTests(unittest.TestCase):
-
-    def test_can_update_indicator_with_bars(self):
-        # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarDataWrangler(5, 1, data)
-        bars = bar_builder.build_bars_all()
-        ema = ExponentialMovingAverage(10)
-        updater = IndicatorUpdater(ema)
-
-        # Act
-        for bar in bars:
-            updater.update_bar(bar)
-
-        # Assert
-        self.assertEqual(1000, ema.count)
-        self.assertEqual(1.9838850009689002, ema.value)
-
-    def test_can_build_features_from_bars(self):
-        # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarDataWrangler(5, 1, data)
-        bars = bar_builder.build_bars_all()
-        ema = ExponentialMovingAverage(10)
-        updater = IndicatorUpdater(ema)
-
-        # Act
-        result = updater.build_features_bars(bars)
-
-        # Assert
-        self.assertTrue("value" in result)
-        self.assertEqual(1000, len(result["value"]))
-        self.assertEqual(1.9838850009689002, ema.value)
-
-    def test_can_update_ema_indicator(self):
-        # Arrange
-        ema = ExponentialMovingAverage(20)
-        updater = IndicatorUpdater(ema)
-
-        bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
-            Quantity(1000),
-            UNIX_EPOCH)
-
-        # Act
-        updater.update_bar(bar)
-        result = ema.value
-
-        # Assert
-        self.assertEqual(1.00003, result)
-
-    def test_can_update_vwap_indicator(self):
-        # Arrange
-        vwap = VolumeWeightedAveragePrice(20)
-        updater = IndicatorUpdater(vwap)
-
-        bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
-            Quantity(1000),
-            UNIX_EPOCH)
-
-        # Act
-        updater.update_bar(bar)
-        result = vwap.value
-
-        # Assert
-        self.assertEqual(1.00003, result)
-
-    def test_can_update_atr_indicator(self):
-        # Arrange
-        atr = AverageTrueRange(10)
-        updater = IndicatorUpdater(atr, input_method=atr.update)
-
-        bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
-            Quantity(1000),
-            UNIX_EPOCH)
-
-        # Act
-        updater.update_bar(bar)
-        result = atr.value
-
-        # Assert
-        self.assertEqual(2.0000000000131024e-05, result)
 
 
 class BarBuilderTests(unittest.TestCase):

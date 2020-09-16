@@ -56,7 +56,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         for _i in range(100):
-            self.obv.update(1.00000, 1.00010, 10000)
+            self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act
         # Assert
@@ -64,7 +64,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.obv.update(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act
         # Assert
@@ -72,16 +72,16 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
     def test_values_with_higher_inputs_returns_expected_value(self):
         # Arrange
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00000, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
-        self.obv.update(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00000, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
+        self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act
         # Assert
@@ -89,16 +89,16 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
     def test_values_with_lower_inputs_returns_expected_value(self):
         # Arrange
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00010, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
-        self.obv.update(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00010, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
+        self.obv.update_raw(1.00010, 1.00000, 10000)
 
         # Act
         # Assert
@@ -107,7 +107,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(100):
-            self.obv.update(1.00000, 1.00010, 10000)
+            self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act
         self.obv.reset()  # No assertion errors.
@@ -119,7 +119,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
         # Act
         for point in BatterySeries.create():
-            self.obv.update(sys.float_info.epsilon, point, 10000)
+            self.obv.update_raw(sys.float_info.epsilon, point, 10000)
             output.append(self.obv.value)
 
         # Assert

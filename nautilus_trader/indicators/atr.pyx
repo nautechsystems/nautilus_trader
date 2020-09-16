@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
@@ -49,8 +48,7 @@ cdef class AverageTrueRange(Indicator):
         super().__init__(params=[period,
                                  ma_type.name,
                                  use_previous,
-                                 value_floor],
-                         check_inputs=check_inputs)
+                                 value_floor])
 
         self.period = period
         self._moving_average = MovingAverageFactory.create(self.period, ma_type)
@@ -59,55 +57,32 @@ cdef class AverageTrueRange(Indicator):
         self._previous_close = 0.0
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
-            self,
-            double high,
-            double low,
-            double close) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given bar.
 
-        :param high: The high price (> 0).
-        :param low: The low price (> 0).
-        :param close: The close price (> 0).
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.positive(close, "close")
-            Condition.true(high >= low, "high >= low")
-            Condition.true(high >= close, "high >= close")
-            Condition.true(low <= close, "low <= close")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(bar.high.as_double(), bar.low.as_double(), bar.close.as_double())
+
+    cpdef void update_raw(self, double high, double low, double close):
+        """
+        Update the indicator with the given raw values.
+
+        :param high: The high price.
+        :param low: The low price.
+        :param close: The close price.
+        """
         # Calculate average
         if self._use_previous:
             if not self.has_inputs:
                 self._previous_close = close
-            self._moving_average.update(max(self._previous_close, high) - min(low, self._previous_close))
+            self._moving_average.update_raw(max(self._previous_close, high) - min(low, self._previous_close))
             self._previous_close = close
         else:
-            self._moving_average.update(high - low)
-
-        self._floor_value()
-        self._check_initialized()
-
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update_mid(self, double close) except *:
-        """
-        Update the indicator with the given value.
-
-        :param close: The mid close price (> 0).
-        """
-        if self.check_inputs:
-            Condition.positive(close, "close")
-
-        if not self.has_inputs:
-            self._previous_close = close
-
-        # Calculate average
-        self._moving_average.update(max(self._previous_close, close) - min(close, self._previous_close))
-        self._previous_close = close
+            self._moving_average.update_raw(high - low)
 
         self._floor_value()
         self._check_initialized()

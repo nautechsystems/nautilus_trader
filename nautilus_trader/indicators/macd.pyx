@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
@@ -31,23 +29,20 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     def __init__(self,
                  int fast_period,
                  int slow_period,
-                 ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-                 bint check_inputs=False):
+                 ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL):
         """
         Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
         :param fast_period: The period for the fast moving average (> 0).
         :param slow_period: The period for the slow moving average (> 0 & > fast_sma).
         :param ma_type: The moving average type for the calculations.
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
         Condition.true(slow_period > fast_period, "slow_period > fast_period")
         super().__init__(params=[fast_period,
                                  slow_period,
-                                 ma_type.name],
-                         check_inputs=check_inputs)
+                                 ma_type.name])
 
         self._fast_period = fast_period
         self._slow_period = slow_period
@@ -55,15 +50,24 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self._slow_ma = MovingAverageFactory.create(slow_period, ma_type)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double point) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given point value.
+        Update the indicator with the given bar.
 
-        :param point: The price value.
+        :param bar: The update bar.
         """
-        self._fast_ma.update(point)
-        self._slow_ma.update(point)
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double close) except *:
+        """
+        Update the indicator with the given close price.
+
+        :param close: The close price.
+        """
+        self._fast_ma.update_raw(close)
+        self._slow_ma.update_raw(close)
         self.value = self._fast_ma.value - self._slow_ma.value
 
         # Initialization logic

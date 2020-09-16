@@ -50,22 +50,22 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        self.macd.update(1.00000)
-        self.macd.update(2.00000)
-        self.macd.update(3.00000)
-        self.macd.update(4.00000)
-        self.macd.update(5.00000)
-        self.macd.update(6.00000)
-        self.macd.update(7.00000)
-        self.macd.update(8.00000)
-        self.macd.update(9.00000)
-        self.macd.update(10.00000)
-        self.macd.update(11.00000)
-        self.macd.update(12.00000)
-        self.macd.update(13.00000)
-        self.macd.update(14.00000)
-        self.macd.update(15.00000)
-        self.macd.update(16.00000)
+        self.macd.update_raw(1.00000)
+        self.macd.update_raw(2.00000)
+        self.macd.update_raw(3.00000)
+        self.macd.update_raw(4.00000)
+        self.macd.update_raw(5.00000)
+        self.macd.update_raw(6.00000)
+        self.macd.update_raw(7.00000)
+        self.macd.update_raw(8.00000)
+        self.macd.update_raw(9.00000)
+        self.macd.update_raw(10.00000)
+        self.macd.update_raw(11.00000)
+        self.macd.update_raw(12.00000)
+        self.macd.update_raw(13.00000)
+        self.macd.update_raw(14.00000)
+        self.macd.update_raw(15.00000)
+        self.macd.update_raw(16.00000)
 
         # Act
         # Assert
@@ -73,7 +73,7 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.macd.update(1.00000)
+        self.macd.update_raw(1.00000)
 
         # Act
         # Assert
@@ -81,9 +81,9 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
-        self.macd.update(1.00000)
-        self.macd.update(2.00000)
-        self.macd.update(3.00000)
+        self.macd.update_raw(1.00000)
+        self.macd.update_raw(2.00000)
+        self.macd.update_raw(3.00000)
 
         # Act
         # Assert
@@ -91,22 +91,22 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
     def test_value_with_more_inputs_expected_value(self):
         # Arrange
-        self.macd.update(1.00000)
-        self.macd.update(2.00000)
-        self.macd.update(3.00000)
-        self.macd.update(4.00000)
-        self.macd.update(5.00000)
-        self.macd.update(6.00000)
-        self.macd.update(7.00000)
-        self.macd.update(8.00000)
-        self.macd.update(9.00000)
-        self.macd.update(10.00000)
-        self.macd.update(11.00000)
-        self.macd.update(12.00000)
-        self.macd.update(13.00000)
-        self.macd.update(14.00000)
-        self.macd.update(15.00000)
-        self.macd.update(16.00000)
+        self.macd.update_raw(1.00000)
+        self.macd.update_raw(2.00000)
+        self.macd.update_raw(3.00000)
+        self.macd.update_raw(4.00000)
+        self.macd.update_raw(5.00000)
+        self.macd.update_raw(6.00000)
+        self.macd.update_raw(7.00000)
+        self.macd.update_raw(8.00000)
+        self.macd.update_raw(9.00000)
+        self.macd.update_raw(10.00000)
+        self.macd.update_raw(11.00000)
+        self.macd.update_raw(12.00000)
+        self.macd.update_raw(13.00000)
+        self.macd.update_raw(14.00000)
+        self.macd.update_raw(15.00000)
+        self.macd.update_raw(16.00000)
 
         # Act
         # Assert
@@ -114,9 +114,9 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        self.macd.update(1.00020)
-        self.macd.update(1.00030)
-        self.macd.update(1.00050)
+        self.macd.update_raw(1.00020)
+        self.macd.update_raw(1.00030)
+        self.macd.update_raw(1.00050)
 
         # Act
         self.macd.reset()  # No assertion errors.
@@ -128,7 +128,7 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.macd.update(point)
+            self.macd.update_raw(point)
             output.append(self.macd.value)
 
         # Assert

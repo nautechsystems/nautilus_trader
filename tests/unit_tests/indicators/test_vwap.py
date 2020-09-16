@@ -52,14 +52,14 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         # Act
-        self.vwap.update(1.00000, 10000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
         # Assert
         self.assertEqual(True, self.vwap.initialized)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.vwap.update(1.00000, 10000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
         # Act
         # Assert
@@ -68,16 +68,16 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
     def test_values_with_higher_inputs_returns_expected_value(self):
         # Arrange
         # Act
-        self.vwap.update(1.00000, 10000, UNIX_EPOCH)
-        self.vwap.update(1.00010, 11000, UNIX_EPOCH)
-        self.vwap.update(1.00020, 12000, UNIX_EPOCH)
-        self.vwap.update(1.00030, 13000, UNIX_EPOCH)
-        self.vwap.update(1.00040, 14000, UNIX_EPOCH)
-        self.vwap.update(1.00050, 0, UNIX_EPOCH)
-        self.vwap.update(1.00060, 16000, UNIX_EPOCH)
-        self.vwap.update(1.00070, 17000, UNIX_EPOCH)
-        self.vwap.update(1.00080, 18000, UNIX_EPOCH)
-        self.vwap.update(1.00090, 19000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00010, 11000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00020, 12000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00030, 13000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00040, 14000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00050, 0, UNIX_EPOCH)
+        self.vwap.update_raw(1.00060, 16000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00070, 17000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00080, 18000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00090, 19000, UNIX_EPOCH)
 
         # Assert
         self.assertEqual(1.0005076923076923, self.vwap.value)
@@ -85,16 +85,16 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
     def test_values_with_all_lower_inputs_returns_expected_value(self):
         # Arrange
         # Act
-        self.vwap.update(1.00100, 20000, UNIX_EPOCH)
-        self.vwap.update(1.00090, 19000, UNIX_EPOCH)
-        self.vwap.update(1.00080, 18000, UNIX_EPOCH)
-        self.vwap.update(1.00070, 17000, UNIX_EPOCH)
-        self.vwap.update(1.00060, 16000, UNIX_EPOCH)
-        self.vwap.update(1.00050, 15000, UNIX_EPOCH)
-        self.vwap.update(1.00040, 14000, UNIX_EPOCH)
-        self.vwap.update(1.00030, 13000, UNIX_EPOCH)
-        self.vwap.update(1.00020, 12000, UNIX_EPOCH)
-        self.vwap.update(1.00010, 11000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00100, 20000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00090, 19000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00080, 18000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00070, 17000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00060, 16000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00050, 15000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00040, 14000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00030, 13000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00020, 12000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00010, 11000, UNIX_EPOCH)
 
         # Assert
         self.assertEqual(1.0006032258064514, self.vwap.value)
@@ -102,17 +102,17 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
     def test_new_day_resets_values(self):
         # Arrange
         # Act
-        self.vwap.update(1.00000, 10000, UNIX_EPOCH)
-        self.vwap.update(1.00010, 11000, UNIX_EPOCH)
-        self.vwap.update(1.00020, 12000, UNIX_EPOCH)
-        self.vwap.update(1.00030, 13000, UNIX_EPOCH)
-        self.vwap.update(1.00040, 14000, UNIX_EPOCH)
-        self.vwap.update(1.00050, 0, UNIX_EPOCH)
-        self.vwap.update(1.00060, 16000, UNIX_EPOCH)
-        self.vwap.update(1.00070, 17000, UNIX_EPOCH)
-        self.vwap.update(1.00080, 18000, UNIX_EPOCH)
-        self.vwap.update(1.00090, 19000, UNIX_EPOCH)
-        self.vwap.update(1.00000, 10000, UNIX_EPOCH + timedelta(1))
+        self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00010, 11000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00020, 12000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00030, 13000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00040, 14000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00050, 0, UNIX_EPOCH)
+        self.vwap.update_raw(1.00060, 16000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00070, 17000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00080, 18000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00090, 19000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH + timedelta(1))
 
         # Assert
         self.assertEqual(1.00000, self.vwap.value)
@@ -120,8 +120,8 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
     def test_new_day_with_first_volume_zero_returns_price_as_value(self):
         # Arrange
         # Act
-        self.vwap.update(2.00000, 10000, UNIX_EPOCH)
-        self.vwap.update(1.00000, 0, UNIX_EPOCH + timedelta(1))
+        self.vwap.update_raw(2.00000, 10000, UNIX_EPOCH)
+        self.vwap.update_raw(1.00000, 0, UNIX_EPOCH + timedelta(1))
 
         # Assert
         self.assertEqual(1.00000, self.vwap.value)
@@ -129,7 +129,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(100):
-            self.vwap.update(1.00000, 10000, UNIX_EPOCH)
+            self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
         # Act
         self.vwap.reset()  # No assertion errors.
@@ -142,7 +142,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
 
         # Act
         for point in BatterySeries.create():
-            self.vwap.update(point, 10000, UNIX_EPOCH)
+            self.vwap.update_raw(point, 10000, UNIX_EPOCH)
             output.append(self.vwap.value)
 
         # Assert

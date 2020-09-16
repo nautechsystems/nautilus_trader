@@ -56,14 +56,14 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         for _i in range(10):
-            self.ama.update(1.00000)
+            self.ama.update_raw(1.00000)
 
         # Assert
         self.assertEqual(True, self.ama.initialized)
 
     def test_value_with_one_input(self):
         # Arrange
-        self.ama.update(1.00000)
+        self.ama.update_raw(1.00000)
 
         # Act
         # Assert
@@ -71,9 +71,9 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
 
     def test_value_with_three_inputs(self):
         # Arrange
-        self.ama.update(1.00000)
-        self.ama.update(2.00000)
-        self.ama.update(3.00000)
+        self.ama.update_raw(1.00000)
+        self.ama.update_raw(2.00000)
+        self.ama.update_raw(3.00000)
 
         # Act
         # Assert
@@ -82,7 +82,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(1000):
-            self.ama.update(1.00000)
+            self.ama.update_raw(1.00000)
 
         # Act
         self.ama.reset()
@@ -97,7 +97,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.ama.update(point)
+            self.ama.update_raw(point)
             output.append(self.ama.value)
 
         # Assert

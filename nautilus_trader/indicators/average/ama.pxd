@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.efficiency_ratio cimport EfficiencyRatio
 
@@ -27,5 +28,6 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     cdef EfficiencyRatio _efficiency_ratio
     cdef double _prior_value
 
-    cpdef void update(self, double point) except *
+    cpdef void update(self, Bar bar) except *
+    cpdef void update_raw(self, double value) except *
     cpdef void reset(self) except *

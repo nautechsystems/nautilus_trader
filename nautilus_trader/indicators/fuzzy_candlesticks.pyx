@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from libc.math cimport fabs
 
 from collections import deque
@@ -27,6 +25,7 @@ from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
 from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
 from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
 from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class FuzzyCandle:
@@ -122,8 +121,7 @@ cdef class FuzzyCandlesticks(Indicator):
                  double threshold1=0.5,
                  double threshold2=1.0,
                  double threshold3=2.0,
-                 double threshold4=3.0,
-                 bint check_inputs=False):
+                 double threshold4=3.0):
         """
         Initialize a new instance of the FuzzyCandlesticks class.
 
@@ -139,8 +137,6 @@ cdef class FuzzyCandlesticks(Indicator):
             The membership function x threshold3 (> threshold2).
         threshold4 : float
             The membership function x threshold4 (> threshold3).
-        check_inputs : bool
-            The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
         Condition.positive(threshold1, "threshold1")
@@ -151,8 +147,7 @@ cdef class FuzzyCandlesticks(Indicator):
                                  threshold1,
                                  threshold2,
                                  threshold3,
-                                 threshold4],
-                         check_inputs=check_inputs)
+                                 threshold4])
 
         self.period = period
         self._threshold1 = threshold1
@@ -176,31 +171,35 @@ cdef class FuzzyCandlesticks(Indicator):
         self.uw_size = CandleWickSize.NONE
         self.lw_size = CandleWickSize.NONE
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
+    cpdef void update(self, Bar bar) except *:
+        """
+        Update the indicator with the given bar.
+
+        :param bar: The update bar.
+        """
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(
+            bar.open.as_double(),
+            bar.high.as_double(),
+            bar.low.as_double(),
+            bar.close.as_double()
+        )
+
+    cpdef void update_raw(
             self,
             double open_price,
             double high_price,
             double low_price,
-            double close_price) except *:
+            double close_price):
         """
-        Update the indicator with the given values, data should be
-        pre-cleaned to ensure it is not invalid.
+        Update the indicator with the given raw values.
 
-        :param open_price: The open price (> 0).
-        :param high_price: The high price (> 0).
-        :param low_price: The low price (> 0).
-        :param close_price: The close price (> 0).
+        :param open_price: The open price.
+        :param high_price: The high price.
+        :param low_price: The low price.
+        :param close_price: The close price.
         """
-        if self.check_inputs:
-            Condition.positive(open_price, "open_price")
-            Condition.positive(high_price, "high_price")
-            Condition.positive(low_price, "low_price")
-            Condition.positive(close_price, "close_price")
-            Condition.true(high_price >= low_price, "high_price >= low_price")
-            Condition.true(high_price >= close_price, "high_price >= close_price")
-            Condition.true(low_price <= close_price, 'low_price <= close_price')
-
         # Check if this is the first input
         if not self.has_inputs:
             self._last_open = open_price
