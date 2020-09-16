@@ -55,16 +55,16 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        self.rsi.update(1.00000)
-        self.rsi.update(2.00000)
-        self.rsi.update(3.00000)
-        self.rsi.update(4.00000)
-        self.rsi.update(5.00000)
-        self.rsi.update(6.00000)
-        self.rsi.update(7.00000)
-        self.rsi.update(8.00000)
-        self.rsi.update(9.00000)
-        self.rsi.update(10.00000)
+        self.rsi.update_raw(1.00000)
+        self.rsi.update_raw(2.00000)
+        self.rsi.update_raw(3.00000)
+        self.rsi.update_raw(4.00000)
+        self.rsi.update_raw(5.00000)
+        self.rsi.update_raw(6.00000)
+        self.rsi.update_raw(7.00000)
+        self.rsi.update_raw(8.00000)
+        self.rsi.update_raw(9.00000)
+        self.rsi.update_raw(10.00000)
 
         # Act
         # Assert
@@ -72,7 +72,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.rsi.update(1.00000)
+        self.rsi.update_raw(1.00000)
 
         # Act
         # Assert
@@ -80,10 +80,10 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
     def test_value_with_all_higher_inputs_returns_expected_value(self):
         # Arrange
-        self.rsi.update(1.00000)
-        self.rsi.update(2.00000)
-        self.rsi.update(3.00000)
-        self.rsi.update(4.00000)
+        self.rsi.update_raw(1.00000)
+        self.rsi.update_raw(2.00000)
+        self.rsi.update_raw(3.00000)
+        self.rsi.update_raw(4.00000)
 
         # Act
         # Assert
@@ -91,10 +91,10 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
     def test_value_with_all_lower_inputs_returns_expected_value(self):
         # Arrange
-        self.rsi.update(3.00000)
-        self.rsi.update(2.00000)
-        self.rsi.update(1.00000)
-        self.rsi.update(0.50000)
+        self.rsi.update_raw(3.00000)
+        self.rsi.update_raw(2.00000)
+        self.rsi.update_raw(1.00000)
+        self.rsi.update_raw(0.50000)
 
         # Act
         # Assert
@@ -102,12 +102,12 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
     def test_value_with_various_inputs_returns_expected_value(self):
         # Arrange
-        self.rsi.update(3.00000)
-        self.rsi.update(2.00000)
-        self.rsi.update(5.00000)
-        self.rsi.update(6.00000)
-        self.rsi.update(7.00000)
-        self.rsi.update(6.00000)
+        self.rsi.update_raw(3.00000)
+        self.rsi.update_raw(2.00000)
+        self.rsi.update_raw(5.00000)
+        self.rsi.update_raw(6.00000)
+        self.rsi.update_raw(7.00000)
+        self.rsi.update_raw(6.00000)
 
         # Act
         # Assert
@@ -115,14 +115,14 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
     def test_value_at_returns_expected_value(self):
         # Arrange
-        self.rsi.update(3.00000)
-        self.rsi.update(2.00000)
-        self.rsi.update(5.00000)
-        self.rsi.update(6.00000)
-        self.rsi.update(7.00000)
-        self.rsi.update(6.00000)
-        self.rsi.update(6.00000)
-        self.rsi.update(7.00000)
+        self.rsi.update_raw(3.00000)
+        self.rsi.update_raw(2.00000)
+        self.rsi.update_raw(5.00000)
+        self.rsi.update_raw(6.00000)
+        self.rsi.update_raw(7.00000)
+        self.rsi.update_raw(6.00000)
+        self.rsi.update_raw(6.00000)
+        self.rsi.update_raw(7.00000)
 
         # Act
         # Assert
@@ -130,9 +130,9 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        self.rsi.update(1.00020)
-        self.rsi.update(1.00030)
-        self.rsi.update(1.00050)
+        self.rsi.update_raw(1.00020)
+        self.rsi.update_raw(1.00030)
+        self.rsi.update_raw(1.00050)
 
         # Act
         self.rsi.reset()  # No assertion errors.
@@ -144,7 +144,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.rsi.update(point)
+            self.rsi.update_raw(point)
             output.append(self.rsi.value)
 
         # Assert

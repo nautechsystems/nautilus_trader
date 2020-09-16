@@ -15,11 +15,10 @@
 
 from collections import deque
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class SimpleMovingAverage(MovingAverage):
@@ -39,15 +38,24 @@ cdef class SimpleMovingAverage(MovingAverage):
         self._inputs = deque(maxlen=period)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double point) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given point value.
+        Update the indicator with the given bar.
 
-        :param point: The input point value for the update.
+        :param bar: The update bar.
         """
-        self._update(point)
-        self._inputs.append(point)
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double value) except *:
+        """
+        Update the indicator with the given raw value.
+
+        :param value: The update value.
+        """
+        self._update()
+        self._inputs.append(value)
 
         self.value = fast_mean(list(self._inputs))
 

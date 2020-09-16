@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class ExponentialMovingAverage(MovingAverage):
@@ -37,21 +36,30 @@ cdef class ExponentialMovingAverage(MovingAverage):
         self.alpha = 2.0 / (period + 1.0)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double point) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given point value.
+        Update the indicator with the given bar.
 
-        :param point: The input point value for the update.
+        :param bar: The update bar.
+        """
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double value) except *:
+        """
+        Update the indicator with the given raw value.
+
+        :param value: The update value.
         """
         # Check if this is the initial input
         if not self.has_inputs:
-            self._update(point)
-            self.value = point
+            self._update()
+            self.value = value
             return
 
-        self._update(point)
-        self.value = self.alpha * point + ((1.0 - self.alpha) * self.value)
+        self._update()
+        self.value = self.alpha * value + ((1.0 - self.alpha) * self.value)
 
     cpdef void reset(self) except *:
         """

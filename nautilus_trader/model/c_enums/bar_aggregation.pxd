@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum BarStructure:
+cpdef enum BarAggregation:
     UNDEFINED = 0,  # Invalid value
     TICK = 1,
     TICK_IMBALANCE = 2,
@@ -28,7 +28,7 @@ cpdef enum BarStructure:
     DAY = 10,
 
 
-cdef inline str bar_structure_to_string(int value):
+cdef inline str bar_aggregation_to_string(int value):
     if value == 1:
         return 'TICK'
     elif value == 2:
@@ -53,26 +53,26 @@ cdef inline str bar_structure_to_string(int value):
         return 'UNDEFINED'
 
 
-cdef inline BarStructure bar_structure_from_string(str value):
+cdef inline BarAggregation bar_aggregation_from_string(str value):
     if value == 'TICK':
-        return BarStructure.TICK
+        return BarAggregation.TICK
     elif value == 'TICK_IMBALANCE':
-        return BarStructure.TICK_IMBALANCE
+        return BarAggregation.TICK_IMBALANCE
     elif value == 'VOLUME':
-        return BarStructure.VOLUME
+        return BarAggregation.VOLUME
     elif value == 'VOLUME_IMBALANCE':
-        return BarStructure.VOLUME_IMBALANCE
+        return BarAggregation.VOLUME_IMBALANCE
     elif value == 'DOLLAR':
-        return BarStructure.DOLLAR
+        return BarAggregation.DOLLAR
     elif value == 'DOLLAR_IMBALANCE':
-        return BarStructure.DOLLAR_IMBALANCE
+        return BarAggregation.DOLLAR_IMBALANCE
     elif value == 'SECOND':
-        return BarStructure.SECOND
+        return BarAggregation.SECOND
     elif value == 'MINUTE':
-        return BarStructure.MINUTE
+        return BarAggregation.MINUTE
     elif value == 'HOUR':
-        return BarStructure.HOUR
+        return BarAggregation.HOUR
     elif value == 'DAY':
-        return BarStructure.DAY
+        return BarAggregation.DAY
     else:
-        return BarStructure.UNDEFINED
+        return BarAggregation.UNDEFINED

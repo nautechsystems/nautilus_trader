@@ -56,7 +56,7 @@ class HilbertTransformTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Act
         for _i in range(10):
-            self.ht.update(1.00000)
+            self.ht.update_raw(1.00000)
 
         # Assert
         self.assertEqual(True, self.ht.initialized)
@@ -70,7 +70,7 @@ class HilbertTransformTests(unittest.TestCase):
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
         for _i in range(100):
-            self.ht.update(sys.float_info.epsilon)
+            self.ht.update_raw(sys.float_info.epsilon)
 
         # Act
         # Assert
@@ -80,7 +80,7 @@ class HilbertTransformTests(unittest.TestCase):
     def test_value_with_ones_inputs_returns_expected_value(self):
         # Arrange
         for _i in range(100):
-            self.ht.update(1.00000)
+            self.ht.update_raw(1.00000)
 
         # Act
         # Assert
@@ -96,7 +96,7 @@ class HilbertTransformTests(unittest.TestCase):
         for _i in range(9):
             high += 0.00010
             low += 0.00010
-            self.ht.update((high + low) / 2)
+            self.ht.update_raw((high + low) / 2)
 
         # Assert
         self.assertEqual(0.0, self.ht.value_in_phase)
@@ -111,7 +111,7 @@ class HilbertTransformTests(unittest.TestCase):
         for _i in range(1000):
             high += 0.00010
             low += 0.00010
-            self.ht.update((high + low) / 2)
+            self.ht.update_raw((high + low) / 2)
 
         # Assert
         self.assertEqual(0.001327272727272581, self.ht.value_in_phase)
@@ -126,7 +126,7 @@ class HilbertTransformTests(unittest.TestCase):
         for _i in range(1000):
             high -= 0.00010
             low -= 0.00010
-            self.ht.update((high + low) / 2)
+            self.ht.update_raw((high + low) / 2)
 
         # Assert
         self.assertEqual(-0.001327272727272581, self.ht.value_in_phase)
@@ -135,7 +135,7 @@ class HilbertTransformTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(1000):
-            self.ht.update(1.00000)
+            self.ht.update_raw(1.00000)
 
         # Act
         self.ht.reset()
@@ -152,7 +152,7 @@ class HilbertTransformTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.ht.update(point)
+            self.ht.update_raw(point)
             output1.append(self.ht.value_in_phase)
             output2.append(self.ht.value_quad)
 

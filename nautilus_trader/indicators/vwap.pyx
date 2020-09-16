@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -26,13 +24,11 @@ cdef class VolumeWeightedAveragePrice(Indicator):
     An indicator which calculates the volume weighted average price for the day.
     """
 
-    def __init__(self, bint check_inputs=False):
+    def __init__(self):
         """
         Initialize a new instance of the VolumeWeightedAveragePrice class.
-
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
-        super().__init__(params=[], check_inputs=check_inputs)
+        super().__init__(params=[])
 
         self._day = 0
         self._price_volume = 0.0
@@ -42,23 +38,28 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self.has_inputs = False
         self.initialized = False
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
-            self,
-            double price,
-            double volume,
-            datetime timestamp) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given bar.
 
-        :param price: The price (> 0).
-        :param volume: The volume (>= 0).
-        :param timestamp: The timestamp.
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(price, "price")
-            Condition.not_negative(volume, "volume")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(
+            bar.close.as_double(),
+            bar.volume.as_double(),
+            bar.timestamp
+        )
+
+    cpdef void update_raw(self, double price, double volume, datetime timestamp) except *:
+        """
+        Update the indicator with the given raw values.
+
+        :param price: The update price.
+        :param volume: The update volume.
+        :param timestamp: The current timestamp.
+        """
         # On a new day reset the indicator
         if timestamp.day != self._day:
             self.reset()

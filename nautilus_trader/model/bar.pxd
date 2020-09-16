@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
@@ -24,12 +24,12 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class BarSpecification:
     cdef readonly int step
-    cdef readonly BarStructure structure
+    cdef readonly BarAggregation aggregation
     cdef readonly PriceType price_type
 
     @staticmethod
     cdef BarSpecification from_string(str value)
-    cdef str structure_string(self)
+    cdef str aggregation_string(self)
     cdef str price_type_string(self)
     cpdef bint equals(self, BarSpecification other)
     cpdef str to_string(self)
@@ -41,7 +41,7 @@ cdef class BarType:
 
     @staticmethod
     cdef BarType from_string(str value)
-    cdef str structure_string(self)
+    cdef str aggregation_string(self)
     cdef str price_type_string(self)
     cpdef bint equals(self, BarType other)
     cpdef str to_string(self)

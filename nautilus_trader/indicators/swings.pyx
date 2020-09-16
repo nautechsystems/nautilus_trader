@@ -13,12 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
 from cpython.datetime cimport datetime
+
 from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class Swings(Indicator):
@@ -26,15 +27,14 @@ cdef class Swings(Indicator):
     A swing indicator which calculates and stores various swing metrics.
     """
 
-    def __init__(self, int period, bint check_inputs=False):
+    def __init__(self, int period):
         """
         Initialize a new instance of the Swings class.
 
         :param period: The rolling window period for the indicator (> 0).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
-        super().__init__(params=[period], check_inputs=check_inputs)
+        super().__init__(params=[period])
 
         self.period = period
         self._high_inputs = deque(maxlen=self.period)
@@ -56,37 +56,27 @@ cdef class Swings(Indicator):
         self.since_high = 0
         self.since_low = 0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
-            self,
-            double high,
-            double low,
-            datetime timestamp) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given bar.
 
-        :param high: The high price (> 0).
-        :param low: The low price (> 0).
-        :param timestamp: The timestamp.
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.true(high >= low, "high >= low")
+        Condition.not_none(bar, "bar")
 
-        self._calculate_swing_logic(high, low, timestamp)
+        self.update_raw(
+            bar.high.as_double(),
+            bar.low.as_double(),
+            bar.timestamp
+        )
 
-    cdef void _calculate_swing_logic(
-            self,
-            double high,
-            double low,
-            datetime timestamp) except *:
+    cpdef void update_raw(self, double high, double low, datetime timestamp) except *:
         """
-        Calculate the swing logic based on the given prices.
+        Update the indicator with the given raw values.
 
-        :param high: The high price of the last closed bar.
-        :param low: The low price of the last closed bar.
-        :param timestamp: The timestamp of the last closed bar.
+        :param high: The high price.
+        :param low: The low price.
+        :param timestamp: The current timestamp.
         """
         # Update inputs
         self._high_inputs.append(high)

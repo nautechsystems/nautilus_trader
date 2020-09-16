@@ -70,7 +70,9 @@ cdef class TradingStrategy:
     cdef set _take_profit_ids
 
     cdef list _indicators
-    cdef dict _indicator_updaters
+    cdef dict _indicators_for_quotes
+    cdef dict _indicators_for_trades
+    cdef dict _indicators_for_bars
 
     cdef DataClient _data
     cdef ExecutionEngine _exec
@@ -98,7 +100,9 @@ cdef class TradingStrategy:
     cpdef void register_trader(self, TraderId trader_id, Clock clock, UUIDFactory uuid_factory, Logger logger) except *
     cpdef void register_data_client(self, DataClient client) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
-    cpdef void register_indicator(self, data_source, Indicator indicator, update_method=*) except *
+    cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
+    cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *
+    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
     cpdef void register_stop_loss(self, PassiveOrder order)
     cpdef void register_take_profit(self, PassiveOrder order)
 

@@ -34,7 +34,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -44,10 +44,10 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef list _TIME_BARS = [
-    BarStructure.SECOND,
-    BarStructure.MINUTE,
-    BarStructure.HOUR,
-    BarStructure.DAY,
+    BarAggregation.SECOND,
+    BarAggregation.MINUTE,
+    BarAggregation.HOUR,
+    BarAggregation.DAY,
 ]
 
 
@@ -578,9 +578,9 @@ cdef class DataClient:
 
     cdef void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:
-            if bar_type.spec.structure == BarStructure.TICK:
+            if bar_type.spec.aggregation == BarAggregation.TICK:
                 aggregator = TickBarAggregator(bar_type, self.handle_bar, self._log.get_logger())
-            elif bar_type.spec.structure in _TIME_BARS:
+            elif bar_type.spec.aggregation in _TIME_BARS:
                 aggregator = TimeBarAggregator(
                     bar_type=bar_type,
                     handler=self.handle_bar,

@@ -15,12 +15,12 @@
 
 import unittest
 
+from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.trading.analyzers import SpreadAnalyzer
 from tests.test_kit.stubs import UNIX_EPOCH
 
 USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))

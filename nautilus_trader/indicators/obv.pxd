@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
@@ -22,5 +23,6 @@ cdef class OnBalanceVolume(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, double open_price, double close_price, double volume) except *
+    cpdef void update(self, Bar bar) except *
+    cpdef void update_raw(self, double open_price, double close_price, double volume) except *
     cpdef void reset(self) except *

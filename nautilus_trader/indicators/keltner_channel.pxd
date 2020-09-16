@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -28,5 +29,6 @@ cdef class KeltnerChannel(Indicator):
     cdef readonly double value_middle_band
     cdef readonly double value_lower_band
 
-    cpdef void update(self, double high, double low, double close) except *
+    cpdef void update(self, Bar bar) except *
+    cpdef void update_raw(self, double high, double low, double close) except *
     cpdef void reset(self) except *

@@ -15,7 +15,6 @@
 
 from collections import deque
 
-import cython
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
@@ -30,20 +29,18 @@ cdef class HilbertSignalNoiseRatio(Indicator):
     def __init__(self,
                  int period=7,
                  double range_floor=0.00001,
-                 double amplitude_floor=0.001,
-                 bint check_inputs=False):
+                 double amplitude_floor=0.001):
         """
         Initialize a new instance of the HilbertSignalNoiseRatio class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param range_floor: The floor value for range calculations.
         :param amplitude_floor: The floor value for amplitude calculations (0.001 from paper).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(range_floor, "range_floor")
         Condition.not_negative(amplitude_floor, "amplitude_floor")
-        super().__init__(params=[period], check_inputs=check_inputs)
+        super().__init__(params=[period])
 
         self.period = period
         self._i_mult = 0.635
@@ -61,19 +58,23 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         self._amplitude = 0.0
         self.value = 0.0  # The last amplitude value (dB)
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double high, double low) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given price values.
+        Update the indicator with the given bar.
 
-        :param high: The high price (> 0).
-        :param low: The low price (> 0).
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.true(high >= low, "high >= low")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(bar.high.as_double(), bar.low.as_double())
+
+    cpdef void update_raw(self, double high, double low) except *:
+        """
+        Update the indicator with the given raw values.
+
+        :param high: The high price.
+        :param low: The low price.
+        """
         self._inputs.append((high + low) / 2.0)
 
         # Initialization logic

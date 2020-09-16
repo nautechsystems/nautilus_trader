@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
@@ -32,7 +32,7 @@ cdef class BacktestDataContainer:
 
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_quote_ticks(self, Symbol symbol, data) except *
-    cpdef void add_bars(self, Symbol symbol, BarStructure structure, PriceType price_type, data) except *
+    cpdef void add_bars(self, Symbol symbol, BarAggregation aggregation, PriceType price_type, data) except *
     cpdef void check_integrity(self) except *
     cpdef long total_data_size(self)
 

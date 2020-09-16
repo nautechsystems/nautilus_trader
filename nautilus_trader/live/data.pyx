@@ -26,7 +26,7 @@ from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
@@ -322,7 +322,7 @@ cdef class LiveDataClient(DataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.callable(callback, "callback")
 
-        if bar_type.spec.structure == BarStructure.TICK:
+        if bar_type.spec.aggregation == BarAggregation.TICK:
             self._bulk_build_tick_bars(bar_type, from_datetime, to_datetime, limit, callback)
             return
 

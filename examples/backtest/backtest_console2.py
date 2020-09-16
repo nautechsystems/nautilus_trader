@@ -25,7 +25,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.data import TestDataProvider
@@ -38,18 +38,18 @@ if __name__ == "__main__":
     data.add_instrument(USDJPY)
     data.add_bars(
         USDJPY.symbol,
-        BarStructure.MINUTE,
+        BarAggregation.MINUTE,
         PriceType.BID,
         TestDataProvider.usdjpy_1min_bid())
     data.add_bars(
         USDJPY.symbol,
-        BarStructure.MINUTE,
+        BarAggregation.MINUTE,
         PriceType.ASK,
         TestDataProvider.usdjpy_1min_ask())
 
     strategies = [EMACrossFiltered(
         symbol=USDJPY.symbol,
-        bar_spec=BarSpecification(1, BarStructure.MINUTE, PriceType.BID),
+        bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
         risk_bp=10,
         fast_ema=10,
         slow_ema=20,

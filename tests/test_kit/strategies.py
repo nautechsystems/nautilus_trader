@@ -18,6 +18,7 @@ from datetime import timedelta
 from nautilus_trader.core.types import Label
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
@@ -28,7 +29,6 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.trading.analyzers import SpreadAnalyzer
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import ObjectStorer
@@ -131,8 +131,8 @@ class TestStrategy1(TradingStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.register_indicator(self.bar_type, self.ema1, self.ema1.update)
-        self.register_indicator(self.bar_type, self.ema2, self.ema2.update)
+        self.register_indicator_for_bars(self.bar_type, self.ema1)
+        self.register_indicator_for_bars(self.bar_type, self.ema2)
 
         self.position_id = None
 
@@ -249,18 +249,9 @@ class EMACross(TradingStrategy):
         self.quote_currency = instrument.quote_currency
 
         # Register the indicators for updating
-        self.register_indicator(
-            data_source=self.bar_type,
-            indicator=self.fast_ema,
-            update_method=self.fast_ema.update)
-        self.register_indicator(
-            data_source=self.bar_type,
-            indicator=self.slow_ema,
-            update_method=self.slow_ema.update)
-        self.register_indicator(
-            data_source=self.bar_type,
-            indicator=self.atr,
-            update_method=self.atr.update)
+        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
+        self.register_indicator_for_bars(self.bar_type, self.atr)
 
         # Get historical data
         self.get_quote_ticks(self.symbol)

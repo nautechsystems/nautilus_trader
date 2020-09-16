@@ -20,7 +20,7 @@ isort:skip_file
 """
 
 from nautilus_trader.model.c_enums.account_type import AccountType        # noqa F401 (being used)
-from nautilus_trader.model.c_enums.bar_structure import BarStructure      # noqa F401 (being used)
+from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation      # noqa F401 (being used)
 from nautilus_trader.model.c_enums.component_state import ComponentState  # noqa F401 (being used)
 from nautilus_trader.model.c_enums.currency import Currency               # noqa F401 (being used)
 from nautilus_trader.model.c_enums.maker import Maker                     # noqa F401 (being used)

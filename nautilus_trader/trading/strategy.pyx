@@ -27,7 +27,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
-from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
@@ -124,8 +123,10 @@ cdef class TradingStrategy:
         self._take_profit_ids = set()      # type: {OrderId}
 
         # Indicators
-        self._indicators = []          # type: [Indicator]
-        self._indicator_updaters = {}  # type: {Indicator, [IndicatorUpdater]}
+        self._indicators = []                # type: [Indicator]
+        self._indicators_for_quotes = {}  # type: {Symbol, [Indicator]}
+        self._indicators_for_trades = {}  # type: {Symbol, [Indicator]}
+        self._indicators_for_bars = {}    # type: {BarType, [Indicator]}
 
         # Registerable modules
         self._data = None  # Initialized when registered with the data client
@@ -345,37 +346,71 @@ cdef class TradingStrategy:
 
         self._exec = engine
 
-    cpdef void register_indicator(
-            self,
-            data_source,
-            Indicator indicator,
-            update_method: callable=None) except *:
+    cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
         """
-        Register the given indicator with the strategy to receive data of the
-        given data_source (can be a <Symbol> for <QuoteTick> data, or a
-        <BarType> for <Bar> data).
+        Register the given indicator with the strategy to receive quote tick
+        data for the given symbol.
 
-        :param data_source: The data source for updates.
+        :param symbol: The symbol for tick updates.
         :param indicator: The indicator to register.
-        :param update_method: The update method for the indicator.
-        :raises ValueError: If update_method is not of type callable.
         """
-        Condition.not_none(data_source, "data_source")
+        Condition.not_none(symbol, "symbol")
         Condition.not_none(indicator, "indicator")
-        if update_method is None:
-            update_method = indicator.update
-        Condition.callable(update_method, "update_method")
 
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        if data_source not in self._indicator_updaters:
-            self._indicator_updaters[data_source] = []  # type: [IndicatorUpdater]
+        if symbol not in self._indicators_for_quotes:
+            self._indicators_for_quotes[symbol] = []  # type: [Indicator]
 
-        if indicator not in self._indicator_updaters[data_source]:
-            self._indicator_updaters[data_source].append(IndicatorUpdater(indicator, update_method))
+        if indicator not in self._indicators_for_quotes[symbol]:
+            self._indicators_for_quotes[symbol].append(indicator)
         else:
-            self.log.error(f"Indicator {indicator} already registered for {data_source}.")
+            self.log.error(f"Indicator {indicator} already registered for {symbol} quote ticks.")
+
+    cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *:
+        """
+        Register the given indicator with the strategy to receive trade tick
+        data for the given symbol.
+
+        :param symbol: The symbol for tick updates.
+        :param indicator: The indicator to register.
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(indicator, "indicator")
+
+        if indicator not in self._indicators:
+            self._indicators.append(indicator)
+
+        if symbol not in self._indicators_for_trades:
+            self._indicators_for_trades[symbol] = []  # type: [Indicator]
+
+        if indicator not in self._indicators_for_trades[symbol]:
+            self._indicators_for_trades[symbol].append(indicator)
+        else:
+            self.log.error(f"Indicator {indicator} already registered for {symbol} trade ticks.")
+
+    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *:
+        """
+        Register the given indicator with the strategy to receive bar data for the
+        given bar type.
+
+        :param bar_type: The bar type for bar updates.
+        :param indicator: The indicator to register.
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(indicator, "indicator")
+
+        if indicator not in self._indicators:
+            self._indicators.append(indicator)
+
+        if bar_type not in self._indicators_for_bars:
+            self._indicators_for_bars[bar_type] = []  # type: [Indicator]
+
+        if indicator not in self._indicators_for_bars[bar_type]:
+            self._indicators_for_bars[bar_type].append(indicator)
+        else:
+            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
     cpdef void register_stop_loss(self, PassiveOrder order):
         """
@@ -436,11 +471,11 @@ cdef class TradingStrategy:
         Condition.not_none(tick, "tick")
 
         # Update indicators
-        cdef list updaters = self._indicator_updaters.get(tick.symbol)  # Can be None
-        cdef IndicatorUpdater updater
-        if updaters is not None:
-            for updater in updaters:
-                updater.update_tick(tick)
+        cdef list indicators = self._indicators_for_quotes.get(tick.symbol)  # Could be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.update(tick)
 
         if is_historical:
             return  # Don't pass to on_tick()
@@ -481,6 +516,13 @@ cdef class TradingStrategy:
         (won't be passed to on_trade_tick()).
         """
         Condition.not_none(tick, "tick")
+
+        # Update indicators
+        cdef list indicators = self._indicators_for_trades.get(tick.symbol)  # Could be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.update(tick)
 
         if is_historical:
             return  # Don't pass to on_tick()
@@ -525,11 +567,11 @@ cdef class TradingStrategy:
         Condition.not_none(bar, "bar")
 
         # Update indicators
-        cdef list updaters = self._indicator_updaters.get(bar_type)  # Can be None
-        cdef IndicatorUpdater updater
-        if updaters is not None:
-            for updater in updaters:
-                updater.update_bar(bar)
+        cdef list indicators = self._indicators_for_bars.get(bar_type)  # Could be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.update(bar)
 
         if is_historical:
             return  # Don't pass to on_bar()
@@ -1011,9 +1053,9 @@ cdef class TradingStrategy:
 
         :return bool.
         """
-        cdef int i
-        for i in range(len(self._indicators)):
-            if self._indicators[i].initialized is False:
+        cdef Indicator indicator
+        for indicator in self._indicators:
+            if indicator.initialized is False:
                 return False
         return True
 
@@ -1534,15 +1576,14 @@ cdef class TradingStrategy:
         if self.position_id_generator is not None:
             self.position_id_generator.reset()
 
-        self._flattening_ids = set()      # type: {PositionId}
+        self._flattening_ids = set()   # type: {PositionId}
         self._stop_loss_ids = set()    # type: {OrderId}
         self._take_profit_ids = set()  # type: {OrderId}
 
         self._indicators.clear()
-        self._indicator_updaters.clear()
-
-        for indicator in self._indicators:
-            indicator.reset()
+        self._indicators_for_quotes.clear()
+        self._indicators_for_trades.clear()
+        self._indicators_for_bars.clear()
 
         try:
             self.on_reset()
