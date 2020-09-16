@@ -28,8 +28,8 @@ from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_to_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 from nautilus_trader.model.instrument cimport Instrument
@@ -75,7 +75,7 @@ cdef class TickDataWrangler:
         self.instrument = instrument
 
         self.tick_data = []
-        self.resolution = BarStructure.UNDEFINED
+        self.resolution = BarAggregation.UNDEFINED
 
     cpdef void build(self, int symbol_indexer) except *:
         """
@@ -94,26 +94,26 @@ cdef class TickDataWrangler:
             if "ask_size" not in self.tick_data.columns:
                 self.tick_data["ask_size"] = 1.0
 
-            self.resolution = BarStructure.TICK
+            self.resolution = BarAggregation.TICK
             return
 
         # Build ticks from highest resolution bar data
-        if BarStructure.SECOND in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.SECOND]
-            bars_ask = self._data_bars_ask[BarStructure.SECOND]
-            self.resolution = BarStructure.SECOND
-        elif BarStructure.MINUTE in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.MINUTE]
-            bars_ask = self._data_bars_ask[BarStructure.MINUTE]
-            self.resolution = BarStructure.MINUTE
-        elif BarStructure.HOUR in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.HOUR]
-            bars_ask = self._data_bars_ask[BarStructure.HOUR]
-            self.resolution = BarStructure.HOUR
-        elif BarStructure.DAY in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.DAY]
-            bars_ask = self._data_bars_ask[BarStructure.DAY]
-            self.resolution = BarStructure.DAY
+        if BarAggregation.SECOND in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.SECOND]
+            bars_ask = self._data_bars_ask[BarAggregation.SECOND]
+            self.resolution = BarAggregation.SECOND
+        elif BarAggregation.MINUTE in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.MINUTE]
+            bars_ask = self._data_bars_ask[BarAggregation.MINUTE]
+            self.resolution = BarAggregation.MINUTE
+        elif BarAggregation.HOUR in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.HOUR]
+            bars_ask = self._data_bars_ask[BarAggregation.HOUR]
+            self.resolution = BarAggregation.HOUR
+        elif BarAggregation.DAY in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.DAY]
+            bars_ask = self._data_bars_ask[BarAggregation.DAY]
+            self.resolution = BarAggregation.DAY
 
         Condition.not_none(bars_bid, "bars_bid")
         Condition.not_none(bars_ask, "bars_ask")
@@ -561,7 +561,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef datetime get_start_time(self):
         cdef datetime now = self._clock.time_now()
-        if self.bar_type.spec.structure == BarStructure.SECOND:
+        if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -570,7 +570,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 minute=now.minute,
                 second=now.second,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.spec.structure == BarStructure.MINUTE:
+        elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -578,32 +578,32 @@ cdef class TimeBarAggregator(BarAggregator):
                 hour=now.hour,
                 minute=now.minute,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.spec.structure == BarStructure.HOUR:
+        elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day,
                 hour=now.hour,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.spec.structure == BarStructure.DAY:
+        elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day)
         else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.spec.structure)} is not supported.")
+            raise ValueError(f"The BarAggregation {bar_aggregation_to_string(self.bar_type.spec.aggregation)} is not supported.")
 
     cdef timedelta _get_interval(self):
-        if self.bar_type.spec.structure == BarStructure.SECOND:
+        if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return timedelta(seconds=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.structure == BarStructure.MINUTE:
+        elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
             return timedelta(minutes=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.structure == BarStructure.HOUR:
+        elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
             return timedelta(hours=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.structure == BarStructure.DAY:
+        elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return timedelta(days=(1 * self.bar_type.spec.step))
         else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.spec.structure)} is not supported.")
+            raise ValueError(f"The BarAggregation {bar_aggregation_to_string(self.bar_type.spec.aggregation)} is not supported.")
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = self.bar_type.to_string()

@@ -27,7 +27,7 @@ from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.execution import ExecutionEngine
 from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import IdTag
@@ -48,8 +48,8 @@ class TraderTests(unittest.TestCase):
         usdjpy = TestStubs.instrument_usdjpy()
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
-        data.add_bars(usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
+        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
         clock = TestClock()
         uuid_factory = TestUUIDFactory()

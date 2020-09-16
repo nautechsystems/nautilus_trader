@@ -19,9 +19,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_from_string
-from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_to_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_from_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport price_type_from_string
 from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
@@ -37,24 +37,24 @@ cdef class BarSpecification:
     """
     def __init__(self,
                  int step,
-                 BarStructure structure,
+                 BarAggregation aggregation,
                  PriceType price_type):
         """
         Initialize a new instance of the BarSpecification class.
 
         :param step: The bar step (> 0).
-        :param structure: The bar structure.
+        :param aggregation: The bar aggregation.
         :param price_type: The bar price type.
-        :raises ValueError: If the step is not positive (> 0).
-        :raises ValueError: If the price type is LAST.
+        :raises ValueError: If step is not positive (> 0).
+        :raises ValueError: If aggregation is UNDEFINED.
+        :raises ValueError: If price type is UNDEFINED.
         """
         Condition.positive_int(step, 'step')
-        Condition.true(price_type != PriceType.LAST, 'price_type != PriceType.LAST')
-        Condition.not_equal(structure, BarStructure.UNDEFINED, 'structure', 'UNDEFINED')
+        Condition.not_equal(aggregation, BarAggregation.UNDEFINED, 'aggregation', 'UNDEFINED')
         Condition.not_equal(price_type, PriceType.UNDEFINED, 'price_type', 'UNDEFINED')
 
         self.step = step
-        self.structure = structure
+        self.aggregation = aggregation
         self.price_type = price_type
 
     @staticmethod
@@ -72,7 +72,7 @@ cdef class BarSpecification:
 
         return BarSpecification(
             int(split[0]),
-            bar_structure_from_string(split[1]),
+            bar_aggregation_from_string(split[1]),
             price_type_from_string(split[2]))
 
     @staticmethod
@@ -88,13 +88,13 @@ cdef class BarSpecification:
         """
         return BarSpecification.from_string(value)
 
-    cdef str structure_string(self):
+    cdef str aggregation_string(self):
         """
-        Return the bar structure as a string
+        Return the bar aggregation as a string
 
         :return str.
         """
-        return bar_structure_to_string(self.structure)
+        return bar_aggregation_to_string(self.aggregation)
 
     cdef str price_type_string(self):
         """
@@ -111,9 +111,9 @@ cdef class BarSpecification:
         :param other: The other object.
         :return bool.
         """
-        return (self.step == other.step and            # noqa (W504 - easier to read)
-                self.structure == other.structure and  # noqa (W504 - easier to read)
-                self.price_type == other.price_type)   # noqa (W504 - easier to read)
+        return (self.step == other.step and                # noqa (W504 - easier to read)
+                self.aggregation == other.aggregation and  # noqa (W504 - easier to read)
+                self.price_type == other.price_type)       # noqa (W504 - easier to read)
 
     cpdef str to_string(self):
         """
@@ -121,7 +121,7 @@ cdef class BarSpecification:
 
         :return: str.
         """
-        return f"{self.step}-{bar_structure_to_string(self.structure)}-{price_type_to_string(self.price_type)}"
+        return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
 
     def __eq__(self, BarSpecification other) -> bool:
         """
@@ -147,7 +147,7 @@ cdef class BarSpecification:
 
         :return int.
         """
-        return hash((self.step, self.structure, self.price_type))
+        return hash((self.step, self.aggregation, self.price_type))
 
     def __str__(self) -> str:
         """
@@ -200,7 +200,7 @@ cdef class BarType:
         cdef Symbol symbol = Symbol(symbol_split[0], Venue(symbol_split[1]))
         cdef BarSpecification bar_spec = BarSpecification(
             int(split[1]),
-            bar_structure_from_string(split[2]),
+            bar_aggregation_from_string(split[2]),
             price_type_from_string(split[3]))
 
         return BarType(symbol, bar_spec)
@@ -217,13 +217,13 @@ cdef class BarType:
         """
         return BarType.from_string(value)
 
-    cdef str structure_string(self):
+    cdef str aggregation_string(self):
         """
-        Return the bar structure as a string
+        Return the bar aggregation as a string
 
         :return str.
         """
-        return self.spec.structure_string()
+        return self.spec.aggregation_string()
 
     cdef str price_type_string(self):
         """

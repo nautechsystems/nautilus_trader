@@ -20,7 +20,7 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.data import TestDataProvider
@@ -37,8 +37,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.usdjpy = TestStubs.instrument_usdjpy()
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
-        data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
-        data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
+        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
+        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
         config = BacktestConfig(
             tick_capacity=1000,

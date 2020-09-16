@@ -29,7 +29,7 @@ from nautilus_trader.common.market import TickDataWrangler
 from nautilus_trader.common.market import TimeBarAggregator
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -63,15 +63,15 @@ class TickDataWranglerTests(unittest.TestCase):
         self.tick_builder = TickDataWrangler(
             instrument=TestStubs.instrument_usdjpy(),
             data_ticks=tick_data,
-            data_bars_bid={BarStructure.MINUTE: bid_data},
-            data_bars_ask={BarStructure.MINUTE: ask_data})
+            data_bars_bid={BarAggregation.MINUTE: bid_data},
+            data_bars_ask={BarAggregation.MINUTE: ask_data})
 
         # Act
         self.tick_builder.build(0)
         ticks = self.tick_builder.tick_data
 
         # Assert
-        self.assertEqual(BarStructure.TICK, self.tick_builder.resolution)
+        self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
         self.assertEqual(1000, len(ticks))
         self.assertEqual(Timestamp("2013-01-01 22:02:35.907000", tz="UTC"), ticks.iloc[1].name)
 
@@ -82,15 +82,15 @@ class TickDataWranglerTests(unittest.TestCase):
         self.tick_builder = TickDataWrangler(
             instrument=TestStubs.instrument_usdjpy(),
             data_ticks=None,
-            data_bars_bid={BarStructure.MINUTE: bid_data},
-            data_bars_ask={BarStructure.MINUTE: ask_data})
+            data_bars_bid={BarAggregation.MINUTE: bid_data},
+            data_bars_ask={BarAggregation.MINUTE: ask_data})
 
         # Act
         self.tick_builder.build(0)
         tick_data = self.tick_builder.tick_data
 
         # Assert
-        self.assertEqual(BarStructure.MINUTE, self.tick_builder.resolution)
+        self.assertEqual(BarAggregation.MINUTE, self.tick_builder.resolution)
         self.assertEqual(1491252, len(tick_data))
         self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[0].name)
         self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[1].name)
@@ -351,7 +351,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         bar_store = ObjectStorer()
         handler = bar_store.store_2
         symbol = TestStubs.symbol_audusd_fxcm()
-        bar_spec = BarSpecification(3, BarStructure.TICK, PriceType.MID)
+        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
@@ -401,7 +401,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         bar_store = ObjectStorer()
         handler = bar_store.store_2
         symbol = TestStubs.symbol_audusd_fxcm()
-        bar_spec = BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TimeBarAggregator(bar_type, handler, True, TestClock(), TestLogger(clock))
 

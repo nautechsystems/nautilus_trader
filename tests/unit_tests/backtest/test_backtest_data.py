@@ -21,7 +21,7 @@ from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.data import BacktestDataClient
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
@@ -36,8 +36,8 @@ class BacktestDataClientTests(unittest.TestCase):
         self.usdjpy = TestStubs.instrument_usdjpy()
         self.data = BacktestDataContainer()
         self.data.add_instrument(self.usdjpy)
-        self.data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
-        self.data.add_bars(self.usdjpy.symbol, BarStructure.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
+        self.data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
+        self.data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
         self.test_clock = TestClock()
 
     def test_can_initialize_client_with_data(self):

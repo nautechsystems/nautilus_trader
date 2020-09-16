@@ -25,7 +25,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -113,19 +113,19 @@ class TestStubs:
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
-        return BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+        return BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
     @staticmethod
     def bar_spec_1min_ask() -> BarSpecification:
-        return BarSpecification(1, BarStructure.MINUTE, PriceType.ASK)
+        return BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK)
 
     @staticmethod
     def bar_spec_1min_mid() -> BarSpecification:
-        return BarSpecification(1, BarStructure.MINUTE, PriceType.MID)
+        return BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
 
     @staticmethod
     def bar_spec_1sec_mid() -> BarSpecification:
-        return BarSpecification(1, BarStructure.SECOND, PriceType.MID)
+        return BarSpecification(1, BarAggregation.SECOND, PriceType.MID)
 
     @staticmethod
     def bartype_audusd_1min_bid() -> BarType:
