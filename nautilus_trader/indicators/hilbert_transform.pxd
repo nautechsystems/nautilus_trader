@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
@@ -28,5 +29,6 @@ cdef class HilbertTransform(Indicator):
     cdef readonly double value_in_phase
     cdef readonly double value_quad
 
-    cpdef void update(self, double price) except *
+    cpdef void update(self, Bar bar) except *
+    cpdef void update_raw(self, double price) except *
     cpdef void reset(self) except *

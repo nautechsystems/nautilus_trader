@@ -70,7 +70,8 @@ cdef class TradingStrategy:
     cdef set _take_profit_ids
 
     cdef list _indicators
-    cdef dict _indicator_updaters
+    cdef dict _indicator_tick_updaters
+    cdef dict _indicator_bar_updaters
 
     cdef DataClient _data
     cdef ExecutionEngine _exec

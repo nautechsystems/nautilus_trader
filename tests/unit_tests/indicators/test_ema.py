@@ -59,16 +59,16 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        self.ema.update(1.00000)
-        self.ema.update(2.00000)
-        self.ema.update(3.00000)
-        self.ema.update(4.00000)
-        self.ema.update(5.00000)
-        self.ema.update(6.00000)
-        self.ema.update(7.00000)
-        self.ema.update(8.00000)
-        self.ema.update(9.00000)
-        self.ema.update(10.00000)
+        self.ema.update_raw(1.00000)
+        self.ema.update_raw(2.00000)
+        self.ema.update_raw(3.00000)
+        self.ema.update_raw(4.00000)
+        self.ema.update_raw(5.00000)
+        self.ema.update_raw(6.00000)
+        self.ema.update_raw(7.00000)
+        self.ema.update_raw(8.00000)
+        self.ema.update_raw(9.00000)
+        self.ema.update_raw(10.00000)
 
         # Act
 
@@ -77,7 +77,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.ema.update(1.00000)
+        self.ema.update_raw(1.00000)
 
         # Act
         # Assert
@@ -85,9 +85,9 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
-        self.ema.update(1.00000)
-        self.ema.update(2.00000)
-        self.ema.update(3.00000)
+        self.ema.update_raw(1.00000)
+        self.ema.update_raw(2.00000)
+        self.ema.update_raw(3.00000)
 
         # Act
         # Assert
@@ -96,7 +96,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(1000):
-            self.ema.update(1.00000)
+            self.ema.update_raw(1.00000)
 
         # Act
         self.ema.reset()
@@ -111,7 +111,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.ema.update(point)
+            self.ema.update_raw(point)
             output.append(self.ema.value)
 
         # Assert

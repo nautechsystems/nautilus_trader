@@ -20,7 +20,6 @@ cdef class Indicator:
     """
     cdef readonly str name
     cdef readonly str params
-    cdef readonly bint check_inputs
     cdef readonly bint has_inputs
     cdef readonly bint initialized
 

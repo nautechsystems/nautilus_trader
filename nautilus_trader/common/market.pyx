@@ -13,13 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import inspect
-
 import pandas as pd
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from cpython.object cimport PyObject_GetAttr
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.handlers cimport BarHandler
@@ -28,7 +25,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
-from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
@@ -39,7 +35,6 @@ from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport Tick
 
 
 cdef class TickDataWrangler:
@@ -287,188 +282,6 @@ cdef class BarDataWrangler:
                    Price(values[3], self._precision),
                    Quantity(values[4] * self._volume_multiple),
                    timestamp)
-
-
-cdef str _BID = "bid"
-cdef str _ASK = "ask"
-cdef str _POINT = "point"
-cdef str _PRICE = "price"
-cdef str _MID = "mid"
-cdef str _OPEN = "open"
-cdef str _HIGH = "high"
-cdef str _LOW = "low"
-cdef str _CLOSE = "close"
-cdef str _OPEN_PRICE = "open_price"
-cdef str _HIGH_PRICE = "high_price"
-cdef str _LOW_PRICE = "low_price"
-cdef str _CLOSE_PRICE = "close_price"
-cdef str _VOLUME = "volume"
-cdef str _TIMESTAMP = "timestamp"
-
-cdef dict _PARAM_MAP = {
-    _BID: _BID,
-    _ASK: _ASK,
-    _POINT: _CLOSE,
-    _PRICE: _CLOSE,
-    _MID: _CLOSE,
-    _OPEN: _OPEN,
-    _HIGH: _HIGH,
-    _LOW: _LOW,
-    _CLOSE: _CLOSE,
-    _OPEN_PRICE: _OPEN,
-    _HIGH_PRICE: _HIGH,
-    _LOW_PRICE: _LOW,
-    _CLOSE_PRICE: _CLOSE,
-    _VOLUME: _VOLUME,
-    _TIMESTAMP: _TIMESTAMP
-}
-
-
-cdef class IndicatorUpdater:
-    """
-    Provides an adapter for updating an indicator with a bar. When instantiated
-    with an indicator update method, the updater will inspect the method and
-    construct the required parameter list for updates.
-    """
-
-    def __init__(self,
-                 Indicator indicator not None,
-                 input_method: callable=None,
-                 list outputs: [str]=None):
-        """
-        Initialize a new instance of the IndicatorUpdater class.
-
-        :param indicator: The indicator for updating.
-        :param input_method: The indicators input method.
-        :param outputs: The list of the indicators output properties.
-        :raises TypeError: If input_method is not of type callable or None.
-        """
-        Condition.callable_or_none(input_method, "input_method")
-
-        self._indicator = indicator
-        if input_method is None:
-            self._input_method = indicator.update
-        else:
-            self._input_method = input_method
-
-        self._input_params = []
-
-        for param in inspect.signature(self._input_method).parameters:
-            if param == "self":
-                self._include_self = True
-            else:
-                self._input_params.append(_PARAM_MAP[param])
-
-        if outputs is None or not outputs:
-            self._outputs = ["value"]
-        else:
-            self._outputs = outputs
-
-        self.last_update = None
-
-    cpdef void update_tick(self, QuoteTick tick) except *:
-        """
-        Update the indicator with the given tick.
-
-        :param tick: The tick to update with.
-        """
-        Condition.not_none(tick, "tick")
-
-        if self.last_update is not None and tick.timestamp <= self.last_update:
-            return  # Previously handled tick
-
-        # Get input arguments
-        cdef str param
-        cdef list inputs = []
-        for param in self._input_params:
-            if param != _TIMESTAMP:
-                inputs.append(PyObject_GetAttr(tick, param).as_double())
-            else:
-                inputs.append(PyObject_GetAttr(tick, param))
-
-        # Pass inputs to indicator
-        if self._include_self:
-            self._input_method(self._indicator, *inputs)
-        else:
-            self._input_method(*inputs)
-
-        self.last_update = tick.timestamp
-
-    cpdef void update_bar(self, Bar bar) except *:
-        """
-        Update the indicator with the given bar.
-
-        :param bar: The bar to update with.
-        """
-        Condition.not_none(bar, "bar")
-
-        if self.last_update is not None and bar.timestamp <= self.last_update:
-            return  # Previously handled bar
-
-        # Get input arguments
-        cdef str param
-        cdef list inputs = []
-        for param in self._input_params:
-            if param != _TIMESTAMP:
-                inputs.append(PyObject_GetAttr(bar, param).as_double())
-            else:
-                inputs.append(PyObject_GetAttr(bar, param))
-
-        # Pass inputs to indicator
-        if self._include_self:
-            self._input_method(self._indicator, *inputs)
-        else:
-            self._input_method(*inputs)
-
-        self.last_update = bar.timestamp
-
-    cpdef dict build_features_ticks(self, list ticks):
-        """
-        Return a dictionary of output features from the given bars data.
-
-        :return Dict[str, float].
-        """
-        Condition.not_none(ticks, "ticks")
-
-        cdef dict features = {}
-        for output in self._outputs:
-            features[output] = []
-
-        cdef Tick tick
-        cdef tuple value
-        for tick in ticks:
-            self.update_tick(tick)
-            for value in self._get_values():
-                features[value[0]].append(value[1])
-
-        return features
-
-    cpdef dict build_features_bars(self, list bars):
-        """
-        Return a dictionary of output features from the given bars data.
-
-        :return Dict[str, float].
-        """
-        Condition.not_none(bars, "bars")
-
-        cdef dict features = {}
-        for output in self._outputs:
-            features[output] = []
-
-        cdef Bar bar
-        cdef tuple value
-        for bar in bars:
-            self.update_bar(bar)
-            for value in self._get_values():
-                features[value[0]].append(value[1])
-
-        return features
-
-    cdef list _get_values(self):
-        # Create a list of the current indicator outputs. The list will contain
-        # a tuple of the name of the output and the float value. Returns List[(str, float)].
-        cdef str output
-        return [(output, PyObject_GetAttr(self._indicator, output)) for output in self._outputs]
 
 
 cdef class BarBuilder:

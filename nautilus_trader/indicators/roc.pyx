@@ -16,10 +16,9 @@
 from collections import deque
 from math import log
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class RateOfChange(Indicator):
@@ -28,35 +27,37 @@ cdef class RateOfChange(Indicator):
     The return output can be simple or log.
     """
 
-    def __init__(self,
-                 int period,
-                 bint use_log=False,
-                 bint check_inputs=False):
+    def __init__(self, int period, bint use_log=False):
         """
         Initialize a new instance of the RateOfChange class.
 
         :param period: The period for the indicator (> 1).
         :param use_log: Use log returns for value calculation.
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.true(period > 1, "period > 1")
 
-        super().__init__(params=[period], check_inputs=check_inputs)
+        super().__init__(params=[period])
         self.period = period
         self._use_log = use_log
         self._prices = deque(maxlen=self.period)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double price) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given price value.
+        Update the indicator with the given bar.
 
-        :param price: The price value.
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(price, "price")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double price) except *:
+        """
+        Update the indicator with the given price.
+
+        :param price: The update price.
+        """
         self._prices.append(price)
 
         if not self.initialized:

@@ -15,11 +15,11 @@
 
 from collections import deque
 
-import cython
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class HilbertPeriod(Indicator):
@@ -31,15 +31,14 @@ cdef class HilbertPeriod(Indicator):
     (one full cycle) every 10 bars.
     """
 
-    def __init__(self, int period=7, bint check_inputs=False):
+    def __init__(self, int period=7):
         """
         Initialize a new instance of the HilbertPeriod class.
 
         :param period: The rolling window period for the indicator (> 0).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
-        super().__init__(params=[period], check_inputs=check_inputs)
+        super().__init__(params=[period])
 
         self.period = period
         self._i_mult = 0.635
@@ -53,19 +52,23 @@ cdef class HilbertPeriod(Indicator):
         self._delta_phase = []
         self.value = 0  # The last instantaneous period value
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double high, double low) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given price values.
+        Update the indicator with the given bar.
 
-        :param high: The high price (> 0).
-        :param low: The low price (> 0).
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.true(high >= low, "high >= low")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(bar.high.as_double(), bar.low.as_double())
+
+    cpdef void update_raw(self, double high, double low) except *:
+        """
+        Update the indicator with the given raw values.
+
+        :param high: The high price.
+        :param low: The low price.
+        """
         self._inputs.append((high + low) / 2)
 
         # Initialization logic (leave this here)

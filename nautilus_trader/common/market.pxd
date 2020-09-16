@@ -21,7 +21,6 @@ from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
@@ -55,22 +54,6 @@ cdef class BarDataWrangler:
     cpdef list build_bars_from(self, int index=*)
     cpdef list build_bars_range(self, int start=*, int end=*)
     cpdef Bar _build_bar(self, double[:] values, datetime timestamp)
-
-
-cdef class IndicatorUpdater:
-    cdef Indicator _indicator
-    cdef object _input_method
-    cdef list _input_params
-    cdef list _outputs
-    cdef bint _include_self
-
-    cdef readonly datetime last_update
-
-    cpdef void update_tick(self, QuoteTick tick) except *
-    cpdef void update_bar(self, Bar bar) except *
-    cpdef dict build_features_ticks(self, list ticks)
-    cpdef dict build_features_bars(self, list bars)
-    cdef list _get_values(self)
 
 
 cdef class BarBuilder:

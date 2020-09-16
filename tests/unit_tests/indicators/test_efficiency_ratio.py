@@ -56,14 +56,14 @@ class EfficiencyRatioTests(unittest.TestCase):
         # Arrange
         # Act
         for _i in range(10):
-            self.er.update(1.00000)
+            self.er.update_raw(1.00000)
 
         # Assert
         self.assertEqual(True, self.er.initialized)
 
     def test_value_with_one_input(self):
         # Arrange
-        self.er.update(1.00000)
+        self.er.update_raw(1.00000)
 
         # Act
         # Assert
@@ -76,7 +76,7 @@ class EfficiencyRatioTests(unittest.TestCase):
         # Act
         for _i in range(10):
             initial_price += 0.00001
-            self.er.update(initial_price)
+            self.er.update_raw(initial_price)
 
         # Assert
         self.assertEqual(1.0, self.er.value)
@@ -88,18 +88,18 @@ class EfficiencyRatioTests(unittest.TestCase):
         # Act
         for _i in range(10):
             initial_price -= 0.00001
-            self.er.update(initial_price)
+            self.er.update_raw(initial_price)
 
         # Assert
         self.assertEqual(1.0, self.er.value)
 
     def test_value_with_oscillating_inputs_returns_zero(self):
         # Arrange
-        self.er.update(1.00000)
-        self.er.update(1.00010)
-        self.er.update(1.00000)
-        self.er.update(0.99990)
-        self.er.update(1.00000)
+        self.er.update_raw(1.00000)
+        self.er.update_raw(1.00010)
+        self.er.update_raw(1.00000)
+        self.er.update_raw(0.99990)
+        self.er.update_raw(1.00000)
 
         # Act
         # Assert
@@ -107,11 +107,11 @@ class EfficiencyRatioTests(unittest.TestCase):
 
     def test_value_with_half_oscillating_inputs_returns_zero(self):
         # Arrange
-        self.er.update(1.00000)
-        self.er.update(1.00020)
-        self.er.update(1.00010)
-        self.er.update(1.00030)
-        self.er.update(1.00020)
+        self.er.update_raw(1.00000)
+        self.er.update_raw(1.00020)
+        self.er.update_raw(1.00010)
+        self.er.update_raw(1.00030)
+        self.er.update_raw(1.00020)
 
         # Act
         # Assert
@@ -119,13 +119,13 @@ class EfficiencyRatioTests(unittest.TestCase):
 
     def test_value_with_noisy_inputs(self):
         # Arrange
-        self.er.update(1.00000)
-        self.er.update(1.00010)
-        self.er.update(1.00008)
-        self.er.update(1.00007)
-        self.er.update(1.00012)
-        self.er.update(1.00005)
-        self.er.update(1.00015)
+        self.er.update_raw(1.00000)
+        self.er.update_raw(1.00010)
+        self.er.update_raw(1.00008)
+        self.er.update_raw(1.00007)
+        self.er.update_raw(1.00012)
+        self.er.update_raw(1.00005)
+        self.er.update_raw(1.00015)
 
         # Act
         # Assert
@@ -134,7 +134,7 @@ class EfficiencyRatioTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(10):
-            self.er.update(1.00000)
+            self.er.update_raw(1.00000)
 
         # Act
         self.er.reset()
@@ -149,7 +149,7 @@ class EfficiencyRatioTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.er.update(point)
+            self.er.update_raw(point)
             output.append(self.er.value)
 
         # Assert

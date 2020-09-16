@@ -27,7 +27,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
-from nautilus_trader.common.market cimport IndicatorUpdater
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
@@ -124,8 +123,9 @@ cdef class TradingStrategy:
         self._take_profit_ids = set()      # type: {OrderId}
 
         # Indicators
-        self._indicators = []          # type: [Indicator]
-        self._indicator_updaters = {}  # type: {Indicator, [IndicatorUpdater]}
+        self._indicators = []               # type: [Indicator]
+        self._indicator_tick_updaters = {}  # type: {Symbol, [Indicator]}
+        self._indicator_bar_updaters = {}   # type: {BarType, [Indicator]}
 
         # Registerable modules
         self._data = None  # Initialized when registered with the data client
@@ -369,13 +369,20 @@ cdef class TradingStrategy:
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        if data_source not in self._indicator_updaters:
-            self._indicator_updaters[data_source] = []  # type: [IndicatorUpdater]
-
-        if indicator not in self._indicator_updaters[data_source]:
-            self._indicator_updaters[data_source].append(IndicatorUpdater(indicator, update_method))
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {data_source}.")
+        if isinstance(data_source, Symbol):
+            if data_source not in self._indicator_tick_updaters:
+                self._indicator_tick_updaters[data_source] = []  # type: [Indicator]
+            if indicator not in self._indicator_tick_updaters[data_source]:
+                self._indicator_tick_updaters[data_source].append(indicator)
+            else:
+                self.log.error(f"Indicator {indicator} already registered for {data_source}.")
+        elif isinstance(data_source, BarType):
+            if data_source not in self._indicator_bar_updaters:
+                self._indicator_bar_updaters[data_source] = []  # type: [Indicator]
+            if indicator not in self._indicator_bar_updaters[data_source]:
+                self._indicator_bar_updaters[data_source].append(indicator)
+            else:
+                self.log.error(f"Indicator {indicator} already registered for {data_source}.")
 
     cpdef void register_stop_loss(self, PassiveOrder order):
         """
@@ -436,11 +443,11 @@ cdef class TradingStrategy:
         Condition.not_none(tick, "tick")
 
         # Update indicators
-        cdef list updaters = self._indicator_updaters.get(tick.symbol)  # Can be None
-        cdef IndicatorUpdater updater
-        if updaters is not None:
-            for updater in updaters:
-                updater.update_tick(tick)
+        cdef list indicators = self._indicator_tick_updaters.get(tick.symbol)  # Can be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.update(tick)
 
         if is_historical:
             return  # Don't pass to on_tick()
@@ -525,11 +532,11 @@ cdef class TradingStrategy:
         Condition.not_none(bar, "bar")
 
         # Update indicators
-        cdef list updaters = self._indicator_updaters.get(bar_type)  # Can be None
-        cdef IndicatorUpdater updater
-        if updaters is not None:
-            for updater in updaters:
-                updater.update_bar(bar)
+        cdef list indicators = self._indicator_bar_updaters.get(bar_type)  # Can be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.update(bar)
 
         if is_historical:
             return  # Don't pass to on_bar()
@@ -1011,9 +1018,9 @@ cdef class TradingStrategy:
 
         :return bool.
         """
-        cdef int i
-        for i in range(len(self._indicators)):
-            if self._indicators[i].initialized is False:
+        cdef Indicator indicator
+        for indicator in self._indicators:
+            if indicator.initialized is False:
                 return False
         return True
 
@@ -1539,10 +1546,8 @@ cdef class TradingStrategy:
         self._take_profit_ids = set()  # type: {OrderId}
 
         self._indicators.clear()
-        self._indicator_updaters.clear()
-
-        for indicator in self._indicators:
-            indicator.reset()
+        self._indicator_tick_updaters.clear()
+        self._indicator_bar_updaters.clear()
 
         try:
             self.on_reset()
