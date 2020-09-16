@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef class SpreadAnalyzer:
+cdef class SpreadAnalyzer(Indicator):
     """
     Provides various spread analysis metrics.
     """
@@ -44,12 +44,12 @@ cdef class SpreadAnalyzer:
 
         """
         Condition.positive_int(capacity, "capacity")
+        super().__init__(params=[symbol, capacity])
 
         self.symbol = symbol
         self.capacity = capacity
         self.current_spread = 0
         self.average_spread = 0
-        self.initialized = False
 
         self._spreads = deque(maxlen=self.capacity)
 
@@ -72,8 +72,9 @@ cdef class SpreadAnalyzer:
 
         # Check initialization
         if not self.initialized:
+            self._set_has_inputs(True)
             if len(self._spreads) == self.capacity:
-                self.initialized = True
+                self._set_initialized(True)
 
         cdef double spread = tick.ask.as_double() - tick.bid.as_double()
 
@@ -95,7 +96,7 @@ cdef class SpreadAnalyzer:
         All stateful values are reset to their initial value.
 
         """
+        self._reset_base()
         self._spreads.clear()
         self.current_spread = 0
         self.average_spread = 0
-        self.initialized = False
