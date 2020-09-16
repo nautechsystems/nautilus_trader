@@ -127,17 +127,17 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
     def test_values_with_doji_bars_returns_expected_results(self):
         # arrange
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
-        self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
+        self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
 
         # act
         result_candle = self.fc.value
@@ -158,16 +158,16 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
     def test_values_with_stub_bars_returns_expected_results(self):
         # Arrange
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
 
         # Act
         result_candle = self.fc.value
@@ -188,16 +188,16 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
     def test_values_with_down_market_returns_expected_results(self):
         # Arrange
-        self.fc.update(1.00000, 1.00010, 0.99990, 1.00005)
-        self.fc.update(1.00005, 1.00005, 0.99990, 0.99990)
-        self.fc.update(0.99990, 0.99990, 0.99960, 0.99970)
-        self.fc.update(0.99970, 0.99970, 0.99930, 0.99950)
-        self.fc.update(0.99950, 0.99960, 0.99925, 0.99930)
-        self.fc.update(0.99925, 0.99930, 0.99900, 0.99910)
-        self.fc.update(0.99910, 0.99910, 0.99890, 0.99895)
-        self.fc.update(0.99895, 0.99990, 0.99885, 0.99885)
-        self.fc.update(0.99885, 0.99885, 0.99860, 0.99870)
-        self.fc.update(0.99870, 0.99870, 0.99850, 0.99850)
+        self.fc.update_raw(1.00000, 1.00010, 0.99990, 1.00005)
+        self.fc.update_raw(1.00005, 1.00005, 0.99990, 0.99990)
+        self.fc.update_raw(0.99990, 0.99990, 0.99960, 0.99970)
+        self.fc.update_raw(0.99970, 0.99970, 0.99930, 0.99950)
+        self.fc.update_raw(0.99950, 0.99960, 0.99925, 0.99930)
+        self.fc.update_raw(0.99925, 0.99930, 0.99900, 0.99910)
+        self.fc.update_raw(0.99910, 0.99910, 0.99890, 0.99895)
+        self.fc.update_raw(0.99895, 0.99990, 0.99885, 0.99885)
+        self.fc.update_raw(0.99885, 0.99885, 0.99860, 0.99870)
+        self.fc.update_raw(0.99870, 0.99870, 0.99850, 0.99850)
 
         # Act
         result_candle = self.fc.value
@@ -219,7 +219,7 @@ class FuzzyCandlesticksTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(1000):
-            self.fc.update(1.00000, 1.00000, 1.00000, 1.00000)
+            self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
 
         # Act
         self.fc.reset()
@@ -235,7 +235,7 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         # Act
         for point in battery_signal:
             try:
-                self.fc.update(point, point, point, point)
+                self.fc.update_raw(point, point, point, point)
             except Exception as ex:
                 print(ex)
             output.append(self.fc.vector)

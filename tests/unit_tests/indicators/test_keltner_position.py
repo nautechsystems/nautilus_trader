@@ -52,7 +52,7 @@ class KeltnerPositionTests(unittest.TestCase):
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         for _i in range(10):
-            self.kp.update(1.00000, 1.00000, 1.00000)
+            self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act
         # Assert
@@ -70,7 +70,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_zero(self):
         # Arrange
-        self.kp.update(1.00020, 1.00000, 1.00010)
+        self.kp.update_raw(1.00020, 1.00000, 1.00010)
 
         # Act
         # Assert
@@ -80,7 +80,7 @@ class KeltnerPositionTests(unittest.TestCase):
         # Arrange
         # Arrange
         for _i in range(10):
-            self.kp.update(1.00000, 1.00000, 1.00000)
+            self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act
         # Assert
@@ -88,9 +88,9 @@ class KeltnerPositionTests(unittest.TestCase):
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
-        self.kp.update(1.00020, 1.00000, 1.00010)
-        self.kp.update(1.00030, 1.00010, 1.00020)
-        self.kp.update(1.00040, 1.00020, 1.00030)
+        self.kp.update_raw(1.00020, 1.00000, 1.00010)
+        self.kp.update_raw(1.00030, 1.00010, 1.00020)
+        self.kp.update_raw(1.00040, 1.00020, 1.00030)
 
         # Act
         # Assert
@@ -105,7 +105,7 @@ class KeltnerPositionTests(unittest.TestCase):
             high += 0.00010
             low += 0.00010
             close = high
-            self.kp.update(high=high, low=low, close=close)
+            self.kp.update_raw(high=high, low=low, close=close)
 
         # Act
         # Assert
@@ -120,7 +120,7 @@ class KeltnerPositionTests(unittest.TestCase):
             high -= 0.00010
             low -= 0.00010
             close = low
-            self.kp.update(high=high, low=low, close=close)
+            self.kp.update_raw(high=high, low=low, close=close)
 
         # Act
         # Assert
@@ -128,16 +128,16 @@ class KeltnerPositionTests(unittest.TestCase):
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
-        self.kp.update(1.00020, 1.00000, 1.00010)
-        self.kp.update(1.00030, 1.00010, 1.00020)
-        self.kp.update(1.00050, 1.00020, 1.00030)
-        self.kp.update(1.00030, 1.00000, 1.00010)
-        self.kp.update(1.00030, 1.00010, 1.00020)
-        self.kp.update(1.00040, 1.00020, 1.00030)
-        self.kp.update(1.00010, 1.00000, 1.00010)
-        self.kp.update(1.00030, 1.00010, 1.00020)
-        self.kp.update(1.00030, 1.00020, 1.00030)
-        self.kp.update(1.00020, 1.00010, 1.00010)
+        self.kp.update_raw(1.00020, 1.00000, 1.00010)
+        self.kp.update_raw(1.00030, 1.00010, 1.00020)
+        self.kp.update_raw(1.00050, 1.00020, 1.00030)
+        self.kp.update_raw(1.00030, 1.00000, 1.00010)
+        self.kp.update_raw(1.00030, 1.00010, 1.00020)
+        self.kp.update_raw(1.00040, 1.00020, 1.00030)
+        self.kp.update_raw(1.00010, 1.00000, 1.00010)
+        self.kp.update_raw(1.00030, 1.00010, 1.00020)
+        self.kp.update_raw(1.00030, 1.00020, 1.00030)
+        self.kp.update_raw(1.00020, 1.00010, 1.00010)
 
         # Act
         # Assert
@@ -145,9 +145,9 @@ class KeltnerPositionTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        self.kp.update(1.00020, 1.00000, 1.00010)
-        self.kp.update(1.00030, 1.00010, 1.00020)
-        self.kp.update(1.00040, 1.00020, 1.00030)
+        self.kp.update_raw(1.00020, 1.00000, 1.00010)
+        self.kp.update_raw(1.00030, 1.00010, 1.00020)
+        self.kp.update_raw(1.00040, 1.00020, 1.00030)
 
         # Act
         self.kp.reset()  # No assertion errors.
@@ -160,7 +160,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         for point in BatterySeries.create():
-            self.kp.update(point, sys.float_info.epsilon, sys.float_info.epsilon)
+            self.kp.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
             output.append(self.kp.value)
 
         # Assert

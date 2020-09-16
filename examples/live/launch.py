@@ -17,7 +17,7 @@
 from examples.strategies.ema_cross_filtered import EMACrossFiltered
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.enums import BarStructure
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers import Venue
 #   - A NautilusData instance listening on the default ports
 #   - A NautilusExecutor instance listening on the default ports
 
-BAR_SPEC_FX = BarSpecification(1, BarStructure.MINUTE, PriceType.BID)
+BAR_SPEC_FX = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
 symbols_fx = [
     Symbol('AUD/USD', Venue('FXCM')),

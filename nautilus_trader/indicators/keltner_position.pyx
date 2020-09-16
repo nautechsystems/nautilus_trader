@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
 
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.indicators.keltner_channel cimport KeltnerChannel
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class KeltnerPosition(Indicator):
@@ -35,8 +35,7 @@ cdef class KeltnerPosition(Indicator):
                  ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
                  ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
                  bint use_previous=True,
-                 double atr_floor=0.0,
-                 bint check_inputs=False):
+                 double atr_floor=0.0):
         """
         Initialize a new instance of the KeltnerChannel class.
 
@@ -46,7 +45,6 @@ cdef class KeltnerPosition(Indicator):
         :param ma_type_atr: The moving average type for the internal ATR (cannot be None).
         :param use_previous: The boolean flag indicating whether previous price values should be used.
         :param atr_floor: The ATR floor (minimum) output value for the indicator (>= 0).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
         Condition.positive(k_multiplier, "k_multiplier")
@@ -56,8 +54,7 @@ cdef class KeltnerPosition(Indicator):
                                  ma_type.name,
                                  ma_type_atr.name,
                                  use_previous,
-                                 atr_floor],
-                         check_inputs=check_inputs)
+                                 atr_floor])
         self._period = period
         self._kc = KeltnerChannel(
             period,
@@ -82,28 +79,29 @@ cdef class KeltnerPosition(Indicator):
         """
         return self._kc.k_multiplier
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
-            self,
-            double high,
-            double low,
-            double close) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given bar.
 
-        :param high: The high price (> 0).
-        :param low: The low price (> 0).
-        :param close: The close price (> 0).
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.positive(close, "close")
-            Condition.true(high >= low, "high >= low")
-            Condition.true(high >= close, "high >= close")
-            Condition.true(low <= close, "low <= close")
+        Condition.not_none(bar, "bar")
 
-        self._kc.update(high, low, close)
+        self.update_raw(
+            bar.high.as_double(),
+            bar.low.as_double(),
+            bar.close.as_double(),
+        )
+
+    cpdef void update_raw(self, double high, double low, double close) except *:
+        """
+        Update the indicator with the given raw value.
+
+        :param high: The high price.
+        :param low: The low price.
+        :param close: The close price.
+        """
+        self._kc.update_raw(high, low, close)
 
         # Initialization logic
         if not self.initialized:

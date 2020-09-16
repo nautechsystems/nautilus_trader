@@ -15,10 +15,9 @@
 
 from collections import deque
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class EfficiencyRatio(Indicator):
@@ -28,31 +27,36 @@ cdef class EfficiencyRatio(Indicator):
     relation to the volatility, this could be thought of as a proxy for noise.
     """
 
-    def __init__(self, int period, bint check_inputs=False):
+    def __init__(self, int period):
         """
         Initialize a new instance of the EfficiencyRatio class.
 
         :param period: The rolling window period for the indicator (>= 2).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.true(period >= 2, "period >= 2")
-        super().__init__(params=[period], check_inputs=check_inputs)
+        super().__init__(params=[period])
 
         self.period = period
         self._inputs = deque(maxlen=self.period)
         self._deltas = deque(maxlen=self.period)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double price) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given price value.
+        Update the indicator with the given bar.
 
-        :param price: The price (> 0).
+        :param bar: The update bar.
         """
-        if self.check_inputs:
-            Condition.positive(price, "price")
+        Condition.not_none(bar, "bar")
 
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double price) except *:
+        """
+        Update the indicator with the given price.
+
+        :param price: The update price.
+        """
         self._inputs.append(price)
 
         # Initialization logic

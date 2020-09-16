@@ -56,14 +56,14 @@ class RateOfChangeTests(unittest.TestCase):
         # Arrange
         # Act
         for _i in range(3):
-            self.roc.update(1.00000)
+            self.roc.update_raw(1.00000)
 
         # Assert
         self.assertEqual(True, self.roc.initialized)
 
     def test_value_with_one_input(self):
         # Arrange
-        self.roc.update(1.00000)
+        self.roc.update_raw(1.00000)
 
         # Act
         # Assert
@@ -76,18 +76,18 @@ class RateOfChangeTests(unittest.TestCase):
         # Act
         for _i in range(10):
             price += 0.10000
-            self.roc.update(price)
+            self.roc.update_raw(price)
 
         # Assert
         self.assertEqual(0.11111111111111116, self.roc.value)
 
     def test_value_with_oscillating_inputs_returns_zero(self):
         # Arrange
-        self.roc.update(1.00000)
-        self.roc.update(1.00010)
-        self.roc.update(1.00000)
-        self.roc.update(0.99990)
-        self.roc.update(1.00000)
+        self.roc.update_raw(1.00000)
+        self.roc.update_raw(1.00010)
+        self.roc.update_raw(1.00000)
+        self.roc.update_raw(0.99990)
+        self.roc.update_raw(1.00000)
 
         # Act
         # Assert
@@ -95,11 +95,11 @@ class RateOfChangeTests(unittest.TestCase):
 
     def test_value_with_half_oscillating_inputs_returns_zero(self):
         # Arrange
-        self.roc.update(1.00000)
-        self.roc.update(1.00020)
-        self.roc.update(1.00010)
-        self.roc.update(1.00030)
-        self.roc.update(1.00020)
+        self.roc.update_raw(1.00000)
+        self.roc.update_raw(1.00020)
+        self.roc.update_raw(1.00010)
+        self.roc.update_raw(1.00030)
+        self.roc.update_raw(1.00020)
 
         # Act
         # Assert
@@ -107,13 +107,13 @@ class RateOfChangeTests(unittest.TestCase):
 
     def test_value_with_noisy_inputs(self):
         # Arrange
-        self.roc.update(1.00000)
-        self.roc.update(1.00010)
-        self.roc.update(1.00008)
-        self.roc.update(1.00007)
-        self.roc.update(1.00012)
-        self.roc.update(1.00005)
-        self.roc.update(1.00015)
+        self.roc.update_raw(1.00000)
+        self.roc.update_raw(1.00010)
+        self.roc.update_raw(1.00008)
+        self.roc.update_raw(1.00007)
+        self.roc.update_raw(1.00012)
+        self.roc.update_raw(1.00005)
+        self.roc.update_raw(1.00015)
 
         # Act
         # Assert
@@ -123,13 +123,13 @@ class RateOfChangeTests(unittest.TestCase):
         # Arrange
         roc = RateOfChange(3, use_log=True)
 
-        roc.update(1.00000)
-        roc.update(1.00010)
-        roc.update(1.00008)
-        roc.update(1.00007)
-        roc.update(1.00012)
-        roc.update(1.00005)
-        roc.update(1.00015)
+        roc.update_raw(1.00000)
+        roc.update_raw(1.00010)
+        roc.update_raw(1.00008)
+        roc.update_raw(1.00007)
+        roc.update_raw(1.00012)
+        roc.update_raw(1.00005)
+        roc.update_raw(1.00015)
 
         # Act
         # Assert
@@ -138,7 +138,7 @@ class RateOfChangeTests(unittest.TestCase):
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(10):
-            self.roc.update(1.00000)
+            self.roc.update_raw(1.00000)
 
         # Act
         self.roc.reset()
@@ -153,7 +153,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.roc.update(point)
+            self.roc.update_raw(point)
             output.append(self.roc.value)
 
         # Assert

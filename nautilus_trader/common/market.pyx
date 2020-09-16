@@ -13,13 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import inspect
-
 import pandas as pd
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from cpython.object cimport PyObject_GetAttr
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.handlers cimport BarHandler
@@ -28,18 +25,16 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
-from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_structure cimport BarStructure
-from nautilus_trader.model.c_enums.bar_structure cimport bar_structure_to_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport Tick
 
 
 cdef class TickDataWrangler:
@@ -80,7 +75,7 @@ cdef class TickDataWrangler:
         self.instrument = instrument
 
         self.tick_data = []
-        self.resolution = BarStructure.UNDEFINED
+        self.resolution = BarAggregation.UNDEFINED
 
     cpdef void build(self, int symbol_indexer) except *:
         """
@@ -99,26 +94,26 @@ cdef class TickDataWrangler:
             if "ask_size" not in self.tick_data.columns:
                 self.tick_data["ask_size"] = 1.0
 
-            self.resolution = BarStructure.TICK
+            self.resolution = BarAggregation.TICK
             return
 
         # Build ticks from highest resolution bar data
-        if BarStructure.SECOND in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.SECOND]
-            bars_ask = self._data_bars_ask[BarStructure.SECOND]
-            self.resolution = BarStructure.SECOND
-        elif BarStructure.MINUTE in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.MINUTE]
-            bars_ask = self._data_bars_ask[BarStructure.MINUTE]
-            self.resolution = BarStructure.MINUTE
-        elif BarStructure.HOUR in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.HOUR]
-            bars_ask = self._data_bars_ask[BarStructure.HOUR]
-            self.resolution = BarStructure.HOUR
-        elif BarStructure.DAY in self._data_bars_bid:
-            bars_bid = self._data_bars_bid[BarStructure.DAY]
-            bars_ask = self._data_bars_ask[BarStructure.DAY]
-            self.resolution = BarStructure.DAY
+        if BarAggregation.SECOND in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.SECOND]
+            bars_ask = self._data_bars_ask[BarAggregation.SECOND]
+            self.resolution = BarAggregation.SECOND
+        elif BarAggregation.MINUTE in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.MINUTE]
+            bars_ask = self._data_bars_ask[BarAggregation.MINUTE]
+            self.resolution = BarAggregation.MINUTE
+        elif BarAggregation.HOUR in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.HOUR]
+            bars_ask = self._data_bars_ask[BarAggregation.HOUR]
+            self.resolution = BarAggregation.HOUR
+        elif BarAggregation.DAY in self._data_bars_bid:
+            bars_bid = self._data_bars_bid[BarAggregation.DAY]
+            bars_ask = self._data_bars_ask[BarAggregation.DAY]
+            self.resolution = BarAggregation.DAY
 
         Condition.not_none(bars_bid, "bars_bid")
         Condition.not_none(bars_ask, "bars_ask")
@@ -287,188 +282,6 @@ cdef class BarDataWrangler:
                    Price(values[3], self._precision),
                    Quantity(values[4] * self._volume_multiple),
                    timestamp)
-
-
-cdef str _BID = "bid"
-cdef str _ASK = "ask"
-cdef str _POINT = "point"
-cdef str _PRICE = "price"
-cdef str _MID = "mid"
-cdef str _OPEN = "open"
-cdef str _HIGH = "high"
-cdef str _LOW = "low"
-cdef str _CLOSE = "close"
-cdef str _OPEN_PRICE = "open_price"
-cdef str _HIGH_PRICE = "high_price"
-cdef str _LOW_PRICE = "low_price"
-cdef str _CLOSE_PRICE = "close_price"
-cdef str _VOLUME = "volume"
-cdef str _TIMESTAMP = "timestamp"
-
-cdef dict _PARAM_MAP = {
-    _BID: _BID,
-    _ASK: _ASK,
-    _POINT: _CLOSE,
-    _PRICE: _CLOSE,
-    _MID: _CLOSE,
-    _OPEN: _OPEN,
-    _HIGH: _HIGH,
-    _LOW: _LOW,
-    _CLOSE: _CLOSE,
-    _OPEN_PRICE: _OPEN,
-    _HIGH_PRICE: _HIGH,
-    _LOW_PRICE: _LOW,
-    _CLOSE_PRICE: _CLOSE,
-    _VOLUME: _VOLUME,
-    _TIMESTAMP: _TIMESTAMP
-}
-
-
-cdef class IndicatorUpdater:
-    """
-    Provides an adapter for updating an indicator with a bar. When instantiated
-    with an indicator update method, the updater will inspect the method and
-    construct the required parameter list for updates.
-    """
-
-    def __init__(self,
-                 Indicator indicator not None,
-                 input_method: callable=None,
-                 list outputs: [str]=None):
-        """
-        Initialize a new instance of the IndicatorUpdater class.
-
-        :param indicator: The indicator for updating.
-        :param input_method: The indicators input method.
-        :param outputs: The list of the indicators output properties.
-        :raises TypeError: If input_method is not of type callable or None.
-        """
-        Condition.callable_or_none(input_method, "input_method")
-
-        self._indicator = indicator
-        if input_method is None:
-            self._input_method = indicator.update
-        else:
-            self._input_method = input_method
-
-        self._input_params = []
-
-        for param in inspect.signature(self._input_method).parameters:
-            if param == "self":
-                self._include_self = True
-            else:
-                self._input_params.append(_PARAM_MAP[param])
-
-        if outputs is None or not outputs:
-            self._outputs = ["value"]
-        else:
-            self._outputs = outputs
-
-        self.last_update = None
-
-    cpdef void update_tick(self, QuoteTick tick) except *:
-        """
-        Update the indicator with the given tick.
-
-        :param tick: The tick to update with.
-        """
-        Condition.not_none(tick, "tick")
-
-        if self.last_update is not None and tick.timestamp <= self.last_update:
-            return  # Previously handled tick
-
-        # Get input arguments
-        cdef str param
-        cdef list inputs = []
-        for param in self._input_params:
-            if param != _TIMESTAMP:
-                inputs.append(PyObject_GetAttr(tick, param).as_double())
-            else:
-                inputs.append(PyObject_GetAttr(tick, param))
-
-        # Pass inputs to indicator
-        if self._include_self:
-            self._input_method(self._indicator, *inputs)
-        else:
-            self._input_method(*inputs)
-
-        self.last_update = tick.timestamp
-
-    cpdef void update_bar(self, Bar bar) except *:
-        """
-        Update the indicator with the given bar.
-
-        :param bar: The bar to update with.
-        """
-        Condition.not_none(bar, "bar")
-
-        if self.last_update is not None and bar.timestamp <= self.last_update:
-            return  # Previously handled bar
-
-        # Get input arguments
-        cdef str param
-        cdef list inputs = []
-        for param in self._input_params:
-            if param != _TIMESTAMP:
-                inputs.append(PyObject_GetAttr(bar, param).as_double())
-            else:
-                inputs.append(PyObject_GetAttr(bar, param))
-
-        # Pass inputs to indicator
-        if self._include_self:
-            self._input_method(self._indicator, *inputs)
-        else:
-            self._input_method(*inputs)
-
-        self.last_update = bar.timestamp
-
-    cpdef dict build_features_ticks(self, list ticks):
-        """
-        Return a dictionary of output features from the given bars data.
-
-        :return Dict[str, float].
-        """
-        Condition.not_none(ticks, "ticks")
-
-        cdef dict features = {}
-        for output in self._outputs:
-            features[output] = []
-
-        cdef Tick tick
-        cdef tuple value
-        for tick in ticks:
-            self.update_tick(tick)
-            for value in self._get_values():
-                features[value[0]].append(value[1])
-
-        return features
-
-    cpdef dict build_features_bars(self, list bars):
-        """
-        Return a dictionary of output features from the given bars data.
-
-        :return Dict[str, float].
-        """
-        Condition.not_none(bars, "bars")
-
-        cdef dict features = {}
-        for output in self._outputs:
-            features[output] = []
-
-        cdef Bar bar
-        cdef tuple value
-        for bar in bars:
-            self.update_bar(bar)
-            for value in self._get_values():
-                features[value[0]].append(value[1])
-
-        return features
-
-    cdef list _get_values(self):
-        # Create a list of the current indicator outputs. The list will contain
-        # a tuple of the name of the output and the float value. Returns List[(str, float)].
-        cdef str output
-        return [(output, PyObject_GetAttr(self._indicator, output)) for output in self._outputs]
 
 
 cdef class BarBuilder:
@@ -748,7 +561,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef datetime get_start_time(self):
         cdef datetime now = self._clock.time_now()
-        if self.bar_type.spec.structure == BarStructure.SECOND:
+        if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -757,7 +570,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 minute=now.minute,
                 second=now.second,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.spec.structure == BarStructure.MINUTE:
+        elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
             return datetime(
                 year=now.year,
                 month=now.month,
@@ -765,32 +578,32 @@ cdef class TimeBarAggregator(BarAggregator):
                 hour=now.hour,
                 minute=now.minute,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.spec.structure == BarStructure.HOUR:
+        elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day,
                 hour=now.hour,
                 tzinfo=now.tzinfo)
-        elif self.bar_type.spec.structure == BarStructure.DAY:
+        elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day)
         else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.spec.structure)} is not supported.")
+            raise ValueError(f"The BarAggregation {bar_aggregation_to_string(self.bar_type.spec.aggregation)} is not supported.")
 
     cdef timedelta _get_interval(self):
-        if self.bar_type.spec.structure == BarStructure.SECOND:
+        if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return timedelta(seconds=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.structure == BarStructure.MINUTE:
+        elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
             return timedelta(minutes=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.structure == BarStructure.HOUR:
+        elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
             return timedelta(hours=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.structure == BarStructure.DAY:
+        elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return timedelta(days=(1 * self.bar_type.spec.step))
         else:
-            raise ValueError(f"The BarStructure {bar_structure_to_string(self.bar_type.spec.structure)} is not supported.")
+            raise ValueError(f"The BarAggregation {bar_aggregation_to_string(self.bar_type.spec.aggregation)} is not supported.")
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = self.bar_type.to_string()

@@ -44,16 +44,16 @@ class HullMovingAverageTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        self.hma.update(1.00000)
-        self.hma.update(2.00000)
-        self.hma.update(3.00000)
-        self.hma.update(4.00000)
-        self.hma.update(5.00000)
-        self.hma.update(6.00000)
-        self.hma.update(7.00000)
-        self.hma.update(8.00000)
-        self.hma.update(9.00000)
-        self.hma.update(10.00000)
+        self.hma.update_raw(1.00000)
+        self.hma.update_raw(2.00000)
+        self.hma.update_raw(3.00000)
+        self.hma.update_raw(4.00000)
+        self.hma.update_raw(5.00000)
+        self.hma.update_raw(6.00000)
+        self.hma.update_raw(7.00000)
+        self.hma.update_raw(8.00000)
+        self.hma.update_raw(9.00000)
+        self.hma.update_raw(10.00000)
 
         # Act
         # Assert
@@ -61,7 +61,7 @@ class HullMovingAverageTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.hma.update(1.00000)
+        self.hma.update_raw(1.00000)
 
         # Act
         # Assert
@@ -69,9 +69,9 @@ class HullMovingAverageTests(unittest.TestCase):
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
-        self.hma.update(1.00000)
-        self.hma.update(2.00000)
-        self.hma.update(3.00000)
+        self.hma.update_raw(1.00000)
+        self.hma.update_raw(2.00000)
+        self.hma.update_raw(3.00000)
 
         # Act
         # Assert
@@ -79,17 +79,17 @@ class HullMovingAverageTests(unittest.TestCase):
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
-        self.hma.update(1.00000)
-        self.hma.update(1.00010)
-        self.hma.update(1.00020)
-        self.hma.update(1.00030)
-        self.hma.update(1.00040)
-        self.hma.update(1.00050)
-        self.hma.update(1.00040)
-        self.hma.update(1.00030)
-        self.hma.update(1.00020)
-        self.hma.update(1.00010)
-        self.hma.update(1.00000)
+        self.hma.update_raw(1.00000)
+        self.hma.update_raw(1.00010)
+        self.hma.update_raw(1.00020)
+        self.hma.update_raw(1.00030)
+        self.hma.update_raw(1.00040)
+        self.hma.update_raw(1.00050)
+        self.hma.update_raw(1.00040)
+        self.hma.update_raw(1.00030)
+        self.hma.update_raw(1.00020)
+        self.hma.update_raw(1.00010)
+        self.hma.update_raw(1.00000)
 
         # Act
         # Assert
@@ -97,9 +97,9 @@ class HullMovingAverageTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        self.hma.update(1.00020)
-        self.hma.update(1.00030)
-        self.hma.update(1.00050)
+        self.hma.update_raw(1.00020)
+        self.hma.update_raw(1.00030)
+        self.hma.update_raw(1.00050)
 
         # Act
         self.hma.reset()  # No assertion errors.
@@ -111,7 +111,7 @@ class HullMovingAverageTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.hma.update(point)
+            self.hma.update_raw(point)
             output.append(self.hma.value)
 
         # Assert

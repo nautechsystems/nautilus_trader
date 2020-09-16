@@ -13,16 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
-cdef class VolatilityCompressionRatio(Indicator):
+cdef class VolatilityRatio(Indicator):
     """
     An indicator which calculates the ratio of different ranges of volatility.
     Different moving average types can be selected for the inner ATR calculations.
@@ -33,8 +32,7 @@ cdef class VolatilityCompressionRatio(Indicator):
                  int slow_period,
                  ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
                  bint use_previous=True,
-                 double value_floor=0.0,
-                 bint check_inputs=False):
+                 double value_floor=0.0):
         """
         Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
@@ -43,7 +41,6 @@ cdef class VolatilityCompressionRatio(Indicator):
         :param ma_type: The moving average type for the ATR calculations.
         :param use_previous: The boolean flag indicating whether previous price values should be used.
         :param value_floor: The floor (minimum) output value for the indicator (>= 0).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
@@ -53,8 +50,7 @@ cdef class VolatilityCompressionRatio(Indicator):
                                  slow_period,
                                  ma_type.name,
                                  use_previous,
-                                 value_floor],
-                         check_inputs=check_inputs)
+                                 value_floor])
 
         self._fast_period = fast_period
         self._slow_period = slow_period
@@ -62,47 +58,30 @@ cdef class VolatilityCompressionRatio(Indicator):
         self._atr_slow = AverageTrueRange(slow_period, ma_type, use_previous, value_floor)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
-            self,
-            double high,
-            double low,
-            double close) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given bar.
+
+        :param bar: The update bar.
+        """
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(
+            bar.high.as_double(),
+            bar.low.as_double(),
+            bar.close.as_double()
+        )
+
+    cpdef void update_raw(self, double high, double low, double close) except *:
+        """
+        Update the indicator with the given raw value.
 
         :param high: The high price.
         :param low: The low price.
         :param close: The close price.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.positive(close, "close")
-            Condition.true(high >= low, "high >= low")
-            Condition.true(high >= close, "high >= close")
-            Condition.true(low <= close, "low <= close")
-
-        self._atr_fast.update(high, low, close)
-        self._atr_slow.update(high, low, close)
-
-        if self._atr_fast.value > 0.0:  # Guard against divide by zero
-            self.value = self._atr_slow.value / self._atr_fast.value
-
-        self._check_initialized()
-
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update_mid(self, double close) except *:
-        """
-        Update the indicator with the given value.
-
-        :param close: The close price.
-        """
-        if self.check_inputs:
-            Condition.positive(close, "close")
-
-        self._atr_fast.update_mid(close)
-        self._atr_slow.update_mid(close)
+        self._atr_fast.update_raw(high, low, close)
+        self._atr_slow.update_raw(high, low, close)
 
         if self._atr_fast.value > 0.0:  # Guard against divide by zero
             self.value = self._atr_slow.value / self._atr_fast.value

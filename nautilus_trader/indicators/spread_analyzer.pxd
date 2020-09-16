@@ -15,12 +15,12 @@
 
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-cdef class SpreadAnalyzer:
+cdef class SpreadAnalyzer(Indicator):
     cdef readonly Symbol symbol
     cdef readonly int capacity
-    cdef readonly bint initialized
     cdef readonly double current_spread
     cdef readonly double average_spread
 

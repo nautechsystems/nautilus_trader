@@ -15,10 +15,9 @@
 
 from collections import deque
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class OnBalanceVolume(Indicator):
@@ -26,38 +25,45 @@ cdef class OnBalanceVolume(Indicator):
     An indicator which calculates the momentum of relative positive or negative volume.
     """
 
-    def __init__(self, int period=0, bint check_inputs=False):
+    def __init__(self, int period=0):
         """
         Initialize a new instance of the OnBalanceVolume class.
 
         :param period: The period for the indicator, zero indicates no window (>= 0).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.not_negative(period, "period")
-        super().__init__(params=[period], check_inputs=check_inputs)
+        super().__init__(params=[period])
 
         self.period = period
         self._obv = deque(maxlen=None if self.period == 0 else self.period)
         self.value = 0.0
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
+    cpdef void update(self, Bar bar) except *:
+        """
+        Update the indicator with the given bar.
+
+        :param bar: The update bar.
+        """
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(
+            bar.open.as_double(),
+            bar.close.as_double(),
+            bar.volume.as_double()
+        )
+
+    cpdef void update_raw(
             self,
             double open_price,
             double close_price,
             double volume) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given raw values.
 
-        :param open_price: The open price (> 0).
-        :param close_price: The close price (> 0).
-        :param volume: The volume (>= 0).
+        :param open_price: The high price.
+        :param close_price: The low price.
+        :param volume: The close price.
         """
-        if self.check_inputs:
-            Condition.positive(open_price, "open_price")
-            Condition.positive(close_price, "close_price")
-            Condition.not_negative(volume, "volume")
-
         if close_price > open_price:
             self._obv.append(volume)
         elif close_price < open_price:

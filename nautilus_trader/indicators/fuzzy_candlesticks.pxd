@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
 from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
@@ -51,7 +52,13 @@ cdef class FuzzyCandlesticks(Indicator):
     cdef readonly CandleWickSize lw_size
     cdef readonly FuzzyCandle value
 
-    cpdef void update(self, double open_price, double high_price, double low_price, double close_price) except *
+    cpdef void update(self, Bar bar) except *
+    cpdef void update_raw(
+        self,
+        double open_price,
+        double high_price,
+        double low_price,
+        double close_price)
     cpdef void reset(self) except *
 
     cdef CandleDirection _fuzzify_direction(self, double open_price, double close_price)

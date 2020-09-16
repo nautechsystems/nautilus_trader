@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.bar cimport Bar
 
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
@@ -32,55 +32,57 @@ cdef class Pressure(Indicator):
     def __init__(self,
                  int period,
                  ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-                 double atr_floor=0.0,
-                 bint check_inputs=False):
+                 double atr_floor=0.0):
         """
         Initialize a new instance of the Pressure class.
 
         :param period: The period for the indicator (> 0).
         :param ma_type: The moving average type for the calculations.
         :param atr_floor: The ATR floor (minimum) output value for the indicator (>= 0.).
-        :param check_inputs: The flag indicating whether the input values should be checked.
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(atr_floor, "atr_floor")
         super().__init__(params=[period,
                                  ma_type.name,
-                                 atr_floor],
-                         check_inputs=check_inputs)
+                                 atr_floor])
 
         self.period = period
-        self._atr = AverageTrueRange(period, ma_type, atr_floor)
+        self._atr = AverageTrueRange(period, MovingAverageType.EXPONENTIAL, atr_floor)
         self._average_volume = MovingAverageFactory.create(period, ma_type)
         self.value = 0.0
         self.value_cumulative = 0.0  # The sum of the pressure across the period
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(
+    cpdef void update(self, Bar bar) except *:
+        """
+        Update the indicator with the given bar.
+
+        :param bar: The update bar.
+        """
+        Condition.not_none(bar, "bar")
+
+        self.update_raw(
+            bar.high.as_double(),
+            bar.low.as_double(),
+            bar.close.as_double(),
+            bar.volume.as_double()
+        )
+
+    cpdef void update_raw(
             self,
             double high,
             double low,
             double close,
             double volume) except *:
         """
-        Update the indicator with the given values.
+        Update the indicator with the given raw values.
 
-        :param high: The high price (> 0).
-        :param low: The low price (> 0).
-        :param close: The close price (> 0).
-        :param volume: The volume (>= 0).
+        :param high: The high price.
+        :param low: The low price.
+        :param close: The close price.
+        :param volume: The close price.
         """
-        if self.check_inputs:
-            Condition.positive(high, "high")
-            Condition.positive(low, "low")
-            Condition.positive(close, "close")
-            Condition.true(high >= low, "high >= low")
-            Condition.true(high >= close, "high >= close")
-            Condition.true(low <= close, "low <= close")
-            Condition.not_negative(volume, "volume")
-
-        self._atr.update(high, low, close)
-        self._average_volume.update(volume)
+        self._atr.update_raw(high, low, close)
+        self._average_volume.update_raw(volume)
 
         # Initialization logic (do not move this to the bottom as guard against zero will return)
         if not self.initialized:

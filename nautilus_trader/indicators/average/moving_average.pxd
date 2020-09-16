@@ -21,5 +21,5 @@ cdef class MovingAverage(Indicator):
     cdef readonly int count
     cdef readonly double value
 
-    cdef void _update(self, double point) except *
+    cdef void _update(self) except *
     cdef void _reset_ma(self) except *

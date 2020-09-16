@@ -120,17 +120,17 @@ cdef class Trader:
                 raise ValueError(f"The strategy_id {strategy.id} was not unique "
                                  f"(duplicate strategy_ids).")
 
-            # Wire strategy into trader
+            # Wire trader into strategy
             strategy.register_trader(
                 self.id,
                 self._clock.__class__(),  # Clock per strategy
                 self._uuid_factory,
                 self._log.get_logger())
 
-            # Wire strategy into data client
+            # Wire data client into strategy
             self._data_client.register_strategy(strategy)
 
-            # Wire strategy into execution engine
+            # Wire execution engine into strategy
             self._exec_engine.register_strategy(strategy)
 
             # Add to internal strategies

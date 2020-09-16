@@ -62,16 +62,16 @@ class KeltnerChannelTests(unittest.TestCase):
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
 
         # Act
         # Assert
@@ -79,7 +79,7 @@ class KeltnerChannelTests(unittest.TestCase):
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.kc.update(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
 
         # Act
         # Assert
@@ -89,9 +89,9 @@ class KeltnerChannelTests(unittest.TestCase):
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00030, 1.00010, 1.00020)
-        self.kc.update(1.00040, 1.00020, 1.00030)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00030, 1.00010, 1.00020)
+        self.kc.update_raw(1.00040, 1.00020, 1.00030)
 
         # Act
         # Assert
@@ -101,9 +101,9 @@ class KeltnerChannelTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        self.kc.update(1.00020, 1.00000, 1.00010)
-        self.kc.update(1.00030, 1.00010, 1.00020)
-        self.kc.update(1.00040, 1.00020, 1.00030)
+        self.kc.update_raw(1.00020, 1.00000, 1.00010)
+        self.kc.update_raw(1.00030, 1.00010, 1.00020)
+        self.kc.update_raw(1.00040, 1.00020, 1.00030)
 
         # Act
         self.kc.reset()  # No assertion errors.
@@ -117,7 +117,7 @@ class KeltnerChannelTests(unittest.TestCase):
 
         # Act
         for point in BatterySeries.create():
-            self.kc.update(point, sys.float_info.epsilon, sys.float_info.epsilon)
+            self.kc.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
             output1.append(self.kc.value_upper_band)
             output2.append(self.kc.value_middle_band)
             output3.append(self.kc.value_lower_band)

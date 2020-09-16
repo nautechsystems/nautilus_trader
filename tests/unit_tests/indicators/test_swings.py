@@ -59,12 +59,12 @@ class SwingsTests(unittest.TestCase):
 
     def test_can_determine_swing_high(self):
         # arrange
-        self.swings.update(1.00010, 1.00000, UNIX_EPOCH)
-        self.swings.update(1.00030, 1.00010, UNIX_EPOCH)
-        self.swings.update(1.00040, 1.00020, UNIX_EPOCH)
-        self.swings.update(1.00050, 1.00030, UNIX_EPOCH)
-        self.swings.update(1.00060, 1.00040, UNIX_EPOCH)
-        self.swings.update(1.00050, 1.00040, UNIX_EPOCH)
+        self.swings.update_raw(1.00010, 1.00000, UNIX_EPOCH)
+        self.swings.update_raw(1.00030, 1.00010, UNIX_EPOCH)
+        self.swings.update_raw(1.00040, 1.00020, UNIX_EPOCH)
+        self.swings.update_raw(1.00050, 1.00030, UNIX_EPOCH)
+        self.swings.update_raw(1.00060, 1.00040, UNIX_EPOCH)
+        self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
 
         # act
         result = self.swings.high_price
@@ -75,12 +75,12 @@ class SwingsTests(unittest.TestCase):
 
     def test_can_determine_swing_low(self):
         # arrange
-        self.swings.update(1.00100, 1.00080, UNIX_EPOCH)
-        self.swings.update(1.00080, 1.00060, UNIX_EPOCH)
-        self.swings.update(1.00060, 1.00040, UNIX_EPOCH)
-        self.swings.update(1.00040, 1.00030, UNIX_EPOCH)
-        self.swings.update(1.00020, 1.00010, UNIX_EPOCH)
-        self.swings.update(1.00020, 1.00020, UNIX_EPOCH)
+        self.swings.update_raw(1.00100, 1.00080, UNIX_EPOCH)
+        self.swings.update_raw(1.00080, 1.00060, UNIX_EPOCH)
+        self.swings.update_raw(1.00060, 1.00040, UNIX_EPOCH)
+        self.swings.update_raw(1.00040, 1.00030, UNIX_EPOCH)
+        self.swings.update_raw(1.00020, 1.00010, UNIX_EPOCH)
+        self.swings.update_raw(1.00020, 1.00020, UNIX_EPOCH)
 
         # act
         result = self.swings.low_price
@@ -94,7 +94,7 @@ class SwingsTests(unittest.TestCase):
         battery_signal = BatterySeries.create()
 
         for point in battery_signal:
-            self.swings.update(point, point, UNIX_EPOCH)
+            self.swings.update_raw(point, point, UNIX_EPOCH)
 
         # Act
         self.swings.reset()
@@ -107,7 +107,7 @@ class SwingsTests(unittest.TestCase):
         battery_signal = BatterySeries.create()
 
         for point in battery_signal:
-            self.swings.update(point, point, UNIX_EPOCH)
+            self.swings.update_raw(point, point, UNIX_EPOCH)
 
         # Act
         self.swings.reset()
@@ -122,7 +122,7 @@ class SwingsTests(unittest.TestCase):
 
         # Act
         for point in battery_signal:
-            self.swings.update(point + 0.00010, point, UNIX_EPOCH)
+            self.swings.update_raw(point + 0.00010, point, UNIX_EPOCH)
             output.append(self.swings.value)
 
         # Assert

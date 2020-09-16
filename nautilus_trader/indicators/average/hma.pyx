@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
 import numpy as np
 
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.model.bar cimport Bar
+
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
+
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -54,18 +56,27 @@ cdef class HullMovingAverage(MovingAverage):
         w = np.arange(1, size + 1)
         return list(w / sum(w))
 
-    @cython.binding(True)  # Needed for IndicatorUpdater to use this method as a delegate
-    cpdef void update(self, double point) except *:
+    cpdef void update(self, Bar bar) except *:
         """
-        Update the indicator with the given point value.
+        Update the indicator with the given bar.
 
-        :param point: The input point value for the update.
+        :param bar: The update bar.
         """
-        self._update(point)
+        Condition.not_none(bar, "bar")
 
-        self._ma1.update(point)
-        self._ma2.update(point)
-        self._ma3.update(self._ma1.value * 2.0 - self._ma2.value)
+        self.update_raw(bar.close.as_double())
+
+    cpdef void update_raw(self, double value) except *:
+        """
+        Update the indicator with the given raw value.
+
+        :param value: The update value.
+        """
+        self._update()
+
+        self._ma1.update_raw(value)
+        self._ma2.update_raw(value)
+        self._ma3.update_raw(self._ma1.value * 2.0 - self._ma2.value)
 
         self.value = self._ma3.value
 
