@@ -171,7 +171,7 @@ cdef class FuzzyCandlesticks(Indicator):
         self.uw_size = CandleWickSize.NONE
         self.lw_size = CandleWickSize.NONE
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

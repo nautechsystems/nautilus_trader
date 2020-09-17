@@ -58,7 +58,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         self._amplitude = 0.0
         self.value = 0.0  # The last amplitude value (dB)
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

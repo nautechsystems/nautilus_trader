@@ -58,7 +58,7 @@ cdef class VolatilityRatio(Indicator):
         self._atr_slow = AverageTrueRange(slow_period, ma_type, use_previous, value_floor)
         self.value = 0.0
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

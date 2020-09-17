@@ -56,7 +56,7 @@ cdef class HullMovingAverage(MovingAverage):
         w = np.arange(1, size + 1)
         return list(w / sum(w))
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

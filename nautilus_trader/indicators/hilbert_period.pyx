@@ -52,7 +52,7 @@ cdef class HilbertPeriod(Indicator):
         self._delta_phase = []
         self.value = 0  # The last instantaneous period value
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

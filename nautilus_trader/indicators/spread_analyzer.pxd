@@ -26,5 +26,5 @@ cdef class SpreadAnalyzer(Indicator):
 
     cdef object _spreads
 
-    cpdef void update(self, QuoteTick tick) except *
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void reset(self)

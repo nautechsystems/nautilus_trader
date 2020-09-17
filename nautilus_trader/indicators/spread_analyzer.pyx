@@ -53,7 +53,7 @@ cdef class SpreadAnalyzer(Indicator):
 
         self._spreads = deque(maxlen=self.capacity)
 
-    cpdef void update(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
         Update the analyzer with the given quote tick.
 
