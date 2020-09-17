@@ -29,6 +29,6 @@ cdef class HilbertTransform(Indicator):
     cdef readonly double value_in_phase
     cdef readonly double value_quad
 
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double price) except *
     cpdef void reset(self) except *

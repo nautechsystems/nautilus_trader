@@ -47,6 +47,15 @@ cdef class Indicator:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+    cdef void handle_quote_tick(self, QuoteTick tick) except *:
+        raise NotImplemented(f"Cannot handle {repr(tick)} (not implemented in subclass).")
+
+    cdef void handle_trade_tick(self, TradeTick tick) except *:
+        raise NotImplemented(f"Cannot handle {repr(tick)} (not implemented in subclass).")
+
+    cdef void handle_bar(self, Bar bar) except *:
+        raise NotImplemented(f"Cannot handle {repr(bar)} (not implemented in subclass).")
+
     cdef void _set_has_inputs(self, bint setting) except *:
         self.has_inputs = setting
 

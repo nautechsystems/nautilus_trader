@@ -44,7 +44,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         self.weights = weights
         self.value = 0.0
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

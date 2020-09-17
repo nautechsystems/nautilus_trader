@@ -52,7 +52,7 @@ cdef class Pressure(Indicator):
         self.value = 0.0
         self.value_cumulative = 0.0  # The sum of the pressure across the period
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

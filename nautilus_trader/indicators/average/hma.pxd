@@ -28,6 +28,6 @@ cdef class HullMovingAverage(MovingAverage):
     cdef MovingAverage _ma3
 
     cdef list _get_weights(self, int size)
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double value) except *
     cpdef void reset(self) except *

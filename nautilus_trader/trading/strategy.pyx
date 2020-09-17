@@ -475,7 +475,7 @@ cdef class TradingStrategy:
         cdef Indicator indicator
         if indicators is not None:
             for indicator in indicators:
-                indicator.update(tick)
+                indicator.handle_quote_tick(tick)
 
         if is_historical:
             return  # Don't pass to on_tick()
@@ -522,7 +522,7 @@ cdef class TradingStrategy:
         cdef Indicator indicator
         if indicators is not None:
             for indicator in indicators:
-                indicator.update(tick)
+                indicator.handle_trade_tick(tick)
 
         if is_historical:
             return  # Don't pass to on_tick()
@@ -571,7 +571,7 @@ cdef class TradingStrategy:
         cdef Indicator indicator
         if indicators is not None:
             for indicator in indicators:
-                indicator.update(bar)
+                indicator.handle_bar(bar)
 
         if is_historical:
             return  # Don't pass to on_bar()

@@ -84,8 +84,9 @@ time and contained in the `keys\` directory (see below).
 
 To generate a new client key pair from a python console or .py run the following;
 
-    import zmq.auth
     from pathlib import Path
+
+    import zmq.auth
 
     keys_dir = 'path/to/your/keys'
     Path(keys_dir).mkdir(parents=True, exist_ok=True)
