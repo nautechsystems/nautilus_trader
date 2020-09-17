@@ -105,9 +105,9 @@ cdef class TradingStrategy:
         self.trader_id = None  # Initialized when registered with a trader
 
         # Components
-        self.clock = None          # Initialized when registered with a trader
-        self.uuid_factory = None   # Initialized when registered with a trader
-        self.log = None            # Initialized when registered with a trader
+        self.clock = None         # Initialized when registered with a trader
+        self.uuid_factory = None  # Initialized when registered with a trader
+        self.log = None           # Initialized when registered with a trader
 
         # Management flags
         self.flatten_on_stop = flatten_on_stop
@@ -123,10 +123,10 @@ cdef class TradingStrategy:
         self._take_profit_ids = set()      # type: {OrderId}
 
         # Indicators
-        self._indicators = []                # type: [Indicator]
-        self._indicators_for_quotes = {}  # type: {Symbol, [Indicator]}
-        self._indicators_for_trades = {}  # type: {Symbol, [Indicator]}
-        self._indicators_for_bars = {}    # type: {BarType, [Indicator]}
+        self._indicators = []              # type: [Indicator]
+        self._indicators_for_quotes = {}   # type: {Symbol, [Indicator]}
+        self._indicators_for_trades = {}   # type: {Symbol, [Indicator]}
+        self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
         # Registerable modules
         self._data = None  # Initialized when registered with the data client

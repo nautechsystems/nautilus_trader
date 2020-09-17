@@ -13,6 +13,7 @@
 
 import os
 import sys
+import nautilus_trader
 
 sys.path.insert(0, os.path.abspath('../nautilus_trader/core/'))
 
@@ -24,7 +25,7 @@ copyright = '2020, Nautech Systems'
 author = 'Nautech Systems'
 
 # The full version, including alpha/beta/rc tags
-release = '1.28.0b0'
+release = nautilus_trader.__version__
 
 
 # -- General configuration ---------------------------------------------------
@@ -32,7 +33,7 @@ release = '1.28.0b0'
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc', 'numpydoc', 'sphinx.ext.autosummary']
+extensions = ['sphinx.ext.autodoc', 'sphinx.ext.numpydoc', 'sphinx.ext.autosummary']
 
 add_module_names = False
 autosummary_generate = True
