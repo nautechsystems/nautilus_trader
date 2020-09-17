@@ -38,7 +38,7 @@ cdef class OnBalanceVolume(Indicator):
         self._obv = deque(maxlen=None if self.period == 0 else self.period)
         self.value = 0.0
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

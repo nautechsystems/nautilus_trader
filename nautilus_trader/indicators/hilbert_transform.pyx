@@ -47,7 +47,7 @@ cdef class HilbertTransform(Indicator):
         self.value_in_phase = 0.0  # The last in-phase value (real part of complex number) held
         self.value_quad = 0.0      # The last quadrature value (imaginary part of complex number) held
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

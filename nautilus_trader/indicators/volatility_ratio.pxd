@@ -26,7 +26,7 @@ cdef class VolatilityRatio(Indicator):
 
     cdef readonly double value
 
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close) except *
     cdef void _check_initialized(self) except *
     cpdef void reset(self) except *

@@ -27,7 +27,7 @@ cdef class AverageTrueRange(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close)
     cdef void _floor_value(self) except *
     cdef void _check_initialized(self) except *

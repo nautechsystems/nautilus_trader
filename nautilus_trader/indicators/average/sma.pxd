@@ -20,6 +20,6 @@ from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 cdef class SimpleMovingAverage(MovingAverage):
     cdef object _inputs
 
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double value) except *
     cpdef void reset(self) except *

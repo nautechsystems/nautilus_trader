@@ -65,7 +65,7 @@ cdef class KeltnerChannel(Indicator):
         self.value_middle_band = 0.0
         self.value_lower_band = 0.0
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

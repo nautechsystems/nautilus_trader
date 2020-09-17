@@ -22,6 +22,6 @@ cdef class WeightedMovingAverage(MovingAverage):
 
     cdef readonly object weights
 
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double value) except *
     cpdef void reset(self) except *

@@ -52,7 +52,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
             UNIX_EPOCH)
         # Act
         # Assert
-        self.assertRaises(ValueError, analyzer.update, tick)
+        self.assertRaises(ValueError, analyzer.handle_quote_tick, tick)
 
     def test_update_correctly_updates_analyzer(self):
         # Arrange
@@ -74,8 +74,8 @@ class SpreadAnalyzerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        analyzer.update(tick1)
-        analyzer.update(tick2)
+        analyzer.handle_quote_tick(tick1)
+        analyzer.handle_quote_tick(tick2)
 
         # Assert
         self.assertAlmostEqual(6e-05, analyzer.current_spread)
