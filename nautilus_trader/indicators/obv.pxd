@@ -23,6 +23,6 @@ cdef class OnBalanceVolume(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double open_price, double close_price, double volume) except *
     cpdef void reset(self) except *

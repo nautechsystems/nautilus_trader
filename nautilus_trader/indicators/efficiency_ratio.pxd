@@ -24,6 +24,6 @@ cdef class EfficiencyRatio(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void update(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double price) except *
     cpdef void reset(self) except *

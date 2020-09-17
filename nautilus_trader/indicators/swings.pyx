@@ -56,7 +56,7 @@ cdef class Swings(Indicator):
         self.since_high = 0
         self.since_low = 0
 
-    cpdef void update(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 

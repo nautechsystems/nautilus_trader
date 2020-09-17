@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
+
 
 cdef class Indicator:
     """
@@ -23,6 +27,9 @@ cdef class Indicator:
     cdef readonly bint has_inputs
     cdef readonly bint initialized
 
+    cdef void handle_quote_tick(self, QuoteTick tick) except *
+    cdef void handle_trade_tick(self, TradeTick tick) except *
+    cdef void handle_bar(self, Bar bar) except *
     cdef void _set_has_inputs(self, bint setting) except *
     cdef void _set_initialized(self, bint setting) except *
     cdef void _reset_base(self) except *

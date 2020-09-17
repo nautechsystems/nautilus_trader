@@ -249,6 +249,7 @@ class EMACross(TradingStrategy):
         self.quote_currency = instrument.quote_currency
 
         # Register the indicators for updating
+        self.register_indicator_for_quote_ticks(self.symbol, self.spread_analyzer)
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
         self.register_indicator_for_bars(self.bar_type, self.atr)
@@ -269,7 +270,6 @@ class EMACross(TradingStrategy):
         :param tick: The quote tick received.
         """
         # self.log.info(f"Received Tick({tick})")  # For debugging
-        self.spread_analyzer.update(tick)
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
