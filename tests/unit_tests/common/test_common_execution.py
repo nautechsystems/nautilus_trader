@@ -20,8 +20,8 @@ from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.account import Account
-from nautilus_trader.common.execution import ExecutionEngine
-from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
+from nautilus_trader.common.execution_engine import ExecutionEngine
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.core.decimal import Decimal64
