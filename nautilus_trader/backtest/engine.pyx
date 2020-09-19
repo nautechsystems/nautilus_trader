@@ -135,7 +135,7 @@ cdef class BacktestEngine:
                 logger=self.test_logger)
         else:
             raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
-                             f"(can be either \"in-memory\" or \"redis\").")
+                             f"(can be either \"in-memory\" or \"redis\")")
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
