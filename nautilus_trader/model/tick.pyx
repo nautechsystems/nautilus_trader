@@ -68,9 +68,7 @@ cdef class Tick:
 
     cpdef str to_string(self):
         """
-        Return the string representation of this object.
-
-        :return: str.
+Condition.not_none(self._exec, "execution_engine")
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -271,9 +269,7 @@ cdef class QuoteTick(Tick):
 
     cpdef str to_string(self):
         """
-        Return the string representation of this object.
-
-        :return: str.
+Condition.not_none(self._exec, "execution_engine")
         """
         return (f"{self.symbol.to_string()},"
                 f"{self.bid.to_string()},"
