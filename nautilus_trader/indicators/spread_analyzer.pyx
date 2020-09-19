@@ -17,6 +17,7 @@ from collections import deque
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean_iterated
+from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.tick cimport QuoteTick
 
@@ -68,6 +69,7 @@ cdef class SpreadAnalyzer(Indicator):
             If tick.symbol does not equal the analyzers symbol.
 
         """
+        Condition.not_none(tick, "tick")
         Condition.equal(self.symbol, tick.symbol, "symbol", "tick.symbol")
 
         # Check initialization

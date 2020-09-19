@@ -27,6 +27,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountStateEvent
@@ -44,6 +45,7 @@ from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import MatchId
 from nautilus_trader.model.identifiers import OrderIdBroker
 from nautilus_trader.model.identifiers import PositionIdBroker
 from nautilus_trader.model.identifiers import StrategyId
@@ -56,6 +58,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -183,6 +186,26 @@ class TestStubs:
             Price(90.003, 3),
             Quantity(1),
             Quantity(1),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def quote_tick_5decimal(symbol) -> QuoteTick:
+        return QuoteTick(
+            symbol,
+            Price(1.00001, 5),
+            Price(1.00003, 5),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def trade_tick_5decimal(symbol) -> TradeTick:
+        return TradeTick(
+            symbol,
+            Price(1.00001, 5),
+            Quantity(100000, 0),
+            Maker.BUYER,
+            MatchId("123456"),
             UNIX_EPOCH)
 
     @staticmethod

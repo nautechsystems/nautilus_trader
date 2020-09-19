@@ -9,6 +9,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -19,7 +20,6 @@ from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class MaxBidMinAsk(Indicator):
-
     cdef readonly Symbol symbol
     cdef readonly timedelta lookback
 

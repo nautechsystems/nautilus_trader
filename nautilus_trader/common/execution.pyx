@@ -1175,13 +1175,13 @@ cdef class ExecutionEngine:
                               f"{event.order_id.to_string(with_class=True)} "
                               f"not found in cache.")
             return  # Cannot process event further
-        else:
-            try:
-                order.apply(event)
-            except InvalidStateTrigger as ex:
-                self._log.exception(ex)
 
-            self.database.update_order(order)
+        try:
+            order.apply(event)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+
+        self.database.update_order(order)
 
         if isinstance(event, OrderFillEvent):
             self._handle_order_fill(event)
