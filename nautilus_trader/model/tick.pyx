@@ -54,8 +54,15 @@ cdef class Tick:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -148,7 +155,10 @@ cdef class Tick:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.to_string()
 
@@ -157,7 +167,10 @@ cdef class Tick:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
@@ -239,8 +252,15 @@ cdef class QuoteTick(Tick):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return (self.symbol.equals(other.symbol) and      # noqa (W504 - easier to read)
                 self.bid.equals(other.bid) and            # noqa (W504 - easier to read)
@@ -352,8 +372,15 @@ cdef class TradeTick(Tick):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return (self.symbol.equals(other.symbol) and      # noqa (W504 - easier to read)
                 self.price.equals(other.price) and        # noqa (W504 - easier to read)

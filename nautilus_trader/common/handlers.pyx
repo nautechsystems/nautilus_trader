@@ -37,8 +37,15 @@ cdef class Handler:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return PyObject_Repr(self.handle) == PyObject_Repr(other.handle)
 
@@ -46,16 +53,26 @@ cdef class Handler:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.handle != other.handle
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash(self.handle)
 

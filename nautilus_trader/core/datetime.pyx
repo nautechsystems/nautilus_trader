@@ -126,7 +126,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
 
     Returns
     -------
-    pd.Series or pd.DataFrame or None
+    pd.Series, pd.DataFrame or None
 
     """
     if data is None:

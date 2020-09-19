@@ -30,8 +30,8 @@ from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.execution_database cimport InMemoryExecutionDatabase
+from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header

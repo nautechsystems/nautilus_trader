@@ -52,7 +52,10 @@ cdef class AccountInquiry(Command):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.account_id.value}, "
@@ -95,7 +98,10 @@ cdef class SubmitOrder(Command):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
@@ -141,7 +147,10 @@ cdef class SubmitBracketOrder(Command):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
@@ -187,7 +196,10 @@ cdef class ModifyOrder(Command):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
@@ -227,7 +239,10 @@ cdef class CancelOrder(Command):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "

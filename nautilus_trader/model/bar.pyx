@@ -108,8 +108,15 @@ cdef class BarSpecification:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return (self.step == other.step and                # noqa (W504 - easier to read)
                 self.aggregation == other.aggregation and  # noqa (W504 - easier to read)
@@ -127,8 +134,15 @@ cdef class BarSpecification:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
@@ -136,16 +150,26 @@ cdef class BarSpecification:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
-        """"
-         Return the hash code of this object.
+        """
+        Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash((self.step, self.aggregation, self.price_type))
 
@@ -153,7 +177,10 @@ cdef class BarSpecification:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.to_string()
 
@@ -162,7 +189,10 @@ cdef class BarSpecification:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
@@ -237,8 +267,15 @@ cdef class BarType:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.symbol.equals(other.symbol) and self.spec.equals(other.spec)
 
@@ -254,8 +291,15 @@ cdef class BarType:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
@@ -263,16 +307,26 @@ cdef class BarType:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash((self.symbol, self.spec))
 
@@ -280,7 +334,10 @@ cdef class BarType:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.to_string()
 
@@ -289,7 +346,10 @@ cdef class BarType:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
@@ -369,8 +429,15 @@ cdef class Bar:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return (self.open.equals(other.open) and      # noqa (W504)
                 self.high.equals(other.high) and      # noqa (W504)
@@ -438,7 +505,10 @@ cdef class Bar:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.to_string()
 
@@ -447,6 +517,9 @@ cdef class Bar:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"

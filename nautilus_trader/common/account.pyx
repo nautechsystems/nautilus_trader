@@ -55,8 +55,15 @@ cdef class Account:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(other, "other")
 
@@ -66,18 +73,28 @@ cdef class Account:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(other, "other")
 
         return not self.__eq__(other)
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash(self.id.value)
 
@@ -85,7 +102,10 @@ cdef class Account:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"Account({self.id.value})"
 
@@ -94,7 +114,10 @@ cdef class Account:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"
 
