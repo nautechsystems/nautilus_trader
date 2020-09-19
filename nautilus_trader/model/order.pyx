@@ -134,8 +134,15 @@ cdef class Order:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.id.equals(other.id)
 
@@ -236,8 +243,15 @@ cdef class Order:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
@@ -245,16 +259,26 @@ cdef class Order:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash(self.id)
 
@@ -262,7 +286,10 @@ cdef class Order:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"id={self.id.value}, "
@@ -274,7 +301,10 @@ cdef class Order:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -282,7 +312,10 @@ cdef class Order:
         """
         Return the orders status as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         raise NotImplemented("method must be implemented in subclass")
 
@@ -290,7 +323,10 @@ cdef class Order:
         """
         Return the order state as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self._fsm.state_as_string()
 
@@ -780,8 +816,15 @@ cdef class BracketOrder:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.id.equals(other.id)
 
@@ -789,8 +832,15 @@ cdef class BracketOrder:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
@@ -798,16 +848,26 @@ cdef class BracketOrder:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash(self.id)
 
@@ -815,7 +875,10 @@ cdef class BracketOrder:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         cdef str take_profit_price = "NONE" if self.take_profit is None or self.take_profit.price is None else self.take_profit.price.to_string()
         return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
@@ -825,6 +888,9 @@ cdef class BracketOrder:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"

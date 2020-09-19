@@ -21,9 +21,17 @@ cdef class ObjectCache:
     Provides an object cache with strings as keys.
     """
 
-    def __init__(self, type type_value not None, parser not None):
+    def __init__(self, type type_value not None, parser not None: callable):
         """
         Initialize a new instance of the ObjectCache class.
+
+        Parameters
+        ----------
+        type_value : type
+            The type of the cached objects.
+        parser : callable
+            The parser function to created an object for the cache.
+
         """
         self.type_key = str
         self.type_value = type_value
@@ -35,9 +43,16 @@ cdef class ObjectCache:
         Return the cached object for the given key otherwise cache and return
         the parsed key.
 
-        :param key: The key to check.
+        Parameters
+        ----------
+        key : str
+            The key of the cached object to get.
 
-        :return object.
+        Returns
+        -------
+        object
+            The cached object.
+
         """
         Condition.valid_string(key, "key")
 
@@ -52,7 +67,10 @@ cdef class ObjectCache:
         """
         Return a list of the keys held in the cache.
 
-        :return: List[str].
+        Returns
+        -------
+        list of str
+
         """
         return list(self._cache.keys())
 

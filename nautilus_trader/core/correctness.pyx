@@ -46,7 +46,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the condition predicate is False.
+            If condition predicate is False.
 
         """
         if predicate:
@@ -75,7 +75,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the condition predicate is True.
+            If condition predicate is True.
 
         """
         if not predicate:
@@ -104,7 +104,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the argument is not None.
+            If argument is not None.
 
         """
         if argument is None:
@@ -133,7 +133,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the argument is None.
+            If argument is None.
 
         """
         if argument is not None:
@@ -168,7 +168,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If the object is not of the expected type.
+            If object is not of the expected type.
 
         """
         if isinstance(argument, expected):
@@ -204,7 +204,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If the object is not None and not of the expected type.
+            If object is not None and not of the expected type.
 
         """
         if argument is None:
@@ -229,7 +229,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If the argument is not callable.
+            If argument is not callable.
 
         """
         if PyCallable_Check(argument):
@@ -258,7 +258,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If the argument is not None and not callable.
+            If argument is not None and not callable.
 
         """
         if argument is None:
@@ -292,7 +292,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the objects are not equal.
+            If objects are not equal.
 
         """
         if argument1 == argument2:
@@ -332,7 +332,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the objects are equal.
+            If objects are equal.
 
         """
         if object1 != object2:
@@ -368,7 +368,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-             If the list is not empty and contains a type other than the expected type.
+             If list is not empty and contains a type other than the expected type.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -409,8 +409,8 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If the dictionary is not empty and contains a key type other than the key_type.
-            If the dictionary is not empty and contains a value type other than the value_type.
+            If dictionary is not empty and contains a key type other than the key_type.
+            If dictionary is not empty and contains a value type other than the value_type.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -443,7 +443,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the element is not contained in the collection.
+            If element is not contained in the collection.
 
         """
         Condition.not_none(collection, param2, ex_type)
@@ -484,7 +484,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If the element is contained in the collection.
+            If element is contained in the collection.
 
         """
         Condition.not_none(collection, param2, ex_type)
@@ -516,7 +516,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-             If the collection is empty.
+             If collection is empty.
 
         """
         Condition.not_none(collection, param, ex_type)
@@ -547,7 +547,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-             If the collection is not empty.
+             If collection is not empty.
 
         """
         Condition.not_none(collection, param)
@@ -578,7 +578,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-             If the value is not positive (> 0).
+             If value is not positive (> 0).
 
         """
         if value > 0:
@@ -607,7 +607,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-             If the value is not positive (> 0).
+             If value is not positive (> 0).
 
         """
         if value > 0:
@@ -636,7 +636,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If the value is negative (< 0).
+              If value is negative (< 0).
 
         """
         if value >= 0.0:
@@ -665,7 +665,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If the value is negative (< 0).
+              If value is negative (< 0).
 
         """
         if value >= 0:
@@ -703,7 +703,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If the value is not within the range inclusive of the end points.
+              If value is not within the range (inclusive of the end points).
 
         """
         if start <= value <= end:
@@ -742,7 +742,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If the value is not within the range inclusive of the end points.
+              If value is not within the range (inclusive of the end points).
 
         """
         if start <= value <= end:
@@ -772,7 +772,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If the string argument is None, empty or whitespace.
+              If argument is None, empty or whitespace.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -804,7 +804,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If the value is not in range [49152, 65535].
+              If value is not in range [49152, 65535].
 
         """
         Condition.in_range_int(value, 49152, 65535, param, ex_type)
@@ -829,7 +829,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the condition predicate is False.
+            If condition predicate is False.
 
         """
         Condition.true(predicate, description, ex_type)
@@ -851,7 +851,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the condition predicate is True.
+            If condition predicate is True.
 
         """
         Condition.false(predicate, description, ex_type)
@@ -873,7 +873,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the argument is not None.
+            If argument is not None.
 
         """
         Condition.none(argument, param, ex_type)
@@ -895,7 +895,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the argument is None.
+            If argument is None.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -919,7 +919,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If the object is not of the expected type.
+            If object is not of the expected type.
 
         """
         Condition.type(argument, expected, param, ex_type)
@@ -943,7 +943,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If the object is not None and not of the expected type.
+            If object is not None and not of the expected type.
 
         """
         Condition.type_or_none(argument, expected, param, ex_type)
@@ -965,7 +965,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If the argument is not callable.
+            If argument is not callable.
 
         """
         Condition.callable(argument, param, ex_type)
@@ -987,7 +987,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If the argument is not None and not callable.
+            If argument is not None and not callable.
 
         """
         Condition.callable_or_none(argument, param, ex_type)
@@ -1013,7 +1013,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the objects are not equal.
+            If objects are not equal.
 
         """
         Condition.equal(argument1, argument2, param1, param2, ex_type)
@@ -1039,7 +1039,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the objects are equal.
+            If objects are equal.
 
         """
         Condition.not_equal(argument1, argument2, param1, param2, ex_type)
@@ -1063,7 +1063,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-             If the list is not empty and contains a type other than the expected type.
+             If list is not empty and contains a type other than the expected type.
 
         """
         Condition.list_type(argument, expected_type, param, ex_type)
@@ -1089,8 +1089,8 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If the dictionary is not empty and contains a key type other than the key_type.
-            If the dictionary is not empty and contains a value type other than the value_type.
+            If dictionary is not empty and contains a key type other than the key_type.
+            If dictionary is not empty and contains a value type other than the value_type.
 
         """
         Condition.dict_types(argument, key_type, value_type, param, ex_type)
@@ -1116,7 +1116,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the element is not contained in the collection.
+            If element is not contained in the collection.
 
         """
         Condition.is_in(element, collection, param1, param2, ex_type)
@@ -1142,7 +1142,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If the element is contained in the collection.
+            If element is contained in the collection.
 
         """
         Condition.not_in(element, collection, param1, param2, ex_type)
@@ -1164,7 +1164,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-             If the collection is empty.
+             If collection is empty.
 
         """
         Condition.not_empty(argument, param, ex_type)
@@ -1208,7 +1208,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-             If the value is not positive (> 0).
+             If value is not positive (> 0).
 
         """
         Condition.positive(value, param, ex_type)
@@ -1230,7 +1230,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-             If the value is not positive (> 0).
+             If value is not positive (> 0).
 
         """
         Condition.positive_int(value, param, ex_type)
@@ -1252,7 +1252,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If the value is negative (< 0).
+              If value is negative (< 0).
 
         """
         Condition.not_negative(value, param, ex_type)
@@ -1274,7 +1274,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If the value is negative (< 0).
+              If value is negative (< 0).
 
         """
         Condition.not_negative_int(value, param, ex_type)
@@ -1300,7 +1300,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If the value is not within the range inclusive of the end points.
+              If value is not within the range (inclusive of the end points).
 
         """
         Condition.in_range(value, start, end, param, ex_type)
@@ -1326,7 +1326,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If the value is not within the range inclusive of the end points.
+              If value is not within the range (inclusive of the end points).
 
         """
         Condition.in_range_int(value, start, end, param, ex_type)
@@ -1348,7 +1348,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If the string argument is None, empty or whitespace.
+              If argument is None, empty or whitespace.
 
         """
         Condition.valid_string(argument, param, ex_type)
@@ -1370,7 +1370,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If the value is not in range [49152, 65535].
+              If value is not in range [49152, 65535].
 
         """
         Condition.valid_port(value, param, ex_type)

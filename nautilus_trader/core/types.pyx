@@ -46,8 +46,15 @@ cdef class ValidString:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.value == other.value
 
@@ -55,8 +62,15 @@ cdef class ValidString:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.value != other.value
 
@@ -99,10 +113,13 @@ cdef class ValidString:
         return self.value.__ge__(other.value)
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash(self.value)
 
@@ -110,7 +127,10 @@ cdef class ValidString:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.value
 
@@ -119,7 +139,10 @@ cdef class ValidString:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self.__class__.__name__)}({str(self.value)}) object at {id(self)}>"
 

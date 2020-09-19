@@ -41,8 +41,8 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution_client cimport LiveExecClient
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.execution_database cimport RedisExecutionDatabase
+from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.live.logging cimport LogStore
