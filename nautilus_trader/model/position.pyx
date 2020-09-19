@@ -163,7 +163,10 @@ cdef class Position:
         """
         Return the market position as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return market_position_to_string(self.market_position)
 
@@ -171,7 +174,10 @@ cdef class Position:
         """
         Return the positions status as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string_formatted()} "
         return f"{market_position_to_string(self.market_position)}{quantity}{self.symbol}"
