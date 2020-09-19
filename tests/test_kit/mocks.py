@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.execution import ExecutionClient
+from nautilus_trader.common.execution_client import ExecutionClient
 
 
 class ObjectStorer:

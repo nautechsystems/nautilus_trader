@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.execution_client cimport ExecutionClient
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.network.identifiers cimport ClientId

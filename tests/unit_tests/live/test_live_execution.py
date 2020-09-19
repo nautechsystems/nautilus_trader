@@ -17,7 +17,7 @@ import time
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.core.message import MessageType
