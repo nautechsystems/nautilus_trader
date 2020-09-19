@@ -65,7 +65,7 @@ cdef class ExchangeRateCalculator:
             for ccy_pair in bid_rates.keys():
                 calculation_rates[ccy_pair] = (bid_rates[ccy_pair] + ask_rates[ccy_pair]) / 2.0
         else:
-            raise ValueError(f"Cannot calculate exchange rate for price type {price_type_to_string(price_type)}.")
+            raise ValueError(f"Cannot calculate exchange rate for price type {price_type_to_string(price_type)}")
 
         cdef dict exchange_rates = {}
         cdef set symbols = set()
@@ -136,4 +136,4 @@ cdef class ExchangeRateCalculator:
             return exchange_rates[lhs_str][rhs_str]
         except KeyError:
             raise ValueError(f"Cannot calculate exchange rate for {lhs_str}{rhs_str} or {rhs_str}{lhs_str} "
-                             f"(not enough data).")
+                             f"(not enough data)")

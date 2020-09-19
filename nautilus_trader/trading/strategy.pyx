@@ -562,8 +562,7 @@ cdef class TradingStrategy:
         tick : QuoteTick
             The received tick.
         is_historical : bool
-            The flag indicating whether the tick is historical (if true won't be
-            passed to on_quote_tick()).
+            If tick is historical then it won't be passed to on_quote_tick().
 
         """
         Condition.not_none(tick, "tick")
@@ -620,8 +619,7 @@ cdef class TradingStrategy:
         tick : TradeTick
             The received trade tick.
         is_historical : bool
-            The flag indicating whether the tick is historical (if true won't be
-            passed to on_trade_tick()).
+            If tick is historical then it won't be passed to on_trade_tick().
 
         """
         Condition.not_none(tick, "tick")
@@ -680,8 +678,7 @@ cdef class TradingStrategy:
         bar : Bar
             The bar received.
         is_historical : bool
-            The flag indicating whether the bar is historical (if true won't be
-            passed to on_bar).
+            If bar is historical then it won't be passed to on_bar().
 
         """
         Condition.not_none(bar_type, "bar_type")

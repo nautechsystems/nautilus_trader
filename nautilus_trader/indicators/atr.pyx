@@ -41,7 +41,7 @@ cdef class AverageTrueRange(Indicator):
         :param use_previous: The boolean flag indicating whether previous price values should be used.
         (note: only applicable for update(). update_mid() will need to use previous price.
         :param value_floor: The floor (minimum) output value for the indicator (>= 0).
-        :param check_inputs: The flag indicating whether the input values should be checked.
+        :param check_inputs: If the input values should be checked.
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(value_floor, "value_floor")

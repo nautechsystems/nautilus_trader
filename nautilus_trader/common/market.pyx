@@ -53,14 +53,28 @@ cdef class TickDataWrangler:
         """
         Initialize a new instance of the TickDataWrangler class.
 
-        :param instrument: The instrument for the data wrangler.
-        :param data_ticks: The optional pd.DataFrame containing the tick data.
-        :param data_bars_bid: The optional dictionary containing the bars bid data.
-        :param data_bars_ask: The optional dictionary containing the bars ask data.
-        :raises: ValueError: If the tick_data is a type other than None or DataFrame.
-        :raises: ValueError: If the bid_data is a type other than None or Dict.
-        :raises: ValueError: If the ask_data is a type other than None or Dict.
-        :raises: ValueError: If the tick_data is None and the bars data is None.
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the data wrangler.
+        data_ticks : pd.DataFrame
+            The optional pd.DataFrame containing the tick data.
+        data_bars_bid : Dict[BarAggregation, pd.DataFrame], optional
+            The bars bid data.
+        data_bars_ask : Dict[BarAggregation, pd.DataFrame], optional
+            The bars ask data.
+
+        Raises
+        ------
+        ValueError
+            If tick_data is a type other than None or DataFrame.
+        ValueError
+            If bid_data is a type other than None or Dict.
+        ValueError
+            If ask_data is a type other than None or Dict.
+        ValueError
+            If tick_data is None and the bars data is None.
+
         """
         Condition.type_or_none(data_ticks, pd.DataFrame, "tick_data")
         Condition.type_or_none(data_bars_bid, dict, "bid_data")
@@ -226,12 +240,25 @@ cdef class BarDataWrangler:
         """
         Initialize a new instance of the BarDataWrangler class.
 
-        :param precision: The decimal precision for bar prices (>= 0).
-        :param data: The the bars market data.
-        :param volume_multiple: The volume multiple for the builder (> 0).
-        :raises: ValueError: If the decimal_precision is negative (< 0).
-        :raises: ValueError: If the volume_multiple is not positive (> 0).
-        :raises: ValueError: If the data is a type other than DataFrame.
+        Parameters
+        ----------
+        precision : int
+            The decimal precision for bar prices (>= 0).
+        volume_multiple : int
+            The volume multiple for the builder (> 0). This can be used to
+            transform decimalized volumes to integers.
+        data : pd.DataFrame
+            The the bars market data.
+
+        Raises
+        ------
+        ValueError
+            If decimal_precision is negative (< 0).
+        ValueError
+            If volume_multiple is not positive (> 0).
+        ValueError
+            If data is a type other than DataFrame.
+
         """
         Condition.not_negative_int(precision, "precision")
         Condition.positive_int(volume_multiple, "volume_multiple")
@@ -243,9 +270,12 @@ cdef class BarDataWrangler:
 
     cpdef list build_bars_all(self):
         """
-        Return a list of Bars from all data.
+        Return a list of bars from all data.
 
-        :return List[Bar].
+        Returns
+        -------
+        List[Bar]
+
         """
         return list(map(self._build_bar,
                         self._data.values,
@@ -253,9 +283,12 @@ cdef class BarDataWrangler:
 
     cpdef list build_bars_from(self, int index=0):
         """
-        Return a list of Bars from the given index (>= 0).
+        Return a list of bars from the given index (>= 0).
 
-        :return List[Bar].
+        Returns
+        -------
+        List[Bar]
+
         """
         Condition.not_negative_int(index, "index")
 
@@ -265,9 +298,12 @@ cdef class BarDataWrangler:
 
     cpdef list build_bars_range(self, int start=0, int end=-1):
         """
-        Return a list of Bars within the given range.
+        Return a list of bars within the given range.
 
-        :return List[Bar].
+        Returns
+        -------
+        List[Bar]
+
         """
         Condition.not_negative_int(start, "start")
 
@@ -288,16 +324,21 @@ cdef class BarDataWrangler:
 
 cdef class BarBuilder:
     """
-    The base class for all bar builders.
+    Provides a generic bar builder for aggregation.
     """
 
     def __init__(self, BarSpecification bar_spec not None, bint use_previous_close=False):
         """
         Initialize a new instance of the BarBuilder class.
 
-        :param bar_spec: The bar specification for the builder.
-        :param use_previous_close: The flag indicating whether the previous close
-        price should be the open price of a new bar.
+        Parameters
+        ----------
+        bar_spec : BarSpecification
+            The bar specification for the builder.
+        use_previous_close : bool
+            If the previous close price should set the
+            open price of a new bar.
+
         """
         self.bar_spec = bar_spec
         self.last_update = None
@@ -428,7 +469,7 @@ cdef class BarBuilder:
         elif self.bar_spec.price_type == PriceType.ASK:
             return tick.ask
         else:
-            raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
+            raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported")
 
     cdef inline Quantity _get_volume(self, QuoteTick tick):
         cdef int max_precision
@@ -442,7 +483,7 @@ cdef class BarBuilder:
         elif self.bar_spec.price_type == PriceType.ASK:
             return self._volume.add(tick.ask_size)
         else:
-            raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
+            raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported")
 
     def __str__(self) -> str:
         """
@@ -470,7 +511,7 @@ cdef class BarBuilder:
 
 cdef class BarAggregator:
     """
-    Provides a means of aggregating built bars to the registered handler.
+    Provides a means of aggregating specified bars and sending to the registered handler.
     """
 
     def __init__(self,
@@ -481,10 +522,17 @@ cdef class BarAggregator:
         """
         Initialize a new instance of the BarAggregator class.
 
-        :param bar_type: The bar type for the aggregator.
-        :param handler: The bar handler for the aggregator.
-        :param logger: The logger for the aggregator.
-        :param use_previous_close: If the previous close price should be the open price of a new bar.
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the aggregator.
+        handler : callable
+            The bar handler for the aggregator.
+        logger : Logger
+            The logger for the aggregator.
+        use_previous_close : bool
+            If the previous close price should set the open price of a new bar.
+
         """
         self.bar_type = bar_type
         self._handler = BarHandler(handler)
@@ -517,9 +565,15 @@ cdef class TickBarAggregator(BarAggregator):
         """
         Initialize a new instance of the TickBarBuilder class.
 
-        :param bar_type: The bar type for the aggregator.
-        :param handler: The bar handler for the aggregator.
-        :param logger: The logger for the aggregator.
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the aggregator.
+        handler : callable
+            The bar handler for the aggregator.
+        logger : Logger
+            The logger for the aggregator.
+
         """
         super().__init__(bar_type=bar_type,
                          handler=handler,
@@ -584,12 +638,19 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         Initialize a new instance of the TimeBarAggregator class.
 
-        :param bar_type: The bar type for the aggregator.
-        :param handler: The bar handler for the aggregator.
-        :param use_previous_close: The flag indicating whether the previous close
-        should become the next open.
-        :param clock: If the clock for the aggregator.
-        :param logger: The logger for the aggregator.
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the aggregator.
+        handler : callable
+            The bar handler for the aggregator.
+        use_previous_close : bool
+            If the previous close should set the next open.
+        clock : Clock
+            The clock for the aggregator.
+        logger : Logger
+            The logger for the aggregator.
+
         """
         super().__init__(bar_type=bar_type,
                          handler=handler,
@@ -691,7 +752,9 @@ cdef class TimeBarAggregator(BarAggregator):
                 month=now.month,
                 day=now.day)
         else:
-            raise ValueError(f"The BarAggregation {bar_aggregation_to_string(self.bar_type.spec.aggregation)} is not supported.")
+            # Design time error
+            raise ValueError(f"Aggregation not a time, "
+                             f"was {bar_aggregation_to_string(self.bar_type.spec.aggregation)}")
 
     cdef timedelta _get_interval(self):
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
@@ -703,7 +766,9 @@ cdef class TimeBarAggregator(BarAggregator):
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return timedelta(days=(1 * self.bar_type.spec.step))
         else:
-            raise ValueError(f"The BarAggregation {bar_aggregation_to_string(self.bar_type.spec.aggregation)} is not supported.")
+            # Design time error
+            raise ValueError(f"Aggregation not a time, "
+                             f"was {bar_aggregation_to_string(self.bar_type.spec.aggregation)}")
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = self.bar_type.to_string()

@@ -429,7 +429,7 @@ cdef class BacktestExecClient(ExecutionClient):
             difference = open_price - close_price
         else:
             raise ValueError(f"Cannot calculate the pnl of a "
-                             f"{market_position_to_string(direction)} direction.")
+                             f"{market_position_to_string(direction)} direction")
 
         return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
 

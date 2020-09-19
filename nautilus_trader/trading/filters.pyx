@@ -424,11 +424,11 @@ cdef class EconomicNewsEventFilter:
 
         if time_now < self.unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
-                             f"available news data start at {self.unfiltered_data_start}.")
+                             f"available news data start at {self.unfiltered_data_start}")
 
         if time_now > self.unfiltered_data_end:
             raise ValueError(f"The given time_now at {time_now} was after the "
-                             f"available news data end at {self.unfiltered_data_end}.")
+                             f"available news data end at {self.unfiltered_data_end}")
 
         events = self._news_data[self._news_data.index >= time_now]
 
@@ -467,11 +467,11 @@ cdef class EconomicNewsEventFilter:
 
         if time_now < self.unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
-                             f"available news data start at {self.unfiltered_data_start}.")
+                             f"available news data start at {self.unfiltered_data_start}")
 
         if time_now > self.unfiltered_data_end:
             raise ValueError(f"The given time_now at {time_now} was after the "
-                             f"available news data end at {self.unfiltered_data_end}.")
+                             f"available news data end at {self.unfiltered_data_end}")
 
         events = self._news_data[self._news_data.index <= time_now]
         if events.empty:
