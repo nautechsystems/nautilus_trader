@@ -38,7 +38,7 @@ cdef class Timer:
     cdef readonly datetime start_time
     cdef readonly datetime next_time
     cdef readonly datetime stop_time
-    cdef readonly expired
+    cdef readonly bint expired
 
     cpdef TimeEvent pop_event(self, UUID event_id)
     cpdef void iterate_next_time(self, datetime now) except *

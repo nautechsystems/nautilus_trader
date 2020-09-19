@@ -20,6 +20,9 @@ import numpy as np
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class WeightedMovingAverage(MovingAverage):
@@ -27,28 +30,64 @@ cdef class WeightedMovingAverage(MovingAverage):
     An indicator which calculates a weighted moving average across a rolling window.
     """
 
-    def __init__(self, int period, weights=None):
+    def __init__(self,
+                 int period,
+                 weights=None,
+                 PriceType price_type=PriceType.UNDEFINED):
         """
         Initialize a new instance of the SimpleMovingAverage class.
 
         :param period: The rolling window period for the indicator (> 0).
         :param weights: The weights for the moving average calculation
         (if not None then = period).
+        :param price_type: The specified price type for extracting values from quote ticks (default=UNDEFINED).
         """
         Condition.positive_int(period, "period")
         if weights is not None:
             Condition.equal(len(weights), period, "len(weights)", "period")
-        super().__init__(period, params=[period, weights])
+        super().__init__(period, params=[period, weights], price_type=price_type)
 
         self._inputs = deque(maxlen=self.period)
         self.weights = weights
         self.value = 0.0
 
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+        """
+        Update the indicator with the given quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The update tick to handle.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self.update_raw(self._get_quote_price(tick, self._price_type).as_double())
+
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        """
+        Update the indicator with the given trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The update tick to handle.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self.update_raw(tick.price.as_double())
+
     cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar to handle.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -58,7 +97,11 @@ cdef class WeightedMovingAverage(MovingAverage):
         """
         Update the indicator with the given raw value.
 
-        :param value: The update value.
+        Parameters
+        ----------
+        value : double
+            The update value.
+
         """
         self._update()
         self._inputs.append(value)

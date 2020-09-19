@@ -9,6 +9,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from collections import deque
 
 from cpython.datetime cimport datetime
@@ -24,7 +25,18 @@ from nautilus_trader.model.tick cimport QuoteTick
 
 cdef class MaxBidMinAsk(Indicator):
 
-    def __init__(self, Symbol symbol not None, timedelta lookback):
+    def __init__(self, Symbol symbol not None, timedelta lookback not None):
+        """
+        Initialize a new instance of the MaxBidMinAsk class
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for inbound ticks.
+        lookback : timedelta
+            The look back duration in time.
+
+        """
         self.symbol = symbol
         self.lookback = lookback
 
@@ -38,13 +50,14 @@ cdef class MaxBidMinAsk(Indicator):
         self._handle_bid_and_ask(tick.bid, tick.ask, tick.timestamp)
 
     cpdef void reset(self):
+        self._reset_base()
         self.max_bid = None
         self.min_ask = None
         self._bid_prices.clear()
         self._ask_prices.clear()
 
     cdef inline void _handle_bid_and_ask(self, Price bid, Price ask, datetime timestamp):
-        Condition.true(is_datetime_utc(timestamp), "utc_now is tz aware UTC")
+        Condition.true(is_datetime_utc(timestamp), "timestamp is tz aware UTC")
 
         cdef datetime cutoff = timestamp - self.lookback
 

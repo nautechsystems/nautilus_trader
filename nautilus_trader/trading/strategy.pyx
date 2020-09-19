@@ -351,8 +351,13 @@ cdef class TradingStrategy:
         Register the given indicator with the strategy to receive quote tick
         data for the given symbol.
 
-        :param symbol: The symbol for tick updates.
-        :param indicator: The indicator to register.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for tick updates.
+        indicator : Indicator
+            The indicator to register.
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(indicator, "indicator")

@@ -14,22 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class Indicator:
-    """
-    The base class for all indicators.
-    """
     cdef readonly str name
     cdef readonly str params
     cdef readonly bint has_inputs
     cdef readonly bint initialized
 
-    cdef void handle_quote_tick(self, QuoteTick tick) except *
-    cdef void handle_trade_tick(self, TradeTick tick) except *
-    cdef void handle_bar(self, Bar bar) except *
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *
+    cpdef void handle_trade_tick(self, TradeTick tick) except *
+    cpdef void handle_bar(self, Bar bar) except *
+    cpdef void reset(self) except *
+
+    cdef inline Price _get_quote_price(self, QuoteTick tick, PriceType price_type)
     cdef void _set_has_inputs(self, bint setting) except *
     cdef void _set_initialized(self, bint setting) except *
     cdef void _reset_base(self) except *
