@@ -86,7 +86,7 @@ setup(
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
     classifiers=[
-        "Development Status :: 5 - Production/Stable",
+        "Development Status :: 4 - BETA",
         "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
