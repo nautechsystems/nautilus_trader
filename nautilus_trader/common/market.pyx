@@ -35,6 +35,8 @@ from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class TickDataWrangler:
@@ -310,42 +312,61 @@ cdef class BarBuilder:
         self._close = None
         self._volume = Quantity.zero()
 
-    cpdef void update(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
         Update the builder with the given tick.
 
-        :param tick: The tick to update with.
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick to update with.
+
         """
         Condition.not_none(tick, "tick")
 
         if self.last_update is not None and tick.timestamp < self.last_update:
             return  # Previously handled tick
 
-        cdef Price price = self._get_price(tick)
+        self._update(
+            price=self._get_price(tick),
+            volume=self._get_volume(tick),
+            timestamp=tick.timestamp
+        )
 
-        if self._open is None:
-            # Initialize builder
-            self._open = price
-            self._high = price
-            self._low = price
-            self.initialized = True
-        elif price.gt(self._high):
-            self._high = price
-        elif price.lt(self._low):
-            self._low = price
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        """
+        Update the builder with the given tick.
 
-        self._close = price
-        self._volume = self._get_volume(tick)
-        self.count += 1
-        self.last_update = tick.timestamp
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick to update with.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        if self.last_update is not None and tick.timestamp < self.last_update:
+            return  # Previously handled tick
+
+        self._update(
+            price=tick.price,
+            volume=tick.size,
+            timestamp=tick.timestamp
+        )
 
     cpdef Bar build(self, datetime close_time=None):
         """
         Return a bar from the internal properties.
 
-        :param close_time: The optional closing time for the bar (if None will be last updated time).
+        Parameters
+        ----------
+        close_time : datetime, optional
+            The closing time for the bar (if None will be last updated time).
 
-        :return: Bar.
+        Returns
+        -------
+        Bar
+
         """
         if close_time is None:
             close_time = self.last_update
@@ -368,6 +389,23 @@ cdef class BarBuilder:
         self._reset()
         return bar
 
+    cdef void _update(self, Price price, Quantity volume, datetime timestamp) except *:
+        if self._open is None:
+            # Initialize builder
+            self._open = price
+            self._high = price
+            self._low = price
+            self.initialized = True
+        elif price.gt(self._high):
+            self._high = price
+        elif price.lt(self._low):
+            self._low = price
+
+        self._close = price
+        self._volume = volume
+        self.count += 1
+        self.last_update = timestamp
+
     cdef void _reset(self) except *:
         if self.use_previous_close:
             self._open = self._close
@@ -382,7 +420,7 @@ cdef class BarBuilder:
         self._volume = Quantity.zero()
         self.count = 0
 
-    cdef Price _get_price(self, QuoteTick tick):
+    cdef inline Price _get_price(self, QuoteTick tick):
         if self.bar_spec.price_type == PriceType.MID:
             return Price((tick.bid.as_double() + tick.ask.as_double()) / 2, tick.bid.precision + 1)
         elif self.bar_spec.price_type == PriceType.BID:
@@ -392,7 +430,7 @@ cdef class BarBuilder:
         else:
             raise ValueError(f"The PriceType {price_type_to_string(self.bar_spec.price_type)} is not supported.")
 
-    cdef Quantity _get_volume(self, QuoteTick tick):
+    cdef inline Quantity _get_volume(self, QuoteTick tick):
         cdef int max_precision
         cdef double total_volume
         if self.bar_spec.price_type == PriceType.MID:
@@ -455,7 +493,12 @@ cdef class BarAggregator:
             bar_spec=self.bar_type.spec,
             use_previous_close=use_previous_close)
 
-    cpdef void update(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void _handle_bar(self, Bar bar) except *:
@@ -485,16 +528,37 @@ cdef class TickBarAggregator(BarAggregator):
 
         self.step = bar_type.spec.step
 
-    cpdef void update(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
         Update the builder with the given tick.
 
-        :param tick: The tick for the update.
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick for the update.
+
         """
         Condition.not_none(tick, "tick")
 
-        self._builder.update(tick)
+        self._builder.handle_quote_tick(tick)
+        self._check_bar_builder()
 
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        """
+        Update the builder with the given tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick for the update.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self._builder.handle_trade_tick(tick)
+        self._check_bar_builder()
+
+    cdef inline void _check_bar_builder(self) except *:
         cdef Bar bar
         if self._builder.count == self.step:
             try:
@@ -537,11 +601,15 @@ cdef class TimeBarAggregator(BarAggregator):
         self._set_build_timer()
         self.next_close = self._clock.get_timer(self.bar_type.to_string()).next_time
 
-    cpdef void update(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
         Update the builder with the given tick.
 
-        :param tick: The tick for the update.
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick for the update.
+
         """
         Condition.not_none(tick, "tick")
 
@@ -549,15 +617,41 @@ cdef class TimeBarAggregator(BarAggregator):
             if self.next_close < tick.timestamp:
                 # Build bar first, then update
                 self._build_bar(self.next_close)
-                self._builder.update(tick)
+                self._builder.handle_quote_tick(tick)
                 return
             elif self.next_close == tick.timestamp:
                 # Update first, then build bar
-                self._builder.update(tick)
+                self._builder.handle_quote_tick(tick)
                 self._build_bar(self.next_close)
                 return
 
-        self._builder.update(tick)
+        self._builder.handle_quote_tick(tick)
+
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        """
+        Update the builder with the given tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick for the update.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        if self._clock.is_test_clock:
+            if self.next_close < tick.timestamp:
+                # Build bar first, then update
+                self._build_bar(self.next_close)
+                self._builder.handle_trade_tick(tick)
+                return
+            elif self.next_close == tick.timestamp:
+                # Update first, then build bar
+                self._builder.handle_trade_tick(tick)
+                self._build_bar(self.next_close)
+                return
+
+        self._builder.handle_trade_tick(tick)
 
     cpdef void stop(self) except *:
         """

@@ -195,9 +195,9 @@ class BarBuilderTests(unittest.TestCase):
             timestamp=UNIX_EPOCH)
 
         # Act
-        builder.update(tick1)
-        builder.update(tick2)
-        builder.update(tick3)
+        builder.handle_quote_tick(tick1)
+        builder.handle_quote_tick(tick2)
+        builder.handle_quote_tick(tick3)
 
         # Assert
         self.assertEqual(bar_spec, builder.bar_spec)
@@ -233,9 +233,9 @@ class BarBuilderTests(unittest.TestCase):
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
-        builder.update(tick1)
-        builder.update(tick2)
-        builder.update(tick3)
+        builder.handle_quote_tick(tick1)
+        builder.handle_quote_tick(tick2)
+        builder.handle_quote_tick(tick3)
 
         # Act
         bar = builder.build()  # Also resets builder
@@ -279,9 +279,9 @@ class BarBuilderTests(unittest.TestCase):
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
-        builder.update(tick1)
-        builder.update(tick2)
-        builder.update(tick3)
+        builder.handle_quote_tick(tick1)
+        builder.handle_quote_tick(tick2)
+        builder.handle_quote_tick(tick3)
 
         # Act
         bar = builder.build()  # Also resets builder
@@ -325,9 +325,9 @@ class BarBuilderTests(unittest.TestCase):
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
-        builder.update(tick1)
-        builder.update(tick2)
-        builder.update(tick3)
+        builder.handle_quote_tick(tick1)
+        builder.handle_quote_tick(tick2)
+        builder.handle_quote_tick(tick3)
         builder.build()
 
         # Act
@@ -380,9 +380,9 @@ class TickBarAggregatorTests(unittest.TestCase):
             timestamp=UNIX_EPOCH)
 
         # Act
-        aggregator.update(tick1)
-        aggregator.update(tick2)
-        aggregator.update(tick3)
+        aggregator.handle_quote_tick(tick1)
+        aggregator.handle_quote_tick(tick2)
+        aggregator.handle_quote_tick(tick3)
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
@@ -432,9 +432,9 @@ class TimeBarAggregatorTests(unittest.TestCase):
             timestamp=stop_time)
 
         # Act
-        aggregator.update(tick1)
-        aggregator.update(tick2)
-        aggregator.update(tick3)
+        aggregator.handle_quote_tick(tick1)
+        aggregator.handle_quote_tick(tick2)
+        aggregator.handle_quote_tick(tick3)
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
