@@ -42,12 +42,24 @@ cdef class BarSpecification:
         """
         Initialize a new instance of the BarSpecification class.
 
-        :param step: The bar step (> 0).
-        :param aggregation: The bar aggregation.
-        :param price_type: The bar price type.
-        :raises ValueError: If step is not positive (> 0).
-        :raises ValueError: If aggregation is UNDEFINED.
-        :raises ValueError: If price type is UNDEFINED.
+        Parameters
+        ----------
+        step : int
+            The step for binning samples for bar aggregation (> 0).
+        aggregation : BarAggregation
+            The type of bar aggregation.
+        price_type : PriceType
+            The price type to use for aggregation.
+
+        Raises
+        ------
+        ValueError
+            If step is not positive (> 0).
+        ValueError
+            If aggregation is UNDEFINED.
+        ValueError
+            If price type is UNDEFINED.
+
         """
         Condition.positive_int(step, 'step')
         Condition.not_equal(aggregation, BarAggregation.UNDEFINED, 'aggregation', 'UNDEFINED')
@@ -61,10 +73,22 @@ cdef class BarSpecification:
     cdef BarSpecification from_string(str value):
         """
         Return a bar specification parsed from the given string.
-        Note: String format example is '200-TICK-MID'.
+        String format example is '200-TICK-MID'.
 
-        :param value: The bar specification string to parse.
-        :return BarSpecification.
+        Parameters
+        ----------
+        value : str
+            The bar specification string to parse.
+
+        Returns
+        -------
+        BarSpecification
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         Condition.valid_string(value, 'value')
 
@@ -78,13 +102,26 @@ cdef class BarSpecification:
     @staticmethod
     def py_from_string(str value) -> BarSpecification:
         """
-        Python wrapper for the from_string method.
-
         Return a bar specification parsed from the given string.
-        Note: String format example is '1-MINUTE-BID'.
 
-        :param value: The bar specification string to parse.
-        :return BarSpecification.
+        Parameters
+        ----------
+        value : str
+            The bar specification string to parse.
+
+        Examples
+        --------
+        String format example is '200-TICK-MID'.
+
+        Returns
+        -------
+        BarSpecification
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         return BarSpecification.from_string(value)
 
@@ -92,7 +129,10 @@ cdef class BarSpecification:
         """
         Return the bar aggregation as a string
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return bar_aggregation_to_string(self.aggregation)
 
@@ -100,7 +140,10 @@ cdef class BarSpecification:
         """
         Return the price type as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return price_type_to_string(self.price_type)
 
@@ -126,7 +169,10 @@ cdef class BarSpecification:
         """
         Return the string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
 
@@ -208,8 +254,13 @@ cdef class BarType:
         """
         Initialize a new instance of the BarType class.
 
-        :param symbol: The bar symbol.
-        :param bar_spec: The bar specification.
+        Parameters
+        ----------
+        symbol : Symbol
+            The bar symbol.
+        bar_spec : BarSpecification
+            The bar specification.
+
         """
         self.symbol = symbol
         self.spec = bar_spec
@@ -219,8 +270,20 @@ cdef class BarType:
         """
         Return a bar type parsed from the given string.
 
-        :param value: The bar type string to parse.
-        :return BarType.
+        Parameters
+        ----------
+        value : str
+            The bar type string to parse.
+
+        Returns
+        -------
+        BarType
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         Condition.valid_string(value, 'value')
 
@@ -238,12 +301,22 @@ cdef class BarType:
     @staticmethod
     def py_from_string(str value) -> BarType:
         """
-        Python wrapper for the from_string method.
-
         Return a bar type parsed from the given string.
 
-        :param value: The bar type string to parse.
-        :return BarType.
+        Parameters
+        ----------
+        value : str
+            The bar type string to parse.
+
+        Returns
+        -------
+        BarType
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         return BarType.from_string(value)
 
@@ -283,7 +356,10 @@ cdef class BarType:
         """
         Return the string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return f"{self.symbol.to_string()}-{self.spec}"
 
@@ -370,16 +446,32 @@ cdef class Bar:
         """
         Initialize a new instance of the Bar class.
 
-        :param open_price: The bars open price.
-        :param high_price: The bars high price.
-        :param low_price: The bars low price.
-        :param close_price: The bars close price.
-        :param volume: The bars volume.
-        :param timestamp: The bars timestamp (UTC).
-        :param check: If the bar parameters should be checked valid.
-        :raises ValueError: If check and the high_price is not >= low_price.
-        :raises ValueError: If check and the high_price is not >= close_price.
-        :raises ValueError: If check and the low_price is not <= close_price.
+        Parameters
+        ----------
+        open_price : Price
+            The bars open price.
+        high_price : Price
+            The bars high price.
+        low_price : Price
+            The bars low price.
+        close_price : Price
+            The bars close price.
+        volume : Quantity
+            The bars volume.
+        timestamp : datetime
+            The bars timestamp (UTC).
+        check : bool
+            If bar parameters should be checked valid.
+
+        Raises
+        ------
+        ValueError
+            If check True and the high_price is not >= low_price.
+        ValueError
+            If check True and the high_price is not >= close_price.
+        ValueError
+            If check True and the low_price is not <= close_price.
+
         """
         if check:
             Condition.true(high_price.ge(low_price), 'high_price >= low_price')
@@ -399,8 +491,15 @@ cdef class Bar:
         """
         Return a bar parsed from the given string.
 
-        :param value: The bar string to parse.
-        :return Bar.
+        Parameters
+        ----------
+        value : str
+            The bar string to parse.
+
+        Returns
+        -------
+        Bar
+
         """
         Condition.valid_string(value, 'value')
 
@@ -420,8 +519,15 @@ cdef class Bar:
 
         Return a bar parsed from the given string.
 
-        :param value: The bar string to parse.
-        :return Bar.
+        Parameters
+        ----------
+        value : str
+            The bar string to parse.
+
+        Returns
+        -------
+        Bar
+
         """
         return Bar.from_serializable_string(value)
 
@@ -450,7 +556,10 @@ cdef class Bar:
         """
         Return the string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.open.to_string()},"
                 f"{self.high.to_string()},"
@@ -463,7 +572,10 @@ cdef class Bar:
         """
         Return the serializable string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.open.to_string()},"
                 f"{self.high.to_string()},"
@@ -475,29 +587,43 @@ cdef class Bar:
     def __eq__(self, Bar other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
-        Note: The equality is based on the bars timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Bar
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
     def __ne__(self, Bar other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
-        Note: The equality is based on the bars timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Bar
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
         Return the hash code of this object.
-        Note: The hash is based on the bars timestamp only.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash(str(self.timestamp))
 
