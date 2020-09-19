@@ -124,7 +124,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.warning(f"The load_caches flag was {load_caches} "
                               f"(this should only be done in a testing environment).")
 
-
     # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_accounts_cache(self) except *:

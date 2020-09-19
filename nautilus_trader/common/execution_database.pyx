@@ -46,7 +46,6 @@ cdef class ExecutionDatabase:
         self._cached_orders = {}     # type: {OrderId, Order}
         self._cached_positions = {}  # type: {PositionId, Position}
 
-
     # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *:
@@ -108,7 +107,6 @@ cdef class ExecutionDatabase:
         self._cached_positions.clear()
 
         self._log.info(f"Reset.")
-
 
     # -- QUERIES ---------------------------------------------------------------------------------------
 
@@ -247,7 +245,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_positions = set()         # type: {PositionId}
         self._index_positions_open = set()    # type: {PositionId}
         self._index_positions_closed = set()  # type: {PositionId}
-
 
     # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -480,7 +477,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Flush the database which clears all data.
         """
         self._log.info("Flushing database (in-memory database does nothing).")
-
 
     # -- QUERIES ---------------------------------------------------------------------------------------
 
