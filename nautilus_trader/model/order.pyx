@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines various Order types to be used for trading.
+Defines various order types to be used for trading.
 """
 
 from cpython.datetime cimport datetime
@@ -83,7 +83,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.WORKING, OrderExpired.__name__): OrderState.EXPIRED,
     (OrderState.WORKING, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
     (OrderState.WORKING, OrderFilled.__name__): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderCancelled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderCancelled.__name__): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderFilled.__name__): OrderState.FILLED,
 }
@@ -172,7 +172,10 @@ cdef class Order:
         """
         Return a sorted list of execution identifiers.
 
-        :return List[ExecutionId].
+        Returns
+        -------
+        List[ExecutionId]
+
         """
         return self._execution_ids.copy()
 
@@ -180,7 +183,10 @@ cdef class Order:
         """
         Return a list or order events.
 
-        :return List[OrderEvent].
+        Returns
+        -------
+        List[OrderEvent]
+
         """
         return self._events.copy()
 
@@ -334,9 +340,18 @@ cdef class Order:
         """
         Apply the given order event to the order.
 
-        :param event: The order event to apply.
-        :raises ValueError: If the order_events order_id is not equal to the event.order_id.
-        :raises ValueError: If the order account_id is not None and is not equal to the event.account_id.
+        Parameters
+        ----------
+        event : OrderEvent
+            The order event to apply.
+
+        Raises
+        ------
+        ValueError
+            If event.order_id is not equal to the orders identifier.
+        ValueError
+            If event.account_id is not equal to the orders account_id.
+
         """
         Condition.not_none(event, "event")
         Condition.equal(self.id, event.order_id, "id", "event.order_id")
@@ -448,11 +463,15 @@ cdef class PassiveOrder(Order):
         Raises
         ------
         ValueError
-            If the quantities value is not positive (> 0).
-            If the order_side is UNDEFINED.
-            If the order_type is UNDEFINED.
-            If the time_in_force is UNDEFINED.
-            If the time_in_force is GTD and the expire_time is None.
+            If quantity is not positive (> 0).
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If order_type is UNDEFINED.
+        ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
+            If time_in_force is GTD and the expire_time is None.
 
         """
         Condition.positive(quantity.as_double(), "quantity")
@@ -485,7 +504,10 @@ cdef class PassiveOrder(Order):
         """
         Return the orders status as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
@@ -522,11 +544,12 @@ cdef set _MARKET_ORDER_VALID_TIF = {
 
 cdef class MarketOrder(Order):
     """
-    The market order type. A market order is an order to buy or sell an instrument
-    immediately. This type of order guarantees that the order will be executed, but does not
-    guarantee the execution price. A market order generally will execute at or near the
-    current bid (for a sell order) or ask (for a buy order) price. The last-traded price is
-    not necessarily the price at which a market order will be executed.
+    A market order is an order to buy or sell an instrument immediately. This
+    type of order guarantees that the order will be executed, but does not
+    guarantee the execution price. A market order generally will execute at or
+    near the current bid (for a sell order) or ask (for a buy order) price. The
+    last-traded price is not necessarily the price at which a market order will
+    be executed.
     """
     def __init__(
             self,
@@ -558,8 +581,11 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If the quantities value is not positive (> 0).
-            If the order_side is UNDEFINED.
+            If quantity is not positive (> 0).
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If time_in_force is other than DAY, IOC or FOC.
 
         """
         Condition.positive(quantity.as_double(), "quantity")
@@ -584,8 +610,15 @@ cdef class MarketOrder(Order):
         """
         Return an order from the given initialized event.
 
-        :param event: The event to initialize with.
-        :return Order.
+        Parameters
+        ----------
+        event : OrderInitialized
+            The event to initialize with.
+
+        Returns
+        -------
+        Order
+
         """
         Condition.not_none(event, "event")
 
@@ -602,7 +635,10 @@ cdef class MarketOrder(Order):
         """
         Return the orders status as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
                 f"{order_type_to_string(self.type)} "
@@ -622,7 +658,11 @@ cdef class MarketOrder(Order):
 
 cdef class LimitOrder(PassiveOrder):
     """
-    Represents a limit order.
+    Limit orders are used to specify a maximum or minimum price the trader is
+    willing to buy or sell at. Traders use this order type to minimise their
+    trading cost, however they are sacrificing guaranteed execution as there is
+    a chance the order may not be executed if it is placed deep out of the
+    market.
     """
     def __init__(self,
                  OrderId order_id not None,
@@ -648,7 +688,7 @@ cdef class LimitOrder(PassiveOrder):
         quantity : Quantity
             The order quantity (> 0).
         price : Price
-            The order price.
+            The order limit price.
         time_in_force : TimeInForce
             The order time in force.
         expire_time : datetime, optional
@@ -661,10 +701,13 @@ cdef class LimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If the quantities value is not positive (> 0).
-            If the order_side is UNDEFINED.
-            If the time_in_force is UNDEFINED.
-            If the time_in_force is GTD and the expire_time is None.
+            If quantity is not positive (> 0).
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
+            If time_in_force is GTD and expire_time is None.
 
         """
         super().__init__(
@@ -684,8 +727,15 @@ cdef class LimitOrder(PassiveOrder):
         """
         Return a limit order from the given initialized event.
 
-        :param event: The event to initialize with.
-        :return Order.
+        Parameters
+        ----------
+        event : OrderInitialized
+            The event to initialize with.
+
+        Returns
+        -------
+        Order
+
         """
         Condition.not_none(event, "event")
 
@@ -703,7 +753,11 @@ cdef class LimitOrder(PassiveOrder):
 
 cdef class StopOrder(PassiveOrder):
     """
-    Represents a stop order.
+    A stop order is an order to buy or sell a security when its price moves past
+    a particular point, ensuring a higher probability of achieving a
+    predetermined entry or exit point. The order can be used to both limit a
+    traders loss or take a profit. Once the price crosses the predefined
+    entry/exit point, the stop order becomes a market order.
     """
     def __init__(self,
                  OrderId order_id not None,
@@ -729,7 +783,7 @@ cdef class StopOrder(PassiveOrder):
         quantity : Quantity
             The order quantity (> 0).
         price : Price
-            The order price.
+            The order stop price.
         time_in_force : TimeInForce
             The order time in force.
         expire_time : datetime, optional
@@ -742,10 +796,13 @@ cdef class StopOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If the quantities value is not positive (> 0).
-            If the order_side is UNDEFINED.
-            If the time_in_force is UNDEFINED.
-            If the time_in_force is GTD and the expire_time is None.
+            If quantity is not positive (> 0).
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
+            If time_in_force is GTD and the expire_time is None.
 
         """
         super().__init__(
@@ -765,8 +822,15 @@ cdef class StopOrder(PassiveOrder):
         """
         Return a stop order from the given initialized event.
 
-        :param event: The event to initialize with.
-        :return Order.
+        Parameters
+        ----------
+        event : OrderInitialized
+            The event to initialize with.
+
+        Returns
+        -------
+        Order
+
         """
         Condition.not_none(event, "event")
 
@@ -784,9 +848,13 @@ cdef class StopOrder(PassiveOrder):
 
 cdef class BracketOrder:
     """
-    Represents an order for a financial market instrument consisting of a 'parent'
-    entry order and 'child' OCO orders representing a stop-loss and optional
-    profit target.
+    A bracket orders is designed to help limit a traders loss and optionally
+    lock in a profit by "bracketing" an entry order with two opposite-side exit
+    orders. A BUY order is bracketed by a high-side sell limit order and a
+    low-side sell stop order. A SELL order is bracketed by a high-side buy stop
+    order and a low side buy limit order.
+    Once the 'parent' entry order is triggered the 'child' OCO orders being a
+    STOP and optional LIMIT automatically become working on the brokers side.
     """
     def __init__(self,
                  Order entry not None,
