@@ -601,7 +601,11 @@ cdef class DataClient:
             self._bar_aggregators[bar_type] = aggregator
             self._log.debug(f"Added {aggregator} for {bar_type} bars.")
 
-            self.subscribe_quote_ticks(bar_type.symbol, aggregator.update)
+            # Subscribe to required data
+            if bar_type.spec.price_type == PriceType.LAST:
+                self.subscribe_trade_ticks(bar_type.symbol, aggregator.handle_trade_tick)
+            else:
+                self.subscribe_quote_ticks(bar_type.symbol, aggregator.handle_quote_tick)
 
         self._add_bar_handler(bar_type, handler)  # Add handler last
 
@@ -614,7 +618,11 @@ cdef class DataClient:
                     aggregator.stop()
 
                 # Unsubscribe from update ticks
-                self.unsubscribe_quote_ticks(bar_type.symbol, aggregator.update)
+                if bar_type.spec.price_type == PriceType.LAST:
+                    self.unsubscribe_trade_ticks(bar_type.symbol, aggregator.handle_trade_tick)
+                else:
+                    self.unsubscribe_quote_ticks(bar_type.symbol, aggregator.handle_quote_tick)
+
                 del self._bar_aggregators[bar_type]
 
     cdef void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *:
@@ -848,8 +856,12 @@ cdef class BulkTickBarBuilder:
         :param ticks: The bulk ticks for aggregation into tick bars.
         """
         cdef int i
-        for i in range(len(ticks)):
-            self.aggregator.update(ticks[i])
+        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
+            for i in range(len(ticks)):
+                self.aggregator.handle_trade_tick(ticks[i])
+        else:
+            for i in range(len(ticks)):
+                self.aggregator.handle_quote_tick(ticks[i])
 
         self.callback(self.aggregator.bar_type, self.bars)
 
@@ -880,8 +892,13 @@ cdef class BulkTimeBarUpdater:
         :param ticks: The bulk ticks for updating the aggregator.
         """
         cdef int i
-        for i in range(len(ticks)):
-            if ticks[i].timestamp < self.start_time:
-                continue  # Price not applicable to this bar
-
-            self.aggregator.update(ticks[i])
+        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
+            for i in range(len(ticks)):
+                if ticks[i].timestamp < self.start_time:
+                    continue  # Price not applicable to this bar
+                self.aggregator.handle_trade_tick(ticks[i])
+        else:
+            for i in range(len(ticks)):
+                if ticks[i].timestamp < self.start_time:
+                    continue  # Price not applicable to this bar
+                self.aggregator.handle_quote_tick(ticks[i])

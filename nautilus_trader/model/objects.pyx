@@ -24,6 +24,7 @@ from nautilus_trader.model.c_enums.currency cimport currency_to_string
 cdef Quantity _QUANTITY_ZERO = Quantity()
 cdef Quantity _QUANTITY_ONE = Quantity(value=1, precision=0)
 
+
 cdef class Quantity(Decimal64):
     """
     Represents a quantity with a non-negative value.
