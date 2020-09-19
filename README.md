@@ -12,9 +12,8 @@
 
 **BETA**
 
-*** **The API is still in a state of flux with potential breaking changes** ***
-
-*** **There is currently a large effort to develop improved documentation.** ***
+- **The API is still in a state of flux with potential breaking changes**
+- **There is currently a large effort to develop improved documentation.**
 
 ## Introduction
 
