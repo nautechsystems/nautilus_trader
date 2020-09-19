@@ -42,7 +42,6 @@ cdef class ExecutionClient:
 
         self._log.info(f"Initialized.")
 
-
     # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void connect(self) except *:

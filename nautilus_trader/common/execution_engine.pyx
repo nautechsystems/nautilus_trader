@@ -92,7 +92,6 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-
     # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *:
@@ -168,7 +167,6 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-
     # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef list registered_strategies(self):
@@ -198,7 +196,6 @@ cdef class ExecutionEngine:
         :return bool.
         """
         return self.database.count_positions_open() == 0
-
 
     # --------------------------------------------------------------------------------------------------
 
