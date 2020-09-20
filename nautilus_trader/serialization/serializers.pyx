@@ -30,6 +30,8 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
+from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_from_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_from_string
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
@@ -206,6 +208,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             package[PRICE] = convert_price_to_string(order.price)
             package[EXPIRE_TIME] = convert_datetime_to_string(order.expire_time)
 
+        if isinstance(order, LimitOrder):
+            package[IS_POST_ONLY] = str(order.is_post_only)
+            package[IS_HIDDEN] = str(order.is_hidden)
+
         return MsgPackSerializer.serialize(package)
 
     cpdef Order deserialize(self, bytes order_bytes):
@@ -252,7 +258,9 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 time_in_force=time_in_force,
                 expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
                 init_id=init_id,
-                timestamp=timestamp)
+                timestamp=timestamp,
+                is_post_only=unpacked[IS_POST_ONLY].decode(UTF8) == str(True),
+                is_hidden=unpacked[IS_HIDDEN].decode(UTF8) == str(True))
 
         if order_type == OrderType.STOP:
             return StopOrder(
@@ -439,9 +447,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
             package[QUANTITY] = event.quantity.to_string()
-            package[PRICE] = convert_price_to_string(event.price)
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
-            package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
+            package[OPTIONS] = MsgPackSerializer.serialize(event.options)
         elif isinstance(event, OrderSubmitted):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
@@ -505,6 +512,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
             package[LEAVES_QUANTITY] = event.leaves_quantity.to_string()
             package[AVERAGE_PRICE] = event.average_price.to_string()
+            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
             package[CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         elif isinstance(event, OrderFilled):
@@ -516,6 +524,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
             package[AVERAGE_PRICE] = event.average_price.to_string()
+            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
             package[CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
@@ -562,11 +571,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
                 Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
-                convert_string_to_price(unpacked[PRICE].decode(UTF8)),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
-                convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
                 event_id,
-                event_timestamp)
+                event_timestamp,
+                MsgPackSerializer.deserialize(unpacked[OPTIONS], raw_values=False))
         elif event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
@@ -661,6 +669,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
                 Quantity.from_string(unpacked[LEAVES_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
                 currency_from_string(unpacked[CURRENCY].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
@@ -675,6 +684,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
                 currency_from_string(unpacked[CURRENCY].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,

@@ -118,7 +118,9 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None):
+            datetime expire_time=None,
+            bint is_post_only=False,
+            bint is_hidden=False):
         """
         Returns a limit order.
         Note: If the time in force is GTD then a valid expire time must be given.
@@ -129,6 +131,8 @@ cdef class OrderFactory:
         :param price: The orders price.
         :param time_in_force: The orders time in force (default=DAY).
         :param expire_time: The optional order expire time (for GTD orders).
+        :param is_post_only: If the order can only make liquidity.
+        :param is_hidden: If the order is hidden from the public book.
         :raises ValueError: If quantity is not positive (> 0).
         :raises ValueError: If time_in_force is GTD and the expire_time is None.
         :return Order.
@@ -142,7 +146,9 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
+            timestamp=self._clock.time_now(),
+            is_post_only=is_post_only,
+            is_hidden=is_hidden)
 
     cpdef StopOrder stop(
             self,

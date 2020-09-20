@@ -13,22 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
 
-import os
+cpdef enum LiquiditySide:
+    NONE = 0,
+    MAKER = 1,
+    TAKER = 2,
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+cdef inline str liquidity_side_to_string(int value):
+    if value == 1:
+        return 'MAKER'
+    elif value == 2:
+        return 'TAKER'
+    else:
+        return 'NONE'
 
 
-__author__ = "Nautech Systems"
-
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 61
-_PATCH_VERSION = 0
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+cdef inline LiquiditySide liquidity_side_from_string(str value):
+    if value == 'MAKER':
+        return LiquiditySide.MAKER
+    elif value == 'TAKER':
+        return LiquiditySide.TAKER
+    else:
+        return LiquiditySide.NONE

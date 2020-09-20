@@ -25,6 +25,7 @@ from nautilus_trader.common.execution_client cimport ExecutionClient
 from nautilus_trader.common.execution_database cimport ExecutionDatabase
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.events cimport OrderFillEvent
@@ -100,7 +101,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason) except *
     cdef void _expire_order(self, PassiveOrder order) except *
     cdef void _process_order(self, Order order) except *
-    cdef void _fill_order(self, Order order, Price fill_price) except *
+    cdef void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
     cdef void _clean_up_child_orders(self, OrderId order_id) except *
     cdef void _check_oco_order(self, OrderId order_id) except *
     cdef void _reject_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *
