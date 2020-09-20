@@ -721,7 +721,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._clock.cancel_timer(self.bar_type.to_string())
 
     cpdef datetime get_start_time(self):
-        cdef datetime now = self._clock.time_now()
+        cdef datetime now = self._clock.utc_now()
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return datetime(
                 year=now.year,

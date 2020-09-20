@@ -85,10 +85,10 @@ cdef class BacktestEngine:
         self.account_id = AccountId.from_string("NAUTILUS-001-SIMULATED")
         self.config = config
         self.clock = LiveClock()
-        self.created_time = self.clock.time_now()
+        self.created_time = self.clock.utc_now()
 
         self.test_clock = TestClock()
-        self.test_clock.set_time(self.clock.time_now())
+        self.test_clock.set_time(self.clock.utc_now())
         self.uuid_factory = TestUUIDFactory()
 
         self.logger = TestLogger(
@@ -139,7 +139,7 @@ cdef class BacktestEngine:
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
-        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
+        self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
         self.data_client = BacktestDataClient(
             data=data,
             tick_capacity=config.tick_capacity,
@@ -184,7 +184,7 @@ cdef class BacktestEngine:
             uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
-        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
+        self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
 
         self.iteration = 0
 
@@ -235,7 +235,7 @@ cdef class BacktestEngine:
             Condition.not_empty(strategies, "strategies")
             Condition.list_type(strategies, TradingStrategy, "strategies")
 
-        cdef datetime run_started = self.clock.time_now()
+        cdef datetime run_started = self.clock.utc_now()
 
         # Setup logging
         self.test_logger.clear_log_store()
@@ -286,7 +286,7 @@ cdef class BacktestEngine:
         self.log.debug("Stopping...")
         self.trader.stop()
         self.log.info("Stopped.")
-        self._backtest_footer(run_started, self.clock.time_now(), start, stop)
+        self._backtest_footer(run_started, self.clock.utc_now(), start, stop)
         if print_log_store:
             self.print_log_store()
 

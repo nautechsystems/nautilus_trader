@@ -344,7 +344,7 @@ cdef class ExecutionEngine:
         self.handle_event(position_modified)
 
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
-        cdef datetime time_now = self._clock.time_now()
+        cdef datetime time_now = self._clock.utc_now()
         cdef PositionClosed position_closed = PositionClosed(
             position,
             strategy_id,

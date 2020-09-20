@@ -237,7 +237,7 @@ cdef class MessageServer(ServerNode):
             rejected_message,
             correlation_id,
             self._uuid_factory.generate(),
-            self._clock.time_now())
+            self._clock.utc_now())
 
         self.send_response(response, receiver)
 
@@ -257,7 +257,7 @@ cdef class MessageServer(ServerNode):
             original.__class__.__name__,
             original.id,
             self._uuid_factory.generate(),
-            self._clock.time_now())
+            self._clock.utc_now())
 
         self.send_response(response, receiver)
 
@@ -376,7 +376,7 @@ cdef class MessageServer(ServerNode):
             session_id,
             request.id,
             self._uuid_factory.generate(),
-            self._clock.time_now())
+            self._clock.utc_now())
 
         self.send_response(response, client_id)
 
@@ -401,7 +401,7 @@ cdef class MessageServer(ServerNode):
             session_id,
             request.id,
             self._uuid_factory.generate(),
-            self._clock.time_now())
+            self._clock.utc_now())
 
         self.send_response(response, client_id)
 

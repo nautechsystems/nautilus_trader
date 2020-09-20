@@ -208,7 +208,7 @@ cdef class MessageClient(ClientNode):
         self._socket_outbound.connect()
         self._socket_inbound.connect()
 
-        cdef datetime timestamp = self._clock.time_now()
+        cdef datetime timestamp = self._clock.utc_now()
 
         cdef Connect connect = Connect(
             self.client_id,
@@ -232,7 +232,7 @@ cdef class MessageClient(ClientNode):
             self._log.warning("No session to disconnect from.")
             return
 
-        cdef datetime timestamp = self._clock.time_now()
+        cdef datetime timestamp = self._clock.utc_now()
 
         cdef Disconnect disconnect = Disconnect(
             self.client_id,
