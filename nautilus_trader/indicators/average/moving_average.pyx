@@ -18,6 +18,7 @@ from enum import unique
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 
 
 @unique
@@ -39,12 +40,20 @@ cdef class MovingAverage(Indicator):
 
     def __init__(self,
                  int period,
-                 list params=None):
+                 list params not None,
+                 PriceType price_type):
         """
         Initialize a new instance of the abstract MovingAverage class.
 
-        :param period: The rolling window period for the indicator (> 0).
-        :param params: The initialization parameters for the indicator.
+        Parameters
+        ----------
+        period : int
+            The rolling window period for the indicator (> 0).
+        params : list
+            The initialization parameters for the indicator.
+        price_type : PriceType, optional
+            The specified price type for extracting values from quote ticks.
+
         """
         Condition.positive_int(period, "period")
         super().__init__(params)
@@ -52,10 +61,11 @@ cdef class MovingAverage(Indicator):
         self.period = period
         self.count = 0
         self.value = 0.0
+        self._price_type = price_type
 
     cdef void _update(self) except *:
         """
-        Update the indicator.
+        Update the indicator count and initialization properties.
         """
         self.count += 1
 

@@ -32,10 +32,20 @@ cdef class Message:
         """
         Initialize a new instance of the Message class.
 
-        :param message_type: The message type.
-        :param identifier: The message identifier.
-        :param timestamp: The message timestamp.
-        :raises ValueError: If message_type is UNDEFINED.
+        Parameters
+        ----------
+        message_type : MessageType
+            The message type.
+        identifier : UUID
+            The message identifier.
+        timestamp : datetime
+            The message timestamp.
+
+        Raises
+        ------
+        ValueError
+            If message_type is UNDEFINED.
+
         """
         Condition.not_equal(message_type, MessageType.UNDEFINED, "message_type", "UNDEFINED")
 
@@ -47,8 +57,15 @@ cdef class Message:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         if self.message_type == other.message_type:
             return self.id == other.id
@@ -59,8 +76,15 @@ cdef class Message:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
@@ -68,16 +92,26 @@ cdef class Message:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
-        :return int.
+        Returns
+        -------
+        int
+
         """
         return hash(self.id)
 
@@ -85,7 +119,10 @@ cdef class Message:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"{self.__class__.__name__}({self.id})"
 
@@ -94,7 +131,10 @@ cdef class Message:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -187,6 +227,9 @@ cdef class Response(Message):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"{self.__class__.__name__}(id={self.id}, correlation_id={self.correlation_id})"

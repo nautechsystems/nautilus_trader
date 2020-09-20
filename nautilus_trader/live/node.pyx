@@ -23,8 +23,8 @@ import pymongo
 import redis
 import zmq
 
-from nautilus_trader.common.execution cimport ExecutionDatabase
-from nautilus_trader.common.execution cimport InMemoryExecutionDatabase
+from nautilus_trader.common.execution_database cimport ExecutionDatabase
+from nautilus_trader.common.execution_database cimport InMemoryExecutionDatabase
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.commands cimport AccountInquiry
@@ -41,8 +41,8 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution_client cimport LiveExecClient
+from nautilus_trader.live.execution_database cimport RedisExecutionDatabase
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
 from nautilus_trader.live.logging cimport LogStore

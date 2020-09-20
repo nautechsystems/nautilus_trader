@@ -60,10 +60,7 @@ cdef class Decimal64:
         Raises
         ------
         ValueError
-            If value is 'nan'.
-            If value is 'inf.
-            If value is '-inf'.
-            If precision is not in range [0, 9].
+            If value is 'nan', 'inf, '-inf', or not in range [0, 9].
 
         """
         Condition.true(not isnan(value), "value is not nan")

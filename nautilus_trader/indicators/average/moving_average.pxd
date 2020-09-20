@@ -14,9 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 
 
 cdef class MovingAverage(Indicator):
+    cdef readonly PriceType _price_type
+
     cdef readonly int period
     cdef readonly int count
     cdef readonly double value

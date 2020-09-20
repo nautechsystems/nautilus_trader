@@ -25,9 +25,10 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.data import DataClient
-from nautilus_trader.common.execution import ExecutionEngine
-from nautilus_trader.common.execution import InMemoryExecutionDatabase
+from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
+from nautilus_trader.common.execution_engine import ExecutionEngine
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
@@ -91,10 +92,11 @@ class BacktestExecClientTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger)
 
+        self.config = BacktestConfig()
         self.exec_client = BacktestExecClient(
             exec_engine=self.exec_engine,
             instruments={self.usdjpy.symbol: self.usdjpy},
-            config=BacktestConfig(),
+            config=self.config,
             fill_model=FillModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
@@ -385,3 +387,42 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(3, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[2], OrderRejected))
+
+    def test_orders_fill_gets_commissioned(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        order = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        top_up_order = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        reduce_order = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(50000))
+
+        # Act
+        position_id = strategy.position_id_generator.generate()
+        strategy.submit_order(order, position_id)
+        strategy.submit_order(top_up_order, position_id)
+        strategy.submit_order(reduce_order, position_id)
+
+        position = strategy.positions_open()[position_id]
+        expected_commission = position.quantity.as_double() * basis_points_as_percentage(self.config.commission_rate_bp)
+        self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
+                         strategy.account().cash_balance.as_double())

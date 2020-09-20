@@ -29,8 +29,8 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.execution_client cimport ExecutionClient
+from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
@@ -356,7 +356,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
         Condition.not_none(event, "event")
-        Condition.not_none(position, "position")
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
@@ -368,19 +367,21 @@ cdef class BacktestExecClient(ExecutionClient):
             ask_rates=self._build_current_ask_rates())
 
         cdef MarketPosition direction
-        if position.entry_direction == OrderSide.BUY:
-            direction = MarketPosition.LONG
-        elif position.entry_direction == OrderSide.SELL:
-            direction = MarketPosition.SHORT
-        else:
-            raise RuntimeError(f"Invalid entry direction")
+        cdef Money pnl = Money(0, self.account_currency)
+        if position is not None and position.entry_direction != event.order_side:
+            if position.entry_direction == OrderSide.BUY:
+                direction = MarketPosition.LONG
+            elif position.entry_direction == OrderSide.SELL:
+                direction = MarketPosition.SHORT
+            else:
+                raise RuntimeError(f"Invalid entry direction")
 
-        cdef Money pnl = self.calculate_pnl(
-            direction=direction,
-            open_price=position.average_open_price,
-            close_price=event.average_price.as_double(),
-            quantity=event.filled_quantity,
-            exchange_rate=exchange_rate)
+            pnl = self.calculate_pnl(
+                direction=direction,
+                open_price=position.average_open_price,
+                close_price=event.average_price.as_double(),
+                quantity=event.filled_quantity,
+                exchange_rate=exchange_rate)
 
         cdef Money commission = self.commission_calculator.calculate(
             symbol=event.symbol,
@@ -428,7 +429,7 @@ cdef class BacktestExecClient(ExecutionClient):
             difference = open_price - close_price
         else:
             raise ValueError(f"Cannot calculate the pnl of a "
-                             f"{market_position_to_string(direction)} direction.")
+                             f"{market_position_to_string(direction)} direction")
 
         return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
 
@@ -836,8 +837,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Adjust account if position exists and opposite order side
         cdef Position position = self._exec_engine.database.get_position_for_order(order.id)
-        if position is not None and position.entry_direction != order.side:
-            self.adjust_account(filled, position)
+        self.adjust_account(filled, position)
 
         self._exec_engine.handle_event(filled)
         self._check_oco_order(order.id)

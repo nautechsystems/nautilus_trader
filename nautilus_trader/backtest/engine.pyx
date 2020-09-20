@@ -30,8 +30,8 @@ from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
-from nautilus_trader.common.execution cimport ExecutionEngine
-from nautilus_trader.common.execution cimport InMemoryExecutionDatabase
+from nautilus_trader.common.execution_database cimport InMemoryExecutionDatabase
+from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
@@ -44,7 +44,7 @@ from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.execution_engine cimport RedisExecutionDatabase
+from nautilus_trader.live.execution_database cimport RedisExecutionDatabase
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -135,7 +135,7 @@ cdef class BacktestEngine:
                 logger=self.test_logger)
         else:
             raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
-                             f"(can be either \"in-memory\" or \"redis\").")
+                             f"(can be either \"in-memory\" or \"redis\")")
         if self.config.exec_db_flush:
             self.exec_db.flush()
 

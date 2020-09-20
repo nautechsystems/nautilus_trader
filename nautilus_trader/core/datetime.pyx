@@ -67,7 +67,7 @@ cpdef bint is_tz_aware(time_object):
     elif isinstance(time_object, pd.DataFrame):
         return hasattr(time_object.index, "tz") or time_object.index.tz is not None
     else:
-        raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object.")
+        raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object")
 
 
 cpdef bint is_tz_naive(time_object):
@@ -126,7 +126,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
 
     Returns
     -------
-    pd.Series or pd.DataFrame or None
+    pd.Series, pd.DataFrame or None
 
     """
     if data is None:
