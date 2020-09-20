@@ -20,9 +20,9 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.execution_client cimport ExecutionClient
-from nautilus_trader.common.execution_database cimport ExecutionDatabase
+from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -37,12 +37,20 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
 
 
-cdef class BacktestExecClient(ExecutionClient):
-    cdef readonly Clock _clock
-    cdef readonly UUIDFactory _uuid_factory
-    cdef readonly Account _account
+cdef class SimulatedBroker:
+    cdef Clock _clock
+    cdef UUIDFactory _uuid_factory
+    cdef LoggerAdapter _log
+    cdef Account _account
+
+    cdef readonly ExecutionEngine exec_engine
     cdef readonly dict instruments
     cdef readonly dict data_ticks
     cdef readonly int day_number
@@ -54,7 +62,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
-    cdef readonly ExecutionDatabase exec_db
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly RolloverInterestCalculator rollover_calculator
@@ -88,8 +95,13 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 
+    cpdef void handle_account_inquiry(self, AccountInquiry command) except *
+    cpdef void handle_submit_order(self, SubmitOrder command) except *
+    cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cpdef void handle_modify_order(self, ModifyOrder command) except *
+    cpdef void handle_cancel_order(self, CancelOrder command) except *
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
+    # -- EVENT HANDLING --------------------------------------------------------------------------------
     cdef bint _check_valid_price(self, PassiveOrder order, QuoteTick current_market, bint reject=*)
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)

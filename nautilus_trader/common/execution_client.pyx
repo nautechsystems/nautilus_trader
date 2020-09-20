@@ -37,6 +37,7 @@ cdef class ExecutionClient:
         self._exec_engine = exec_engine
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
+        self.trader_id = exec_engine.trader_id
         self.command_count = 0
         self.event_count = 0
 
@@ -49,6 +50,10 @@ cdef class ExecutionClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void reset(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -73,10 +78,6 @@ cdef class ExecutionClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void reset(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
     # -----------------------------------------------------------------------------#

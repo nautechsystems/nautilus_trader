@@ -23,9 +23,10 @@ import pytz
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
@@ -96,19 +97,24 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger)
 
         usdjpy = TestStubs.instrument_usdjpy()
-        self.exec_client = BacktestExecClient(
+
+        self.broker = SimulatedBroker(
             exec_engine=self.exec_engine,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger)
+
+        self.exec_client = BacktestExecClient(
+            broker=self.broker,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.handle_event(TestStubs.account_event())
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(

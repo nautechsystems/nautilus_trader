@@ -20,9 +20,10 @@ from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataClient
 from nautilus_trader.backtest.data import BacktestDataContainer
-from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
 from nautilus_trader.common.execution_engine import ExecutionEngine
@@ -83,14 +84,19 @@ class TraderTests(unittest.TestCase):
             uuid_factory=uuid_factory,
             logger=logger)
 
-        self.exec_client = BacktestExecClient(
+        self.broker = SimulatedBroker(
             exec_engine=self.exec_engine,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=clock,
-            uuid_factory=uuid_factory,
+            uuid_factory=TestUUIDFactory(),
             logger=logger)
+
+        self.exec_client = BacktestExecClient(
+            broker=self.broker,
+            logger=logger)
+
         self.exec_engine.register_client(self.exec_client)
 
         strategies = [EmptyStrategy("001"),

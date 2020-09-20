@@ -30,8 +30,8 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_from_string
+from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_from_string
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
