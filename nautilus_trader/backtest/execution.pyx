@@ -33,6 +33,7 @@ from nautilus_trader.common.execution_client cimport ExecutionClient
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -324,28 +325,52 @@ cdef class BacktestExecClient(ExecutionClient):
                     if tick.ask.ge(order.price) or self._is_marginal_buy_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
-                            self._fill_order(order, order.price.add(self._slippages[order.symbol]))
+                            self._fill_order(
+                                order,
+                                order.price.add(self._slippages[order.symbol]),
+                                LiquiditySide.TAKER
+                            )
                         else:
-                            self._fill_order(order, order.price)
+                            self._fill_order(
+                                order,
+                                order.price,
+                                LiquiditySide.TAKER
+                            )
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.ask.le(order.price) or self._is_marginal_buy_limit_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
-                        self._fill_order(order, order.price)
+                        self._fill_order(
+                            order,
+                            order.price,
+                            LiquiditySide.MAKER
+                        )
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type == OrderType.STOP:
                     if tick.bid.le(order.price) or self._is_marginal_sell_stop_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
-                            self._fill_order(order, order.price.sub(self._slippages[order.symbol]))
+                            self._fill_order(
+                                order,
+                                order.price.sub(self._slippages[order.symbol]),
+                                LiquiditySide.TAKER
+                            )
                         else:
-                            self._fill_order(order, order.price)
+                            self._fill_order(
+                                order,
+                                order.price,
+                                LiquiditySide.TAKER
+                            )
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.bid.ge(order.price) or self._is_marginal_sell_limit_fill(order.price, tick):
                         del self._working_orders[order.id]  # Remove order from working orders
-                        self._fill_order(order, order.price)
+                        self._fill_order(
+                            order,
+                            order.price,
+                            LiquiditySide.MAKER
+                        )
                         continue  # Continue loop to next order
 
             # Check for order expiry
@@ -630,7 +655,11 @@ cdef class BacktestExecClient(ExecutionClient):
                     return False  # Invalid price
             elif order.type == OrderType.LIMIT:
                 if order.price.gt(current_market.ask.sub(self._min_limits[order.symbol])):
-                    if reject:
+                    if not order.is_post_only:
+                        self._accept_order(order)
+                        self._fill_order(order, current_market, LiquiditySide.TAKER)
+                        return False  # Filled
+                    elif reject:
                         self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
                                                   f"far from the market, ask={current_market.ask}")
                     return False  # Invalid price
@@ -643,10 +672,14 @@ cdef class BacktestExecClient(ExecutionClient):
                     return False  # Invalid price
             elif order.type == OrderType.LIMIT:
                 if order.price.lt(current_market.bid.add(self._min_limits[order.symbol])):
-                    if reject:
+                    if not order.is_post_only:
+                        self._accept_order(order)
+                        self._fill_order(order, current_market, LiquiditySide.TAKER)
+                        return False  # Filled
+                    elif reject:
                         self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
                                                   f"far from the market, bid={current_market.bid}")
-                    return False  # Invalid price
+                        return False  # Invalid price
 
         return True  # Valid price
 
@@ -778,17 +811,19 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._fill_order(
                         order,
                         current_market.ask.add(
-                            self._slippages[order.symbol]))
+                            self._slippages[order.symbol]),
+                        LiquiditySide.TAKER)
                 else:
-                    self._fill_order(order, current_market.ask)
+                    self._fill_order(order, current_market.ask, LiquiditySide.TAKER)
                 return  # Market order filled - nothing further to process
             elif order.side == OrderSide.SELL:
                 if self.fill_model.is_slipped():
                     self._fill_order(
                         order,
-                        current_market.bid.sub(self._slippages[order.symbol]))
+                        current_market.bid.sub(self._slippages[order.symbol]),
+                        LiquiditySide.TAKER)
                 else:
-                    self._fill_order(order, current_market.bid)
+                    self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
                 return  # Market order filled - nothing further to process
         else:
             # Check order price is valid or reject
@@ -819,7 +854,11 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._exec_engine.handle_event(working)
 
-    cdef void _fill_order(self, Order order, Price fill_price) except *:
+    cdef void _fill_order(
+            self,
+            Order order,
+            Price fill_price,
+            LiquiditySide liquidity_side) except *:
         # Generate event
         cdef OrderFilled filled = OrderFilled(
             self._account.id,
@@ -830,6 +869,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.side,
             order.quantity,
             fill_price,
+            liquidity_side,
             self.instruments[order.symbol].quote_currency,
             self._clock.time_now(),
             self._uuid_factory.generate(),
