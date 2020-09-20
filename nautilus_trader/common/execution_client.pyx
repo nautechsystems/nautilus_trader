@@ -45,30 +45,39 @@ cdef class ExecutionClient:
     # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void connect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void account_inquiry(self, AccountInquiry command) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void submit_order(self, SubmitOrder command) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void modify_order(self, ModifyOrder command) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
     # -----------------------------------------------------------------------------#
 

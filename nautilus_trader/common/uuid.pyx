@@ -30,4 +30,5 @@ cdef class UUIDFactory:
         UUID
 
         """
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
