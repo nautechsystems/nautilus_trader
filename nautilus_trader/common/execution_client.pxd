@@ -20,24 +20,26 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef ExecutionEngine _exec_engine
 
+    cdef readonly TraderId trader_id
     cdef readonly int command_count
     cdef readonly int event_count
 
     # -- ABSTRACT METHODS ------------------------------------------------------------------------------
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
+    cpdef void reset(self) except *
     cpdef void dispose(self) except *
     cpdef void account_inquiry(self, AccountInquiry command) except *
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
-    cpdef void reset(self) except *
     # --------------------------------------------------------------------------------------------------
     cdef void _reset(self) except *

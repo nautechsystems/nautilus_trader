@@ -29,7 +29,6 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.execution_client cimport ExecutionClient
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport Currency
@@ -75,9 +74,9 @@ from nautilus_trader.model.tick cimport QuoteTick
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 
-cdef class BacktestExecClient(ExecutionClient):
+cdef class SimulatedBroker:
     """
-    Provides an execution client for the BacktestEngine.
+    Provides a simulated brokerage.
     """
 
     def __init__(self,
@@ -101,11 +100,12 @@ cdef class BacktestExecClient(ExecutionClient):
         :raises ValueError: If instruments contains a type other than Instrument.
         """
         Condition.dict_types(instruments, Symbol, Instrument, "instruments")
-        super().__init__(exec_engine, logger)
 
         self._clock = clock
         self._uuid_factory = uuid_factory
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
 
+        self.exec_engine = exec_engine
         self.instruments = instruments
 
         self.day_number = 0
@@ -119,7 +119,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_activity_day = Money(0, self.account_currency)
 
         self._account = Account(self.reset_account_event())
-        self.exec_db = exec_engine.database
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
@@ -198,7 +197,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.debug(f"Resetting...")
 
-        self._reset()
         self.day_number = 0
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
@@ -214,18 +212,12 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        TBD.
-        """
-        pass
-
     cdef AccountStateEvent reset_account_event(self):
         """
         Resets the account.
         """
         return AccountStateEvent(
-            self._exec_engine.account_id,
+            self.exec_engine.account_id,
             self.account_currency,
             self.starting_capital,
             self.starting_capital,
@@ -244,20 +236,6 @@ cdef class BacktestExecClient(ExecutionClient):
         :return: datetime.
         """
         return self._clock.utc_now()
-
-    cpdef void connect(self) except *:
-        """
-        Connect to the execution service.
-        """
-        self._log.info("Connected.")
-        # Do nothing else
-
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect from the execution service.
-        """
-        self._log.info("Disconnected.")
-        # Do nothing else
 
     cpdef void change_fill_model(self, FillModel fill_model) except *:
         """
@@ -436,7 +414,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.utc_now())
 
-            self._exec_engine.handle_event(account_event)
+            self.exec_engine.handle_event(account_event)
 
     cpdef Money calculate_pnl(
             self,
@@ -460,13 +438,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, "timestamp")
+        Condition.not_none(self.exec_engine, "_exec_engine")
 
-        # Apply rollover interest for all open positions
-        if self.exec_db is None:
-            self._log.error("Cannot apply rollover interest (no execution database registered).")
-            return
-
-        cdef dict open_positions = self.exec_db.get_positions_open()
+        cdef dict open_positions = self.exec_engine.database.get_positions_open()
 
         cdef Instrument instrument
         cdef Currency base_currency
@@ -524,12 +498,11 @@ cdef class BacktestExecClient(ExecutionClient):
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.utc_now())
 
-            self._exec_engine.handle_event(account_event)
+            self.exec_engine.handle_event(account_event)
 
+    # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
-# -- COMMAND EXECUTION -----------------------------------------------------------------------------
-
-    cpdef void account_inquiry(self, AccountInquiry command) except *:
+    cpdef void handle_account_inquiry(self, AccountInquiry command) except *:
         Condition.not_none(command, "command")
 
         # Generate event
@@ -546,15 +519,15 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(event)
+        self.exec_engine.handle_event(event)
 
-    cpdef void submit_order(self, SubmitOrder command) except *:
+    cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
         self._submit_order(command.order)
         self._process_order(command.order)
 
-    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
+    cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         Condition.not_none(command, "command")
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
@@ -585,7 +558,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._process_order(command.bracket_order.entry)
 
-    cpdef void cancel_order(self, CancelOrder command) except *:
+    cpdef void handle_cancel_order(self, CancelOrder command) except *:
         Condition.not_none(command, "command")
 
         if command.order_id not in self._working_orders:
@@ -605,10 +578,10 @@ cdef class BacktestExecClient(ExecutionClient):
         # Remove from working orders (checked it was in dictionary above)
         del self._working_orders[command.order_id]
 
-        self._exec_engine.handle_event(cancelled)
+        self.exec_engine.handle_event(cancelled)
         self._check_oco_order(command.order_id)
 
-    cpdef void modify_order(self, ModifyOrder command) except *:
+    cpdef void handle_modify_order(self, ModifyOrder command) except *:
         Condition.not_none(command, "command")
 
         if command.order_id not in self._working_orders:
@@ -639,10 +612,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(modified)
+        self.exec_engine.handle_event(modified)
 
-
-# -- EVENT HANDLING --------------------------------------------------------------------------------
+    # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef bint _check_valid_price(self, PassiveOrder order, QuoteTick current_market, bint reject=True):
         # Check order price is valid and reject if not
@@ -704,7 +676,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(submitted)
+        self.exec_engine.handle_event(submitted)
 
     cdef void _accept_order(self, Order order) except *:
         # Generate event
@@ -716,7 +688,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(accepted)
+        self.exec_engine.handle_event(accepted)
 
     cdef void _reject_order(self, Order order, str reason) except *:
         if order.state() != OrderState.SUBMITTED:
@@ -732,7 +704,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(rejected)
+        self.exec_engine.handle_event(rejected)
         self._check_oco_order(order.id)
         self._clean_up_child_orders(order.id)
 
@@ -751,7 +723,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(cancel_reject)
+        self.exec_engine.handle_event(cancel_reject)
 
     cdef void _expire_order(self, PassiveOrder order) except *:
         # Generate event
@@ -762,7 +734,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(expired)
+        self.exec_engine.handle_event(expired)
 
         cdef OrderId first_child_order_id
         cdef OrderId other_oco_order_id
@@ -852,7 +824,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(working)
+        self.exec_engine.handle_event(working)
 
     cdef void _fill_order(
             self,
@@ -876,10 +848,10 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.utc_now())
 
         # Adjust account if position exists and opposite order side
-        cdef Position position = self._exec_engine.database.get_position_for_order(order.id)
+        cdef Position position = self.exec_engine.database.get_position_for_order(order.id)
         self.adjust_account(filled, position)
 
-        self._exec_engine.handle_event(filled)
+        self.exec_engine.handle_event(filled)
         self._check_oco_order(order.id)
 
         # Work any bracket child orders
@@ -910,7 +882,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         if order_id in self._oco_orders:
             oco_order_id = self._oco_orders[order_id]
-            oco_order = self._exec_engine.database.get_order(oco_order_id)
+            oco_order = self.exec_engine.database.get_order(oco_order_id)
             del self._oco_orders[order_id]
             del self._oco_orders[oco_order_id]
 
@@ -942,7 +914,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._exec_engine.handle_event(event)
+        self.exec_engine.handle_event(event)
 
     cdef void _cancel_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *:
         # order is the OCO order to cancel
@@ -960,7 +932,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.utc_now())
 
         self._log.debug(f"Cancelling {order.id} OCO order from {oco_order_id}.")
-        self._exec_engine.handle_event(event)
+        self.exec_engine.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         if order.state() != OrderState.WORKING:
@@ -976,4 +948,4 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.utc_now())
 
         self._log.debug(f"Cancelling {order.id} as linked position closed.")
-        self._exec_engine.handle_event(event)
+        self.exec_engine.handle_event(event)
