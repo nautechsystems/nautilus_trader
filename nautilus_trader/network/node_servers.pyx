@@ -77,12 +77,15 @@ cdef class ServerNode:
         self.recv_count = 0
 
     cpdef void start(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void stop(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
 

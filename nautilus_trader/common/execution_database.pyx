@@ -49,39 +49,51 @@ cdef class ExecutionDatabase:
     # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_account(self, Account event) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_order(self, Order order) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_position(self, Position position) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Account load_account(self, AccountId account_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Order load_order(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Position load_position(self, PositionId position_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void check_residuals(self) except *:
@@ -93,6 +105,7 @@ cdef class ExecutionDatabase:
             self._log.warning(f"Residual {position}")
 
     cpdef void reset(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void flush(self) except *:
@@ -111,108 +124,143 @@ cdef class ExecutionDatabase:
     # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account get_account(self, AccountId account_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef set get_strategy_ids(self):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef set get_order_ids(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef set get_order_working_ids(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef set get_order_completed_ids(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef set get_position_ids(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef set get_position_open_ids(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef set get_position_closed_ids(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Order get_order(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict get_orders(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict get_orders_working(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict get_orders_completed(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Position get_position(self, PositionId position_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Position get_position_for_order(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef PositionId get_position_id(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict get_positions(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict get_positions_open(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict get_positions_closed(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint order_exists(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint is_order_working(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint is_order_completed(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint position_exists(self, PositionId position_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint position_exists_for_order(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint position_indexed_for_order(self, OrderId order_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint is_position_open(self, PositionId position_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint is_position_closed(self, PositionId position_id):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int count_orders_total(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int count_orders_working(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int count_orders_completed(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int count_positions_total(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int count_positions_open(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int count_positions_closed(self, StrategyId strategy_id=None):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
 

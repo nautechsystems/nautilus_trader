@@ -100,15 +100,19 @@ cdef class ClientNode:
         self._message_handler = handler
 
     cpdef bint is_connected(self):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void connect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
 
