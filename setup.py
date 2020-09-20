@@ -26,8 +26,7 @@ from tools.packaging import make_extensions
 from tools.packaging import parse_requirements
 
 PACKAGE_NAME = "nautilus_trader"
-MAINTAINER = __author__
-MAINTAINER_EMAIL = "info@nautechsystems.io"
+AUTHOR_EMAIL = "info@nautechsystems.io"
 DESCRIPTION = "An algorithmic trading platform and event-driven backtester"
 URL = "https://github.com/nautechsystems/nautilus_trader"
 PYTHON_REQUIRES = ">=3.6.8"
@@ -61,7 +60,7 @@ LINE_TRACING = False
 
 # Cython compiler directives
 compiler_directives = {
-    "language_level": 3,         # If Python 3
+    "language_level": 3,         # Python 3 default (can remove soon)
     "cdivision": True,           # If division is as per C with no check for zero (35% speed up)
     "embedsignature": True,      # If docstrings should be embedded into C signatures
     "emit_code_comments": True,  # If comments should be emitted to generated C code
@@ -80,13 +79,14 @@ setup(
     name=PACKAGE_NAME,
     version=__version__,
     author=__author__,
-    maintainer=MAINTAINER,
-    maintainer_email=MAINTAINER_EMAIL,
+    author_email=AUTHOR_EMAIL,
+    maintainer=__author__,
+    maintainer_email=AUTHOR_EMAIL,
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
     classifiers=[
-        "Development Status :: 4 - BETA",
+        "Development Status :: 4 - Beta",
         "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
