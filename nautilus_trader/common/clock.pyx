@@ -18,6 +18,7 @@ import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from cpython.datetime cimport tzinfo
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -34,7 +35,11 @@ cdef class Clock:
         """
         Initialize a new instance of the Clock class.
 
-        :param uuid_factory: The uuid factory for the clocks time events.
+        Parameters
+        ----------
+        uuid_factory : UUIDFactory
+            The uuid factory for the clocks time events.
+
         """
         self._log = None
         self._uuid_factory = uuid_factory
@@ -48,27 +53,69 @@ cdef class Clock:
         self.next_event_name = None
         self.is_default_handler_registered = False
 
-    cpdef datetime time_now(self):
+    cpdef datetime utc_now(self):
         """
-        Return the current datetime of the clock (UTC).
+        Return the current UTC datetime of the clock.
 
-        :return datetime.
+        Returns
+        -------
+        datetime
+            tz-aware UTC.
+
         """
         raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef datetime local_now(self, tzinfo tz):
+        """
+        Return the current datetime of the clock in the given local timezone.
+
+        Parameters
+        ----------
+        tz : tzinfo
+            The local timezone for the returned datetime.
+
+        Returns
+        -------
+        datetime
+            tz-aware as local timezone.
+
+        """
+        return self.utc_now().astimezone(tz)
 
     cpdef timedelta get_delta(self, datetime time):
         """
         Return the timedelta from the given time.
 
-        :return timedelta.
+        Parameters
+        ----------
+        time : datetime
+            The time to take from UTC now to find the difference.
+
+        Returns
+        -------
+        timedelta
+
         """
         Condition.not_none(time, "time")
 
-        return self.time_now() - time
+        return self.utc_now() - time
 
     cpdef Timer get_timer(self, str name):
         """
-        Return the datetime for the given timer name (if found).
+        Return the datetime for the given timer name.
+
+        Parameters
+        ----------
+        name : str
+            The name of the timer.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        KeyError
+            If the timer is not found.
+
         """
         Condition.valid_string(name, "name")
 
@@ -78,7 +125,10 @@ cdef class Clock:
         """
         Return the timer labels held by the clock.
 
-        :return List[Label].
+        Returns
+        -------
+        List[Label]
+
         """
         cdef str name
         return [name for name in self._timers.keys()]
@@ -87,9 +137,17 @@ cdef class Clock:
         """
         Register the given handler as the clocks default handler.
 
-        :param handler: The handler to register (must be Callable).
-        :raises TypeError: If handler is not of type callable.
+        handler : callable
+            The handler to register.
+
+        Raises
+        ------
+        TypeError
+            If handler is not of type callable.
+
         """
+        Condition.not_none(handler, "handler")
+
         self._default_handler = handler
         self.is_default_handler_registered = True
 
@@ -97,18 +155,31 @@ cdef class Clock:
             self,
             str name,
             datetime alert_time,
-            handler=None) except *:
+            handler: callable=None) except *:
         """
         Set a time alert for the given time. When the time is reached the
         handler will be passed the TimeEvent containing the timers unique label.
 
-        :param name: The name for the alert (must be unique for this clock).
-        :param alert_time: The time for the alert.
-        :param handler: The optional handler to receive time events (must be Callable).
-        :raises ValueError: If label is not unique for this clock.
-        :raises ValueError: If alert_time is not >= the clocks current time.
-        :raises TypeError: If handler is not of type Callable or None.
-        :raises ValueError: If handler is None and no default handler is registered.
+        Parameters
+        ----------
+        name : str
+            The name for the alert (must be unique for this clock).
+        alert_time : datetime
+            The time for the alert.
+        handler : callable
+            The optional handler to receive time events (must be Callable).
+
+        Raises
+        ------
+        ValueError
+            If label is not unique for this clock.
+        ValueError
+            If alert_time is not >= the clocks current time.
+        TypeError
+            If handler is not of type Callable or None.
+        ValueError
+            If handler is None and no default handler is registered.
+
         """
         Condition.not_none(name, "name")
         Condition.not_none(alert_time, "alert_time")
@@ -116,7 +187,7 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
-        cdef datetime now = self.time_now()
+        cdef datetime now = self.utc_now()
         Condition.true(alert_time >= now, "alert_time >= time_now()")
         Condition.callable(handler, "handler")
 
@@ -141,17 +212,34 @@ cdef class Clock:
         time (optionally until the stop time). When the intervals are reached the
         handlers will be passed the TimeEvent containing the timers unique label.
 
-        :param name: The name for the timer (must be unique for this clock).
-        :param interval: The time interval for the timer.
-        :param start_time: The optional start time for the timer (if None then starts immediately).
-        :param stop_time: The optional stop time for the timer (if None then repeats indefinitely).
-        :param handler: The optional handler to receive time events (must be Callable or None).
-        :raises ValueError: If label is not unique for this clock.
-        :raises ValueError: If interval is not positive (> 0).
-        :raises ValueError: If stop_time is not None and stop_time < time_now.
-        :raises ValueError: If stop_time is not None and start_time + interval > stop_time.
-        :raises TypeError: If handler is not of type Callable or None.
-        :raises ValueError: If handler is None and no default handler is registered.
+        Parameters
+        ----------
+        name : str
+            The name for the timer (must be unique for this clock).
+        interval : timedelta
+            The time interval for the timer.
+        start_time : datetime, optional
+            The start time for the timer (if None then starts immediately).
+        stop_time : datetime, optional
+            The optional stop time for the timer (if None then repeats indefinitely).
+        handler : callable, optional
+            The handler to receive time events (must be Callable or None).
+
+        Raises
+        ------
+        ValueError
+            If label is not unique for this clock.
+        ValueError
+            If interval is not positive (> 0).
+        ValueError
+            If stop_time is not None and stop_time < time_now.
+        ValueError
+            If stop_time is not None and start_time + interval > stop_time.
+        TypeError
+            If handler is not of type Callable or None.
+        ValueError
+            If handler is None and no default handler is registered.
+
         """
         Condition.valid_string(name, "name")
         Condition.not_none(interval, "interval")
@@ -162,7 +250,7 @@ cdef class Clock:
         Condition.true(interval.total_seconds() > 0, "interval positive")
         Condition.callable(handler, "handler")
 
-        cdef datetime now = self.time_now()
+        cdef datetime now = self.utc_now()
         if start_time is None:
             start_time = now
         if stop_time is not None:
@@ -182,8 +270,16 @@ cdef class Clock:
         """
         Cancel the timer corresponding to the given label.
 
-        :param name: The name for the timer to cancel.
-        :raises RuntimeError: If no timer with the given name is found.
+        Parameters
+        ----------
+        name : str
+            The name for the timer to cancel.
+
+        Notes
+        -----
+        Logs a warning if a timer with the given name is not found (it may have
+        already been cancelled).
+
         """
         Condition.valid_string(name, "name")
 

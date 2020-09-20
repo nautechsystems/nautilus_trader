@@ -21,6 +21,7 @@ import pytz
 
 from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.common.timer import TimeEventHandler
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestClockTests(unittest.TestCase):
@@ -41,18 +42,27 @@ class TestClockTests(unittest.TestCase):
         self.assertTrue(self.clock.is_default_handler_registered)
         self.assertEqual([], self.clock.get_timer_names())
 
-    def test_time_now(self):
+    def test_utc_now(self):
         # Arrange
         # Act
-        result = self.clock.time_now()
+        result = self.clock.utc_now()
 
         # Assert
-        self.assertEqual(pytz.utc, result.tzinfo)
         self.assertEqual(datetime, type(result))
+        self.assertEqual(pytz.utc, result.tzinfo)
+
+    def test_local_now(self):
+        # Arrange
+        # Act
+        result = self.clock.local_now(pytz.timezone("Australia/Sydney"))
+
+        # Assert
+        self.assertEqual(datetime, type(result))
+        self.assertEqual(UNIX_EPOCH.astimezone(tz=pytz.timezone("Australia/Sydney")), result)
 
     def test_get_delta(self):
         # Arrange
-        start = self.clock.time_now()
+        start = self.clock.utc_now()
 
         # Act
         self.clock.set_time(start + timedelta(1))
@@ -65,11 +75,11 @@ class TestClockTests(unittest.TestCase):
     def test_can_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
-        alert_time = self.clock.time_now() + timedelta(milliseconds=100)
+        alert_time = self.clock.utc_now() + timedelta(milliseconds=100)
 
         # Act
         self.clock.set_time_alert(name, alert_time)
-        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=200))
+        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=200))
 
         # Assert
         self.assertEqual([], self.clock.get_timer_names())
@@ -80,7 +90,7 @@ class TestClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_ALERT"
         interval = timedelta(milliseconds=100)
-        alert_time = self.clock.time_now() + interval
+        alert_time = self.clock.utc_now() + interval
 
         self.clock.set_time_alert(name, alert_time)
 
@@ -93,13 +103,13 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_multiple_time_alerts(self):
         # Arrange
-        alert_time1 = self.clock.time_now() + timedelta(milliseconds=200)
-        alert_time2 = self.clock.time_now() + timedelta(milliseconds=300)
+        alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
+        alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
 
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
+        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=300))
 
         # Assert
         self.assertEqual([], self.clock.get_timer_names())
@@ -115,7 +125,7 @@ class TestClockTests(unittest.TestCase):
             interval=timedelta(milliseconds=100),
             start_time=None,
             stop_time=None)
-        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
+        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
         self.assertEqual([name], self.clock.get_timer_names())
@@ -133,7 +143,7 @@ class TestClockTests(unittest.TestCase):
             interval=interval,
             start_time=None,
             stop_time=None)
-        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
+        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
         self.assertEqual([name], self.clock.get_timer_names())
@@ -148,8 +158,8 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_timer(
             name=name,
             interval=interval,
-            stop_time=self.clock.time_now() + timedelta(milliseconds=300))
-        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=300))
+            stop_time=self.clock.utc_now() + timedelta(milliseconds=300))
+        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=300))
 
         # Assert
         self.assertEqual([], self.clock.get_timer_names())
@@ -163,7 +173,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_timer(
             name=name,
             interval=interval,
-            start_time=self.clock.time_now() + timedelta(milliseconds=10),
+            start_time=self.clock.utc_now() + timedelta(milliseconds=10),
             stop_time=None)
 
         # Act
@@ -181,10 +191,10 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_timer(
             name=name,
             interval=interval,
-            start_time=self.clock.time_now(),
+            start_time=self.clock.utc_now(),
             stop_time=None)
 
-        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=400))
+        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
         self.assertEqual([name], self.clock.get_timer_names())
@@ -194,13 +204,13 @@ class TestClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now()
+        start_time = self.clock.utc_now()
         stop_time = start_time + timedelta(seconds=5)
 
         self.clock.set_timer(
             name=name,
             interval=interval,
-            start_time=self.clock.time_now(),
+            start_time=self.clock.utc_now(),
             stop_time=stop_time)
 
         # Act
@@ -211,24 +221,24 @@ class TestClockTests(unittest.TestCase):
 
     def test_can_set_two_repeating_timers(self):
         # Arrange
-        start_time = self.clock.time_now()
+        start_time = self.clock.utc_now()
         interval = timedelta(milliseconds=100)
 
         # Act
         self.clock.set_timer(
             name="TEST_TIMER1",
             interval=interval,
-            start_time=self.clock.time_now(),
+            start_time=self.clock.utc_now(),
             stop_time=None)
 
         self.clock.set_timer(
             name="TEST_TIMER2",
             interval=interval,
-            start_time=self.clock.time_now(),
+            start_time=self.clock.utc_now(),
             stop_time=None)
 
-        events = self.clock.advance_time(self.clock.time_now() + timedelta(milliseconds=500))
+        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=500))
 
         # Assert
         self.assertEqual(10, len(events))
-        self.assertEqual(start_time + timedelta(milliseconds=500), self.clock.time_now())
+        self.assertEqual(start_time + timedelta(milliseconds=500), self.clock.utc_now())

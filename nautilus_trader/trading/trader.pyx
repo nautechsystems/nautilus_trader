@@ -287,7 +287,7 @@ cdef class Trader:
             trader_id=self.id,
             account_id=self.account_id,
             command_id=self._uuid_factory.generate(),
-            command_timestamp=self._clock.time_now())
+            command_timestamp=self._clock.utc_now())
 
         self._exec_engine.execute_command(command)
 

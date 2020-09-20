@@ -175,7 +175,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_can_get_current_time(self):
         # Arrange
         # Act
-        result = self.strategy.clock.time_now()
+        result = self.strategy.clock.utc_now()
 
         # Assert
         self.assertEqual(pytz.utc, result.tzinfo)

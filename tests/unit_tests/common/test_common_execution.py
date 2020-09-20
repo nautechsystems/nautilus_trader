@@ -595,7 +595,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         # Act
         self.exec_engine.execute_command(submit_order)
@@ -629,7 +629,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.exec_engine.execute_command(submit_order)
 
@@ -685,7 +685,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order1,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         submit_order2 = SubmitOrder(
             self.trader_id,
@@ -694,7 +694,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order2,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
@@ -754,7 +754,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order1,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         submit_order2 = SubmitOrder(
             self.trader_id,
@@ -763,7 +763,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order2,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
@@ -835,7 +835,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position1_id,
             order1,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         submit_order2 = SubmitOrder(
             self.trader_id,
@@ -844,7 +844,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position2_id,
             order2,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         # Act
         self.exec_engine.execute_command(submit_order1)
@@ -935,7 +935,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id1,
             order1,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         submit_order2 = SubmitOrder(
             self.trader_id,
@@ -944,7 +944,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id1,
             order2,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         submit_order3 = SubmitOrder(
             self.trader_id,
@@ -953,7 +953,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id2,
             order3,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         # Act
         self.exec_engine.execute_command(submit_order1)

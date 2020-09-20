@@ -54,7 +54,7 @@ cdef class Portfolio:
         self.base_currency = Currency.USD  # Default
         self.daily_pnl_realized = Money(0, self.base_currency)
         self.total_pnl_realized = Money(0, self.base_currency)
-        self.date_now = self._clock.time_now().date()
+        self.date_now = self._clock.utc_now().date()
 
     cpdef void set_base_currency(self, Currency currency) except *:
         """
@@ -94,7 +94,7 @@ cdef class Portfolio:
         self.base_currency = Currency.USD  # Default
         self.daily_pnl_realized = Money(0, self.base_currency)
         self.total_pnl_realized = Money(0, self.base_currency)
-        self.date_now = self._clock.time_now().date()
+        self.date_now = self._clock.utc_now().date()
 
         self._log.info("Reset.")
 

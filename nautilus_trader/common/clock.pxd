@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from cpython.datetime cimport tzinfo
 
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport Timer
@@ -35,7 +36,8 @@ cdef class Clock:
     cdef readonly bint is_test_clock
     cdef readonly bint is_default_handler_registered
 
-    cpdef datetime time_now(self)
+    cpdef datetime utc_now(self)
+    cpdef datetime local_now(self, tzinfo tz)
     cpdef timedelta get_delta(self, datetime time)
     cpdef Timer get_timer(self, str name)
     cpdef list get_timer_names(self)
