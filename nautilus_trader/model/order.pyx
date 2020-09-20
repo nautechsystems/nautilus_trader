@@ -683,7 +683,7 @@ cdef class LimitOrder(PassiveOrder):
                  datetime expire_time,  # Can be None
                  UUID init_id not None,
                  datetime timestamp not None,
-                 bint is_post_only=False,
+                 bint is_post_only=True,
                  bint is_hidden=False):
         """
         Initialize a new instance of the LimitOrder class.
@@ -708,10 +708,10 @@ cdef class LimitOrder(PassiveOrder):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
-        is_post_only : bool
-            If the order will only make a market.
-        is_hidden : bool
-            If the order should be hidden from the public book.
+        is_post_only : bool, optional;
+            If the order will only make a market (default=True).
+        is_hidden : bool, optional
+            If the order should be hidden from the public book (default=False).
 
         Raises
         ------
