@@ -67,17 +67,18 @@ to integrate with `FIX4.4` connections for data ingestion and trade management.
 Please ensure pyzmq >=19.0.1 is installed as some C definitions are required in
 order to compile nautilus_trader. This is due to accessing zmq sockets at the raw C level.
 
-Stable version;
+Latest version;
 
     $ pip install nautilus_trader
 
-Latest version (pre-release);
+Development version (pre-release);
 
-    $ pip install --pre nautilus_trader
+    $ pip install git+https://github.com/nautechsystems/nautilus_trader.git@develop
 
 ## Development
 
 [Development Documentation](docs/development/)
+
 [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md)
 
 We recommend the PyCharm Professional edition IDE as it interprets Cython syntax.
