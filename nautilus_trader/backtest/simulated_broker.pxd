@@ -36,7 +36,9 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -102,7 +104,6 @@ cdef class SimulatedBroker:
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
     # -- EVENT HANDLING --------------------------------------------------------------------------------
-    cdef bint _check_valid_price(self, PassiveOrder order, QuoteTick current_market, bint reject=*)
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)
@@ -113,6 +114,10 @@ cdef class SimulatedBroker:
     cdef void _cancel_reject_order(self, OrderId order_id, str response, str reason) except *
     cdef void _expire_order(self, PassiveOrder order) except *
     cdef void _process_order(self, Order order) except *
+    cdef void _process_market_order(self, MarketOrder order, QuoteTick current_market) except *
+    cdef void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *
+    cdef void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *
+    cdef void _work_order(self, Order order) except *
     cdef void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
     cdef void _clean_up_child_orders(self, OrderId order_id) except *
     cdef void _check_oco_order(self, OrderId order_id) except *

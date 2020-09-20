@@ -33,8 +33,13 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Initialize a new instance of the BacktestExecClient class.
 
-        :param broker: The simulated brokerage for the backtest.
-        :param logger: The logger for the component.
+        Parameters
+        ----------
+        broker : SimulatedBroker
+            The simulated brokerage for the backtest.
+        logger : TestLogger
+            The logger for the component.
+
         """
         super().__init__(broker.exec_engine, logger)
 
@@ -68,7 +73,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Dispose of the execution client.
         """
-        pass
+        pass  # Nothing to dispose
 
     # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 

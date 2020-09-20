@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -68,6 +69,8 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.order cimport MarketOrder
+from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 
@@ -90,14 +93,28 @@ cdef class SimulatedBroker:
         """
         Initialize a new instance of the BacktestExecClient class.
 
-        :param exec_engine: The execution engine for the backtest.
-        :param instruments: The instruments needed for the backtest.
-        :param config: The backtest configuration.
-        :param fill_model: The fill model for the backtest.
-        :param clock: The clock for the component.
-        :param uuid_factory: The UUID factory for the component.
-        :param logger: The logger for the component.
-        :raises ValueError: If instruments contains a type other than Instrument.
+        Parameters
+        ----------
+        exec_engine : ExecutionEngine
+            The execution engine for the backtest.
+        instruments : Dict[Symbol, Instrument]
+            The instruments needed for the backtest.
+        config : BacktestConfig
+            The backtest configuration.
+        fill_model : FillModel
+            The fill model for the backtest.
+        clock : TestClock
+            The clock for the component.
+        uuid_factory : TestUUIDFactory
+            The UUID factory for the component.
+        logger : TestLogger
+            The logger for the component.
+
+        Raises
+        ------
+        ValueError
+            If instruments contains a type other than Instrument.
+
         """
         Condition.dict_types(instruments, Symbol, Instrument, "instruments")
 
@@ -161,21 +178,11 @@ cdef class SimulatedBroker:
         self._min_limits = min_limits
 
     cdef dict _build_current_bid_rates(self):
-        """
-        Return the current currency bid rates in the markets.
-
-        :return: Dict[Symbol, double].
-        """
         cdef Symbol symbol
         cdef QuoteTick tick
         return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
 
     cdef dict _build_current_ask_rates(self):
-        """
-        Return the current currency ask rates in the markets.
-
-        :return: Dict[Symbol, double].
-        """
         cdef Symbol symbol
         cdef QuoteTick tick
         return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
@@ -598,8 +605,42 @@ cdef class SimulatedBroker:
                 f"modified quantity {command.modified_quantity} invalid")
             return  # Cannot modify order
 
-        if not self._check_valid_price(order, self._market[order.symbol], reject=False):
-            return  # Cannot modify order
+        cdef QuoteTick current_market = self._market.get(order.symbol)
+
+        # Check order price is valid and reject or fill
+        if order.side == OrderSide.BUY:
+            if order.type == OrderType.STOP:
+                if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
+                    self._reject_order(order, f"BUY STOP order price of {order.price} is too "
+                                              f"far from the market, ask={current_market.ask}")
+                    return  # Invalid price
+            elif order.type == OrderType.LIMIT:
+                if order.price.ge(current_market.ask.sub(self._min_limits[order.symbol])):
+                    if order.is_post_only:
+                        self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
+                                                  f"far from the market, ask={current_market.ask}")
+                        return  # Invalid price
+                    else:
+                        self._accept_order(order)
+                        self._fill_order(order, current_market.ask, LiquiditySide.TAKER)
+                    return  # Filled
+        elif order.side == OrderSide.SELL:
+            if order.type == OrderType.STOP:
+                if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
+
+                    self._reject_order(order, f"SELL STOP order price of {order.price} is too "
+                                              f"far from the market, bid={current_market.bid}")
+                    return  # Invalid price
+            elif order.type == OrderType.LIMIT:
+                if order.price.le(current_market.bid.add(self._min_limits[order.symbol])):
+                    if order.is_post_only:
+                        self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
+                                                  f"far from the market, bid={current_market.bid}")
+                        return  # Invalid price
+                    else:
+                        self._accept_order(order)
+                        self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
+                        return  # Filled
 
         # Generate event
         cdef OrderModified modified = OrderModified(
@@ -615,45 +656,6 @@ cdef class SimulatedBroker:
         self.exec_engine.handle_event(modified)
 
     # -- EVENT HANDLING --------------------------------------------------------------------------------
-
-    cdef bint _check_valid_price(self, PassiveOrder order, QuoteTick current_market, bint reject=True):
-        # Check order price is valid and reject if not
-        if order.side == OrderSide.BUY:
-            if order.type == OrderType.STOP:
-                if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
-                    if reject:
-                        self._reject_order(order, f"BUY STOP order price of {order.price} is too "
-                                                  f"far from the market, ask={current_market.ask}")
-                    return False  # Invalid price
-            elif order.type == OrderType.LIMIT:
-                if order.price.gt(current_market.ask.sub(self._min_limits[order.symbol])):
-                    if not order.is_post_only:
-                        self._accept_order(order)
-                        self._fill_order(order, current_market, LiquiditySide.TAKER)
-                        return False  # Filled
-                    elif reject:
-                        self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
-                                                  f"far from the market, ask={current_market.ask}")
-                    return False  # Invalid price
-        elif order.side == OrderSide.SELL:
-            if order.type == OrderType.STOP:
-                if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
-                    if reject:
-                        self._reject_order(order, f"SELL STOP order price of {order.price} is too "
-                                                  f"far from the market, bid={current_market.bid}")
-                    return False  # Invalid price
-            elif order.type == OrderType.LIMIT:
-                if order.price.lt(current_market.bid.add(self._min_limits[order.symbol])):
-                    if not order.is_post_only:
-                        self._accept_order(order)
-                        self._fill_order(order, current_market, LiquiditySide.TAKER)
-                        return False  # Filled
-                    elif reject:
-                        self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
-                                                  f"far from the market, bid={current_market.bid}")
-                        return False  # Invalid price
-
-        return True  # Valid price
 
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
         return current_market.ask.eq(order_price) and self.fill_model.is_stop_filled()
@@ -776,35 +778,78 @@ cdef class SimulatedBroker:
 
         # Check if market order and accept and fill immediately
         if order.type == OrderType.MARKET:
-            self._accept_order(order)
-
-            if order.side == OrderSide.BUY:
-                if self.fill_model.is_slipped():
-                    self._fill_order(
-                        order,
-                        current_market.ask.add(
-                            self._slippages[order.symbol]),
-                        LiquiditySide.TAKER)
-                else:
-                    self._fill_order(order, current_market.ask, LiquiditySide.TAKER)
-                return  # Market order filled - nothing further to process
-            elif order.side == OrderSide.SELL:
-                if self.fill_model.is_slipped():
-                    self._fill_order(
-                        order,
-                        current_market.bid.sub(self._slippages[order.symbol]),
-                        LiquiditySide.TAKER)
-                else:
-                    self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
-                return  # Market order filled - nothing further to process
+            self._process_market_order(order, current_market)
+            return  # Market order filled - nothing further to process
+        elif order.type == OrderType.LIMIT:
+            self._process_limit_order(order, current_market)
         else:
-            # Check order price is valid or reject
-            if not self._check_valid_price(order, current_market, reject=True):
-                return  # Cannot accept order
+            self._process_passive_order(order, current_market)
+
+    cdef void _process_market_order(self, MarketOrder order, QuoteTick current_market) except *:
+        self._accept_order(order)
+
+        if order.side == OrderSide.BUY:
+            if self.fill_model.is_slipped():
+                self._fill_order(
+                    order,
+                    current_market.ask.add(self._slippages[order.symbol]),
+                    LiquiditySide.TAKER)
+            else:
+                self._fill_order(order, current_market.ask, LiquiditySide.TAKER)
+        elif order.side == OrderSide.SELL:
+            if self.fill_model.is_slipped():
+                self._fill_order(
+                    order,
+                    current_market.bid.sub(self._slippages[order.symbol]),
+                    LiquiditySide.TAKER)
+            else:
+                self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
+        else:
+            raise RuntimeError(f"Invalid order side, was {order_side_to_string(order.side)}")
+
+    cdef void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *:
+        if order.side == OrderSide.BUY:
+            if order.price.ge(current_market.ask.sub(self._min_limits[order.symbol])):
+                if order.is_post_only:
+                    self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
+                                              f"far from the market, ask={current_market.ask}")
+                    return  # Invalid price
+            elif order.price.ge(current_market.ask):
+                self._accept_order(order)
+                self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
+                return  # Filled
+        elif order.side == OrderSide.SELL:
+            if order.price.le(current_market.bid.add(self._min_limits[order.symbol])):
+                if order.is_post_only:
+                    self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
+                                              f"far from the market, bid={current_market.bid}")
+                    return  # Invalid price
+            elif order.price.le(current_market.bid):
+                self._accept_order(order)
+                self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
+                return  # Filled
 
         # Order is valid and accepted
         self._accept_order(order)
+        self._work_order(order)
 
+    cdef void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *:
+        if order.side == OrderSide.BUY:
+            if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
+                self._reject_order(order, f"BUY STOP order price of {order.price} is too "
+                                          f"far from the market, ask={current_market.ask}")
+                return  # Invalid price
+        elif order.side == OrderSide.SELL:
+            if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
+                self._reject_order(order, f"SELL STOP order price of {order.price} is too "
+                                          f"far from the market, bid={current_market.bid}")
+                return  # Invalid price
+
+        # Order is valid and accepted
+        self._accept_order(order)
+        self._work_order(order)
+
+    cdef void _work_order(self, Order order) except *:
         # Order now becomes working
         self._working_orders[order.id] = order
 
