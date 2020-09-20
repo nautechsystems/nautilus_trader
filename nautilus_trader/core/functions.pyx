@@ -29,8 +29,15 @@ cpdef double fast_mean(list values):
     """
     Return the average value of the iterable.
 
-    :param values: The iterable to evaluate.
-    :return: double.
+    Parameters
+    ----------
+    values : list
+        The iterable to evaluate.
+
+    Returns
+    -------
+    double
+
     """
     cdef int length = len(values)
 
@@ -53,13 +60,23 @@ cpdef double fast_mean_iterated(
     """
     Return the calculated average from the given inputs.
 
-    :param values: The values for the calculation.
-    :param next_value: The next input value for the average.
-    :param current_value: The current value for the average.
-    :param expected_length: The expected length of the inputs.
-    :param drop_left: If the value to be dropped should be from the left side
-    of the inputs (index 0).
-    :return: double.
+    Parameters
+    ----------
+    values : list of doubles
+        The values for the calculation.
+    next_value : double
+        The next input value for the average.
+    current_value : double
+        The current value for the average.
+    expected_length : int
+        The expected length of the inputs.
+    drop_left : bool
+        If the value to be dropped should be from the left side of the inputs (index 0).
+
+    Returns
+    -------
+    double
+
     """
     cdef int length = len(values)
     if length < expected_length:
@@ -75,8 +92,15 @@ cpdef double fast_std(list values):
     """
     Return the standard deviation from the given values.
 
-    :param values: The values for the calculation.
-    :return: double.
+    Parameters
+    ----------
+    values : list
+        The values for the calculation.
+
+    Returns
+    -------
+    double
+
     """
     return fast_std_with_mean(values, fast_mean(values))
 
@@ -86,9 +110,17 @@ cpdef double fast_std_with_mean(list values, double mean):
     Return the standard deviation from the given values and mean.
     Note - garbage in garbage out for given mean.
 
-    :param values: The values for the calculation.
-    :param mean: The pre-calculated mean of the given values.
-    :return: double.
+    Parameters
+    ----------
+    values : list of double
+        The iterable of values to evaluate.
+    mean : double
+        The pre-calculated mean of the given values.
+
+    Returns
+    -------
+    double
+
     """
     cdef int length = len(values)
     cdef double std_dev = 0.0
@@ -103,8 +135,15 @@ cpdef double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
 
-    :param basis_points: The basis points to convert to percentage.
-    :return double.
+    Parameters
+    ----------
+    basis_points : double
+        The basis points to convert to percentage.
+
+    Returns
+    -------
+    double
+
     """
     return basis_points * 0.0001
 
@@ -151,8 +190,15 @@ cpdef str format_bytes(double size):
     """
     Return the formatted bytes size.
 
-    :param size: The size in bytes.
-    :return: str.
+    Parameters
+    ----------
+    size : double
+        The size in bytes.
+
+    Returns
+    -------
+    str
+
     """
     Condition.not_negative(size, "size")
 
@@ -169,11 +215,18 @@ cpdef str pad_string(str string, int length, str pad=" "):
     """
     Return the given string front padded.
 
-    :param string: The string to pad.
-    :param length: The length to pad to.
-    :param pad: The padding character.
+    Parameters
+    ----------
+    string : str
+        The string to pad.
+    length : int
+        The length to pad to.
+    pad : str
+        The padding character.
 
-    :return str.
+    Returns
+    -------
+    str
 
     """
     Condition.not_none(string, "string")
@@ -188,8 +241,16 @@ def max_in_dict(dict dictionary):
     """
     Return the key for the maximum value held in the given dictionary.
 
-    :param dictionary: The dictionary to check.
-    :return The key.
+    Parameters
+    ----------
+    dictionary : dict
+        The dictionary to check.
+
+    Returns
+    -------
+    object
+        The key for the maximum value.
+
     """
     Condition.not_none(dictionary, "dictionary")
 

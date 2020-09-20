@@ -81,8 +81,15 @@ cdef class Position:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
@@ -90,8 +97,15 @@ cdef class Position:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
@@ -99,7 +113,10 @@ cdef class Position:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.to_string()
 
@@ -108,7 +125,10 @@ cdef class Position:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -116,8 +136,15 @@ cdef class Position:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.id.equals(other.id)
 
@@ -125,7 +152,10 @@ cdef class Position:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"Position(id={self.id.value}) {self.status_string()}"
 
@@ -133,7 +163,10 @@ cdef class Position:
         """
         Return the market position as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return market_position_to_string(self.market_position)
 
@@ -141,7 +174,10 @@ cdef class Position:
         """
         Return the positions status as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string_formatted()} "
         return f"{market_position_to_string(self.market_position)}{quantity}{self.symbol}"

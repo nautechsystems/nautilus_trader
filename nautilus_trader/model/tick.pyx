@@ -54,93 +54,148 @@ cdef class Tick:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef str to_string(self):
         """
-        Return the string representation of this object.
+        Returns a string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef str to_serializable_string(self):
         """
-        Return the serializable string representation of this object.
+        Return a serializable string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
     def __eq__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
-        Note: The equality is based on the ticks timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Tick
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.equals(other)
 
     def __ne__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is not equal to (!=) the given object.
-        Note: The equality is based on the ticks timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Tick
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return not self.equals(other)
 
     def __lt__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is less than (<) the given object.
-        Note: The equality is based on the ticks timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Tick
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp < other.timestamp
 
     def __le__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is less than or equal to (<=) the given object.
-        Note: The equality is based on the ticks timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Tick
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp <= other.timestamp
 
     def __gt__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is greater than (>) the given object.
-        Note: The equality is based on the ticks timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Tick
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp > other.timestamp
 
     def __ge__(self, Tick other) -> bool:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
-        Note: The equality is based on the ticks timestamp only.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : Tick
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
         """"
         Return the hash code of this object.
-        Note: The hash is based on the ticks timestamp only.
 
-        :return int.
+        Notes
+        -----
+        The hash is based on the ticks timestamp only.
+
+        Returns
+        -------
+        int
+
         """
         return hash(self.timestamp)
 
@@ -148,7 +203,10 @@ cdef class Tick:
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.to_string()
 
@@ -157,7 +215,10 @@ cdef class Tick:
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
@@ -205,9 +266,22 @@ cdef class QuoteTick(Tick):
         """
         Return a tick parsed from the given symbol and values string.
 
-        :param symbol: The tick symbol.
-        :param values: The tick values string.
-        :return Tick.
+        Parameters
+        ----------
+        symbol : Symbol
+            The tick symbol.
+        values : str
+            The tick values string.
+
+        Returns
+        -------
+        Tick
+
+        Raises
+        ------
+        ValueError
+            If values is not a valid string.
+
         """
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
@@ -225,13 +299,24 @@ cdef class QuoteTick(Tick):
     @staticmethod
     def py_from_serializable_string(Symbol symbol, str values):
         """
-        Python wrapper for the from_string_with_symbol method.
-
         Return a tick parsed from the given symbol and values string.
 
-        :param symbol: The tick symbol.
-        :param values: The tick values string.
-        :return Tick.
+        Parameters
+        ----------
+        symbol : Symbol
+            The tick symbol.
+        values : str
+            The tick values string.
+
+        Returns
+        -------
+        Tick
+
+        Raises
+        ------
+        ValueError
+            If values is not a valid string.
+
         """
         return QuoteTick.from_serializable_string(symbol, values)
 
@@ -239,8 +324,15 @@ cdef class QuoteTick(Tick):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return (self.symbol.equals(other.symbol) and      # noqa (W504 - easier to read)
                 self.bid.equals(other.bid) and            # noqa (W504 - easier to read)
@@ -251,9 +343,12 @@ cdef class QuoteTick(Tick):
 
     cpdef str to_string(self):
         """
-        Return the string representation of this object.
+        Returns a string representation of the object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.symbol.to_string()},"
                 f"{self.bid.to_string()},"
@@ -266,7 +361,10 @@ cdef class QuoteTick(Tick):
         """
         Return the serializable string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.bid.to_string()},"
                 f"{self.ask.to_string()},"
@@ -318,9 +416,22 @@ cdef class TradeTick(Tick):
         """
         Return a tick parsed from the given symbol and values string.
 
-        :param symbol: The tick symbol.
-        :param values: The tick values string.
-        :return Tick.
+        Parameters
+        ----------
+        symbol : Symbol
+            The tick symbol.
+        values : str
+            The tick values string.
+
+        Returns
+        -------
+        Tick
+
+        Raises
+        ------
+        ValueError
+            If values is not a valid string.
+
         """
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
@@ -338,13 +449,24 @@ cdef class TradeTick(Tick):
     @staticmethod
     def py_from_serializable_string(Symbol symbol, str values):
         """
-        Python wrapper for the from_string_with_symbol method.
-
         Return a tick parsed from the given symbol and values string.
 
-        :param symbol: The tick symbol.
-        :param values: The tick values string.
-        :return Tick.
+        Parameters
+        ----------
+        symbol : Symbol
+            The tick symbol.
+        values : str
+            The tick values string.
+
+        Returns
+        -------
+        Tick
+
+        Raises
+        ------
+        ValueError
+            If values is not a valid string.
+
         """
         return TradeTick.from_serializable_string(symbol, values)
 
@@ -352,8 +474,15 @@ cdef class TradeTick(Tick):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return (self.symbol.equals(other.symbol) and      # noqa (W504 - easier to read)
                 self.price.equals(other.price) and        # noqa (W504 - easier to read)
@@ -366,7 +495,10 @@ cdef class TradeTick(Tick):
         """
         Return the string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.symbol.to_string()},"
                 f"{self.price.to_string()},"
@@ -379,7 +511,10 @@ cdef class TradeTick(Tick):
         """
         Return the serializable string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.price.to_string()},"
                 f"{self.size.to_string()},"

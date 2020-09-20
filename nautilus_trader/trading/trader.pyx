@@ -17,7 +17,7 @@ from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -45,19 +45,38 @@ cdef class Trader:
         """
         Initialize a new instance of the Trader class.
 
-        :param trader_id: The trader_id for the trader.
-        :param account_id: The account_id for the trader.
-        :param strategies: The initial strategies for the trader.
-        :param data_client: The data client to register the traders strategies with.
-        :param exec_engine: The execution engine to register the traders strategies with trader.
-        :param clock: The clock for the trader.
-        :param uuid_factory: The uuid_factory for the trader.
-        :param logger: The logger for the trader.
-        :raises ValueError: If strategies is None.
-        :raises ValueError: If strategies list is empty.
-        :raises TypeError: If strategies list contains a type other than TradingStrategy.
-        :raises ValueError: If trader_id is not equal to the exec_engine.trader_id.
-        :raises ValueError: If account_id is not equal to the exec_engine.account_id.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The identifier for the trader.
+        account_id : AccountId
+            The account identifier for the trader.
+        strategies : List[TradingStrategy]
+            The initial strategies for the trader.
+        data_client : DataClient
+            The data client to register the traders strategies with.
+        exec_engine : ExecutionEngine
+            The execution engine to register the traders strategies with trader.
+        clock : Clock
+            The clock for the trader.
+        uuid_factory : UUIDFactory
+            The uuid_factory for the trader.
+        logger : Logger
+            The logger for the trader.
+
+        Raises
+        ------
+        ValueError
+            If strategies is None.
+        ValueError
+            If strategies list is empty.
+        TypeError
+            If strategies list contains a type other than TradingStrategy.
+        ValueError
+            If trader_id is not equal to the exec_engine.trader_id.
+        ValueError
+            If account_id is not equal to the exec_engine.account_id.
+
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
         Condition.equal(account_id, exec_engine.account_id, "account_id", "exec_engine.account_id")
@@ -84,10 +103,18 @@ cdef class Trader:
         """
         Change strategies with the given list of trading strategies.
 
-        :param strategies: The list of strategies to load into the trader.
-        :raises ValueError: If strategies is None.
-        :raises ValueError: If strategies is empty.
-        :raises TypeError: If strategies contains a type other than TradingStrategy.
+        Parameters
+        ----------
+        strategies : list of TradingStrategies
+            The strategies to load into the trader.
+
+        Raises
+        ------
+        ValueError
+            If strategies is None or empty.
+        TypeError
+            If strategies contains a type other than TradingStrategy.
+
         """
         Condition.not_empty(strategies, "strategies")
         Condition.list_type(strategies, TradingStrategy, "strategies")
@@ -118,7 +145,7 @@ cdef class Trader:
                 self.strategy_ids.add(strategy.id)
             else:
                 raise ValueError(f"The strategy_id {strategy.id} was not unique "
-                                 f"(duplicate strategy_ids).")
+                                 f"(duplicate strategy_ids)")
 
             # Wire trader into strategy
             strategy.register_trader(
@@ -210,7 +237,10 @@ cdef class Trader:
 
         All stateful values of the portfolio, and every strategy are reset.
 
-        Note: The trader cannot be running otherwise an error is logged.
+        Notes
+        -----
+        The trader cannot be running otherwise an error is logged.
+
         """
         try:
             self._fsm.trigger('RESET')
@@ -264,16 +294,25 @@ cdef class Trader:
     cpdef ComponentState state(self):
         """
         Return the traders state.
+
+        Returns
+        -------
+        ComponentState
+
         """
         return self._fsm.state
 
     cpdef dict strategy_states(self):
         """
         Return a dictionary containing the traders strategy status.
+
         The key is the strategy_id.
         The value is a bool which is True if the strategy is running else False.
 
-        :return Dict[StrategyId, bool].
+        Returns
+        -------
+        Dict[StrategyId, bool]
+
         """
         cdef states = {}
         for strategy in self.strategies:
@@ -283,32 +322,44 @@ cdef class Trader:
 
     cpdef object generate_orders_report(self):
         """
-        Return an orders report.
+        Generate an orders report.
 
-        :return pd.DataFrame.
+        Returns
+        -------
+        pd.DataFrame
+
         """
         return self._report_provider.generate_orders_report(self._exec_engine.database.get_orders())
 
     cpdef object generate_order_fills_report(self):
         """
-        Return an order fills report.
+        Generate an order fills report.
 
-        :return pd.DataFrame.
+        Returns
+        -------
+        pd.DataFrame
+
         """
         return self._report_provider.generate_order_fills_report(self._exec_engine.database.get_orders())
 
     cpdef object generate_positions_report(self):
         """
-        Return a positions report.
+        Generate a positions report.
 
-        :return pd.DataFrame.
+        Returns
+        -------
+        pd.DataFrame
+
         """
         return self._report_provider.generate_positions_report(self._exec_engine.database.get_positions())
 
     cpdef object generate_account_report(self):
         """
-        Return an account report.
+        Generate an account report.
 
-        :return pd.DataFrame.
+        Returns
+        -------
+        pd.DataFrame
+
         """
         return self._report_provider.generate_account_report(self._exec_engine.account.get_events())

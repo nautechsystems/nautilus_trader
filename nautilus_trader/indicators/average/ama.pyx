@@ -19,6 +19,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.efficiency_ratio cimport EfficiencyRatio
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class AdaptiveMovingAverage(MovingAverage):
@@ -33,21 +36,25 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     def __init__(self,
                  int period_er,
                  int period_alpha_fast,
-                 int period_alpha_slow):
+                 int period_alpha_slow,
+                 PriceType price_type=PriceType.UNDEFINED):
         """
         Initialize a new instance of the AdaptiveMovingAverage class.
 
         :param period_er: The period for the internal Efficiency Ratio (> 0).
         :param period_alpha_fast: The period for the fast smoothing constant (> 0).
         :param period_alpha_slow: The period for the slow smoothing constant (> 0 < alpha_fast).
+        :param price_type: The specified price type for extracting values from quote ticks (default=UNDEFINED).
         """
         Condition.positive_int(period_er, "period_er")
         Condition.positive_int(period_alpha_fast, "period_alpha_fast")
         Condition.positive_int(period_alpha_slow, "period_alpha_slow")
         Condition.true(period_alpha_slow > period_alpha_fast, "period_alpha_slow > period_alpha_fast")
-        super().__init__(period_er, params=[period_er,
-                                            period_alpha_fast,
-                                            period_alpha_slow])
+        super().__init__(period_er,
+                         params=[period_er,
+                                 period_alpha_fast,
+                                 period_alpha_slow],
+                         price_type=price_type)
 
         self._period_er = period_er
         self._period_alpha_fast = period_alpha_fast
@@ -59,11 +66,43 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self._prior_value = 0.0
         self.value = 0.0
 
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+        """
+        Update the indicator with the given quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The update tick to handle.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self.update_raw(self._get_quote_price(tick, self._price_type).as_double())
+
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        """
+        Update the indicator with the given trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The update tick to handle.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self.update_raw(tick.price.as_double())
+
     cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar to handle.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -73,7 +112,11 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         Update the indicator with the given raw value.
 
-        :param value: The update value.
+        Parameters
+        ----------
+        value : double
+            The update value.
+
         """
         # Check if this is the initial input (then initialize variables)
         if not self.has_inputs:

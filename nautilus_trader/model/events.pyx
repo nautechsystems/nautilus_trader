@@ -91,7 +91,10 @@ cdef class AccountStateEvent(Event):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
@@ -103,7 +106,10 @@ cdef class AccountStateEvent(Event):
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -132,7 +138,10 @@ cdef class OrderEvent(Event):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"{self.__class__.__name__}(order_id={self.order_id})"
 
@@ -141,7 +150,10 @@ cdef class OrderEvent(Event):
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -274,7 +286,10 @@ cdef class OrderSubmitted(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -309,7 +324,10 @@ cdef class OrderInvalid(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"order_id={self.order_id}, "
@@ -344,7 +362,10 @@ cdef class OrderDenied(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"order_id={self.order_id}, "
@@ -386,7 +407,10 @@ cdef class OrderRejected(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -428,7 +452,10 @@ cdef class OrderAccepted(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -495,7 +522,10 @@ cdef class OrderWorking(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{self.__class__.__name__}("
@@ -545,7 +575,10 @@ cdef class OrderCancelReject(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -585,7 +618,10 @@ cdef class OrderCancelled(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -632,7 +668,10 @@ cdef class OrderModified(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -672,7 +711,10 @@ cdef class OrderExpired(OrderEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -734,7 +776,10 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -799,7 +844,10 @@ cdef class OrderFilled(OrderFillEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -840,7 +888,10 @@ cdef class PositionEvent(Event):
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -875,7 +926,10 @@ cdef class PositionOpened(PositionEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
@@ -917,7 +971,10 @@ cdef class PositionModified(PositionEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         cdef str currency = currency_to_string(self.position.quote_currency)
         return (f"{self.__class__.__name__}("
@@ -963,7 +1020,10 @@ cdef class PositionClosed(PositionEvent):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         cdef str currency = currency_to_string(self.position.quote_currency)
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")

@@ -156,7 +156,10 @@ cdef class MessageReceived(Response):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"received_type={self.received_type}, "
@@ -190,7 +193,10 @@ cdef class MessageRejected(Response):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"message='{self.message}', "
@@ -224,7 +230,10 @@ cdef class QueryFailure(Response):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"message='{self.message}', "
@@ -286,7 +295,10 @@ cdef class DataResponse(Response):
         """
         Return the string representation of this object.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"{self.__class__.__name__}("
                 f"data_type='{self.data_type}', "

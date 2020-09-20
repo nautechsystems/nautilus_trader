@@ -21,8 +21,8 @@ from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.common.execution cimport ExecutionDatabase
+from nautilus_trader.common.execution_client cimport ExecutionClient
+from nautilus_trader.common.execution_database cimport ExecutionDatabase
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition

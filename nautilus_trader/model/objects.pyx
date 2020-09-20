@@ -24,6 +24,7 @@ from nautilus_trader.model.c_enums.currency cimport currency_to_string
 cdef Quantity _QUANTITY_ZERO = Quantity()
 cdef Quantity _QUANTITY_ONE = Quantity(value=1, precision=0)
 
+
 cdef class Quantity(Decimal64):
     """
     Represents a quantity with a non-negative value.
@@ -51,8 +52,15 @@ cdef class Quantity(Decimal64):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.eq(other)
 
@@ -144,8 +152,15 @@ cdef class Price(Decimal64):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
         """
         return self.eq(other)
 
@@ -264,7 +279,10 @@ cdef class Money(Decimal64):
         Return the string representation of this object which includes the objects
         location in memory.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return (f"<{self.__class__.__name__}({self.to_string()}, currency={currency_to_string(self.currency)}) "
                 f"object at {id(self)}>")

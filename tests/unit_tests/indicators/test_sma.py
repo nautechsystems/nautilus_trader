@@ -17,7 +17,11 @@ import time
 import unittest
 
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
+from nautilus_trader.model.enums import PriceType
 from tests.test_kit.series import BatterySeries
+from tests.test_kit.stubs import TestStubs
+
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 
 class SimpleMovingAverageTests(unittest.TestCase):
@@ -99,6 +103,40 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(2.0, self.sma.value)
+
+    def test_handle_quote_tick_updates_with_expected_value(self):
+        # Arrange
+        sma_for_ticks1 = SimpleMovingAverage(10, PriceType.ASK)
+        sma_for_ticks2 = SimpleMovingAverage(10, PriceType.MID)
+        sma_for_ticks3 = SimpleMovingAverage(10, PriceType.BID)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM)
+
+        # Act
+        sma_for_ticks1.handle_quote_tick(tick)
+        sma_for_ticks2.handle_quote_tick(tick)
+        sma_for_ticks3.handle_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(sma_for_ticks1.has_inputs)
+        self.assertTrue(sma_for_ticks2.has_inputs)
+        self.assertTrue(sma_for_ticks3.has_inputs)
+        self.assertEqual(1.00003, sma_for_ticks1.value)
+        self.assertEqual(1.00002, sma_for_ticks2.value)
+        self.assertEqual(1.00001, sma_for_ticks3.value)
+
+    def test_handle_trade_tick_updates_with_expected_value(self):
+        # Arrange
+        sma_for_ticks = SimpleMovingAverage(10)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM)
+
+        # Act
+        sma_for_ticks.handle_trade_tick(tick)
+
+        # Assert
+        self.assertTrue(sma_for_ticks.has_inputs)
+        self.assertEqual(1.00001, sma_for_ticks.value)
 
     def test_with_battery_signal(self):
         # Arrange

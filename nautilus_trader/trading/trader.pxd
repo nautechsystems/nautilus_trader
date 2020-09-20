@@ -17,7 +17,7 @@ from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory

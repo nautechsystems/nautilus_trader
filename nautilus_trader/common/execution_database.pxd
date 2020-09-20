@@ -14,22 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport Command
-from nautilus_trader.model.commands cimport ModifyOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.events cimport AccountStateEvent
-from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderCancelReject
-from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -49,7 +34,7 @@ cdef class ExecutionDatabase:
 
     cdef readonly TraderId trader_id
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+    # -- COMMANDS --------------------------------------------------------------------------------------
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
@@ -67,7 +52,7 @@ cdef class ExecutionDatabase:
     cpdef void flush(self) except *
     cdef void _reset(self) except *
 
-# -- QUERIES ---------------------------------------------------------------------------------------
+    # -- QUERIES ---------------------------------------------------------------------------------------
     cpdef Account get_account(self, AccountId account_id)
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
@@ -121,68 +106,3 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     cdef set _index_positions
     cdef set _index_positions_open
     cdef set _index_positions_closed
-
-
-cdef class ExecutionEngine:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
-    cdef ExecutionClient _exec_client
-    cdef dict _registered_strategies
-
-    cdef readonly TraderId trader_id
-    cdef readonly AccountId account_id
-    cdef readonly ExecutionDatabase database
-    cdef readonly Account account
-    cdef readonly Portfolio portfolio
-    cdef readonly int command_count
-    cdef readonly int event_count
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-    cpdef void register_client(self, ExecutionClient exec_client) except *
-    cpdef void register_strategy(self, TradingStrategy strategy) except *
-    cpdef void deregister_strategy(self, TradingStrategy strategy) except *
-    cpdef void execute_command(self, Command command) except *
-    cpdef void handle_event(self, Event event) except *
-    cpdef void check_residuals(self) except *
-    cpdef void reset(self) except *
-
-# -- QUERIES ---------------------------------------------------------------------------------------
-    cpdef list registered_strategies(self)
-    cpdef bint is_strategy_flat(self, StrategyId strategy_id)
-    cpdef bint is_flat(self)
-
-# --------------------------------------------------------------------------------------------------
-    cdef void _execute_command(self, Command command) except *
-    cdef void _handle_event(self, Event event) except *
-    cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
-    cdef void _handle_order_event(self, OrderEvent event) except *
-    cdef void _handle_order_fill(self, OrderFillEvent event) except *
-    cdef void _handle_position_event(self, PositionEvent event) except *
-    cdef void _handle_account_event(self, AccountStateEvent event) except *
-    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *
-    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event) except *
-    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
-    cdef void _reset(self) except *
-
-
-cdef class ExecutionClient:
-    cdef LoggerAdapter _log
-    cdef ExecutionEngine _exec_engine
-
-    cdef readonly int command_count
-    cdef readonly int event_count
-
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
-    cpdef void connect(self) except *
-    cpdef void disconnect(self) except *
-    cpdef void dispose(self) except *
-    cpdef void account_inquiry(self, AccountInquiry command) except *
-    cpdef void submit_order(self, SubmitOrder command) except *
-    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void modify_order(self, ModifyOrder command) except *
-    cpdef void cancel_order(self, CancelOrder command) except *
-    cpdef void reset(self) except *
-# --------------------------------------------------------------------------------------------------
-    cdef void _reset(self) except *

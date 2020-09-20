@@ -21,7 +21,7 @@ from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.account import Account
-from nautilus_trader.live.execution_engine import RedisExecutionDatabase
+from nautilus_trader.live.execution_database import RedisExecutionDatabase
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -41,8 +41,6 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 
 class RedisExecutionDatabaseTests(unittest.TestCase):
-
-    # These tests require a Redis instance listening on the default port 6379
 
     def setUp(self):
         # Fixture Setup

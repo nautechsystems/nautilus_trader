@@ -22,8 +22,8 @@ from nautilus_trader.backtest.data cimport BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.execution cimport ExecutionDatabase
-from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.execution_database cimport ExecutionDatabase
+from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio

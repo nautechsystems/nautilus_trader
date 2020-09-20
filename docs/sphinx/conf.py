@@ -24,7 +24,7 @@ copyright = '2020, Nautech Systems'
 author = 'Nautech Systems'
 
 # The full version, including alpha/beta/rc tags
-release = '1.28.0b0'
+release = 1.0
 
 
 # -- General configuration ---------------------------------------------------
@@ -34,9 +34,9 @@ release = '1.28.0b0'
 # ones.
 extensions = ['sphinx.ext.autodoc', 'numpydoc', 'sphinx.ext.autosummary']
 
-add_module_names = False
+add_module_names = True
 autosummary_generate = True
-numpydoc_show_class_members = False
+numpydoc_show_class_members = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -52,7 +52,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'default'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
