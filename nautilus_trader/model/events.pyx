@@ -63,23 +63,23 @@ cdef class AccountState(Event):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         currency : Currency
             The currency for the account.
         cash_balance : Money
-            The event account cash balance.
+            The account cash balance.
         cash_start_day : Money
-            The event account cash start of day.
+            The account cash start of day.
         cash_activity_day : Money
-            The event account activity for the trading day.
+            The account activity for the trading day.
         margin_used_liquidation : Money
-            The event account margin used before liquidation.
+            The account margin used before liquidation.
         margin_used_maintenance : Money
-            The event account margin used for maintenance.
+            The account margin used for maintenance.
         margin_ratio : Decimal64
-            The event account margin ratio.
+            The account margin ratio.
         margin_call_status : str
-            The event account margin call status (can be empty string).
+            The account margin call status (can be empty string).
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -154,7 +154,7 @@ cdef class OrderEvent(Event):
         Parameters
         ----------
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -210,23 +210,23 @@ cdef class OrderInitialized(OrderEvent):
         Parameters
         ----------
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         symbol : Symbol
-            The event order symbol.
+            The order symbol.
         order_side : OrderSide
-            The event order side.
+            The order side.
         order_type : OrderType
-            The event order type.
+            The order type.
         quantity : Quantity
-            The event order quantity.
+            The order quantity.
         time_in_force : TimeInForce
-            The event order time in force.
+            The order time in force.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
         options : Dict[str, str]
-            The event order options. Contains mappings for specific order params.
+            The order options. Contains mappings for specific order params.
 
         Raises
         ------
@@ -270,11 +270,11 @@ cdef class OrderSubmitted(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         submitted_time : datetime
-            The event order submitted time.
+            The order submitted time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -318,9 +318,9 @@ cdef class OrderInvalid(OrderEvent):
         Parameters
         ----------
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         invalid_reason : str
-            The event order invalid reason.
+            The order invalid reason.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -369,9 +369,9 @@ cdef class OrderDenied(OrderEvent):
         Parameters
         ----------
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         denied_reason : str
-            The event order denied reason.
+            The order denied reason.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -424,11 +424,11 @@ cdef class OrderRejected(OrderEvent):
         account_id : AccountId
             The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         rejected_time : datetime
-            The event order rejected time.
+            The order rejected time.
         rejected_reason : datetime
-            The event order rejected reason.
+            The order rejected reason.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -482,13 +482,13 @@ cdef class OrderAccepted(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         order_id_broker : OrderIdBroker
-            The event broker order identifier.
+            The broker order identifier.
         accepted_time : datetime
-            The event order accepted time.
+            The order accepted time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -542,27 +542,27 @@ cdef class OrderWorking(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         order_id_broker : OrderIdBroker
-            The event broker order identifier.
+            The broker order identifier.
         symbol : Symbol
-            The event order symbol.
+            The order symbol.
         order_side : OrderSide
-            The event order side.
+            The order side.
         order_type : OrderType
-            The event order type.
+            The order type.
         quantity : Quantity
-            The event order quantity.
+            The order quantity.
         price : Price
-            The event order price.
+            The order price.
         time_in_force : TimeInForce
-            The event order time in force.
+            The order time in force.
         expire_time : datetime, optional
-            The event order expire time (for GTD orders only).
+            The order expire time (for GTD orders only).
         working_time : datetime
-            The event order working time.
+            The order working time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -635,15 +635,15 @@ cdef class OrderCancelReject(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         rejected_time : datetime
-            The event order cancel reject time.
+            The order cancel reject time.
         rejected_response_to : str
-            The event order cancel reject response.
+            The order cancel reject response.
         rejected_reason : str
-            The event order cancel reject reason.
+            The order cancel reject reason.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -701,9 +701,9 @@ cdef class OrderCancelled(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         :param cancelled_time: The event order cancelled time.
         event_id : UUID
             The event identifier.
@@ -754,15 +754,15 @@ cdef class OrderModified(OrderEvent):
         account_id : AccountId
             The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         order_id_broker : OrderIdBroker
-            The event order broker identifier.
+            The order broker identifier.
         modified_quantity : Quantity
-            The event modified quantity.
+            The modified quantity.
         modified_price : Price
-            The event modified price.
+            The modified price.
         modified_time : datetime
-            The event modified time.
+            The modified time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -812,11 +812,11 @@ cdef class OrderExpired(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         expired_time : datetime
-            The event order expired time.
+            The order expired time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -870,27 +870,27 @@ cdef class OrderFillEvent(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         execution_id : ExecutionId
-            The event order execution identifier.
+            The order execution identifier.
         position_id_broker : PositionIdBroker
-            The event broker position identifier.
+            The broker position identifier.
         symbol : Symbol
-            The event order symbol.
+            The order symbol.
         order_side : OrderSide
-            The event execution order side.
+            The execution order side.
         filled_quantity : Quantity
-            The event execution filled quantity.
+            The execution filled quantity.
         average_price : Price
-            The event execution average price.
+            The execution average price.
         liquidity_side : LiquiditySide
-            The event execution liquidity side.
+            The execution liquidity side.
         quote_currency : Currency
-            The event order quote currency.
+            The order quote currency.
         execution_time : datetime
-            The event execution time.
+            The execution time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -953,29 +953,29 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         execution_id : ExecutionId
-            The event order execution identifier.
+            The order execution identifier.
         position_id_broker : PositionIdBroker
-            The event broker position identifier.
+            The broker position identifier.
         symbol : Symbol
-            The event order symbol.
+            The order symbol.
         order_side : OrderSide
-            The event execution order side.
+            The execution order side.
         filled_quantity : Quantity
-            The event execution filled quantity.
+            The execution filled quantity.
         leaves_quantity : Quantity
-            The event leaves quantity.
+            The leaves quantity.
         average_price : Price
-            The event execution average price.
+            The execution average price.
         liquidity_side : LiquiditySide
-            The event execution liquidity side.
+            The execution liquidity side.
         quote_currency : Currency
-            The event order quote currency.
+            The order quote currency.
         execution_time : datetime
-            The event execution time.
+            The execution time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1047,27 +1047,27 @@ cdef class OrderFilled(OrderFillEvent):
         Parameters
         ----------
         account_id : AccountId
-            The event account identifier.
+            The account identifier.
         order_id : OrderId
-            The event order identifier.
+            The order identifier.
         execution_id : ExecutionId
-            The event order execution identifier.
+            The order execution identifier.
         position_id_broker : PositionIdBroker
-            The event broker position identifier.
+            The broker position identifier.
         symbol : Symbol
-            The event order symbol.
+            The order symbol.
         order_side : OrderSide
-            The event execution order side.
+            The execution order side.
         filled_quantity : Quantity
-            The event execution filled quantity.
+            The execution filled quantity.
         average_price : Price
-            The event execution average price.
+            The execution average price.
         liquidity_side : LiquiditySide
-            The event execution liquidity side.
+            The execution liquidity side.
         quote_currency : Currency
-            The event order quote currency.
+            The order quote currency.
         execution_time : datetime
-            The event execution time.
+            The execution time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1127,7 +1127,7 @@ cdef class PositionEvent(Event):
         Parameters
         ----------
         position : Position
-            The event position.
+            The position.
         strategy_id : StrategyId
             The strategy identifier associated with the position.
         order_fill : OrderEvent
@@ -1173,9 +1173,9 @@ cdef class PositionOpened(PositionEvent):
         Parameters
         ----------
         position : Position
-            The event position.
+            The position.
         strategy_id : StrategyId
-            The event strategy identifier associated with the position.
+            The strategy identifier associated with the position.
         order_fill : OrderEvent
             The order fill event which triggered the event.
         event_id : UUID
@@ -1224,9 +1224,9 @@ cdef class PositionModified(PositionEvent):
         Parameters
         ----------
         position : Position
-            The event position.
+            The position.
         strategy_id : StrategyId
-            The event strategy identifier associated with the position.
+            The strategy identifier associated with the position.
         order_fill : OrderEvent
             The order fill event which triggered the event.
         event_id : UUID
@@ -1285,7 +1285,7 @@ cdef class PositionClosed(PositionEvent):
         Parameters
         ----------
         position : Position
-            The event position.
+            The position.
         strategy_id : StrategyId
             The strategy identifier associated with the position.
         order_fill : OrderEvent

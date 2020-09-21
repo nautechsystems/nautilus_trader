@@ -41,13 +41,13 @@ cdef class AccountInquiry(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader_id.
+            The trader identifier.
         account_id : AccountId
-            The account_id for the inquiry.
+            The account identifier for the inquiry.
         command_id : UUID
-            The command identifier.
+            The commands identifier.
         command_timestamp : datetime
-            The command timestamp.
+            The commands timestamp.
 
         """
         super().__init__(command_id, command_timestamp)
@@ -88,19 +88,19 @@ cdef class SubmitOrder(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader_id.
+            The trader identifier.
         account_id : AccountId
-            The account_id for the inquiry.
+            The account identifier for the inquiry.
         strategy_id : StrategyId
-            The strategy_id associated with the order.
+            The strategy identifier associated with the order.
         position_id : PositionId
-            The position_id associated with the order.
+            The position identifier associated with the order.
         order : Order
             The order to submit.
         command_id : UUID
-            The command identifier.
+            The commands identifier.
         command_timestamp : datetime
-            The command timestamp.
+            The commands timestamp.
 
         """
         super().__init__(command_id, command_timestamp)
@@ -147,13 +147,13 @@ cdef class SubmitBracketOrder(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader_id.
+            The trader identifier.
         account_id : AccountId
-            The account_id for the inquiry.
+            The account identifier for the inquiry.
         strategy_id : StrategyId
-            The strategy_id to associate with the order.
+            The strategy identifier to associate with the order.
         position_id : PositionId
-            The position_id to associate with the order.
+            The position identifier to associate with the order.
         bracket_order : BracketOrder
             The bracket order to submit.
         command_id : UUID
@@ -206,9 +206,9 @@ cdef class ModifyOrder(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader_id.
+            The trader identifier.
         account_id : AccountId
-            The account_id for the inquiry.
+            The account identifier for the inquiry.
         order_id : OrderId
             The order identifier.
         modified_quantity : Quantity
@@ -263,9 +263,9 @@ cdef class CancelOrder(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader_id.
+            The trader identifier.
         account_id : AccountId
-            The account_id for the inquiry.
+            The account identifier for the inquiry.
         order_id : OrderId
             The order identifier.
         command_id : UUID
