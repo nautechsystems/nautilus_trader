@@ -32,7 +32,7 @@ from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderEvent
@@ -230,7 +230,7 @@ cdef class ExecutionEngine:
                 self._handle_order_event(event)
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
-        elif isinstance(event, AccountStateEvent):
+        elif isinstance(event, AccountState):
             self._handle_account_event(event)
 
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
@@ -303,7 +303,7 @@ cdef class ExecutionEngine:
         self.portfolio.update(event)
         self._send_to_strategy(event, event.strategy_id)
 
-    cdef void _handle_account_event(self, AccountStateEvent event) except *:
+    cdef void _handle_account_event(self, AccountState event) except *:
         cdef Account account = self.database.get_account(event.account_id)
         if account is None:
             account = Account(event)

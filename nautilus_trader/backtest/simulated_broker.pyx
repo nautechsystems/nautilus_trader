@@ -46,7 +46,7 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderCancelled
@@ -219,11 +219,11 @@ cdef class SimulatedBroker:
 
         self._log.info("Reset.")
 
-    cdef AccountStateEvent reset_account_event(self):
+    cdef AccountState reset_account_event(self):
         """
         Resets the account.
         """
-        return AccountStateEvent(
+        return AccountState(
             self.exec_engine.account_id,
             self.account_currency,
             self.starting_capital,
@@ -395,12 +395,12 @@ cdef class SimulatedBroker:
         self.total_commissions = self.total_commissions.sub(event.commission)
         pnl = pnl.sub(event.commission)
 
-        cdef AccountStateEvent account_event
+        cdef AccountState account_event
         if not self.frozen_account:
             self.account_capital = self.account_capital.add(pnl)
             self.account_cash_activity_day = self.account_cash_activity_day.add(pnl)
 
-            account_event = AccountStateEvent(
+            account_event = AccountState(
                 self._account.id,
                 self._account.currency,
                 self.account_capital,
@@ -479,12 +479,12 @@ cdef class SimulatedBroker:
         cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
         self.total_rollover = self.total_rollover.add(rollover_final)
 
-        cdef AccountStateEvent account_event
+        cdef AccountState account_event
         if not self.frozen_account:
             self.account_capital = self.account_capital.add(rollover_final)
             self.account_cash_activity_day = self.account_cash_activity_day.add(rollover_final)
 
-            account_event = AccountStateEvent(
+            account_event = AccountState(
                 self._account.id,
                 self._account.currency,
                 self.account_capital,
@@ -505,7 +505,7 @@ cdef class SimulatedBroker:
         Condition.not_none(command, "command")
 
         # Generate event
-        cdef AccountStateEvent event = AccountStateEvent(
+        cdef AccountState event = AccountState(
             self._account.id,
             self._account.currency,
             self._account.cash_balance,

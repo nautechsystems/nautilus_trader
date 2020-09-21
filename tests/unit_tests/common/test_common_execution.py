@@ -29,7 +29,7 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
@@ -211,7 +211,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_add_account(self):
         # Arrange
-        event = AccountStateEvent(
+        event = AccountState(
             AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
             Currency.USD,
             Money(1000000, Currency.USD),
@@ -234,7 +234,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_update_account(self):
         # Arrange
-        event = AccountStateEvent(
+        event = AccountState(
             AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
             Currency.USD,
             Money(1000000, Currency.USD),

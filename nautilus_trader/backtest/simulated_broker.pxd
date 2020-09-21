@@ -27,7 +27,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.objects cimport Money
@@ -89,7 +89,7 @@ cdef class SimulatedBroker:
 
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
-    cdef AccountStateEvent reset_account_event(self)
+    cdef AccountState reset_account_event(self)
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *

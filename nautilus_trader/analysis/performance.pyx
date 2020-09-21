@@ -37,7 +37,7 @@ from scipy.stats import skew
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
 
@@ -69,7 +69,7 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(account, "account")
         Condition.not_none(positions, "positions")
 
-        cdef AccountStateEvent event
+        cdef AccountState event
         for event in account.get_events():
             self.add_transaction(event)
 
@@ -78,7 +78,7 @@ cdef class PerformanceAnalyzer:
             if position.is_closed():
                 self.add_return(position.closed_time, position.realized_return)
 
-    cpdef void add_transaction(self, AccountStateEvent event) except *:
+    cpdef void add_transaction(self, AccountState event) except *:
         """
         Handle the transaction associated with the given account event.
 

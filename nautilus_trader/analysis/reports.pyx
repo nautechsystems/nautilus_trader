@@ -22,7 +22,7 @@ from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.order cimport Order
@@ -139,7 +139,7 @@ cdef class ReportProvider:
                 "realized_pnl": position.realized_pnl.as_double(),
                 "currency": currency_to_string(position.quote_currency)}
 
-    cdef dict _account_state_to_dict(self, AccountStateEvent event):
+    cdef dict _account_state_to_dict(self, AccountState event):
         return {"timestamp": event.timestamp,
                 "cash_balance": event.cash_balance.as_double(),
                 "margin_used": event.margin_used_maintenance.as_double()}

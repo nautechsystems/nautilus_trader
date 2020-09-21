@@ -46,7 +46,7 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderCancelled
@@ -431,7 +431,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             TIMESTAMP: convert_datetime_to_string(event.timestamp)
         }
 
-        if isinstance(event, AccountStateEvent):
+        if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
             package[CURRENCY] = currency_to_string(event.currency)
             package[CASH_BALANCE] = event.cash_balance.to_string()
@@ -552,9 +552,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         cdef Currency currency
-        if event_type == AccountStateEvent.__name__:
+        if event_type == AccountState.__name__:
             currency = currency_from_string(unpacked[CURRENCY].decode(UTF8))
-            return AccountStateEvent(
+            return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 currency,
                 Money.from_string(unpacked[CASH_BALANCE].decode(UTF8), currency),
