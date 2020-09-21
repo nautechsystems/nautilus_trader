@@ -59,6 +59,7 @@ cdef str FILLED_QUANTITY
 cdef str LEAVES_QUANTITY
 cdef str QUANTITY
 cdef str AVERAGE_PRICE
+cdef str COMMISSION
 cdef str PRICE
 cdef str TIME_IN_FORCE
 cdef str LIQUIDITY_SIDE
