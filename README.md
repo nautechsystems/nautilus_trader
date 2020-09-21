@@ -35,13 +35,6 @@ Note that initial compilation may take several minutes due to the quantity of ex
 
     $ python setup.py build_ext --inplace
 
-NautilusTrader has been open-sourced from working production code, and forms
-part of a larger distributed system. The messaging API can interface with the Nautilus platform
-where `Data` and `Execution` services implemented with C# .NET Core allow this trading framework
-to integrate with `FIX4.4` connections for data ingestion and trade management.
-
-> https://github.com/nautechsystems/Nautilus
-
 ## Features
 
 - **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
