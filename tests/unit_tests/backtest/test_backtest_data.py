@@ -40,7 +40,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
         self.test_clock = TestClock()
 
-    def test_can_initialize_client_with_data(self):
+    def test_initialize_client_with_data(self):
         # Arrange
         client = BacktestDataClient(
             data=self.data,

@@ -38,7 +38,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
                           bid_rates,
                           ask_rates)
 
-    def test_can_calculate_exchange_rate(self):
+    def test_get_rate(self):
         # Arrange
         converter = ExchangeRateCalculator()
         bid_rates = {"AUDUSD": 0.80000}

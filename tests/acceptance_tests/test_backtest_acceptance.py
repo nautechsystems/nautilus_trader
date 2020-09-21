@@ -65,7 +65,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
     def tearDown(self):
         self.engine.dispose()
 
-    def test_can_run_empty_strategy(self):
+    def test_run_empty_strategy(self):
         # Arrange
         start = datetime(2013, 1, 1, 0, 0, 0, 0)
         stop = datetime(2013, 2, 1, 0, 0, 0, 0)
@@ -76,7 +76,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # Assert
         self.assertEqual(2720, self.engine.iteration)
 
-    def test_can_reset_engine(self):
+    def test_reset_engine(self):
         # Arrange
         start = datetime(2013, 1, 1, 0, 0, 0, 0)
         stop = datetime(2013, 2, 1, 0, 0, 0, 0)
@@ -89,7 +89,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, self.engine.iteration)  # No exceptions raised
 
-    def test_can_run_ema_cross_strategy(self):
+    def test_run_ema_cross_strategy(self):
         # Arrange
         strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
@@ -110,7 +110,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # TODO: Trailing stops not being modified
         # self.assertEqual(-5328.73, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
-    def test_can_rerun_ema_cross_strategy_returns_identical_performance(self):
+    def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
         strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
@@ -133,7 +133,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # Assert
         self.assertEqual(all(result1), all(result2))
 
-    def test_can_run_multiple_strategies(self):
+    def test_run_multiple_strategies(self):
         # Arrange
         strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),

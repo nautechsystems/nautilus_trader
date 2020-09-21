@@ -32,7 +32,7 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 class CommissionCalculatorTests(unittest.TestCase):
 
-    def test_can_calculate_correct_commission(self):
+    def test_calculate_returns_correct_commission(self):
         # Arrange
         calculator = CommissionCalculator()
 
@@ -47,7 +47,7 @@ class CommissionCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(32.60, Currency.USD), result)
 
-    def test_can_calculate_correct_minimum_commission(self):
+    def test_calculate_returns_correct_minimum_commission(self):
         # Arrange
         calculator = CommissionCalculator(minimum=Money(2.00, Currency.USD))
 
@@ -57,7 +57,7 @@ class CommissionCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(2.00, Currency.USD), result)
 
-    def test_can_calculate_correct_commission_for_notional(self):
+    def test_calculate_returns_correct_commission_for_notional(self):
         # Arrange
         calculator = CommissionCalculator()
 
@@ -67,7 +67,7 @@ class CommissionCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(20.00, Currency.USD), result)
 
-    def test_can_calculate_correct_commission_with_exchange_rate(self):
+    def test_calculate_returns_correct_commission_with_exchange_rate(self):
         # Arrange
         calculator = CommissionCalculator()
 
