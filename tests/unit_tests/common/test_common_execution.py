@@ -67,7 +67,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         self.database = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
 
-    def test_can_add_order(self):
+    def test_add_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -82,7 +82,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.id in self.database.get_order_ids())
         self.assertEqual(order, self.database.get_orders()[order.id])
 
-    def test_can_add_position(self):
+    def test_add_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -107,7 +107,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.database.get_positions_closed(self.strategy.id))
         self.assertTrue(position.id not in self.database.get_positions_closed())
 
-    def test_can_update_order_for_working_order(self):
+    def test_update_order_for_working_order(self):
         # Arrange
         order = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
@@ -138,7 +138,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.id not in self.database.get_orders_completed(self.strategy.id))
         self.assertTrue(order.id not in self.database.get_orders_completed())
 
-    def test_can_update_order_for_completed_order(self):
+    def test_update_order_for_completed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -166,7 +166,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.id not in self.database.get_orders_working(self.strategy.id))
         self.assertTrue(order.id not in self.database.get_orders_working())
 
-    def test_can_update_position_for_closed_position(self):
+    def test_update_position_for_closed_position(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -209,7 +209,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.database.get_positions_open())
         self.assertEqual(position, self.database.get_position_for_order(order1.id))
 
-    def test_can_add_account(self):
+    def test_add_account(self):
         # Arrange
         event = AccountStateEvent(
             AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
@@ -232,7 +232,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # Did not raise exception
 
-    def test_can_update_account(self):
+    def test_update_account(self):
         # Arrange
         event = AccountStateEvent(
             AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
@@ -256,7 +256,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # Did not raise exception
 
-    def test_can_delete_strategy(self):
+    def test_delete_strategy(self):
         # Arrange
         self.database.update_strategy(self.strategy)
 
@@ -266,7 +266,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.strategy.id not in self.database.get_strategy_ids())
 
-    def test_can_check_residuals(self):
+    def test_check_residuals(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -308,7 +308,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         # Does not raise exception
 
-    def test_can_reset(self):
+    def test_reset(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -356,7 +356,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertEqual(0, self.database.count_orders_total())
         self.assertEqual(0, self.database.count_positions_total())
 
-    def test_can_flush(self):
+    def test_flush(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -501,7 +501,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_client = MockExecutionClient(self.exec_engine, self.logger)
         self.exec_engine.register_client(self.exec_client)
 
-    def test_can_register_strategy(self):
+    def test_register_strategy(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(

@@ -20,7 +20,7 @@ from nautilus_trader.core.correctness import PyCondition
 
 class ConditionTests(unittest.TestCase):
 
-    def test_can_raise_custom_exception(self):
+    def test_raises_custom_exception(self):
         # Arrange
         # Act
         # Assert
