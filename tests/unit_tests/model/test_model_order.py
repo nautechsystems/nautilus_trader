@@ -21,6 +21,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
@@ -239,7 +240,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, order.expire_time)
         self.assertFalse(order.is_completed())
 
-    def test_can_initialize_stop_market_order(self):
+    def test_can_initialize_stop_order(self):
         # Arrange
         # Act
         order = self.order_factory.stop(
@@ -545,6 +546,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.quantity,
             Price(1.00001, 5),
+            LiquiditySide.TAKER,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
@@ -584,6 +586,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.quantity,
             Price(1.00001, 5),
+            LiquiditySide.MAKER,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
@@ -627,6 +630,7 @@ class OrderTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price(0.999999, 6),
+            LiquiditySide.MAKER,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),

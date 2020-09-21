@@ -33,30 +33,19 @@ PYTHON_REQUIRES = ">=3.6.8"
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
 
 
-# Cython build options (edit here only)
-# -------------------------------------
+# ------------------------------------------------------------------------------
+# Cython (edit here only)
+# ------------------------------------------------------------------------------
 # https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
 
-# Create a html annotations file for each .pyx
-Options.annotate = True
-
-# Include docstrings in modules
-Options.docstrings = True
-
-# Embed docstrings in extensions
-Options.embed_pos_in_docstring = True
-
-# Abort compilation on first error
-Options.fast_fail = True
-
-# Treat compiler warnings as errors
-Options.warning_errors = True
-
-# Write profiling hooks into methods (x2 overhead, use for profiling only)
-PROFILE_HOOKS = False
-
-# Enable line tracing for code coverage
-LINE_TRACING = False
+# Cython build options
+Options.annotate = True                # Create annotated html files for each .pyx
+Options.docstrings = True              # Include docstrings in modules
+Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
+Options.fast_fail = True               # Abort compilation on first error
+Options.warning_errors = True          # Treat compiler warnings as errors
+PROFILE_HOOKS = False                  # Write profiling hooks into methods (x2 performance overhead)
+LINE_TRACING = False                   # Enable line tracing for code coverage
 
 # Cython compiler directives
 compiler_directives = {
@@ -67,7 +56,7 @@ compiler_directives = {
     "profile": PROFILE_HOOKS,    # See above
     "linetrace": LINE_TRACING    # See above
 }
-# -------------------------------------
+# ------------------------------------------------------------------------------
 
 
 # Create package description

@@ -86,7 +86,7 @@ cdef class IdentifierGenerator:
 
         :return str.
         """
-        cdef datetime time_now = self._clock.time_now()
+        cdef datetime time_now = self._clock.utc_now()
         return (f"{time_now.year}"
                 f"{time_now.month:02d}"
                 f"{time_now.day:02d}"

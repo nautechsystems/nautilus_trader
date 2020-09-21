@@ -141,7 +141,7 @@ cdef class Logger:
         self._log_thread = log_thread
         self._log_to_file = log_to_file
         self._log_file_path = log_file_path
-        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.time_now().date().isoformat()}.log"
+        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.utc_now().date().isoformat()}.log"
         self._log_store = []
         self._logger = logging.getLogger(name)
         self._logger.setLevel(logging.DEBUG)
@@ -173,6 +173,7 @@ cdef class Logger:
 
         :param message: The log message to log.
         """
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list get_log_store(self):
@@ -340,7 +341,7 @@ cdef class LoggerAdapter:
     cdef void _send_to_logger(self, LogLevel level, str message) except *:
         if not self.bypassed:
             self._logger.log(LogMessage(
-                self._logger.clock.time_now(),
+                self._logger.clock.utc_now(),
                 level,
                 self._format_message(message),
                 thread_id=threading.current_thread().ident))

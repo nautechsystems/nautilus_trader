@@ -52,7 +52,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(self._get_quote_price(tick, self._price_type).as_double())
+        self.update_raw(tick.extract_price(self._price_type).as_double())
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -94,11 +94,11 @@ cdef class ExponentialMovingAverage(MovingAverage):
         """
         # Check if this is the initial input
         if not self.has_inputs:
-            self._update()
+            self._increment_input()
             self.value = value
             return
 
-        self._update()
+        self._increment_input()
         self.value = self.alpha * value + ((1.0 - self.alpha) * self.value)
 
     cpdef void reset(self) except *:

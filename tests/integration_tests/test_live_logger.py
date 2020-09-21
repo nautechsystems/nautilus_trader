@@ -51,7 +51,7 @@ class LogStoreTests(unittest.TestCase):
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
         pass
 
-    def test_can_store_log_message(self):
+    def test_store_log_message(self):
         # Arrange
         message = LogMessage(UNIX_EPOCH, LogLevel.WARNING, "This is a test message.", threading.get_ident())
 

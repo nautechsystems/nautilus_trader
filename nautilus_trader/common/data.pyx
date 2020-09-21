@@ -102,15 +102,19 @@ cdef class DataClient:
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
 
     cpdef void connect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_quote_ticks(
@@ -120,6 +124,7 @@ cdef class DataClient:
         datetime to_datetime,
         int limit,
         callback: callable) except *:  # noqa (E125)
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_trade_ticks(
@@ -129,6 +134,7 @@ cdef class DataClient:
             datetime to_datetime,
             int limit,
             callback: callable) except *:  # noqa (E125)
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_bars(
@@ -138,39 +144,51 @@ cdef class DataClient:
         datetime to_datetime,
         int limit,
         callback: callable) except *:  # noqa (E125)
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_instruments(self, Venue venue) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
 

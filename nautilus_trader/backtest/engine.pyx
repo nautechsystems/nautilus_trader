@@ -26,9 +26,10 @@ from nautilus_trader.backtest.clock cimport TestClock
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataClient
 from nautilus_trader.backtest.data cimport BacktestDataContainer
-from nautilus_trader.backtest.execution cimport BacktestExecClient
+from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.simulated_broker cimport SimulatedBroker
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
 from nautilus_trader.common.execution_database cimport InMemoryExecutionDatabase
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
@@ -85,10 +86,10 @@ cdef class BacktestEngine:
         self.account_id = AccountId.from_string("NAUTILUS-001-SIMULATED")
         self.config = config
         self.clock = LiveClock()
-        self.created_time = self.clock.time_now()
+        self.created_time = self.clock.utc_now()
 
         self.test_clock = TestClock()
-        self.test_clock.set_time(self.clock.time_now())
+        self.test_clock.set_time(self.clock.utc_now())
         self.uuid_factory = TestUUIDFactory()
 
         self.logger = TestLogger(
@@ -139,7 +140,7 @@ cdef class BacktestEngine:
         if self.config.exec_db_flush:
             self.exec_db.flush()
 
-        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
+        self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
         self.data_client = BacktestDataClient(
             data=data,
             tick_capacity=config.tick_capacity,
@@ -163,13 +164,17 @@ cdef class BacktestEngine:
             uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
-        self.exec_client = BacktestExecClient(
+        self.broker = SimulatedBroker(
             exec_engine=self.exec_engine,
             instruments=data.instruments,
             config=config,
             fill_model=fill_model,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
+            logger=self.test_logger)
+
+        self.exec_client = BacktestExecClient(
+            broker=self.broker,
             logger=self.test_logger)
 
         self.exec_engine.register_client(self.exec_client)
@@ -184,7 +189,7 @@ cdef class BacktestEngine:
             uuid_factory=self.uuid_factory,
             logger=self.test_logger)
 
-        self.test_clock.set_time(self.clock.time_now())  # For logging consistency
+        self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
 
         self.iteration = 0
 
@@ -235,7 +240,7 @@ cdef class BacktestEngine:
             Condition.not_empty(strategies, "strategies")
             Condition.list_type(strategies, TradingStrategy, "strategies")
 
-        cdef datetime run_started = self.clock.time_now()
+        cdef datetime run_started = self.clock.utc_now()
 
         # Setup logging
         self.test_logger.clear_log_store()
@@ -258,7 +263,7 @@ cdef class BacktestEngine:
 
         # Setup new fill model
         if fill_model is not None:
-            self.exec_client.change_fill_model(fill_model)
+            self.broker.change_fill_model(fill_model)
 
         # Setup new strategies
         if strategies is not None:
@@ -278,7 +283,7 @@ cdef class BacktestEngine:
         while self.data_client.has_data:
             tick = self.data_client.generate_tick()
             self.advance_time(tick.timestamp)
-            self.exec_client.process_tick(tick)
+            self.broker.process_tick(tick)
             self.data_client.process_tick(tick)
             self.iteration += 1
         # ---------------------------------------------------------------------#
@@ -286,7 +291,7 @@ cdef class BacktestEngine:
         self.log.debug("Stopping...")
         self.trader.stop()
         self.log.info("Stopped.")
-        self._backtest_footer(run_started, self.clock.time_now(), start, stop)
+        self._backtest_footer(run_started, self.clock.utc_now(), start, stop)
         if print_log_store:
             self.print_log_store()
 
@@ -384,7 +389,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
         for resolution in self.data_client.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")
-        if self.exec_client.frozen_account:
+        if self.broker.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
             currency = currency_to_string(self.config.account_currency)
@@ -411,13 +416,13 @@ cdef class BacktestEngine:
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")
         self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total():,}")
         self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total():,}")
-        if self.exec_client.frozen_account:
+        if self.broker.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()
         account_starting_length = len(account_balance_starting)
-        account_balance_ending = pad_string(self.exec_client.account_capital.to_string_formatted(), account_starting_length)
-        commissions_total = pad_string(self.exec_client.total_commissions.to_string_formatted(), account_starting_length)
-        rollover_interest = pad_string(self.exec_client.total_rollover.to_string_formatted(), account_starting_length)
+        account_balance_ending = pad_string(self.broker.account_capital.to_string_formatted(), account_starting_length)
+        commissions_total = pad_string(self.broker.total_commissions.to_string_formatted(), account_starting_length)
+        rollover_interest = pad_string(self.broker.total_rollover.to_string_formatted(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")
         self.log.info(f"Account balance (ending):   {account_balance_ending}")
         self.log.info(f"Commissions (total):        {commissions_total}")

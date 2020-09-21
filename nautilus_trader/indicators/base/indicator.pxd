@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -31,7 +29,6 @@ cdef class Indicator:
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void reset(self) except *
 
-    cdef inline Price _get_quote_price(self, QuoteTick tick, PriceType price_type)
     cdef void _set_has_inputs(self, bint setting) except *
     cdef void _set_initialized(self, bint setting) except *
     cdef void _reset_base(self) except *

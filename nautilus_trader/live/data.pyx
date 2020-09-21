@@ -256,7 +256,7 @@ cdef class LiveDataClient(DataClient):
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
-        cdef DataRequest request = DataRequest(query, request_id, self._clock.time_now())
+        cdef DataRequest request = DataRequest(query, request_id, self._clock.utc_now())
         self._data_client.send_request(request)
         self.last_request_id = request_id  # For testing only
 
@@ -296,7 +296,7 @@ cdef class LiveDataClient(DataClient):
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
-        cdef DataRequest request = DataRequest(query, request_id, self._clock.time_now())
+        cdef DataRequest request = DataRequest(query, request_id, self._clock.utc_now())
         self._data_client.send_request(request)
         self.last_request_id = request_id  # For testing only
 
@@ -341,7 +341,7 @@ cdef class LiveDataClient(DataClient):
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
-        cdef DataRequest request = DataRequest(query, request_id, self._clock.time_now())
+        cdef DataRequest request = DataRequest(query, request_id, self._clock.utc_now())
         self._data_client.send_request(request)
         self.last_request_id = request_id  # For testing only
 
@@ -366,7 +366,7 @@ cdef class LiveDataClient(DataClient):
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
-        cdef DataRequest request = DataRequest(query, request_id, self._clock.time_now())
+        cdef DataRequest request = DataRequest(query, request_id, self._clock.utc_now())
         self._data_client.send_request(request)
         self.last_request_id = request_id  # For testing only
 
@@ -390,7 +390,7 @@ cdef class LiveDataClient(DataClient):
         cdef UUID request_id = self._uuid_factory.generate()
         self._set_callback(request_id, callback)
 
-        cdef DataRequest request = DataRequest(query, request_id, self._clock.time_now())
+        cdef DataRequest request = DataRequest(query, request_id, self._clock.utc_now())
         self._data_client.send_request(request)
         self.last_request_id = request_id  # For testing only
 
