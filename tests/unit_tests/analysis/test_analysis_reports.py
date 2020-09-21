@@ -29,7 +29,7 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionIdBroker
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Price, Money
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -80,6 +80,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price(0.80011, 5),
+            Money(0., Currency.AUD),
             LiquiditySide.MAKER,
             Currency.AUD,
             UNIX_EPOCH,
@@ -142,6 +143,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price(0.80011, 5),
+            Money(0., Currency.AUD),
             LiquiditySide.MAKER,
             Currency.AUD,
             UNIX_EPOCH,

@@ -394,7 +394,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.assertEqual(3, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[2], OrderRejected))
 
-    def test_orders_fill_gets_commissioned(self):
+    def test_order_fills_gets_commissioned(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(

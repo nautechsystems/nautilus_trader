@@ -135,6 +135,7 @@ cdef class OrderFillEvent(OrderEvent):
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity
     cdef readonly Price average_price
+    cdef readonly Money commission
     cdef readonly LiquiditySide liquidity_side
     cdef readonly Currency quote_currency
     cdef readonly datetime execution_time
