@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.live.clock cimport LiveClock
 
 
 cdef class IdentifierGenerator:
@@ -34,13 +33,26 @@ cdef class IdentifierGenerator:
         """
         Initialize a new instance of the IdentifierGenerator class.
 
-        :param prefix: The prefix for each generated identifier.
-        :param id_tag_trader: The identifier tag for the trader.
-        :param id_tag_strategy: The identifier tag for the strategy.
-        :param clock: The internal clock.
-        :param initial_count: The initial count for the generator.
-        :raises ValueError: If prefix is not a valid string.
-        :raises ValueError: If initial_count is negative (< 0).
+        Parameters
+        ----------
+        prefix : str
+            The prefix for each generated identifier.
+        id_tag_trader : IdTag
+            The identifier tag for the trader.
+        id_tag_strategy : IdTag
+            The identifier tag for the strategy.
+        clock : Clock
+            The internal clock.
+        initial_count : int
+            The initial count for the generator.
+
+        Raises
+        ------
+        ValueError
+            If prefix is not a valid string.
+        ValueError
+            If initial_count is negative (< 0).
+
         """
         Condition.valid_string(prefix, "prefix")
         Condition.not_negative_int(initial_count, "initial_count")
@@ -55,7 +67,11 @@ cdef class IdentifierGenerator:
         """
         Set the internal counter to the given count.
 
-        :param count: The count to set.
+        Parameters
+        ----------
+        count : int
+            The count to set.
+
         """
         self.count = count
 
@@ -70,7 +86,10 @@ cdef class IdentifierGenerator:
         """
         Return a unique identifier string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         self.count += 1
 
@@ -84,16 +103,19 @@ cdef class IdentifierGenerator:
         """
         Return the datetime tag string for the current time.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
-        cdef datetime time_now = self._clock.utc_now()
-        return (f"{time_now.year}"
-                f"{time_now.month:02d}"
-                f"{time_now.day:02d}"
+        cdef datetime utc_now = self._clock.utc_now()
+        return (f"{utc_now.year}"
+                f"{utc_now.month:02d}"
+                f"{utc_now.day:02d}"
                 f"-"
-                f"{time_now.hour:02d}"
-                f"{time_now.minute:02d}"
-                f"{time_now.second:02d}")
+                f"{utc_now.hour:02d}"
+                f"{utc_now.minute:02d}"
+                f"{utc_now.second:02d}")
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
@@ -104,16 +126,27 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     def __init__(self,
                  IdTag id_tag_trader not None,
                  IdTag id_tag_strategy not None,
-                 Clock clock not None=LiveClock(),
+                 Clock clock not None,
                  int initial_count=0):
         """
         Initialize a new instance of the OrderIdGenerator class.
 
-        :param id_tag_trader: The order_id tag for the trader.
-        :param id_tag_strategy: The order_id tag for the strategy.
-        :param clock: The clock for the component.
-        :param initial_count: The initial count for the generator.
-        :raises ValueError: If initial_count is negative (< 0).
+        Parameters
+        ----------
+        id_tag_trader : IdTag
+            The order identifier tag for the trader.
+        id_tag_strategy : IdTag
+            The order identifier tag for the strategy.
+        clock : Clock
+            The clock for the component.
+        initial_count : int
+            The initial count for the generator.
+
+        Raises
+        ------
+        ValueError
+            If initial_count is negative (< 0).
+
         """
         super().__init__("O",
                          id_tag_trader,
@@ -123,9 +156,12 @@ cdef class OrderIdGenerator(IdentifierGenerator):
 
     cpdef OrderId generate(self):
         """
-        Return a unique order_id.
+        Return a unique order identifier.
 
-        :return OrderId.
+        Returns
+        -------
+        OrderId
+
         """
         return OrderId(self._generate())
 
@@ -138,16 +174,27 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     def __init__(self,
                  IdTag id_tag_trader not None,
                  IdTag id_tag_strategy not None,
-                 Clock clock not None=LiveClock(),
+                 Clock clock not None,
                  int initial_count=0):
         """
         Initialize a new instance of the PositionIdGenerator class.
 
-        :param id_tag_trader: The position_id tag for the trader.
-        :param id_tag_strategy: The position_id tag for the strategy.
-        :param clock: The clock for the component.
-        :param initial_count: The initial count for the generator.
-        :raises ValueError: If initial_count is negative (< 0).
+        Parameters
+        ----------
+        id_tag_trader : IdTag
+            The position identifier tag for the trader.
+        id_tag_strategy : IdTag
+            The position identifier tag for the strategy.
+        clock : Clock
+            The clock for the component.
+        initial_count : int
+            The initial count for the generator.
+
+        Raises
+        ------
+        ValueError
+            If initial_count is negative (< 0).
+
         """
         super().__init__("P",
                          id_tag_trader,
@@ -157,8 +204,11 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef PositionId generate(self):
         """
-        Return a unique position_id.
+        Return a unique position identifier.
 
-        :return PositionId.
+        Returns
+        -------
+        PositionId
+
         """
         return PositionId(self._generate())

@@ -201,6 +201,11 @@ cdef class Identifier(ValidString):
         value : str
             The value of the identifier.
 
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
 
