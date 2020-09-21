@@ -18,9 +18,9 @@ from collections import deque
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.indicators.atr cimport AverageTrueRange
 
 
 cdef class TrailingStopSignal:
@@ -32,7 +32,11 @@ cdef class TrailingStopSignal:
         """
         Initialize a new instance of the TrailingStopSignal class.
 
-        :param price: The price for the trailing stop signal.
+        Parameters
+        ----------
+        price : Price
+            The price for the trailing stop signal.
+
         """
         self.price = price
         self.is_signal = True if self.price is not None else False
@@ -47,7 +51,11 @@ cdef class TrailingStopAlgorithm:
         """
         Initialize a new instance of the TrailingStopAlgorithm class.
 
-        :param order: The order for the trailing stop.
+        Parameters
+        ----------
+        order : Order
+            The order for the trailing stop.
+
         """
         self.order = order
 
@@ -76,15 +84,19 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
     The base class for all trailing stop algorithms updated with ticks.
     """
 
-    def __init__(self, Order order, Symbol symbol):
+    def __init__(self, Order order):
         """
         Initialize a new instance of the TickTrailingStopAlgorithm class.
 
-        :param order: The order for the trailing stop.
+        Parameters
+        ----------
+        order : Order
+            The order for the trailing stop.
+
         """
         super().__init__(order)
 
-        self.symbol = symbol
+        self.symbol = order.symbol
 
         if self.order.side == OrderSide.BUY:
             self._calculate = self.calculate_buy
@@ -97,7 +109,11 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
         """
         Update the algorithm with the given tick.
 
-        :param tick: The tick to update with.
+        Parameters
+        ----------
+        tick : Tick
+            The tick to update with.
+
         """
         self._calculate(tick)
 
@@ -105,7 +121,11 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
         """
         Run the trailing stop algorithm for buy order types.
 
-        :param tick: The tick to run the algorithm with.
+        Parameters
+        ----------
+        tick : Tick
+            The tick to run the algorithm with.
+
         """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -114,7 +134,11 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
         """
         Run the trailing stop algorithm for sell order types.
 
-        :param tick: The tick to run the algorithm with.
+        Parameters
+        ----------
+        tick : Tick
+            The tick to run the algorithm with.
+
         """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -129,7 +153,13 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
         """
         Initialize a new instance of the BarTrailingStopAlgorithm class.
 
-        :param order: The order for the trailing stop.
+        Parameters
+        ----------
+        order : Order
+            The order for the trailing stop algorithm.
+        bar_type : BarType
+            The bar type for the trailing stop algorithm.
+
         """
         super().__init__(order)
 
@@ -146,7 +176,11 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
         """
         Update the algorithm with the given tick.
 
-        :param bar: The bar to update with.
+        Parameters
+        ----------
+        bar : Bar
+            The bar to update with.
+
         """
         self._calculate(bar)
 
@@ -154,7 +188,11 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
         """
         Run the trailing stop algorithm for buy order types.
 
-        :param bar: The bar to run the algorithm with.
+        Parameters
+        ----------
+        bar : Bar
+            The bar to run the algorithm with.
+
         """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -163,7 +201,11 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
         """
         Run the trailing stop algorithm for sell order types.
 
-        :param bar: The bar to run the algorithm with.
+        Parameters
+        ----------
+        bar : Bar
+            The bar to run the algorithm with.
+
         """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -178,13 +220,25 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
                  list bars,
                  int bars_back,
                  double sl_atr_multiple,
-                 object atr,
+                 AverageTrueRange atr,
                  Order order,
                  BarType bar_type):
         """
         Initialize a new instance of the BarsBackTrail class.
 
-        :param order: The order for the trailing stop.
+        Parameters
+        ----------
+        order : Order
+            The order for the trailing stop algorithm.
+        bars_back : int
+            The stop-loss ATR multiple.
+        atr : AverageTrueRange
+            The average true range indicator.
+        order : Order
+            The order for the algorithm.
+        bar_type : BarType
+            The bar type for the algorithm.
+
         """
         super().__init__(order,
                          bar_type)
@@ -198,7 +252,11 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
         """
         Run the trailing stop algorithm for buy order types.
 
-        :param bar: The bar to run the algorithm with.
+        Parameters
+        ----------
+        bar : Bar
+            The bar to run the algorithm with.
+
         """
         self._bars.append(bar)
         return self.generate(bar[0].high + (self._atr.value * self._sl_atr_multiple))
@@ -207,7 +265,11 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
         """
         Run the trailing stop algorithm for sell order types.
 
-        :param bar: The bar to run the algorithm with.
+        Parameters
+        ----------
+        bar : Bar
+            The bar to run the algorithm with.
+
         """
         self._bars.append(bar)
         return self.generate(bar[0].low - (self._atr.value * self._sl_atr_multiple))
