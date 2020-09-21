@@ -21,6 +21,7 @@ import pytz
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
@@ -357,19 +358,24 @@ class TestStubs:
 
         generator = PositionIdGenerator(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"))
+            id_tag_strategy=IdTag("001"),
+            clock=LiveClock()
+        )
 
         for _i in range(number - 1):
             generator.generate()
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"))
+            id_tag_strategy=IdTag("001"),
+            clock=LiveClock()
+        )
 
         order = order_factory.market(
             TestStubs.symbol_audusd_fxcm(),
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000)
+        )
 
         order_filled = TestStubs.event_order_filled(order, entry_price)
 

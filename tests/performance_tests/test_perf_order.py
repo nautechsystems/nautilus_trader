@@ -15,6 +15,7 @@
 
 import unittest
 
+from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.model.generators import OrderIdGenerator
 from nautilus_trader.model.identifiers import IdTag
 from tests.test_kit.performance import PerformanceHarness
@@ -26,7 +27,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 class OrderPerformanceTests(unittest.TestCase):
 
     def setUp(self):
-        self.generator = OrderIdGenerator(IdTag("001"), IdTag("001"))
+        self.generator = OrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())
 
     def test_order_id_generator(self):
         result = PerformanceHarness.profile_function(self.generator.generate, 3, 10000)
