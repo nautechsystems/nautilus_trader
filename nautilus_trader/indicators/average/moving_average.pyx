@@ -63,7 +63,7 @@ cdef class MovingAverage(Indicator):
         self.value = 0.0
         self._price_type = price_type
 
-    cdef void _update(self) except *:
+    cdef void _increment_input(self) except *:
         """
         Update the indicator count and initialization properties.
         """

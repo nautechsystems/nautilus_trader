@@ -122,7 +122,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         if not self.has_inputs:
             self.value = value
 
-        self._update()
+        self._increment_input()
         self._efficiency_ratio.update_raw(value)
         self._prior_value = self.value
 

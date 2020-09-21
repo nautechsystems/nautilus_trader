@@ -52,7 +52,7 @@ class FunctionPerformanceTests(unittest.TestCase):
     def test_np_mean(self):
         result = PerformanceHarness.profile_function(self.np_mean, 3, 100000)
         # ~883ms (883964μs) minimum of 3 runs @ 100,000 iterations each run.
-        self.assertTrue(result < 1.0)
+        self.assertTrue(result < 1.2)
 
     def test_np_std(self):
         result = PerformanceHarness.profile_function(self.np_std, 3, 10000)
