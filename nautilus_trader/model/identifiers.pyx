@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
 cdef class Symbol(Identifier):
     """
     Represents the symbol for a financial market tradeable instrument.
-    The code and and venue combination identifier value must be unique at the
+    The code and venue combination identifier value must be unique at the
     fund level.
     """
 
@@ -33,9 +33,18 @@ cdef class Symbol(Identifier):
         """
         Initialize a new instance of the Symbol class.
 
-        :param code: The symbols code identifier value.
-        :param venue: The symbols venue.
-        :raises ValueError: If the code is not a valid string.
+        Parameters
+        ----------
+        code : str
+            The symbols code identifier value.
+        venue : Venue
+            The symbols venue.
+
+        Raises
+        ------
+        ValueError
+            If code is not a valid string.
+
         """
         Condition.valid_string(code, "code")
         super().__init__(f"{code}.{venue.value}")
@@ -51,8 +60,15 @@ cdef class Symbol(Identifier):
 
         Example: "AUD/USD.FXCM".
 
-        :param value: The symbol string value to parse.
-        :return Symbol.
+        Parameters
+        ----------
+        value : str
+            The symbol string value to parse.
+
+        Returns
+        -------
+        Symbol
+
         """
         Condition.valid_string(value, "value")
 
@@ -69,9 +85,15 @@ cdef class Symbol(Identifier):
 
         Example: "AUD/USD.FXCM".
 
-        :param value: The symbol string value to parse.
+        Parameters
+        ----------
+        value : str
+            The symbol string value to parse.
 
-        :return Symbol.
+        Returns
+        -------
+        Symbol
+
         """
         return Symbol.from_string(value)
 
@@ -86,8 +108,16 @@ cdef class Venue(Identifier):
         """
         Initialize a new instance of the Venue class.
 
-        :param name: The venue name identifier value.
-        :raises ValueError: If the name is not a valid string.
+        Parameters
+        ----------
+        name : str
+            The venue name identifier value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
         """
         super().__init__(name.upper())
 
@@ -102,8 +132,16 @@ cdef class Exchange(Venue):
         """
         Initialize a new instance of the Exchange class.
 
-        :param name: The exchange name identifier value.
-        :raises ValueError: If the name is not a valid string.
+        Parameters
+        ----------
+        name : str
+            The exchange name identifier value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
         """
         super().__init__(name.upper())
 
@@ -118,8 +156,16 @@ cdef class Brokerage(Identifier):
         """
         Initialize a new instance of the Brokerage class.
 
-        :param name: The brokerage name identifier value.
-        :raises ValueError: If the name is not a valid string.
+        Parameters
+        ----------
+        name : str
+            The brokerage name identifier value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
         """
         super().__init__(name.upper())
 
@@ -133,8 +179,16 @@ cdef class IdTag(Identifier):
         """
         Initialize a new instance of the IdTag class.
 
-        :param value: The identifier tag value.
-        :raises ValueError: If the value is not a valid string.
+        Parameters
+        ----------
+        value : str
+            The identifier tag value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
         """
         super().__init__(value)
 
@@ -149,10 +203,20 @@ cdef class TraderId(Identifier):
         """
         Initialize a new instance of the TraderId class.
 
-        :param name: The trader name identifier value.
-        :param order_id_tag: The trader order_id tag value.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the order_id_tag is not a valid string.
+        Parameters
+        ----------
+        name : str
+            The trader name identifier value.
+        order_id_tag : str
+            The trader order identifier tag value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        ValueError
+            If order_id_tag is not a valid string.
+
         """
         Condition.valid_string(name, "name")
         Condition.valid_string(order_id_tag, "order_id_tag")
@@ -164,17 +228,23 @@ cdef class TraderId(Identifier):
     @staticmethod
     cdef TraderId from_string(str value):
         """
-        Return a trader_id parsed from the given string value. Must be
+        Return a trader identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
 
-        Its is expected a trader_id is the abbreviated name of the trader with
-        an order_id tag number separated by a hyphen '-'.
+        Its is expected a trader identifier  is the abbreviated name of the
+        trader with an order identifier tag number separated by a hyphen '-'.
 
         Example: "TESTER-001".
 
-        :param value: The value for the strategy_id.
+        Parameters
+        ----------
+        value : str
+            The value for the strategy identifier.
 
-        :return TraderId.
+        Returns
+        -------
+        TraderId
+
         """
         Condition.valid_string(value, "value")
 
@@ -185,19 +255,23 @@ cdef class TraderId(Identifier):
     @staticmethod
     def py_from_string(value: str) -> TraderId:
         """
-        Python wrapper for the from_string method.
-
-        Return a trader_id parsed from the given string value. Must be
+        Return a trader identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
 
-        Its is expected a trader_id is the abbreviated name of the trader with
-        an order_id tag number separated by a hyphen '-'.
+        Its is expected a trader identifier  is the abbreviated name of the
+        trader with an order identifier tag number separated by a hyphen '-'.
 
         Example: "TESTER-001".
 
-        :param value: The value for the trader_id.
+        Parameters
+        ----------
+        value : str
+            The value for the strategy identifier.
 
-        :return TraderId.
+        Returns
+        -------
+        TraderId
+
         """
         return TraderId.from_string(value)
 
@@ -212,10 +286,20 @@ cdef class StrategyId(Identifier):
         """
         Initialize a new instance of the StrategyId class.
 
-        :param name: The strategy name identifier value.
-        :param order_id_tag: The strategy order_id tag value.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the order_id_tag is not a valid string.
+        Parameters
+        ----------
+        name : str
+            The strategy name identifier value.
+        order_id_tag : str
+            The strategy order identifier tag value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        ValueError
+            If order_id_tag is not a valid string.
+
         """
         Condition.valid_string(name, "name")
         Condition.valid_string(order_id_tag, "order_id_tag")
@@ -227,17 +311,23 @@ cdef class StrategyId(Identifier):
     @staticmethod
     cdef StrategyId from_string(str value):
         """
-        Return a strategy_id parsed from the given string value. Must be
+        Return a strategy identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
 
-        Is is expected a strategy_id is the class name of the strategy with
+        Is is expected a strategy identifier is the class name of the strategy with
         an order_id tag number separated by a hyphen '-'.
 
         Example: "EMACross-001".
 
-        :param value: The value for the strategy_id.
+        Parameters
+        ----------
+        value : str
+            The value for the strategy identifier.
 
-        :return StrategyId.
+        Returns
+        -------
+        StrategyId
+
         """
         Condition.valid_string(value, "value")
 
@@ -247,19 +337,23 @@ cdef class StrategyId(Identifier):
     @staticmethod
     def py_from_string(value: str) -> StrategyId:
         """
-        Python wrapper for the from_string method.
-
-        Return a strategy_id parsed from the given string value. Must be
+        Return a strategy identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
 
-        Is is expected a strategy_id is the class name of the strategy with
+        Is is expected a strategy identifier is the class name of the strategy with
         an order_id tag number separated by a hyphen '-'.
 
         Example: "EMACross-001".
 
-        :param value: The value for the strategy_id.
+        Parameters
+        ----------
+        value : str
+            The value for the strategy identifier.
 
-        :return StrategyId.
+        Returns
+        -------
+        StrategyId
+
         """
         return StrategyId.from_string(value)
 
@@ -277,11 +371,22 @@ cdef class AccountId(Identifier):
         """
         Initialize a new instance of the AccountId class.
 
-        :param broker: The broker identifier value.
-        :param account_number: The account number identifier value.
-        :param account_number: The account type.
-        :raises ValueError: If the broker is not a valid string.
-        :raises ValueError: If the account_number is not a valid string.
+        Parameters
+        ----------
+        broker : str
+            The broker identifier value.
+        account_number : str
+            The account number identifier value.
+        account_type : AccountType
+            The account type.
+
+        Raises
+        ------
+        ValueError
+            If broker is not a valid string.
+        ValueError
+            If account_number is not a valid string.
+
         """
         Condition.valid_string(broker, "broker")
         Condition.valid_string(account_number, "account_number")
@@ -294,14 +399,20 @@ cdef class AccountId(Identifier):
     @staticmethod
     cdef AccountId from_string(str value):
         """
-        Return an account_id from the given string value. Must be correctly
+        Return an account identifier from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
 
         Example: "FXCM-02851908-DEMO".
 
-        :param value: The value for the account_id.
+        Parameters
+        ----------
+        value : str
+            The value for the account identifier.
 
-        :return AccountId.
+        Returns
+        -------
+        AccountId
+
         """
         Condition.valid_string(value, "value")
 
@@ -314,16 +425,20 @@ cdef class AccountId(Identifier):
     @staticmethod
     def py_from_string(value: str) -> AccountId:
         """
-        Python wrapper for the from_string method.
-
-        Return an account_id from the given string value. Must be correctly
+        Return an account identifier from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
 
         Example: "FXCM-02851908-DEMO".
 
-        :param value: The value for the account_id.
+        Parameters
+        ----------
+        value : str
+            The value for the account identifier.
 
-        :return AccountId.
+        Returns
+        -------
+        AccountId
+
         """
         return AccountId.from_string(value)
 
@@ -337,7 +452,16 @@ cdef class AccountNumber(Identifier):
         """
         Initialize a new instance of the AccountNumber class.
 
-        :param value: The value of the account number.
+        Parameters
+        ----------
+        value : str
+            The value of the account number.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
 
@@ -352,7 +476,16 @@ cdef class BracketOrderId(Identifier):
         """
         Initialize a new instance of the OrderId class.
 
-        :param value: The value of the order_id (should be unique).
+        Parameters
+        ----------
+        value : str
+            The value of the order_id (should be unique).
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string or does not start with 'BO-'.
+
         """
         Condition.true(value.startswith("BO-"), f"value must begin with \"BO-\", was {value}.")
         super().__init__(value)
@@ -368,7 +501,16 @@ cdef class OrderId(Identifier):
         """
         Initialize a new instance of the OrderId class.
 
-        :param value: The value of the order_id (should be unique).
+        Parameters
+        ----------
+        value : str
+            The value of the order_id (should be unique).
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string or does not start with 'O-'.
+
         """
         Condition.true(value.startswith("O-"), f"value must begin with \"O-\", was {value}.")
         super().__init__(value)
@@ -383,7 +525,16 @@ cdef class OrderIdBroker(Identifier):
         """
         Initialize a new instance of the OrderId class.
 
-        :param value: The broker order identifier value.
+        Parameters
+        ----------
+        value : str
+            The broker order identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
 
@@ -398,7 +549,16 @@ cdef class PositionId(Identifier):
         """
         Initialize a new instance of the PositionId class.
 
-        :param value: The position identifier value.
+        Parameters
+        ----------
+        value : str
+            The position identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string or does not start with 'P-'.
+
         """
         Condition.true(value.startswith("P-"), f" value must begin with \"P-\", was {value}.")
         super().__init__(value)
@@ -413,7 +573,16 @@ cdef class ExecutionId(Identifier):
         """
         Initialize a new instance of the ExecutionId class.
 
-        :param value: The execution identifier value.
+        Parameters
+        ----------
+        value : str
+            The execution identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
 
@@ -427,7 +596,16 @@ cdef class MatchId(Identifier):
         """
         Initialize a new instance of the MatchId class.
 
-        :param value: The execution identifier value.
+        Parameters
+        ----------
+        value : str
+            The execution identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
 
@@ -441,7 +619,16 @@ cdef class PositionIdBroker(Identifier):
         """
         Initialize a new instance of the PositionIdBroker class.
 
-        :param value: The broker position identifier value.
+        Parameters
+        ----------
+        value : str
+            The broker position identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
 
@@ -456,6 +643,15 @@ cdef class InstrumentId(Identifier):
         """
         Initialize a new instance of the InstrumentId class.
 
-        :param value: The instrument identifier value.
+        Parameters
+        ----------
+        value : str
+            The instrument identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
