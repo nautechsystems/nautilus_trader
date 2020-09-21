@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.types cimport Label
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.serialization.constants cimport *
 
@@ -32,14 +31,6 @@ cpdef str convert_price_to_string(Price price):
     """
     return NONE if price is None else price.to_string()
 
-cpdef str convert_label_to_string(Label label):
-    """
-    Return the converted string from the given label, can return a 'None' string.
-
-    :param label: The label to convert.
-    :return str.
-    """
-    return NONE if label is None else label.value
 
 cpdef str convert_datetime_to_string(datetime time):
     """
@@ -49,6 +40,7 @@ cpdef str convert_datetime_to_string(datetime time):
     :return str.
     """
     return NONE if time is None else format_iso8601(time)
+
 
 cpdef Price convert_string_to_price(str price_string):
     """
@@ -60,17 +52,6 @@ cpdef Price convert_string_to_price(str price_string):
     Condition.valid_string(price_string, "price_string")  # string often 'None'
 
     return None if price_string == NONE else Price.from_string(price_string)
-
-cpdef Label convert_string_to_label(str label_string):
-    """
-    Return the converted label (or None) from the given label string.
-
-    :param label_string: The label string to convert.
-    :return Label or None.
-    """
-    Condition.valid_string(label_string, "label_string")  # string often 'None'
-
-    return None if label_string == NONE else Label(label_string)
 
 
 cpdef datetime convert_string_to_datetime(str time_string):

@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 
@@ -28,4 +28,4 @@ cdef class ReportProvider:
 
     cdef dict _order_to_dict(self, Order order)
     cdef dict _position_to_dict(self, Position position)
-    cdef dict _account_state_to_dict(self, AccountStateEvent event)
+    cdef dict _account_state_to_dict(self, AccountState event)

@@ -25,7 +25,16 @@ cdef class ValidString:
         """
         Initialize a new instance of the ValidString class.
 
-        :param value: The value of the string.
+        Parameters
+        ----------
+        value : str
+            The value of the string.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         Condition.valid_string(value, "value")
 
@@ -35,7 +44,10 @@ cdef class ValidString:
         """
         Return the string representation of this object.
 
-        :return: str.
+        Returns
+        -------
+        str
+
         """
         if with_class:
             return f"{self.__class__.__name__}({self.value})"
@@ -78,8 +90,15 @@ cdef class ValidString:
         """
         Return a value indicating whether this object is less than (<) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : ValidString
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.value.__lt__(other.value)
 
@@ -88,8 +107,15 @@ cdef class ValidString:
         Return a value indicating whether this object is greater than or equal to (>=) the given
         object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : ValidString
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.value.__le__(other.value)
 
@@ -97,8 +123,15 @@ cdef class ValidString:
         """
         Return a value indicating whether this object is greater than (>) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : ValidString
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.value.__gt__(other.value)
 
@@ -107,8 +140,15 @@ cdef class ValidString:
         Return a value indicating whether this object is greater than or equal to (>=) the given
         object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : ValidString
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.value.__ge__(other.value)
 
@@ -147,21 +187,6 @@ cdef class ValidString:
         return f"<{str(self.__class__.__name__)}({str(self.value)}) object at {id(self)}>"
 
 
-cdef class Label(ValidString):
-    """
-    Represents a label with a valid string value.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the Label class.
-
-        :param value: The label identifier value.
-        :raises ValueError: If the value is not a valid string.
-        """
-        super().__init__(value)
-
-
 cdef class Identifier(ValidString):
     """
     The base class for all identifiers.
@@ -171,7 +196,16 @@ cdef class Identifier(ValidString):
         """
         Initialize a new instance of the Identifier class.
 
-        :param value: The value of the identifier.
+        Parameters
+        ----------
+        value : str
+            The value of the identifier.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         super().__init__(value)
 
@@ -181,7 +215,14 @@ cdef class Identifier(ValidString):
         """
         Return a value indicating whether the given object is equal to this object.
 
-        :param other: The other object to compare
-        :return bool.
+        Parameters
+        ----------
+        other : ValidString
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.id_type == other.id_type and self.value == other.value

@@ -15,7 +15,6 @@
 
 from datetime import timedelta
 
-from nautilus_trader.core.types import Label
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
@@ -149,7 +148,6 @@ class TestStrategy1(TradingStrategy):
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    Label("TestStrategy1_E"),
                     OrderSide.BUY,
                     100000)
 
@@ -159,7 +157,6 @@ class TestStrategy1(TradingStrategy):
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    Label("TestStrategy1_E"),
                     OrderSide.SELL,
                     100000)
 

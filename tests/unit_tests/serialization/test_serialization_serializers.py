@@ -39,7 +39,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import SecurityType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelReject
 from nautilus_trader.model.events import OrderCancelled
@@ -64,6 +63,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import LimitOrder
@@ -698,6 +698,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price(1.00000, 5),
+            Money(0., Currency.USD),
             LiquiditySide.MAKER,
             Currency.USD,
             UNIX_EPOCH,
@@ -722,6 +723,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000),
             Price(1.00000, 5),
+            Money(0., Currency.USD),
             LiquiditySide.TAKER,
             Currency.USD,
             UNIX_EPOCH,
@@ -735,26 +737,27 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_deserialize_account_state_events_from_csharp(self):
-        # Arrange
-        # Base64 bytes string from C# MsgPack.Cli
-        base64 = "jKRUeXBlsUFjY291bnRTdGF0ZUV2ZW50oklk2SQyYTk4NjM5ZC1lMzJkLTQ" \
-                 "xMDctYmRmMC1hYTU2ODUwMjFiOGOpVGltZXN0YW1wuDE5NzAtMDEtMDFUMD" \
-                 "A6MDA6MDAuMDAwWqlBY2NvdW50SWS2RlhDTS1EMTIzNDU2LVNJTVVMQVRFR" \
-                 "KhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERh" \
-                 "eaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF" \
-                 "0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hML" \
-                 "BNYXJnaW5DYWxsU3RhdHVzoU4="
-
-        body = b64decode(base64)
-
-        # Act
-        result = self.serializer.deserialize(body)
-
-        # Assert
-        self.assertTrue(isinstance(result, AccountStateEvent))
-        self.assertTrue(isinstance(result.id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
+    # TODO: Breaking changes to C# side (change of event name to AccountState)
+    # def test_deserialize_account_state_events_from_csharp(self):
+    #     # Arrange
+    #     # Base64 bytes string from C# MsgPack.Cli
+    #     base64 = "jKRUeXBlsUFjY291bnRTdGF0ZUV2ZW50oklk2SQyYTk4NjM5ZC1lMzJkLTQ" \
+    #              "xMDctYmRmMC1hYTU2ODUwMjFiOGOpVGltZXN0YW1wuDE5NzAtMDEtMDFUMD" \
+    #              "A6MDA6MDAuMDAwWqlBY2NvdW50SWS2RlhDTS1EMTIzNDU2LVNJTVVMQVRFR" \
+    #              "KhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERh" \
+    #              "eaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF" \
+    #              "0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hML" \
+    #              "BNYXJnaW5DYWxsU3RhdHVzoU4="
+    #
+    #     body = b64decode(base64)
+    #
+    #     # Act
+    #     result = self.serializer.deserialize(body)
+    #
+    #     # Assert
+    #     self.assertTrue(isinstance(result, AccountState))
+    #     self.assertTrue(isinstance(result.id, UUID))
+    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
     def test_deserialize_order_invalid_events_from_csharp(self):
         # Arrange

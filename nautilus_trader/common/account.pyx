@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.objects cimport Money
 
 
@@ -23,13 +23,13 @@ cdef class Account:
     Represents a brokerage account.
     """
 
-    def __init__(self, AccountStateEvent event):
+    def __init__(self, AccountState event):
         """
         Initialize a new instance of the Account class.
 
         Parameters
         ----------
-        event : AccountStateEvent
+        event : AccountState
             The initial account state event.
 
         """
@@ -127,13 +127,13 @@ cdef class Account:
         """
         return self._events.copy()
 
-    cpdef AccountStateEvent last_event(self):
+    cpdef AccountState last_event(self):
         """
         Return the last event.
 
         Returns
         -------
-        AccountStateEvent
+        AccountState
 
         """
         return self._events[-1]
@@ -149,13 +149,13 @@ cdef class Account:
         """
         return len(self._events)
 
-    cpdef void apply(self, AccountStateEvent event) except *:
+    cpdef void apply(self, AccountState event) except *:
         """
         Applies the given account event to the account.
 
         Parameters
         ----------
-        event : AccountStateEvent
+        event : AccountState
             The account event to apply.
 
         """

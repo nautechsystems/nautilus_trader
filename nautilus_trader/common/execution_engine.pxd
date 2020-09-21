@@ -21,7 +21,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.commands cimport Command
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderEvent
@@ -70,7 +70,7 @@ cdef class ExecutionEngine:
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFillEvent event) except *
     cdef void _handle_position_event(self, PositionEvent event) except *
-    cdef void _handle_account_event(self, AccountStateEvent event) except *
+    cdef void _handle_account_event(self, AccountState event) except *
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *
     cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event) except *
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *

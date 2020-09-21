@@ -77,4 +77,4 @@ class ObjectPerformanceTests(unittest.TestCase):
     def test_build_bar_with_checking(self):
         result = PerformanceHarness.profile_function(ObjectTests.build_bar_with_checking, 3, 100000)
         # ~143ms (143914μs) minimum of 3 runs @ 100,000 iterations each run.
-        self.assertTrue(result < 0.2)
+        self.assertTrue(result < 0.3)

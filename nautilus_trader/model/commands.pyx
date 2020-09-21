@@ -38,10 +38,17 @@ cdef class AccountInquiry(Command):
         """
         Initialize a new instance of the AccountInquiry class.
 
-        :param trader_id: The trader_id.
-        :param account_id: The account_id for the inquiry.
-        :param command_id: The command identifier.
-        :param command_timestamp: The command timestamp.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        command_id : UUID
+            The commands identifier.
+        command_timestamp : datetime
+            The commands timestamp.
+
         """
         super().__init__(command_id, command_timestamp)
 
@@ -78,13 +85,23 @@ cdef class SubmitOrder(Command):
         """
         Initialize a new instance of the SubmitOrder class.
 
-        :param trader_id: The trader_id associated with the order.
-        :param account_id: The account_id to submit the order to.
-        :param strategy_id: The strategy_id associated with the order.
-        :param position_id: The position_id associated with the order.
-        :param order: The order to submit.
-        :param command_id: The command identifier.
-        :param command_timestamp: The command timestamp.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        strategy_id : StrategyId
+            The strategy identifier associated with the order.
+        position_id : PositionId
+            The position identifier associated with the order.
+        order : Order
+            The order to submit.
+        command_id : UUID
+            The commands identifier.
+        command_timestamp : datetime
+            The commands timestamp.
+
         """
         super().__init__(command_id, command_timestamp)
 
@@ -127,13 +144,23 @@ cdef class SubmitBracketOrder(Command):
         """
         Initialize a new instance of the SubmitBracketOrder class.
 
-        :param trader_id: The trader_id associated with the order.
-        :param account_id: The account_id to submit the order to.
-        :param strategy_id: The strategy_id to associate with the order.
-        :param position_id: The position_id to associate with the order.
-        :param bracket_order: The bracket order to submit.
-        :param command_id: The command identifier.
-        :param command_timestamp: The command timestamp.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        strategy_id : StrategyId
+            The strategy identifier to associate with the order.
+        position_id : PositionId
+            The position identifier to associate with the order.
+        bracket_order : BracketOrder
+            The bracket order to submit.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
         """
         super().__init__(command_id, command_timestamp)
 
@@ -176,13 +203,23 @@ cdef class ModifyOrder(Command):
         """
         Initialize a new instance of the ModifyOrder class.
 
-        :param trader_id: The trader_id for the command.
-        :param account_id: The account_id for the command.
-        :param order_id: The order_id.
-        :param modified_price: The modified quantity for the order.
-        :param modified_price: The modified price for the order.
-        :param command_id: The command identifier.
-        :param command_timestamp: The command timestamp.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        order_id : OrderId
+            The order identifier.
+        modified_quantity : Quantity
+            The modified quantity for the order.
+        modified_price :
+            The modified price for the order.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
         """
         super().__init__(command_id, command_timestamp)
 
@@ -223,11 +260,19 @@ cdef class CancelOrder(Command):
         """
         Initialize a new instance of the CancelOrder class.
 
-        :param trader_id: The trader_id for the command.
-        :param account_id: The account_id for the command.
-        :param order_id: The order_id.
-        :param command_id: The command identifier.
-        :param command_timestamp: The command timestamp.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        order_id : OrderId
+            The order identifier.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
         """
         super().__init__(command_id, command_timestamp)
 

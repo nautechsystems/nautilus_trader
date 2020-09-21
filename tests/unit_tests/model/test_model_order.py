@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import OrderIdBroker
 from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
@@ -546,6 +547,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.quantity,
             Price(1.00001, 5),
+            Money(0., Currency.USD),
             LiquiditySide.TAKER,
             Currency.USD,
             UNIX_EPOCH,
@@ -586,6 +588,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.quantity,
             Price(1.00001, 5),
+            Money(0., Currency.USD),
             LiquiditySide.MAKER,
             Currency.USD,
             UNIX_EPOCH,
@@ -630,6 +633,7 @@ class OrderTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price(0.999999, 6),
+            Money(0., Currency.USD),
             LiquiditySide.MAKER,
             Currency.USD,
             UNIX_EPOCH,
