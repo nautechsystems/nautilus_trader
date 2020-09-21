@@ -22,7 +22,7 @@ from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.order cimport Order
@@ -43,8 +43,15 @@ cdef class ReportProvider:
         """
         Return an orders report dataframe.
 
-        :param orders: The dictionary of order_ids and order objects.
-        :return pd.DataFrame.
+        Parameters
+        ----------
+        orders : Dict[OrderId, Order]
+            The dictionary of order_ids and order objects.
+
+        Returns
+        -------
+        pd.DataFrame
+
         """
         Condition.not_none(orders, "orders")
 
@@ -59,8 +66,15 @@ cdef class ReportProvider:
         """
         Return an order fills report dataframe.
 
-        :param orders: The dictionary of order_ids and order objects.
-        :return pd.DataFrame.
+        Parameters
+        ----------
+        orders : Dict[OrderId, Order]
+            The dictionary of order_ids and order objects.
+
+        Returns
+        -------
+        pd.DataFrame
+
         """
         Condition.not_none(orders, "orders")
 
@@ -77,8 +91,14 @@ cdef class ReportProvider:
         """
         Return a positions report dataframe.
 
-        :param positions: The dictionary of position_ids and objects.
-        :return pd.DataFrame.
+        Parameters
+        ----------
+        positions : Dict[PositionId, Position]
+
+        Returns
+        -------
+        pd.DataFrame
+
         """
         Condition.not_none(positions, "positions")
 
@@ -93,10 +113,19 @@ cdef class ReportProvider:
         """
         Generate an account report for the given optional time range.
 
-        :param events: The accounts state events list.
-        :param start: The start of the account reports period.
-        :param end: The end of the account reports period.
-        :return: pd.DataFrame.
+        Parameters
+        ----------
+        events : List[AccountState]
+            The accounts state events list.
+        start : datetime
+            The start of the account reports period.
+        end : datetime
+            The end of the account reports period.
+
+        Returns
+        -------
+        pd.DataFrame
+
         """
         Condition.not_none(events, "events")
 
@@ -139,7 +168,7 @@ cdef class ReportProvider:
                 "realized_pnl": position.realized_pnl.as_double(),
                 "currency": currency_to_string(position.quote_currency)}
 
-    cdef dict _account_state_to_dict(self, AccountStateEvent event):
+    cdef dict _account_state_to_dict(self, AccountState event):
         return {"timestamp": event.timestamp,
                 "cash_balance": event.cash_balance.as_double(),
                 "margin_used": event.margin_used_maintenance.as_double()}

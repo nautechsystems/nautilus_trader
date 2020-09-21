@@ -21,6 +21,7 @@ import pytz
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
@@ -31,7 +32,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderExpired
@@ -218,11 +219,11 @@ class TestStubs:
         return AccountId("NAUTILUS", "000", AccountType.SIMULATED)
 
     @staticmethod
-    def account_event(account_id=None) -> AccountStateEvent:
+    def account_event(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
 
-        return AccountStateEvent(
+        return AccountState(
             account_id,
             Currency.USD,
             Money(1000000, Currency.USD),
@@ -265,7 +266,7 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_filled(order, fill_price=None) -> OrderFilled:
+    def event_order_filled(order, fill_price=None, commission=0.) -> OrderFilled:
         if fill_price is None:
             fill_price = Price(1.00000, 5)
 
@@ -278,6 +279,7 @@ class TestStubs:
             order.side,
             order.quantity,
             order.price if fill_price is None else fill_price,
+            Money(commission, Currency.USD),
             LiquiditySide.TAKER,
             Currency.USD,
             UNIX_EPOCH,
@@ -356,19 +358,24 @@ class TestStubs:
 
         generator = PositionIdGenerator(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"))
+            id_tag_strategy=IdTag("001"),
+            clock=LiveClock()
+        )
 
         for _i in range(number - 1):
             generator.generate()
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"))
+            id_tag_strategy=IdTag("001"),
+            clock=LiveClock()
+        )
 
         order = order_factory.market(
             TestStubs.symbol_audusd_fxcm(),
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000)
+        )
 
         order_filled = TestStubs.event_order_filled(order, entry_price)
 
@@ -402,8 +409,9 @@ class TestStubs:
             order.side,
             order.quantity,
             close_price,
-            Currency.USD,
+            Money(0, Currency.USD),
             LiquiditySide.TAKER,
+            Currency.USD,
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5))

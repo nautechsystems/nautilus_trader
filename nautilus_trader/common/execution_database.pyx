@@ -532,7 +532,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the account matching the given identifier (if found).
 
-        :param account_id: The account_id.
+        :param account_id: The account identifier.
         :return Account or None.
         """
         Condition.not_none(account_id, "account_id")
@@ -731,7 +731,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the position associated with the given position_id (if found, else None).
 
-        :param position_id: The position_id.
+        :param position_id: The position identifier.
         :return Position or None.
         """
         Condition.not_none(position_id, "position_id")
@@ -878,7 +878,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a value indicating whether a position with the given identifier exists.
 
-        :param position_id: The position_id.
+        :param position_id: The position identifier.
         :return bool.
         """
         Condition.not_none(position_id, "position_id")
@@ -890,7 +890,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether there is a position associated with the given
         order_id.
 
-        :param order_id: The order_id.
+        :param order_id: The order identifier.
         :return bool.
         """
         Condition.not_none(order_id, "order_id")
@@ -905,7 +905,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether there is a position_id indexed for the
         given order_id.
 
-        :param order_id: The order_id.
+        :param order_id: The order identifier.
         :return bool.
         """
         Condition.not_none(order_id, "order_id")
@@ -917,7 +917,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether a position with the given identifier exists
         and is open.
 
-        :param position_id: The position_id.
+        :param position_id: The position identifier.
         :return bool.
         """
         Condition.not_none(position_id, "position_id")
@@ -929,7 +929,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether a position with the given identifier exists
         and is closed.
 
-        :param position_id: The position_id.
+        :param position_id: The position identifier.
         :return bool.
         """
         Condition.not_none(position_id, "position_id")

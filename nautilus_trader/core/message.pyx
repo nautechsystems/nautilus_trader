@@ -148,8 +148,13 @@ cdef class Command(Message):
         """
         Initialize a new instance of the Command class.
 
-        :param identifier: The command identifier.
-        :param timestamp: The command timestamp.
+        Parameters
+        ----------
+        identifier : UUID
+            The command identifier.
+        timestamp : datetime
+            The command timestamp.
+
         """
         super().__init__(MessageType.COMMAND, identifier, timestamp)
 
@@ -165,8 +170,13 @@ cdef class Document(Message):
         """
         Initialize a new instance of the Document class.
 
-        :param identifier: The event identifier.
-        :param timestamp: The event timestamp.
+        Parameters
+        ----------
+        identifier : UUID
+            The document identifier.
+        timestamp : datetime
+            The document timestamp.
+
         """
         super().__init__(MessageType.DOCUMENT, identifier, timestamp)
 
@@ -182,8 +192,13 @@ cdef class Event(Message):
         """
         Initialize a new instance of the Event class.
 
-        :param identifier: The event identifier.
-        :param timestamp: The event timestamp.
+        Parameters
+        ----------
+        identifier : UUID
+            The event identifier.
+        timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(MessageType.EVENT, identifier, timestamp)
 
@@ -197,8 +212,13 @@ cdef class Request(Message):
         """
         Initialize a new instance of the Request class.
 
-        :param identifier: The request identifier.
-        :param timestamp: The request timestamp.
+        Parameters
+        ----------
+        identifier : UUID
+            The request identifier.
+        timestamp : datetime
+            The request timestamp.
+
         """
         super().__init__(MessageType.REQUEST, identifier, timestamp)
 
@@ -215,9 +235,15 @@ cdef class Response(Message):
         """
         Initialize a new instance of the Response class.
 
-        :param identifier: The correlation identifier.
-        :param identifier: The response identifier.
-        :param timestamp: The response timestamp.
+        Parameters
+        ----------
+        correlation_id : UUID
+            The correlation identifier.
+        identifier : UUID
+            The response identifier.
+        timestamp : datetime
+            The response timestamp.
+
         """
         super().__init__(MessageType.RESPONSE, identifier, timestamp)
 

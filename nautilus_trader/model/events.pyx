@@ -40,7 +40,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
 
-cdef class AccountStateEvent(Event):
+cdef class AccountState(Event):
     """
     Represents an event which includes information on the state of the account.
     """
@@ -58,19 +58,42 @@ cdef class AccountStateEvent(Event):
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
-        Initialize a new instance of the AccountStateEvent class.
+        Initialize a new instance of the AccountState class.
 
-        :param account_id: The account_id.
-        :param currency: The currency for the account.
-        :param cash_balance: The account cash balance.
-        :param cash_start_day: The account cash start of day.
-        :param cash_activity_day: The account activity for the trading day.
-        :param margin_used_liquidation: The account margin used before liquidation.
-        :param margin_used_maintenance: The account margin used for maintenance.
-        :param margin_ratio: The account margin ratio.
-        :param margin_call_status: The account margin call status (can be empty).
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        currency : Currency
+            The currency for the account.
+        cash_balance : Money
+            The account cash balance.
+        cash_start_day : Money
+            The account cash start of day.
+        cash_activity_day : Money
+            The account activity for the trading day.
+        margin_used_liquidation : Money
+            The account margin used before liquidation.
+        margin_used_maintenance : Money
+            The account margin used for maintenance.
+        margin_ratio : Decimal64
+            The account margin ratio.
+        margin_call_status : str
+            The account margin call status (can be empty string).
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If currency is UNDEFINED.
+        ValueError
+            If margin ratio is negative (<0).
+        ValueError
+            If margin_call_status is not a valid string.
+
         """
         Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
         Condition.not_negative(margin_ratio.as_double(), "margin_ratio")
@@ -128,9 +151,15 @@ cdef class OrderEvent(Event):
         """
         Initialize a new instance of the OrderEvent base class.
 
-        :param order_id: The event order_id.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        order_id : OrderId
+            The order identifier.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(event_id, event_timestamp)
 
@@ -178,15 +207,36 @@ cdef class OrderInitialized(OrderEvent):
         """
         Initialize a new instance of the OrderInitialized class.
 
-        :param order_id: The event order_id.
-        :param symbol: The event order symbol.
-        :param order_side: The event order side.
-        :param order_type: The event order type.
-        :param quantity: The event order quantity.
-        :param time_in_force: The event order time in force.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
-        :param options: The event order options.
+        Parameters
+        ----------
+        order_id : OrderId
+            The order identifier.
+        symbol : Symbol
+            The order symbol.
+        order_side : OrderSide
+            The order side.
+        order_type : OrderType
+            The order type.
+        quantity : Quantity
+            The order quantity.
+        time_in_force : TimeInForce
+            The order time in force.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+        options : Dict[str, str]
+            The order options. Contains mappings for specific order params.
+
+        Raises
+        ------
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If order_type is UNDEFINED.
+        ValueError
+            If time_in_force is UNDEFINED.
+
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
@@ -217,11 +267,19 @@ cdef class OrderSubmitted(OrderEvent):
         """
         Initialize a new instance of the OrderSubmitted class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param submitted_time: The event order submitted time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        submitted_time : datetime
+            The order submitted time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(order_id,
                          event_id,
@@ -257,11 +315,24 @@ cdef class OrderInvalid(OrderEvent):
         """
         Initialize a new instance of the OrderInvalid class.
 
-        :param order_id: The event order_id.
-        :param invalid_reason: The event invalid reason.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        order_id : OrderId
+            The order identifier.
+        invalid_reason : str
+            The order invalid reason.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If invalid_reason is not a valid_string.
+
         """
+        Condition.valid_string(invalid_reason, "invalid_reason")
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
@@ -295,11 +366,24 @@ cdef class OrderDenied(OrderEvent):
         """
         Initialize a new instance of the OrderDenied class.
 
-        :param order_id: The event order_id.
-        :param denied_reason: The event denied reason.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        order_id : OrderId
+            The order identifier.
+        denied_reason : str
+            The order denied reason.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If denied_reason is not a valid_string.
+
         """
+        Condition.valid_string(denied_reason, "denied_reason")
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
@@ -335,12 +419,26 @@ cdef class OrderRejected(OrderEvent):
         """
         Initialize a new instance of the OrderRejected class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param rejected_time: The event order rejected time.
-        :param rejected_reason: The event order rejected reason.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        rejected_time : datetime
+            The order rejected time.
+        rejected_reason : datetime
+            The order rejected reason.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If rejected_reason is not a valid_string.
+
         """
         Condition.valid_string(rejected_reason, "rejected_reason")
         super().__init__(order_id,
@@ -381,12 +479,21 @@ cdef class OrderAccepted(OrderEvent):
         """
         Initialize a new instance of the OrderAccepted class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param order_id_broker: The event broker order_id.
-        :param accepted_time: The event order accepted time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        order_id_broker : OrderIdBroker
+            The broker order identifier.
+        accepted_time : datetime
+            The order accepted time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(order_id,
                          event_id,
@@ -432,19 +539,44 @@ cdef class OrderWorking(OrderEvent):
         """
         Initialize a new instance of the OrderWorking class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param order_id_broker: The event broker order_id.
-        :param symbol: The event order symbol.
-        :param order_side: The event order side.
-        :param order_type: The event order type.
-        :param quantity: The event order quantity.
-        :param price: The event order price.
-        :param time_in_force: The event order time in force.
-        :param expire_time: The event order expire time (for GTD orders), optional.
-        :param working_time: The event order working time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        order_id_broker : OrderIdBroker
+            The broker order identifier.
+        symbol : Symbol
+            The order symbol.
+        order_side : OrderSide
+            The order side.
+        order_type : OrderType
+            The order type.
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+        time_in_force : TimeInForce
+            The order time in force.
+        expire_time : datetime, optional
+            The order expire time (for GTD orders only).
+        working_time : datetime
+            The order working time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If order_type is UNDEFINED.
+        ValueError
+            If time_in_force is UNDEFINED.
+
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
@@ -500,13 +632,30 @@ cdef class OrderCancelReject(OrderEvent):
         """
         Initialize a new instance of the OrderCancelReject class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param rejected_time: The event order cancel reject time.
-        :param rejected_response_to: The event order cancel reject response.
-        :param rejected_reason: The event order cancel reject reason.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        rejected_time : datetime
+            The order cancel reject time.
+        rejected_response_to : str
+            The order cancel reject response.
+        rejected_reason : str
+            The order cancel reject reason.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If rejected_response_to is not a valid string.
+        ValueError
+            If rejected_reason is not a valid string.
+
         """
         Condition.valid_string(rejected_response_to, "rejected_response_to")
         Condition.valid_string(rejected_reason, "rejected_reason")
@@ -549,11 +698,18 @@ cdef class OrderCancelled(OrderEvent):
         """
         Initialize a new instance of the OrderCancelled class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
         :param cancelled_time: The event order cancelled time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(order_id,
                          event_id,
@@ -593,14 +749,25 @@ cdef class OrderModified(OrderEvent):
         """
         Initialize a new instance of the OrderModified class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param order_id_broker: The event order broker identifier.
-        :param modified_quantity: The event modified quantity.
-        :param modified_price: The event modified price.
-        :param modified_time: The event modified time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        order_id_broker : OrderIdBroker
+            The order broker identifier.
+        modified_quantity : Quantity
+            The modified quantity.
+        modified_price : Price
+            The modified price.
+        modified_time : datetime
+            The modified time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(order_id,
                          event_id,
@@ -642,11 +809,19 @@ cdef class OrderExpired(OrderEvent):
         """
         Initialize a new instance of the OrderExpired class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param expired_time: The event order expired time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        expired_time : datetime
+            The order expired time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(order_id,
                          event_id,
@@ -683,6 +858,7 @@ cdef class OrderFillEvent(OrderEvent):
                  OrderSide order_side,
                  Quantity filled_quantity not None,
                  Price average_price not None,
+                 Money commission not None,
                  LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
@@ -691,19 +867,44 @@ cdef class OrderFillEvent(OrderEvent):
         """
         Initialize a new instance of the OrderFillEvent class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param execution_id: The event order execution_id.
-        :param position_id_broker: The event broker position identifier.
-        :param symbol: The event order symbol.
-        :param order_side: The event execution order side.
-        :param filled_quantity: The event execution filled quantity.
-        :param average_price: The event execution average price.
-        :param liquidity_side: The event execution liquidity side.
-        :param quote_currency: The event order quote currency.
-        :param execution_time: The event execution time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        execution_id : ExecutionId
+            The order execution identifier.
+        position_id_broker : PositionIdBroker
+            The broker position identifier.
+        symbol : Symbol
+            The order symbol.
+        order_side : OrderSide
+            The execution order side.
+        filled_quantity : Quantity
+            The execution filled quantity.
+        average_price : Price
+            The execution average price.
+        liquidity_side : LiquiditySide
+            The execution liquidity side.
+        quote_currency : Currency
+            The order quote currency.
+        execution_time : datetime
+            The execution time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If liquidity_side is UNDEFINED.
+        ValueError
+            If quote_currency is UNDEFINED.
+
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(liquidity_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
@@ -719,6 +920,7 @@ cdef class OrderFillEvent(OrderEvent):
         self.order_side = order_side
         self.filled_quantity = filled_quantity
         self.average_price = average_price
+        self.commission = commission
         self.liquidity_side = liquidity_side
         self.quote_currency = quote_currency
         self.execution_time = execution_time
@@ -739,6 +941,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                  Quantity filled_quantity not None,
                  Quantity leaves_quantity not None,
                  Price average_price not None,
+                 Money commission not None,
                  LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
@@ -747,20 +950,37 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         """
         Initialize a new instance of the OrderPartiallyFilled class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param execution_id: The event order execution_id.
-        :param position_id_broker: The event broker position identifier.
-        :param symbol: The event order symbol.
-        :param order_side: The event execution order side.
-        :param filled_quantity: The event execution filled quantity.
-        :param leaves_quantity: The event leaves quantity.
-        :param average_price: The event execution average price.
-        :param liquidity_side: The event execution liquidity side.
-        :param quote_currency: The event order quote currency.
-        :param execution_time: The event execution time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        execution_id : ExecutionId
+            The order execution identifier.
+        position_id_broker : PositionIdBroker
+            The broker position identifier.
+        symbol : Symbol
+            The order symbol.
+        order_side : OrderSide
+            The execution order side.
+        filled_quantity : Quantity
+            The execution filled quantity.
+        leaves_quantity : Quantity
+            The leaves quantity.
+        average_price : Price
+            The execution average price.
+        liquidity_side : LiquiditySide
+            The execution liquidity side.
+        quote_currency : Currency
+            The order quote currency.
+        execution_time : datetime
+            The execution time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         # Enums checked in base class
         super().__init__(account_id,
@@ -771,6 +991,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         commission,
                          liquidity_side,
                          quote_currency,
                          execution_time,
@@ -796,7 +1017,8 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
                 f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price})")
+                f"avg_price={self.average_price}, "
+                f"commission={self.commission})")
 
 
 cdef class OrderFilled(OrderFillEvent):
@@ -813,6 +1035,7 @@ cdef class OrderFilled(OrderFillEvent):
                  OrderSide order_side,
                  Quantity filled_quantity not None,
                  Price average_price not None,
+                 Money commission not None,
                  LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
@@ -821,19 +1044,35 @@ cdef class OrderFilled(OrderFillEvent):
         """
         Initialize a new instance of the OrderFilled class.
 
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param execution_id: The event order execution_id.
-        :param position_id_broker: The event broker position identifier.
-        :param symbol: The event order symbol.
-        :param order_side: The event execution order side.
-        :param filled_quantity: The event execution filled quantity.
-        :param average_price: The event execution average price.
-        :param liquidity_side: The event execution liquidity side.
-        :param quote_currency: The event order quote currency.
-        :param execution_time: The event execution time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        order_id : OrderId
+            The order identifier.
+        execution_id : ExecutionId
+            The order execution identifier.
+        position_id_broker : PositionIdBroker
+            The broker position identifier.
+        symbol : Symbol
+            The order symbol.
+        order_side : OrderSide
+            The execution order side.
+        filled_quantity : Quantity
+            The execution filled quantity.
+        average_price : Price
+            The execution average price.
+        liquidity_side : LiquiditySide
+            The execution liquidity side.
+        quote_currency : Currency
+            The order quote currency.
+        execution_time : datetime
+            The execution time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         # Enums checked in base class
         super().__init__(account_id,
@@ -844,6 +1083,7 @@ cdef class OrderFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         commission,
                          liquidity_side,
                          quote_currency,
                          execution_time,
@@ -866,7 +1106,8 @@ cdef class OrderFilled(OrderFillEvent):
                 f"side={order_side_to_string(self.order_side)}"
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price})")
+                f"avg_price={self.average_price}, "
+                f"commission={self.commission})")
 
 
 cdef class PositionEvent(Event):
@@ -883,11 +1124,19 @@ cdef class PositionEvent(Event):
         """
         Initialize a new instance of the PositionEvent base class.
 
-        :param position: The event position.
-        :param strategy_id: The strategy_id associated with the position.
-        :param order_fill: The order fill event which triggered the event.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        position : Position
+            The position.
+        strategy_id : StrategyId
+            The strategy identifier associated with the position.
+        order_fill : OrderEvent
+            The order fill event which triggered the event.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(event_id, event_timestamp)
         self.position = position
@@ -921,11 +1170,19 @@ cdef class PositionOpened(PositionEvent):
         """
         Initialize a new instance of the PositionOpened class.
 
-        :param position: The event position.
-        :param strategy_id: The strategy_id associated with the position.
-        :param order_fill: The order fill event which triggered the event.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        position : Position
+            The position.
+        strategy_id : StrategyId
+            The strategy identifier associated with the position.
+        order_fill : OrderEvent
+            The order fill event which triggered the event.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         super().__init__(position,
                          strategy_id,
@@ -964,12 +1221,24 @@ cdef class PositionModified(PositionEvent):
         """
         Initialize a new instance of the PositionModified class.
 
-        :param position: The event position.
-        :param strategy_id: The strategy_id associated with the position.
-        :param order_fill: The order fill event which triggered the event.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
-        :raises: ValueError: If the position is not open.
+        Parameters
+        ----------
+        position : Position
+            The position.
+        strategy_id : StrategyId
+            The strategy identifier associated with the position.
+        order_fill : OrderEvent
+            The order fill event which triggered the event.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If position is not open.
+
         """
         Condition.true(position.is_open(), "position.is_open()")
         super().__init__(position,
@@ -1013,12 +1282,24 @@ cdef class PositionClosed(PositionEvent):
         """
         Initialize a new instance of the PositionClosed class.
 
-        :param position: The event position.
-        :param strategy_id: The strategy_id associated with the position.
-        :param order_fill: The order fill event which triggered the event.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
-        :raises: ValueError: If the position is not closed.
+        Parameters
+        ----------
+        position : Position
+            The position.
+        strategy_id : StrategyId
+            The strategy identifier associated with the position.
+        order_fill : OrderEvent
+            The order fill event which triggered the event.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        Raises
+        ------
+        ValueError
+            If position is not closed.
+
         """
         Condition.true(position.is_closed(), "position.is_closed()")
         super().__init__(position,

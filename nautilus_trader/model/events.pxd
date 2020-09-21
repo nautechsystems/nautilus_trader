@@ -37,7 +37,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
 
-cdef class AccountStateEvent(Event):
+cdef class AccountState(Event):
     cdef readonly AccountId account_id
     cdef readonly Brokerage broker
     cdef readonly AccountNumber number
@@ -135,6 +135,7 @@ cdef class OrderFillEvent(OrderEvent):
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity
     cdef readonly Price average_price
+    cdef readonly Money commission
     cdef readonly LiquiditySide liquidity_side
     cdef readonly Currency quote_currency
     cdef readonly datetime execution_time
