@@ -20,10 +20,6 @@ cdef class ValidString:
     cpdef str to_string(self, bint with_class=*)
 
 
-cdef class Label(ValidString):
-    pass
-
-
 cdef class Identifier(ValidString):
     cdef readonly str id_type
 
