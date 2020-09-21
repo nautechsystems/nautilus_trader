@@ -94,11 +94,11 @@ cdef class ExponentialMovingAverage(MovingAverage):
         """
         # Check if this is the initial input
         if not self.has_inputs:
-            self._update()
+            self._increment_input()
             self.value = value
             return
 
-        self._update()
+        self._increment_input()
         self.value = self.alpha * value + ((1.0 - self.alpha) * self.value)
 
     cpdef void reset(self) except *:

@@ -103,7 +103,7 @@ cdef class WeightedMovingAverage(MovingAverage):
             The update value.
 
         """
-        self._update()
+        self._increment_input()
         self._inputs.append(value)
 
         if self.initialized or self.weights is None:

@@ -94,7 +94,7 @@ cdef class SimpleMovingAverage(MovingAverage):
             The update value.
 
         """
-        self._update()
+        self._increment_input()
         self._inputs.append(value)
 
         self.value = fast_mean(list(self._inputs))

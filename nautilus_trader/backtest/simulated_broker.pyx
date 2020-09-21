@@ -91,7 +91,7 @@ cdef class SimulatedBroker:
                  TestUUIDFactory uuid_factory not None,
                  TestLogger logger not None):
         """
-        Initialize a new instance of the BacktestExecClient class.
+        Initialize a new instance of the SimulatedBroker class.
 
         Parameters
         ----------
