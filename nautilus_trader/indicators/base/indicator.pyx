@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
-
 
 cdef class Indicator:
     """
@@ -47,7 +44,8 @@ cdef class Indicator:
             The update tick to handle.
 
         """
-        pass  # Optionally override in subclass
+        # Abstract method
+        raise NotImplementedError(f"Cannot handle {repr(tick)}, method not implemented in subclass")
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -59,7 +57,8 @@ cdef class Indicator:
             The update tick to handle.
 
         """
-        pass  # Optionally override in subclass
+        # Abstract method
+        raise NotImplementedError(f"Cannot handle {repr(tick)}, method not implemented in subclass")
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -71,7 +70,8 @@ cdef class Indicator:
             The update bar to handle.
 
         """
-        pass  # Optionally override in subclass
+        # Abstract method
+        raise NotImplementedError(f"Cannot handle {repr(bar)}, method not implemented in subclass")
 
     cpdef void reset(self) except *:
         # Override should call _reset_base()
@@ -105,16 +105,6 @@ cdef class Indicator:
 
     cdef void _set_initialized(self, bint setting) except *:
         self.initialized = setting
-
-    cdef inline Price _get_quote_price(self, QuoteTick tick, PriceType price_type):
-        if price_type == PriceType.MID:
-            return Price((tick.bid.as_double() + tick.ask.as_double()) / 2, tick.bid.precision + 1)
-        elif price_type == PriceType.BID:
-            return tick.bid
-        elif price_type == PriceType.ASK:
-            return tick.ask
-        else:
-            raise RuntimeError(f"Invalid price_type specified, was {price_type_to_string(price_type)}.")
 
     cdef void _reset_base(self) except *:
         self.has_inputs = False

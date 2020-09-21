@@ -22,6 +22,8 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.c_enums.maker cimport maker_from_string
 from nautilus_trader.model.c_enums.maker cimport maker_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 from nautilus_trader.model.identifiers cimport MatchId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
@@ -263,6 +265,52 @@ cdef class QuoteTick(Tick):
         self.ask = ask
         self.bid_size = bid_size
         self.ask_size = ask_size
+
+    cpdef Price extract_price(self, PriceType price_type):
+        """
+        Extract the price for the given price type.
+
+        Parameters
+        ----------
+        price_type : PriceType
+            The price type to extraction.
+
+        Returns
+        -------
+        Price
+
+        """
+        if price_type == PriceType.MID:
+            return Price((self.bid.as_double() + self.ask.as_double()) / 2, self.bid.precision + 1)
+        elif price_type == PriceType.BID:
+            return self.bid
+        elif price_type == PriceType.ASK:
+            return self.ask
+        else:
+            raise ValueError(f"Cannot extract with PriceType {price_type_to_string(price_type)}")
+
+    cpdef Quantity extract_volume(self, PriceType price_type):
+        """
+        Extract the volume for the given price type.
+
+        Parameters
+        ----------
+        price_type : PriceType
+            The price type for extraction.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        if price_type == PriceType.MID:
+            return Quantity(self.bid_size.as_double() + self.ask_size.as_double())
+        elif price_type == PriceType.BID:
+            return self.bid_size
+        elif price_type == PriceType.ASK:
+            return self.ask_size
+        else:
+            raise ValueError(f"Cannot extract with PriceType {price_type_to_string(price_type)}")
 
     @staticmethod
     cdef QuoteTick from_serializable_string(Symbol symbol, str values):
