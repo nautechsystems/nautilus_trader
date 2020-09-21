@@ -68,9 +68,9 @@ from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport LimitOrder
+from nautilus_trader.model.order cimport MarketOrder
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 

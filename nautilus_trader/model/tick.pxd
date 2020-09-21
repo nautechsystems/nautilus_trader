@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.maker cimport Maker
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport MatchId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
@@ -36,6 +37,9 @@ cdef class QuoteTick(Tick):
     cdef readonly Price ask
     cdef readonly Quantity bid_size
     cdef readonly Quantity ask_size
+
+    cpdef Price extract_price(self, PriceType price_type)
+    cpdef Quantity extract_volume(self, PriceType price_type)
 
     @staticmethod
     cdef QuoteTick from_serializable_string(Symbol symbol, str values)

@@ -52,7 +52,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(self._get_quote_price(tick, self._price_type).as_double())
+        self.update_raw(tick.extract_price(self._price_type).as_double())
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
