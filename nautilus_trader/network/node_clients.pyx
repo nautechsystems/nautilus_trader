@@ -100,15 +100,19 @@ cdef class ClientNode:
         self._message_handler = handler
 
     cpdef bint is_connected(self):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void connect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
 
@@ -208,7 +212,7 @@ cdef class MessageClient(ClientNode):
         self._socket_outbound.connect()
         self._socket_inbound.connect()
 
-        cdef datetime timestamp = self._clock.time_now()
+        cdef datetime timestamp = self._clock.utc_now()
 
         cdef Connect connect = Connect(
             self.client_id,
@@ -232,7 +236,7 @@ cdef class MessageClient(ClientNode):
             self._log.warning("No session to disconnect from.")
             return
 
-        cdef datetime timestamp = self._clock.time_now()
+        cdef datetime timestamp = self._clock.utc_now()
 
         cdef Disconnect disconnect = Disconnect(
             self.client_id,

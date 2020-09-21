@@ -16,6 +16,10 @@
 
 cpdef enum Currency:
     UNDEFINED = 0,  # Invalid value
+    BTC = 1,
+    ETH = 2,
+    XRP = 3,
+    USDT = 4,
     AUD = 36,
     CAD = 124,
     CHF = 756,
@@ -41,7 +45,15 @@ cpdef enum Currency:
 
 
 cdef inline str currency_to_string(int value):
-    if value == 36:
+    if value == 1:
+        return 'BTC'
+    elif value == 2:
+        return 'ETH'
+    elif value == 3:
+        return 'XRP'
+    elif value == 4:
+        return 'USDT'
+    elif value == 36:
         return 'AUD'
     elif value == 124:
         return 'CAD'
@@ -90,7 +102,15 @@ cdef inline str currency_to_string(int value):
 
 
 cdef inline Currency currency_from_string(str value):
-    if value == 'AUD':
+    if value == 'BTC':
+        return Currency.BTC
+    elif value == 'ETH':
+        return Currency.ETH
+    elif value == 'XRP':
+        return Currency.XRP
+    elif value == 'USDT':
+        return Currency.USDT
+    elif value == 'AUD':
         return Currency.AUD
     elif value == 'CAD':
         return Currency.CAD

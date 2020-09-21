@@ -13,32 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.core.uuid cimport uuid4
+
+cpdef enum LiquiditySide:
+    NONE = 0,
+    MAKER = 1,
+    TAKER = 2,
 
 
-cdef class TestUUIDFactory(UUIDFactory):
-    """
-    Provides a fake UUID factory for testing purposes.
-    """
-    __test__ = False
+cdef inline str liquidity_side_to_string(int value):
+    if value == 1:
+        return 'MAKER'
+    elif value == 2:
+        return 'TAKER'
+    else:
+        return 'NONE'
 
-    def __init__(self):
-        """
-        Initialize a new instance of the TestUUIDFactory class.
-        """
-        super().__init__()
 
-        self._uuid = uuid4()
-
-    cpdef UUID generate(self):
-        """
-        Return the single test uuid4 instance.
-
-        Returns
-        -------
-        UUID
-
-        """
-        return self._uuid
+cdef inline LiquiditySide liquidity_side_from_string(str value):
+    if value == 'MAKER':
+        return LiquiditySide.MAKER
+    elif value == 'TAKER':
+        return LiquiditySide.TAKER
+    else:
+        return LiquiditySide.NONE

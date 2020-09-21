@@ -27,6 +27,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -277,6 +278,7 @@ class TestStubs:
             order.side,
             order.quantity,
             order.price if fill_price is None else fill_price,
+            LiquiditySide.TAKER,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
@@ -401,6 +403,7 @@ class TestStubs:
             order.quantity,
             close_price,
             Currency.USD,
+            LiquiditySide.TAKER,
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5))

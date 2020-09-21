@@ -108,7 +108,7 @@ cdef class TestClock(Clock):
         self._time = initial_time
         self.is_test_clock = True
 
-    cpdef datetime time_now(self):
+    cpdef datetime utc_now(self):
         """
         Return the current datetime of the clock (UTC).
 

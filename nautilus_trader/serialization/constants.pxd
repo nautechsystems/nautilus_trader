@@ -19,6 +19,7 @@ cdef str NONE
 cdef str TYPE
 cdef str ID
 cdef str ORDER
+cdef str OPTIONS
 cdef str TIMESTAMP
 cdef str VENUE
 cdef str SYMBOL
@@ -49,6 +50,8 @@ cdef str EXECUTION_ID
 cdef str POSITION_ID_BROKER
 cdef str ORDER_SIDE
 cdef str ORDER_TYPE
+cdef str IS_POST_ONLY
+cdef str IS_HIDDEN
 cdef str ENTRY
 cdef str STOP_LOSS
 cdef str TAKE_PROFIT
@@ -58,6 +61,7 @@ cdef str QUANTITY
 cdef str AVERAGE_PRICE
 cdef str PRICE
 cdef str TIME_IN_FORCE
+cdef str LIQUIDITY_SIDE
 cdef str BROKERAGE
 cdef str ACCOUNT_NUMBER
 cdef str CURRENCY

@@ -169,7 +169,7 @@ class EMACrossFiltered(TradingStrategy):
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For debugging
 
-        time_now = self.clock.time_now()
+        time_now = self.clock.utc_now()
 
         if time_now >= self.trading_end:
             self.log.info(f"Trading ended at {self.trading_end}. "
@@ -423,7 +423,7 @@ class EMACrossFiltered(TradingStrategy):
                     self.modify_order(order, order.quantity, temp_price)
 
     def _update_session_times(self):
-        time_now = self.clock.time_now()
+        time_now = self.clock.utc_now()
 
         # Set trading sessions
         self.session_next_start = self.session_filter.next_start(self.session_start_zone, time_now)
@@ -459,7 +459,7 @@ class EMACrossFiltered(TradingStrategy):
         self.log.info("Done for day...")
 
     def _update_news_event(self):
-        time_now = self.clock.time_now()
+        time_now = self.clock.utc_now()
 
         # Set next news event
         self.news_event_next = self.news_filter.next_event(time_now)

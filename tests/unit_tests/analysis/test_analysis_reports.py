@@ -21,6 +21,7 @@ from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import ExecutionId
@@ -79,6 +80,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price(0.80011, 5),
+            LiquiditySide.MAKER,
             Currency.AUD,
             UNIX_EPOCH,
             uuid4(),
@@ -140,6 +142,7 @@ class ReportProviderTests(unittest.TestCase):
             order1.side,
             order1.quantity,
             Price(0.80011, 5),
+            LiquiditySide.MAKER,
             Currency.AUD,
             UNIX_EPOCH,
             uuid4(),
@@ -153,7 +156,6 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_order_fills_report(orders)
 
         # Assert
-        # print(report.iloc[0])
         self.assertEqual(1, len(report))
         self.assertEqual("order_id", report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
@@ -178,7 +180,6 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_positions_report(positions)
 
         # Assert
-        # print(report.iloc[0])
         self.assertEqual(2, len(report))
         self.assertEqual("position_id", report.index.name)
         self.assertEqual(position1.id.value, report.index[0])

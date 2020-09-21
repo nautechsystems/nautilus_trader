@@ -78,7 +78,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(self._get_quote_price(tick, self._price_type).as_double())
+        self.update_raw(tick.extract_price(self._price_type).as_double())
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -122,7 +122,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         if not self.has_inputs:
             self.value = value
 
-        self._update()
+        self._increment_input()
         self._efficiency_ratio.update_raw(value)
         self._prior_value = self.value
 

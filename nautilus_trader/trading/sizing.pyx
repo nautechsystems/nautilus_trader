@@ -69,6 +69,7 @@ cdef class PositionSizer:
             double hard_limit=0.0,
             int units=1,
             int unit_batch_size=0):
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef double _calculate_risk_ticks(self, double entry, double stop_loss):

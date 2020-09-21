@@ -19,6 +19,7 @@ from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -95,6 +96,7 @@ cdef class Order:
 
 cdef class PassiveOrder(Order):
     cdef readonly Price price
+    cdef readonly LiquiditySide liquidity_side
     cdef readonly datetime expire_time
 
     cdef void _set_slippage(self) except *
@@ -111,6 +113,9 @@ cdef class StopOrder(PassiveOrder):
 
 
 cdef class LimitOrder(PassiveOrder):
+    cdef readonly bint is_post_only
+    cdef readonly bint is_hidden
+
     @staticmethod
     cdef LimitOrder create(OrderInitialized event)
 

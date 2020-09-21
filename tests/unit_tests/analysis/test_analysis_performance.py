@@ -32,7 +32,7 @@ class AnalyzerTests(unittest.TestCase):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
 
-    def test_can_add_returns(self):
+    def test_add_return(self):
         # Arrange
         t1 = datetime(year=2010, month=1, day=1)
         t2 = datetime(year=2010, month=1, day=2)
@@ -61,7 +61,7 @@ class AnalyzerTests(unittest.TestCase):
         # Assert
         self.assertEqual(10, len(result))
 
-    def test_can_add_positions(self):
+    def test_add_positions(self):
         # Arrange
         position1 = TestStubs.position()
         position2 = TestStubs.position()

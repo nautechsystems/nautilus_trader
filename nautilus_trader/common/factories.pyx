@@ -45,10 +45,22 @@ cdef class OrderFactory:
         """
         Initialize a new instance of the OrderFactory class.
 
-        :param id_tag_trader: The identifier tag for the trader.
-        :param id_tag_strategy: The identifier tag for the strategy.
-        :param clock: The clock for the component.
-        :raises ValueError: If initial_count is negative (< 0).
+        id_tag_trader : IdTag
+            The identifier tag for the trader.
+        id_tag_strategy : IdTag
+            The identifier tag for the strategy.
+        clock : Clock
+            The clock for the component.
+        uuid_factory : UUIDFactory
+            The UUID factory for the component.
+        initial_count : int, optional
+            The initial order count for the factory (default=0).
+
+        Raises
+        ------
+        ValueError
+            If initial_count is negative (< 0).
+
         """
         if clock is None:
             clock = LiveClock()
@@ -68,7 +80,10 @@ cdef class OrderFactory:
         """
         Return the internal order_id generator count.
 
-        :return: int.
+        Returns
+        -------
+        int
+
         """
         return self._id_generator.count
 
@@ -76,7 +91,11 @@ cdef class OrderFactory:
         """
         System Method: Set the internal order_id generator count to the given count.
 
-        :param count: The count to set.
+        Parameters
+        ----------
+        count : int
+            The count to set.
+
         """
         self._id_generator.set_count(count)
 
@@ -93,14 +112,28 @@ cdef class OrderFactory:
             Quantity quantity,
             TimeInForce time_in_force=TimeInForce.DAY):
         """
-        Return a market order.
+        Create a new market order.
 
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param time_in_force: The orders time in force (default=DAY).
-        :raises ValueError: If quantity is not positive (> 0).
-        :return Order.
+        Parameters
+        ----------
+        symbol : Symbol
+            The orders symbol.
+        order_side : OrderSide
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        time_in_force : TimeInForce
+            The orders time in force (default=DAY).
+
+        Returns
+        -------
+        MarketOrder
+
+        Raises
+        ------
+        ValueError
+            If quantity is not positive (> 0).
+
         """
         return MarketOrder(
             self._id_generator.generate(),
@@ -109,7 +142,7 @@ cdef class OrderFactory:
             quantity,
             time_in_force,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
+            timestamp=self._clock.utc_now())
 
     cpdef LimitOrder limit(
             self,
@@ -118,20 +151,44 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None):
+            datetime expire_time=None,
+            bint is_post_only=True,
+            bint is_hidden=False):
         """
-        Returns a limit order.
-        Note: If the time in force is GTD then a valid expire time must be given.
+        Create a new limit order.
 
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param price: The orders price.
-        :param time_in_force: The orders time in force (default=DAY).
-        :param expire_time: The optional order expire time (for GTD orders).
-        :raises ValueError: If quantity is not positive (> 0).
-        :raises ValueError: If time_in_force is GTD and the expire_time is None.
-        :return Order.
+        If the time in force is GTD then a valid expire time must be given.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The orders symbol.
+        order_side : OrderSide
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        price : Price
+            The orders price.
+        time_in_force : TimeInForce, optional
+            The orders time in force (default=DAY).
+        expire_time : datetime, optional
+            The order expire time (for GTD orders, default=None).
+        is_post_only : bool, optional
+            If the order will only make a market (default=True).
+        is_hidden : bool, optional
+            If the order should be hidden from the public book (default=False).
+
+        Returns
+        -------
+        MarketOrder
+
+        Raises
+        ------
+        ValueError
+            If quantity is not positive (> 0).
+        ValueError
+            If time_in_force is GTD and expire_time is None.
+
         """
         return LimitOrder(
             self._id_generator.generate(),
@@ -142,7 +199,9 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
+            timestamp=self._clock.utc_now(),
+            is_post_only=is_post_only,
+            is_hidden=is_hidden)
 
     cpdef StopOrder stop(
             self,
@@ -153,18 +212,36 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Returns a stop-market order.
-        Note: If the time in force is GTD then a valid expire time must be given.
+        Create a new stop-market order.
 
-        :param symbol: The orders symbol.
-        :param order_side: The orders side.
-        :param quantity: The orders quantity (> 0).
-        :param price: The orders price.
-        :param time_in_force: The orders time in force (default=DAY).
-        :param expire_time: The optional order expire time (for GTD orders).
-        :raises ValueError: If quantity is not positive (> 0).
-        :raises ValueError: If time_in_force is GTD and the expire_time is None.
-        :return Order.
+        If the time in force is GTD then a valid expire time must be given.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The orders symbol.
+        order_side : OrderSide
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        price : Price
+            The orders price.
+        time_in_force : TimeInForce, optional
+            The orders time in force (default=DAY).
+        expire_time : datetime, optional
+            The order expire time (for GTD orders, default=None).
+
+        Returns
+        -------
+        StopOrder
+
+        Raises
+        ------
+        ValueError
+            If quantity is not positive (> 0).
+        ValueError
+            If time_in_force is GTD and expire_time is None.
+
         """
         return StopOrder(
             self._id_generator.generate(),
@@ -175,7 +252,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.time_now())
+            timestamp=self._clock.utc_now())
 
     cpdef BracketOrder bracket(
             self,
@@ -183,12 +260,21 @@ cdef class OrderFactory:
             Price stop_loss,
             Price take_profit=None):
         """
-        Return a bracket order from the given entry.
+        Create a bracket order from the given entry.
 
-        :param entry_order: The entry order for the bracket.
-        :param stop_loss: The stop-loss order price.
-        :param take_profit: The optional take-profit order price.
-        :return BracketOrder.
+        Parameters
+        ----------
+        entry_order : Order
+            The entry parent order for the bracket.
+        stop_loss : Price
+            The stop-loss child order price.
+        take_profit : Price, optional
+            The take-profit child order price (default=None).
+
+        Returns
+        -------
+        BracketOrder
+
         """
         # Validate prices
         if entry_order.side == OrderSide.BUY:

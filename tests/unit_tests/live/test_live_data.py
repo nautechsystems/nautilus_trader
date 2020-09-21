@@ -144,7 +144,7 @@ class LiveDataClientTests(unittest.TestCase):
         # errors caused by the continuous disposal of sockets. Thus for testing
         # we"re avoiding calling .dispose() on the sockets.
 
-    def test_can_subscribe_to_quote_tick_data(self):
+    def test_subscribe_quote_ticks(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -154,7 +154,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_quote_ticks())
 
-    def test_can_unsubscribe_from_quote_tick_data(self):
+    def test_unsubscribe_quote_ticks(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -165,7 +165,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_quote_ticks())
 
-    def test_can_receive_published_quote_tick_data(self):
+    def test_receives_published_quote_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -188,7 +188,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(1, len(data_receiver.get_store()))
         self.assertEqual(tick, data_receiver.get_store()[0])
 
-    def test_can_subscribe_to_bar_data(self):
+    def test_subscribe_bar_data(self):
         # Arrange
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -199,7 +199,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertIn(bar_type, self.data_client.subscribed_bars())
 
-    def test_can_unsubscribe_from_bar_data(self):
+    def test_unsubscribe_bar_data(self):
         # Arrange
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -211,7 +211,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertNotIn(bar_type, self.data_client.subscribed_quote_ticks())
 
-    def test_can_subscribe_to_instrument_data(self):
+    def test_subscribe_instrument(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -221,7 +221,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_instruments())
 
-    def test_can_unsubscribe_from_instrument_data(self):
+    def test_unsubscribe_instrument(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -232,7 +232,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_instruments())
 
-    def test_can_receive_published_instrument_data(self):
+    def test_receives_published_instrument_data(self):
         # Arrange
         instrument = TestStubs.instrument_gbpusd()
         data_receiver = ObjectStorer()
@@ -249,7 +249,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(1, len(data_receiver.get_store()))
         self.assertEqual(instrument, data_receiver.get_store()[0])
 
-    def test_can_request_tick_data(self):
+    def test_request_quote_ticks(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -266,7 +266,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(1, len(self.data_server_sink))
         self.assertEqual(DataRequest, type(self.data_server_sink[0]))
 
-    def test_can_receive_quote_tick_data(self):
+    def test_receives_quote_tick_data(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -308,7 +308,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(ticks, response)
 
-    def test_can_request_bar_data(self):
+    def test_request_bars(self):
         # Arrange
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()

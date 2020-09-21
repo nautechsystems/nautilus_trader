@@ -40,13 +40,26 @@ cdef class LiveTimer(Timer):
         """
         Initialize a new instance of the LiveTimer class.
 
-        :param name: The name for the timer.
-        :param callback: The function to call at the next time.
-        :param interval: The time interval for the timer.
-        :param now: The datetime now (UTC).
-        :param start_time: The start datetime for the timer (UTC).
-        :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
-        :raises TypeError: If callback is not of type callable.
+        Parameters
+        ----------
+        name : str
+            The name for the timer.
+        callback : callable
+            The function to call at the next time.
+        interval : timedelta
+            The time interval for the timer.
+        now : datetime
+            The datetime now (UTC).
+        start_time : datetime
+            The start datetime for the timer (UTC).
+        stop_time : datetime, optional
+            The stop datetime for the timer (UTC) (if None then timer repeats).
+
+        Raises
+        ------
+        TypeError
+            If callback is not of type callable.
+
         """
         Condition.valid_string(name, "name")
         super().__init__(name, callback, interval, start_time, stop_time)
@@ -56,6 +69,12 @@ cdef class LiveTimer(Timer):
     cpdef void repeat(self, datetime now) except *:
         """
         Continue the timer.
+
+        Parameters
+        ----------
+        now : datetime
+            The current time to base the repeat from.
+
         """
         Condition.not_none(now, "now")
 
@@ -87,9 +106,9 @@ cdef class LiveClock(Clock):
         """
         Initialize a new instance of the LiveClock class.
         """
-        super().__init__(LiveUUIDFactory())
+        super().__init__(LiveUUIDFactory())  # Instantiation inside constructor?
 
-    cpdef datetime time_now(self):
+    cpdef datetime utc_now(self):
         """
         Return the current datetime of the clock (UTC).
 
@@ -122,7 +141,7 @@ cdef class LiveClock(Clock):
             stop_time=stop_time)
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
-        cdef datetime now = self.time_now()
+        cdef datetime now = self.utc_now()
         cdef TimeEvent event = timer.pop_event(self._uuid_factory.generate())
         timer.iterate_next_time(now)
         self._handle_time_event(event)

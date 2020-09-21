@@ -17,6 +17,8 @@
 Defines various order types to be used for trading.
 """
 
+import pandas as pd
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -24,6 +26,7 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -433,7 +436,8 @@ cdef class PassiveOrder(Order):
                  TimeInForce time_in_force,
                  datetime expire_time,  # Can be None
                  UUID init_id not None,
-                 datetime timestamp not None):
+                 datetime timestamp not None,
+                 dict options not None):
         """
         Initialize a new instance of the PassiveOrder class.
 
@@ -459,6 +463,8 @@ cdef class PassiveOrder(Order):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
+        options : dict
+            The order options.
 
         Raises
         ------
@@ -483,20 +489,23 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
+        options['Price'] = price.to_string()
+        options['ExpireTime'] = format_iso8601(expire_time) if not None else str(None)
+
         cdef OrderInitialized init_event = OrderInitialized(
             order_id=order_id,
             symbol=symbol,
             order_side=order_side,
             order_type=order_type,
             quantity=quantity,
-            price=price,
             time_in_force=time_in_force,
-            expire_time=expire_time,
             event_id=init_id,
-            event_timestamp=timestamp)
+            event_timestamp=timestamp,
+            options=options)
         super().__init__(init_event)
 
         self.price = price
+        self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
         self.slippage = Decimal64()
 
@@ -523,6 +532,7 @@ cdef class PassiveOrder(Order):
         self.position_id_broker = event.position_id_broker
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
+        self.liquidity_side = event.liquidity_side
         self.filled_quantity = event.filled_quantity
         self.filled_timestamp = event.timestamp
         self.average_price = event.average_price
@@ -597,11 +607,10 @@ cdef class MarketOrder(Order):
             order_side=order_side,
             order_type=OrderType.MARKET,
             quantity=quantity,
-            price=None,
             time_in_force=time_in_force,
-            expire_time=None,
             event_id=init_id,
-            event_timestamp=timestamp)
+            event_timestamp=timestamp,
+            options={})
 
         super().__init__(init_event)
 
@@ -673,7 +682,9 @@ cdef class LimitOrder(PassiveOrder):
                  TimeInForce time_in_force,
                  datetime expire_time,  # Can be None
                  UUID init_id not None,
-                 datetime timestamp not None):
+                 datetime timestamp not None,
+                 bint is_post_only=True,
+                 bint is_hidden=False):
         """
         Initialize a new instance of the LimitOrder class.
 
@@ -697,6 +708,10 @@ cdef class LimitOrder(PassiveOrder):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
+        is_post_only : bool, optional;
+            If the order will only make a market (default=True).
+        is_hidden : bool, optional
+            If the order should be hidden from the public book (default=False).
 
         Raises
         ------
@@ -710,6 +725,14 @@ cdef class LimitOrder(PassiveOrder):
             If time_in_force is GTD and expire_time is None.
 
         """
+        self.is_post_only = is_post_only
+        self.is_hidden = is_hidden
+
+        cdef dict options = {
+            'IsPostOnly': str(is_post_only),
+            'IsHidden': str(is_hidden),
+        }
+
         super().__init__(
             order_id,
             symbol,
@@ -720,7 +743,8 @@ cdef class LimitOrder(PassiveOrder):
             time_in_force,
             expire_time,
             init_id,
-            timestamp)
+            timestamp,
+            options)
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized event):
@@ -739,16 +763,26 @@ cdef class LimitOrder(PassiveOrder):
         """
         Condition.not_none(event, "event")
 
+        cdef str price_string = event.options['Price']
+        cdef str expire_time_string = event.options['ExpireTime']
+
+        cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
+        cdef Price price = Price.from_string(price_string)
+        cdef is_post_only = event.options['IsPostOnly'] == str(True)
+        cdef is_hidden = event.options['IsHidden'] == str(True)
+
         return LimitOrder(
             order_id=event.order_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=event.price,
+            price=price,
             time_in_force=event.time_in_force,
-            expire_time=event.expire_time,
+            expire_time=expire_time,
             init_id=event.id,
-            timestamp=event.timestamp)
+            timestamp=event.timestamp,
+            is_post_only=is_post_only,
+            is_hidden=is_hidden)
 
 
 cdef class StopOrder(PassiveOrder):
@@ -815,7 +849,8 @@ cdef class StopOrder(PassiveOrder):
             time_in_force,
             expire_time,
             init_id,
-            timestamp)
+            timestamp,
+            options={})
 
     @staticmethod
     cdef StopOrder create(OrderInitialized event):
@@ -834,14 +869,20 @@ cdef class StopOrder(PassiveOrder):
         """
         Condition.not_none(event, "event")
 
+        cdef str price_string = event.options['Price']
+        cdef str expire_time_string = event.options['ExpireTime']
+
+        cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
+        cdef Price price = Price.from_string(price_string)
+
         return StopOrder(
             order_id=event.order_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=event.price,
+            price=price,
             time_in_force=event.time_in_force,
-            expire_time=event.expire_time,
+            expire_time=expire_time,
             init_id=event.id,
             timestamp=event.timestamp)
 

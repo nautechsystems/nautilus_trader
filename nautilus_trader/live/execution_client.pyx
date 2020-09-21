@@ -96,7 +96,6 @@ cdef class LiveExecClient(ExecutionClient):
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
 
-        self.trader_id = exec_engine.trader_id
         self.client_id = ClientId(self.trader_id.value)
 
         self._command_client = MessageClient(
@@ -141,18 +140,18 @@ cdef class LiveExecClient(ExecutionClient):
         self._command_client.disconnect()
         self._event_subscriber.disconnect()
 
-    cpdef void dispose(self) except *:
-        """
-        Disposes of the execution client.
-        """
-        self._command_client.dispose()
-        self._event_subscriber.dispose()
-
     cpdef void reset(self) except *:
         """
         Reset the execution client.
         """
         self._reset()
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the execution client.
+        """
+        self._command_client.dispose()
+        self._event_subscriber.dispose()
 
     cpdef void account_inquiry(self, AccountInquiry command) except *:
         self._send_command(command)

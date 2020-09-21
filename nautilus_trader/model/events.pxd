@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -54,26 +55,13 @@ cdef class OrderEvent(Event):
     cdef readonly OrderId order_id
 
 
-cdef class OrderFillEvent(OrderEvent):
-    cdef readonly AccountId account_id
-    cdef readonly ExecutionId execution_id
-    cdef readonly PositionIdBroker position_id_broker
-    cdef readonly Symbol symbol
-    cdef readonly OrderSide order_side
-    cdef readonly Quantity filled_quantity
-    cdef readonly Price average_price
-    cdef readonly Currency quote_currency
-    cdef readonly datetime execution_time
-
-
 cdef class OrderInitialized(OrderEvent):
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
     cdef readonly Quantity quantity
-    cdef readonly Price price
     cdef readonly TimeInForce time_in_force
-    cdef readonly datetime expire_time
+    cdef readonly dict options
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -137,6 +125,19 @@ cdef class OrderModified(OrderEvent):
     cdef readonly Quantity modified_quantity
     cdef readonly Price modified_price
     cdef readonly datetime modified_time
+
+
+cdef class OrderFillEvent(OrderEvent):
+    cdef readonly AccountId account_id
+    cdef readonly ExecutionId execution_id
+    cdef readonly PositionIdBroker position_id_broker
+    cdef readonly Symbol symbol
+    cdef readonly OrderSide order_side
+    cdef readonly Quantity filled_quantity
+    cdef readonly Price average_price
+    cdef readonly LiquiditySide liquidity_side
+    cdef readonly Currency quote_currency
+    cdef readonly datetime execution_time
 
 
 cdef class OrderFilled(OrderFillEvent):

@@ -21,6 +21,8 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -158,57 +160,6 @@ cdef class OrderEvent(Event):
         return f"<{str(self)} object at {id(self)}>"
 
 
-cdef class OrderFillEvent(OrderEvent):
-    """
-    The base class for all order fill events.
-    """
-
-    def __init__(self,
-                 AccountId account_id not None,
-                 OrderId order_id not None,
-                 ExecutionId execution_id not None,
-                 PositionIdBroker position_id_broker not None,
-                 Symbol symbol not None,
-                 OrderSide order_side,
-                 Quantity filled_quantity not None,
-                 Price average_price not None,
-                 Currency quote_currency,
-                 datetime execution_time not None,
-                 UUID event_id not None,
-                 datetime event_timestamp not None):
-        """
-        Initialize a new instance of the OrderFillEvent class.
-
-        :param account_id: The event account_id.
-        :param order_id: The event order_id.
-        :param execution_id: The event order execution_id.
-        :param position_id_broker: The event broker position identifier.
-        :param symbol: The event order symbol.
-        :param order_side: The event execution order side.
-        :param filled_quantity: The event execution filled quantity.
-        :param average_price: The event execution average price.
-        :param quote_currency: The event order quote currency.
-        :param execution_time: The event execution time.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
-        """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
-        super().__init__(order_id,
-                         event_id,
-                         event_timestamp)
-
-        self.account_id = account_id
-        self.execution_id = execution_id
-        self.position_id_broker = position_id_broker
-        self.symbol = symbol
-        self.order_side = order_side
-        self.filled_quantity = filled_quantity
-        self.average_price = average_price
-        self.quote_currency = quote_currency
-        self.execution_time = execution_time
-
-
 cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
@@ -220,11 +171,10 @@ cdef class OrderInitialized(OrderEvent):
                  OrderSide order_side,
                  OrderType order_type,
                  Quantity quantity not None,
-                 Price price,  # Can be None
                  TimeInForce time_in_force,
-                 datetime expire_time,  # Can be None
                  UUID event_id not None,
-                 datetime event_timestamp):
+                 datetime event_timestamp not None,
+                 dict options not None):
         """
         Initialize a new instance of the OrderInitialized class.
 
@@ -233,11 +183,10 @@ cdef class OrderInitialized(OrderEvent):
         :param order_side: The event order side.
         :param order_type: The event order type.
         :param quantity: The event order quantity.
-        :param price: The event order price.
         :param time_in_force: The event order time in force.
-        :param expire_time: The event order expire time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
+        :param options: The event order options.
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
@@ -250,9 +199,8 @@ cdef class OrderInitialized(OrderEvent):
         self.order_side = order_side
         self.order_type = order_type
         self.quantity = quantity
-        self.price = price
         self.time_in_force = time_in_force
-        self.expire_time = expire_time
+        self.options = options
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -721,6 +669,61 @@ cdef class OrderExpired(OrderEvent):
                 f"order_id={self.order_id})")
 
 
+cdef class OrderFillEvent(OrderEvent):
+    """
+    The base class for all order fill events.
+    """
+
+    def __init__(self,
+                 AccountId account_id not None,
+                 OrderId order_id not None,
+                 ExecutionId execution_id not None,
+                 PositionIdBroker position_id_broker not None,
+                 Symbol symbol not None,
+                 OrderSide order_side,
+                 Quantity filled_quantity not None,
+                 Price average_price not None,
+                 LiquiditySide liquidity_side,
+                 Currency quote_currency,
+                 datetime execution_time not None,
+                 UUID event_id not None,
+                 datetime event_timestamp not None):
+        """
+        Initialize a new instance of the OrderFillEvent class.
+
+        :param account_id: The event account_id.
+        :param order_id: The event order_id.
+        :param execution_id: The event order execution_id.
+        :param position_id_broker: The event broker position identifier.
+        :param symbol: The event order symbol.
+        :param order_side: The event execution order side.
+        :param filled_quantity: The event execution filled quantity.
+        :param average_price: The event execution average price.
+        :param liquidity_side: The event execution liquidity side.
+        :param quote_currency: The event order quote currency.
+        :param execution_time: The event execution time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
+        """
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(liquidity_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
+        super().__init__(order_id,
+                         event_id,
+                         event_timestamp)
+
+        self.account_id = account_id
+        self.execution_id = execution_id
+        self.position_id_broker = position_id_broker
+        self.symbol = symbol
+        self.order_side = order_side
+        self.filled_quantity = filled_quantity
+        self.average_price = average_price
+        self.liquidity_side = liquidity_side
+        self.quote_currency = quote_currency
+        self.execution_time = execution_time
+
+
 cdef class OrderPartiallyFilled(OrderFillEvent):
     """
     Represents an event where an order has been partially filled with the broker.
@@ -736,6 +739,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                  Quantity filled_quantity not None,
                  Quantity leaves_quantity not None,
                  Price average_price not None,
+                 LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
                  UUID event_id not None,
@@ -752,11 +756,13 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         :param filled_quantity: The event execution filled quantity.
         :param leaves_quantity: The event leaves quantity.
         :param average_price: The event execution average price.
+        :param liquidity_side: The event execution liquidity side.
         :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
+        # Enums checked in base class
         super().__init__(account_id,
                          order_id,
                          execution_id,
@@ -765,6 +771,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         liquidity_side,
                          quote_currency,
                          execution_time,
                          event_id,
@@ -785,7 +792,8 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
-                f"side={order_side_to_string(self.order_side)}, "
+                f"side={order_side_to_string(self.order_side)}"
+                f"-{liquidity_side_to_string(self.liquidity_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
                 f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
                 f"avg_price={self.average_price})")
@@ -805,6 +813,7 @@ cdef class OrderFilled(OrderFillEvent):
                  OrderSide order_side,
                  Quantity filled_quantity not None,
                  Price average_price not None,
+                 LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
                  UUID event_id not None,
@@ -820,13 +829,13 @@ cdef class OrderFilled(OrderFillEvent):
         :param order_side: The event execution order side.
         :param filled_quantity: The event execution filled quantity.
         :param average_price: The event execution average price.
+        :param liquidity_side: The event execution liquidity side.
         :param quote_currency: The event order quote currency.
         :param execution_time: The event execution time.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-
+        # Enums checked in base class
         super().__init__(account_id,
                          order_id,
                          execution_id,
@@ -835,6 +844,7 @@ cdef class OrderFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         liquidity_side,
                          quote_currency,
                          execution_time,
                          event_id,
@@ -853,7 +863,8 @@ cdef class OrderFilled(OrderFillEvent):
                 f"account_id={self.account_id}, "
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
-                f"side={order_side_to_string(self.order_side)}, "
+                f"side={order_side_to_string(self.order_side)}"
+                f"-{liquidity_side_to_string(self.liquidity_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
                 f"avg_price={self.average_price})")
 

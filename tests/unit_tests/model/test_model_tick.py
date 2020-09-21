@@ -16,6 +16,7 @@
 import unittest
 
 from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import MatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -28,6 +29,46 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 
 class TickTests(unittest.TestCase):
+
+    def test_extract_price_with_various_price_types_returns_expected_values(self):
+        # Arrange
+        tick = QuoteTick(
+            AUDUSD_FXCM,
+            Price(1.00000, 5),
+            Price(1.00001, 5),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
+
+        # Act
+        result1 = tick.extract_price(PriceType.ASK)
+        result2 = tick.extract_price(PriceType.MID)
+        result3 = tick.extract_price(PriceType.BID)
+
+        # Assert
+        self.assertEqual(Price(1.00001, 5), result1)
+        self.assertEqual(Price(1.000005, 6), result2)
+        self.assertEqual(Price(1.00000, 5), result3)
+
+    def test_extract_volume_with_various_price_types_returns_expected_values(self):
+        # Arrange
+        tick = QuoteTick(
+            AUDUSD_FXCM,
+            Price(1.00000, 5),
+            Price(1.00001, 5),
+            Quantity(500000),
+            Quantity(800000),
+            UNIX_EPOCH)
+
+        # Act
+        result1 = tick.extract_volume(PriceType.ASK)
+        result2 = tick.extract_volume(PriceType.MID)
+        result3 = tick.extract_volume(PriceType.BID)
+
+        # Assert
+        self.assertEqual(Quantity(800000), result1)
+        self.assertEqual(Quantity(1300000), result2)
+        self.assertEqual(Quantity(500000), result3)
 
     def test_can_parse_quote_tick_from_string(self):
         # Arrange

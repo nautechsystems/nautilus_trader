@@ -20,9 +20,10 @@ import pandas as pd
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
@@ -44,7 +45,7 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
-class BacktestExecClientTests(unittest.TestCase):
+class SimulatedBrokerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -93,14 +94,19 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=self.logger)
 
         self.config = BacktestConfig()
-        self.exec_client = BacktestExecClient(
+        self.broker = SimulatedBroker(
             exec_engine=self.exec_engine,
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,
             fill_model=FillModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(self.clock))
+            logger=self.logger)
+
+        self.exec_client = BacktestExecClient(
+            broker=self.broker,
+            logger=self.logger)
+
         self.exec_engine.register_client(self.exec_client)
 
     def test_can_account_collateral_inquiry(self):
@@ -131,7 +137,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -157,7 +163,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.limit(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -184,7 +190,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
 
         entry_order = strategy.order_factory.market(
             USDJPY_FXCM,
@@ -215,7 +221,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
 
         entry_order = strategy.order_factory.stop(
             USDJPY_FXCM,
@@ -248,7 +254,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -277,7 +283,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
 
         entry_order = strategy.order_factory.market(
             USDJPY_FXCM,
@@ -374,7 +380,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -400,7 +406,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,

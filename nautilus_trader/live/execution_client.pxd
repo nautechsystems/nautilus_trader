@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.execution_client cimport ExecutionClient
 from nautilus_trader.core.message cimport Command
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.network.identifiers cimport ClientId
 from nautilus_trader.network.node_clients cimport MessageClient
 from nautilus_trader.network.node_clients cimport MessageSubscriber
@@ -30,7 +29,6 @@ cdef class LiveExecClient(ExecutionClient):
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
 
-    cdef readonly TraderId trader_id
     cdef readonly ClientId client_id
 
     cpdef void _send_command(self, Command command) except *

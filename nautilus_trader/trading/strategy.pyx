@@ -2052,7 +2052,7 @@ cdef class TradingStrategy:
             self.trader_id,
             self._exec.account_id,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec.execute_command(command)
@@ -2082,7 +2082,7 @@ cdef class TradingStrategy:
             position_id,
             order,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec.execute_command(command)
@@ -2123,7 +2123,7 @@ cdef class TradingStrategy:
             position_id,
             bracket_order,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec.execute_command(command)
@@ -2164,7 +2164,7 @@ cdef class TradingStrategy:
             new_quantity,
             new_price,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec.execute_command(command)
@@ -2189,7 +2189,7 @@ cdef class TradingStrategy:
             self._exec.account_id,
             order.id,
             self.uuid_factory.generate(),
-            self.clock.time_now())
+            self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec.execute_command(command)
@@ -2217,7 +2217,7 @@ cdef class TradingStrategy:
                 self._exec.account_id,
                 order_id,
                 self.uuid_factory.generate(),
-                self.clock.time_now())
+                self.clock.utc_now())
 
             self.log.info(f"{CMD}{SENT} {command}.")
             self._exec.execute_command(command)

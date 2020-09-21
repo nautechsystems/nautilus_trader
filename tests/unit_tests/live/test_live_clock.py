@@ -42,18 +42,27 @@ class LiveClockTests(unittest.TestCase):
         self.assertTrue(self.clock.is_default_handler_registered)
         self.assertEqual([], self.clock.get_timer_names())
 
-    def test_time_now(self):
+    def test_utc_now(self):
         # Arrange
         # Act
-        result = self.clock.time_now()
+        result = self.clock.utc_now()
 
         # Assert
-        self.assertEqual(pytz.utc, result.tzinfo)
         self.assertEqual(datetime, type(result))
+        self.assertEqual(pytz.utc, result.tzinfo)
+
+    def test_local_now(self):
+        # Arrange
+        # Act
+        result = self.clock.local_now(pytz.timezone("Australia/Sydney"))
+
+        # Assert
+        self.assertEqual(datetime, type(result))
+        # TODO: Check timezone
 
     def test_get_delta(self):
         # Arrange
-        start = self.clock.time_now()
+        start = self.clock.utc_now()
 
         # Act
         time.sleep(0.1)
@@ -67,7 +76,7 @@ class LiveClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_ALERT"
         interval = timedelta(milliseconds=100)
-        alert_time = self.clock.time_now() + interval
+        alert_time = self.clock.utc_now() + interval
 
         # Act
         self.clock.set_time_alert(name, alert_time)
@@ -81,7 +90,7 @@ class LiveClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_ALERT"
         interval = timedelta(milliseconds=100)
-        alert_time = self.clock.time_now() + interval
+        alert_time = self.clock.utc_now() + interval
 
         self.clock.set_time_alert(name, alert_time)
 
@@ -94,8 +103,8 @@ class LiveClockTests(unittest.TestCase):
 
     def test_can_set_multiple_time_alerts(self):
         # Arrange
-        alert_time1 = self.clock.time_now() + timedelta(milliseconds=200)
-        alert_time2 = self.clock.time_now() + timedelta(milliseconds=300)
+        alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
+        alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
 
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
@@ -129,7 +138,7 @@ class LiveClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now() + interval
+        start_time = self.clock.utc_now() + interval
 
         # Act
         self.clock.set_timer(
@@ -149,7 +158,7 @@ class LiveClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now()
+        start_time = self.clock.utc_now()
         stop_time = start_time + interval
 
         # Act
@@ -185,7 +194,7 @@ class LiveClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now()
+        start_time = self.clock.utc_now()
 
         # Act
         self.clock.set_timer(
@@ -207,7 +216,7 @@ class LiveClockTests(unittest.TestCase):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now()
+        start_time = self.clock.utc_now()
         stop_time = start_time + timedelta(seconds=5)
 
         self.clock.set_timer(
@@ -226,7 +235,7 @@ class LiveClockTests(unittest.TestCase):
     def test_can_set_two_repeating_timers(self):
         # Arrange
         interval = timedelta(milliseconds=100)
-        start_time = self.clock.time_now() + timedelta(milliseconds=100)
+        start_time = self.clock.utc_now() + timedelta(milliseconds=100)
 
         # Act
         self.clock.set_timer(

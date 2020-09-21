@@ -76,8 +76,6 @@ cdef class BarBuilder:
     cpdef Bar build(self, datetime close_time=*)
     cdef void _update(self, Price price, Quantity volume, datetime timestamp) except *
     cdef void _reset(self) except *
-    cdef inline Price _get_price(self, QuoteTick tick)
-    cdef inline Quantity _get_volume(self, QuoteTick tick)
 
 
 cdef class BarAggregator:
