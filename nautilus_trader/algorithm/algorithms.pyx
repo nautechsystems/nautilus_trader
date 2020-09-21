@@ -15,12 +15,12 @@
 
 from collections import deque
 
+from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.indicators.atr cimport AverageTrueRange
 
 
 cdef class TrailingStopSignal:
