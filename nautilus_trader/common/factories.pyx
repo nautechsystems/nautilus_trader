@@ -45,6 +45,8 @@ cdef class OrderFactory:
         """
         Initialize a new instance of the OrderFactory class.
 
+        Parameters
+        ----------
         id_tag_trader : IdTag
             The identifier tag for the trader.
         id_tag_strategy : IdTag
@@ -122,7 +124,7 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce
+        time_in_force : TimeInForce, optional
             The orders time in force (default=DAY).
 
         Returns
@@ -133,6 +135,10 @@ cdef class OrderFactory:
         ------
         ValueError
             If quantity is not positive (> 0).
+        ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
+            If time_in_force is other than DAY, IOC or FOC.
 
         """
         return MarketOrder(
@@ -187,6 +193,8 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
             If time_in_force is GTD and expire_time is None.
 
         """
@@ -240,6 +248,8 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
             If time_in_force is GTD and expire_time is None.
 
         """
@@ -274,6 +284,17 @@ cdef class OrderFactory:
         Returns
         -------
         BracketOrder
+
+        Raises
+        ------
+        ValueError
+            If entry_order.side is BUY and entry_order.price <= stop_loss.price.
+        ValueError
+            If entry_order.side is BUY and entry_order.price >= take_profit.price.
+        ValueError
+            If entry_order.side is SELL and entry_order.price >= stop_loss.price.
+        ValueError
+            If entry_order.side is SELL and entry_order.price <= take_profit.price.
 
         """
         # Validate prices

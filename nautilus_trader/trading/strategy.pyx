@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# cython: boundscheck=False
-# cython: wraparound=False
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.data cimport DataClient

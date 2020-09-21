@@ -35,9 +35,9 @@ class SpreadAnalyzerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, analyzer.current_spread)
-        self.assertEqual(0, analyzer.current_spread)
-        self.assertEqual(0, analyzer.average_spread)
+        self.assertEqual(0, analyzer.current)
+        self.assertEqual(0, analyzer.current)
+        self.assertEqual(0, analyzer.average)
         self.assertEqual(False, analyzer.initialized)
 
     def test_update_with_incorrect_tick_raises_exception(self):
@@ -78,5 +78,5 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer.handle_quote_tick(tick2)
 
         # Assert
-        self.assertAlmostEqual(6e-05, analyzer.current_spread)
-        self.assertAlmostEqual(8e-05, analyzer.average_spread)
+        self.assertAlmostEqual(6e-05, analyzer.current)
+        self.assertAlmostEqual(8e-05, analyzer.average)

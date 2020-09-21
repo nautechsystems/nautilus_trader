@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# cython: boundscheck=False
-# cython: wraparound=False
-
 from cpython.datetime cimport datetime
 
 from collections import deque
