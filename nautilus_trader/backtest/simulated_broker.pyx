@@ -367,7 +367,6 @@ cdef class SimulatedBroker:
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
         Condition.not_none(event, "event")
 
-        # Calculate commission
         cdef Instrument instrument = self.instruments[event.symbol]
         cdef double exchange_rate = self.exchange_calculator.get_rate(
             from_currency=instrument.quote_currency,
@@ -393,15 +392,8 @@ cdef class SimulatedBroker:
                 quantity=event.filled_quantity,
                 exchange_rate=exchange_rate)
 
-        cdef Money commission = self.commission_calculator.calculate(
-            symbol=event.symbol,
-            filled_quantity=event.filled_quantity,
-            filled_price=event.average_price,
-            exchange_rate=exchange_rate,
-            currency=self.account_currency)
-
-        self.total_commissions = self.total_commissions.sub(commission)
-        pnl = pnl.sub(commission)
+        self.total_commissions = self.total_commissions.sub(event.commission)
+        pnl = pnl.sub(event.commission)
 
         cdef AccountStateEvent account_event
         if not self.frozen_account:
@@ -871,12 +863,31 @@ cdef class SimulatedBroker:
 
         self.exec_engine.handle_event(working)
 
+    cdef Money _calculate_commission(self, Order order, Price fill_price):
+        cdef Instrument instrument = self.instruments[order.symbol]
+        cdef double exchange_rate = self.exchange_calculator.get_rate(
+            from_currency=instrument.quote_currency,
+            to_currency=self._account.currency,
+            price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
+            bid_rates=self._build_current_bid_rates(),
+            ask_rates=self._build_current_ask_rates())
+
+        cdef Money commission = self.commission_calculator.calculate(
+            symbol=order.symbol,
+            filled_quantity=order.quantity,
+            filled_price=fill_price,
+            exchange_rate=exchange_rate,
+            currency=self.account_currency)
+
+        return commission
+
     cdef void _fill_order(
             self,
             Order order,
             Price fill_price,
             LiquiditySide liquidity_side) except *:
         # Generate event
+        cdef Money commission = self._calculate_commission(order, fill_price)
         cdef OrderFilled filled = OrderFilled(
             self._account.id,
             order.id,
@@ -886,13 +897,13 @@ cdef class SimulatedBroker:
             order.side,
             order.quantity,
             fill_price,
+            commission,
             liquidity_side,
             self.instruments[order.symbol].quote_currency,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        # Adjust account if position exists and opposite order side
         cdef Position position = self.exec_engine.database.get_position_for_order(order.id)
         self.adjust_account(filled, position)
 

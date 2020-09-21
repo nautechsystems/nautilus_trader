@@ -683,6 +683,7 @@ cdef class OrderFillEvent(OrderEvent):
                  OrderSide order_side,
                  Quantity filled_quantity not None,
                  Price average_price not None,
+                 Money commission not None,
                  LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
@@ -719,6 +720,7 @@ cdef class OrderFillEvent(OrderEvent):
         self.order_side = order_side
         self.filled_quantity = filled_quantity
         self.average_price = average_price
+        self.commission = commission
         self.liquidity_side = liquidity_side
         self.quote_currency = quote_currency
         self.execution_time = execution_time
@@ -739,6 +741,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                  Quantity filled_quantity not None,
                  Quantity leaves_quantity not None,
                  Price average_price not None,
+                 Money commission not None,
                  LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
@@ -771,6 +774,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         commission,
                          liquidity_side,
                          quote_currency,
                          execution_time,
@@ -796,7 +800,8 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
                 f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price})")
+                f"avg_price={self.average_price}, "
+                f"commission={self.commission})")
 
 
 cdef class OrderFilled(OrderFillEvent):
@@ -813,6 +818,7 @@ cdef class OrderFilled(OrderFillEvent):
                  OrderSide order_side,
                  Quantity filled_quantity not None,
                  Price average_price not None,
+                 Money commission not None,
                  LiquiditySide liquidity_side,
                  Currency quote_currency,
                  datetime execution_time not None,
@@ -844,6 +850,7 @@ cdef class OrderFilled(OrderFillEvent):
                          order_side,
                          filled_quantity,
                          average_price,
+                         commission,
                          liquidity_side,
                          quote_currency,
                          execution_time,
@@ -866,7 +873,8 @@ cdef class OrderFilled(OrderFillEvent):
                 f"side={order_side_to_string(self.order_side)}"
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
                 f"quantity={self.filled_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price})")
+                f"avg_price={self.average_price}, "
+                f"commission={self.commission})")
 
 
 cdef class PositionEvent(Event):

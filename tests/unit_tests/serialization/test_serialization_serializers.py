@@ -64,7 +64,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Price, Money
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import LimitOrder
 from nautilus_trader.model.order import StopOrder
@@ -698,6 +698,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price(1.00000, 5),
+            Money(0., Currency.USD),
             LiquiditySide.MAKER,
             Currency.USD,
             UNIX_EPOCH,
@@ -722,6 +723,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000),
             Price(1.00000, 5),
+            Money(0., Currency.USD),
             LiquiditySide.TAKER,
             Currency.USD,
             UNIX_EPOCH,

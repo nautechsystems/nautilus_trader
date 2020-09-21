@@ -265,7 +265,7 @@ class TestStubs:
             UNIX_EPOCH)
 
     @staticmethod
-    def event_order_filled(order, fill_price=None) -> OrderFilled:
+    def event_order_filled(order, fill_price=None, commission=0.) -> OrderFilled:
         if fill_price is None:
             fill_price = Price(1.00000, 5)
 
@@ -278,6 +278,7 @@ class TestStubs:
             order.side,
             order.quantity,
             order.price if fill_price is None else fill_price,
+            Money(commission, Currency.USD),
             LiquiditySide.TAKER,
             Currency.USD,
             UNIX_EPOCH,
@@ -402,8 +403,9 @@ class TestStubs:
             order.side,
             order.quantity,
             close_price,
-            Currency.USD,
+            Money(0, Currency.USD),
             LiquiditySide.TAKER,
+            Currency.USD,
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5))
