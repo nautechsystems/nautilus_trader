@@ -29,7 +29,8 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionIdBroker
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Price, Money
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH

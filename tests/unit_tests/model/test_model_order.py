@@ -36,7 +36,8 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import OrderIdBroker
 from nautilus_trader.model.identifiers import PositionIdBroker
-from nautilus_trader.model.objects import Price, Money
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
 from nautilus_trader.model.order import StopOrder
