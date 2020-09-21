@@ -354,6 +354,8 @@ cdef class Order:
             If event.order_id is not equal to the orders identifier.
         ValueError
             If event.account_id is not equal to the orders account_id.
+        InvalidStateTrigger
+            If event is not a valid trigger from the current order.state.
 
         """
         Condition.not_none(event, "event")
@@ -416,9 +418,11 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _modified(self, OrderModified event) except *:
+        # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
     cdef void _filled(self, OrderFillEvent event) except *:
+        # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
 
@@ -594,6 +598,8 @@ cdef class MarketOrder(Order):
             If quantity is not positive (> 0).
         ValueError
             If order_side is UNDEFINED.
+        ValueError
+            If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is other than DAY, IOC or FOC.
 

@@ -49,8 +49,8 @@ cdef class SpreadAnalyzer(Indicator):
 
         self.symbol = symbol
         self.capacity = capacity
-        self.current_spread = 0
-        self.average_spread = 0
+        self.current = 0
+        self.average = 0
 
         self._spreads = deque(maxlen=self.capacity)
 
@@ -80,14 +80,14 @@ cdef class SpreadAnalyzer(Indicator):
 
         cdef double spread = tick.ask.as_double() - tick.bid.as_double()
 
-        self.current_spread = spread
+        self.current = spread
         self._spreads.append(spread)
 
         # Update average spread
-        self.average_spread = fast_mean_iterated(
+        self.average = fast_mean_iterated(
             values=list(self._spreads),
             next_value=spread,
-            current_value=self.average_spread,
+            current_value=self.average,
             expected_length=self.capacity,
             drop_left=False)
 
@@ -100,5 +100,5 @@ cdef class SpreadAnalyzer(Indicator):
         """
         self._reset_base()
         self._spreads.clear()
-        self.current_spread = 0
-        self.average_spread = 0
+        self.current = 0
+        self.average = 0

@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# cython: boundscheck=False
-# cython: wraparound=False
-
 import pytz
 
 from cpython.datetime cimport datetime
@@ -313,14 +310,12 @@ cdef class SimulatedBroker:
                             self._fill_order(
                                 order,
                                 order.price.add(self._slippages[order.symbol]),
-                                LiquiditySide.TAKER
-                            )
+                                LiquiditySide.TAKER)
                         else:
                             self._fill_order(
                                 order,
                                 order.price,
-                                LiquiditySide.TAKER
-                            )
+                                LiquiditySide.TAKER)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.ask.le(order.price) or self._is_marginal_buy_limit_fill(order.price, tick):
@@ -328,8 +323,7 @@ cdef class SimulatedBroker:
                         self._fill_order(
                             order,
                             order.price,
-                            LiquiditySide.MAKER
-                        )
+                            LiquiditySide.MAKER)
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type == OrderType.STOP:
@@ -339,14 +333,12 @@ cdef class SimulatedBroker:
                             self._fill_order(
                                 order,
                                 order.price.sub(self._slippages[order.symbol]),
-                                LiquiditySide.TAKER
-                            )
+                                LiquiditySide.TAKER)
                         else:
                             self._fill_order(
                                 order,
                                 order.price,
-                                LiquiditySide.TAKER
-                            )
+                                LiquiditySide.TAKER)
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.bid.ge(order.price) or self._is_marginal_sell_limit_fill(order.price, tick):
@@ -354,8 +346,7 @@ cdef class SimulatedBroker:
                         self._fill_order(
                             order,
                             order.price,
-                            LiquiditySide.MAKER
-                        )
+                            LiquiditySide.MAKER)
                         continue  # Continue loop to next order
 
             # Check for order expiry

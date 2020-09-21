@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# cython: boundscheck=False
-# cython: wraparound=False
-
 import gc
 
 import numpy as np
