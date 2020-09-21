@@ -19,7 +19,7 @@ from nautilus_trader.common.account import Account
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import AccountNumber
 from nautilus_trader.model.identifiers import Brokerage
@@ -31,7 +31,7 @@ class AccountTests(unittest.TestCase):
 
     def test_can_initialize_account_with_event(self):
         # Arrange
-        event = AccountStateEvent(
+        event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
             Currency.AUD,
             Money(1000000, Currency.AUD),
@@ -61,7 +61,7 @@ class AccountTests(unittest.TestCase):
 
     def test_can_calculate_free_equity_when_greater_than_zero(self):
         # Arrange
-        event = AccountStateEvent(
+        event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
             Currency.AUD,
             Money(100000, Currency.AUD),
@@ -93,7 +93,7 @@ class AccountTests(unittest.TestCase):
 
     def test_can_calculate_free_equity_when_zero(self):
         # Arrange
-        event = AccountStateEvent(
+        event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
             Currency.AUD,
             Money(20000, Currency.AUD),
@@ -125,7 +125,7 @@ class AccountTests(unittest.TestCase):
 
     def test_can_calculate_free_equity_when_negative(self):
         # Arrange
-        event = AccountStateEvent(
+        event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
             Currency.AUD,
             Money(20000, Currency.AUD),

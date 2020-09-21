@@ -31,7 +31,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.events import AccountStateEvent
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderExpired
@@ -218,11 +218,11 @@ class TestStubs:
         return AccountId("NAUTILUS", "000", AccountType.SIMULATED)
 
     @staticmethod
-    def account_event(account_id=None) -> AccountStateEvent:
+    def account_event(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
 
-        return AccountStateEvent(
+        return AccountState(
             account_id,
             Currency.USD,
             Money(1000000, Currency.USD),

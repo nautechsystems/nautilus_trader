@@ -18,7 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.events cimport AccountStateEvent
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport AccountNumber
 from nautilus_trader.model.identifiers cimport Brokerage
@@ -44,8 +44,8 @@ cdef class Account:
     cdef readonly free_equity
 
     cpdef list get_events(self)
-    cpdef AccountStateEvent last_event(self)
+    cpdef AccountState last_event(self)
     cpdef int event_count(self)
-    cpdef void apply(self, AccountStateEvent event) except *
+    cpdef void apply(self, AccountState event) except *
 
     cdef Money _calculate_free_equity(self)
