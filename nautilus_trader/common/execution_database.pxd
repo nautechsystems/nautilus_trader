@@ -34,7 +34,8 @@ cdef class ExecutionDatabase:
 
     cdef readonly TraderId trader_id
 
-    # -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
@@ -52,7 +53,8 @@ cdef class ExecutionDatabase:
     cpdef void flush(self) except *
     cdef void _reset(self) except *
 
-    # -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
+
     cpdef Account get_account(self, AccountId account_id)
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
@@ -88,6 +90,7 @@ cdef class ExecutionDatabase:
     cpdef int count_positions_total(self, StrategyId strategy_id=*)
     cpdef int count_positions_open(self, StrategyId strategy_id=*)
     cpdef int count_positions_closed(self, StrategyId strategy_id=*)
+
 # -------------------------------------------------------------------------------------------------"
 
 
