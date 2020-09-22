@@ -25,7 +25,7 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
-from nautilus_trader.common.data import DataClient
+from nautilus_trader.common.data_engine import DataEngine
 from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
 from nautilus_trader.common.execution_engine import ExecutionEngine
 from nautilus_trader.common.portfolio import Portfolio
@@ -63,7 +63,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger(self.clock)
 
-        self.data_client = DataClient(
+        self.data_client = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
             use_previous_close=False,

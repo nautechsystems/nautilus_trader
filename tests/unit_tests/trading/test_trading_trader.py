@@ -18,8 +18,8 @@ import unittest
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataClient
 from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data import BacktestDataEngine
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
@@ -58,7 +58,7 @@ class TraderTests(unittest.TestCase):
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
-        data_client = BacktestDataClient(
+        data_engine = BacktestDataEngine(
             data=data,
             tick_capacity=1000,
             bar_capacity=1000,
@@ -106,7 +106,7 @@ class TraderTests(unittest.TestCase):
             trader_id=trader_id,
             account_id=account_id,
             strategies=strategies,
-            data_client=data_client,
+            data_engine=data_engine,
             exec_engine=self.exec_engine,
             clock=clock,
             uuid_factory=uuid_factory,

@@ -24,7 +24,7 @@ from pandas import DatetimeIndex
 
 from nautilus_trader.backtest.clock cimport TestClock
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.market cimport TickDataWrangler
 from nautilus_trader.common.timer cimport TimeEventHandler
@@ -150,9 +150,9 @@ cdef class BacktestDataContainer:
         return size
 
 
-cdef class BacktestDataClient(DataClient):
+cdef class BacktestDataEngine(DataEngine):
     """
-    Provides a data client for backtesting.
+    Provides a data engine for backtesting.
     """
 
     def __init__(self,
@@ -162,9 +162,9 @@ cdef class BacktestDataClient(DataClient):
                  TestClock clock not None,
                  Logger logger not None):
         """
-        Initialize a new instance of the BacktestDataClient class.
+        Initialize a new instance of the BacktestDataEngine class.
 
-        :param data: The data needed for the backtest data client.
+        :param data: The data needed for the backtest data engine.
         :param tick_capacity: The max length of the internal tick deques.
         :param bar_capacity: The max length of the internal bar deques.
         :param clock: The clock for the component.
@@ -333,13 +333,13 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void dispose(self) except *:
         """
-        Dispose of the data client by releasing all resources.
+        Dispose of the data engine by releasing all resources.
         """
-        pass
+        pass  # Nothing to dispose
 
     cpdef void process_tick(self, QuoteTick tick) except *:
         """
-        Process the given tick with the data client.
+        Process the given tick with the data engine.
 
         :param tick: The tick to process.
         """
@@ -451,7 +451,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.callable(callback, "callback")
 
-        self._log.info(f"Requesting all instruments for the {venue} ...")
+        self._log.info(f"Requesting all instruments for the {venue} venue ...")
 
         callback(self.get_instruments())
 
@@ -510,7 +510,7 @@ cdef class BacktestDataClient(DataClient):
 
         if symbol not in self._instrument_handlers:
             self._log.info(f"Simulated subscribe to {symbol} instrument updates "
-                           f"(a backtest data client wont update an instrument).")
+                           f"(a backtest data engine will not update an instrument).")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
@@ -566,11 +566,11 @@ cdef class BacktestDataClient(DataClient):
         Condition.callable_or_none(handler, "handler")
 
         self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "
-                       f"(a backtest data client will not update an instrument).")
+                       f"(a backtest data engine will not update an instrument).")
 
     cpdef void update_instruments(self, Venue venue) except *:
         """
         Update all instruments from the database.
         """
         self._log.info(f"Simulated update all instruments for the {venue} venue "
-                       f"(a backtest data client already has all instruments needed).")
+                       f"(a backtest data engine already has all instruments needed).")

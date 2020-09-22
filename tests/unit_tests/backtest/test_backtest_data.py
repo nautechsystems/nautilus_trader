@@ -18,8 +18,8 @@ import unittest
 from pandas import Timestamp
 
 from nautilus_trader.backtest.clock import TestClock
-from nautilus_trader.backtest.data import BacktestDataClient
 from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data import BacktestDataEngine
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
@@ -29,7 +29,7 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 
 
-class BacktestDataClientTests(unittest.TestCase):
+class BacktestDataEngineTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -42,7 +42,7 @@ class BacktestDataClientTests(unittest.TestCase):
 
     def test_initialize_client_with_data(self):
         # Arrange
-        client = BacktestDataClient(
+        client = BacktestDataEngine(
             data=self.data,
             tick_capacity=1000,
             bar_capacity=1000,

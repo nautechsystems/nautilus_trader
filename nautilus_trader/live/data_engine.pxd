@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.core.uuid cimport UUID
@@ -27,7 +27,7 @@ from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
 
 
-cdef class LiveDataClient(DataClient):
+cdef class LiveDataEngine(DataEngine):
     cdef MessageClient _data_client
     cdef MessageSubscriber _data_subscriber
     cdef MessageSubscriber _tick_subscriber
