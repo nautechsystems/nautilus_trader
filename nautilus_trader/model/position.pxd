@@ -42,6 +42,7 @@ cdef class Position:
     cdef Quantity _sell_quantity
     cdef double _relative_quantity
     cdef int _precision
+    cdef Money _commission
 
     cdef readonly PositionId id
     cdef readonly PositionIdBroker id_broker

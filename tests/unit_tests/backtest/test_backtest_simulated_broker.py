@@ -428,7 +428,43 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.submit_order(top_up_order, position_id)
         strategy.submit_order(reduce_order, position_id)
 
+        commission_percent = basis_points_as_percentage(self.config.commission_rate_bp)
+        self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
+                         order.filled_quantity.as_double() * commission_percent)
+        self.assertEqual(strategy.object_storer.get_store()[7].commission.as_double(),
+                         top_up_order.filled_quantity.as_double() * commission_percent)
+        self.assertEqual(strategy.object_storer.get_store()[11].commission.as_double(),
+                         reduce_order.filled_quantity.as_double() * commission_percent)
+
         position = strategy.positions_open()[position_id]
-        expected_commission = position.quantity.as_double() * basis_points_as_percentage(self.config.commission_rate_bp)
+        expected_commission = position.quantity.as_double() * commission_percent
         self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
                          strategy.account().cash_balance.as_double())
+
+    def test_realized_pnl(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        order = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        # Act
+        position_id = strategy.position_id_generator.generate()
+        strategy.submit_order(order, position_id)
+
+        commission = strategy.object_storer.get_store()[3].commission.as_double()
+        filled_price = strategy.object_storer.get_store()[3].average_price.as_double()
+
+        position = strategy.positions_open()[position_id]
+        self.assertEqual(position.realized_pnl, -commission * filled_price)  # -180.01, -180.006
