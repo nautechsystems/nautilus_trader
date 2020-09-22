@@ -63,7 +63,7 @@ class EMACrossFiltered(TradingStrategy):
                  news_impacts: list=None,
                  extra_id_tag: str=""):
         """
-        Initialize a new instance of the EMACrossPy class.
+        Initialize a new instance of the EMACrossFiltered class.
 
         :param symbol: The symbol for the strategy.
         :param bar_spec: The bar specification for the strategy.
@@ -203,12 +203,12 @@ class EMACrossFiltered(TradingStrategy):
             return  # Wait for ticks...
 
         # Check average spread
-        average_spread = self.spread_analyzer.average_spread
+        average_spread = self.spread_analyzer.average
         if average_spread == 0.0:
             self.log.warning(f"average_spread == {average_spread} (not initialized).")
             return  # Protect divide by zero
 
-        spread_buffer = max(average_spread, self.spread_analyzer.current_spread)
+        spread_buffer = max(average_spread, self.spread_analyzer.current)
         sl_buffer = self.atr.value * self.SL_atr_multiple
 
         # Check liquidity
@@ -408,7 +408,7 @@ class EMACrossFiltered(TradingStrategy):
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         for order in self.orders_working().values():
-            if not self.is_stop_loss(order.id):
+            if not self.is_stop_loss(order.cl_ord_id):
                 return
 
             # SELL SIDE ORDERS

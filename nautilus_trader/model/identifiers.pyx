@@ -491,34 +491,34 @@ cdef class BracketOrderId(Identifier):
         super().__init__(value)
 
 
-cdef class OrderId(Identifier):
+cdef class ClientOrderId(Identifier):
     """
-    Represents a valid order identifier. The identifier value must be unique at
+    Represents a valid client order identifier. The identifier value must be unique at
     the fund level.
     """
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the OrderId class.
+        Initialize a new instance of the ClientOrderId class.
 
         Parameters
         ----------
         value : str
-            The value of the order_id (should be unique).
+            The client order identifier value.
 
         Raises
         ------
         ValueError
-            If value is not a valid string or does not start with 'O-'.
+            If value is not a valid string, or does not start with 'O-'.
 
         """
         Condition.true(value.startswith("O-"), f"value must begin with \"O-\", was {value}.")
         super().__init__(value)
 
 
-cdef class OrderIdBroker(Identifier):
+cdef class OrderId(Identifier):
     """
-    Represents a valid broker order identifier.
+    Represents a valid order identifier.
     """
 
     def __init__(self, str value):
@@ -528,7 +528,7 @@ cdef class OrderIdBroker(Identifier):
         Parameters
         ----------
         value : str
-            The broker order identifier value.
+            The broker/exchange assigned order identifier value.
 
         Raises
         ------
@@ -539,10 +539,34 @@ cdef class OrderIdBroker(Identifier):
         super().__init__(value)
 
 
+cdef class ClientPositionId(Identifier):
+    """
+    Represents a valid client position identifier. The identifier value must be unique
+    at the fund level.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the ClientPositionId class.
+
+        Parameters
+        ----------
+        value : str
+            The client position identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string, or does not start with 'P-'.
+
+        """
+        Condition.true(value.startswith("P-"), f" value must begin with \"P-\", was {value}.")
+        super().__init__(value)
+
+
 cdef class PositionId(Identifier):
     """
-    Represents a valid position identifier. The identifier value must be unique
-    at the fund level.
+    Represents a valid position identifier.
     """
 
     def __init__(self, str value):
@@ -552,15 +576,14 @@ cdef class PositionId(Identifier):
         Parameters
         ----------
         value : str
-            The position identifier value.
+            The broker/exchange assigned position identifier value.
 
         Raises
         ------
         ValueError
-            If value is not a valid string or does not start with 'P-'.
+            If value is not a valid string.
 
         """
-        Condition.true(value.startswith("P-"), f" value must begin with \"P-\", was {value}.")
         super().__init__(value)
 
 
@@ -600,29 +623,6 @@ cdef class MatchId(Identifier):
         ----------
         value : str
             The execution identifier value.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
-        super().__init__(value)
-
-
-cdef class PositionIdBroker(Identifier):
-    """
-    Represents a valid broker position identifier.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the PositionIdBroker class.
-
-        Parameters
-        ----------
-        value : str
-            The broker position identifier value.
 
         Raises
         ------

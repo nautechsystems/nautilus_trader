@@ -15,7 +15,7 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
@@ -34,8 +34,8 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.generators cimport PositionIdGenerator
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
@@ -74,8 +74,8 @@ cdef class TradingStrategy:
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
-    cdef DataClient _data
-    cdef ExecutionEngine _exec
+    cdef DataEngine _data_engine
+    cdef ExecutionEngine _exec_engine
 
     cdef FiniteStateMachine _fsm
 
@@ -98,7 +98,7 @@ cdef class TradingStrategy:
 
 # -- REGISTRATION METHODS -------------------------------------------------------------------------#
     cpdef void register_trader(self, TraderId trader_id, Clock clock, UUIDFactory uuid_factory, Logger logger) except *
-    cpdef void register_data_client(self, DataClient client) except *
+    cpdef void register_data_engine(self, DataEngine engine) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *
@@ -162,25 +162,25 @@ cdef class TradingStrategy:
         self,
         Currency quote_currency,
         PriceType price_type=*)
-    cpdef Order order(self, OrderId order_id)
+    cpdef Order order(self, ClientOrderId cl_ord_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)
     cpdef set stop_loss_ids(self)
     cpdef set take_profit_ids(self)
     cpdef dict orders_completed(self)
-    cpdef Position position(self, PositionId position_id)
-    cpdef Position position_for_order(self, OrderId order_id)
+    cpdef Position position(self, ClientPositionId cl_pos_id)
+    cpdef Position position_for_order(self, ClientOrderId cl_ord_id)
     cpdef dict positions(self)
     cpdef dict positions_open(self)
     cpdef dict positions_closed(self)
-    cpdef bint position_exists(self, PositionId position_id)
-    cpdef bint order_exists(self, OrderId order_id)
-    cpdef bint is_stop_loss(self, OrderId order_id)
-    cpdef bint is_take_profit(self, OrderId order_id)
-    cpdef bint is_order_working(self, OrderId order_id)
-    cpdef bint is_order_completed(self, OrderId order_id)
-    cpdef bint is_position_open(self, PositionId position_id)
-    cpdef bint is_position_closed(self, PositionId position_id)
+    cpdef bint position_exists(self, ClientPositionId cl_pos_id)
+    cpdef bint order_exists(self, ClientOrderId cl_ord_id)
+    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id)
+    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id)
+    cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
+    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
+    cpdef bint is_position_open(self, ClientPositionId cl_pos_id)
+    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id)
     cpdef bint is_flat(self)
     cpdef int count_orders_working(self)
     cpdef int count_orders_completed(self)
@@ -198,12 +198,12 @@ cdef class TradingStrategy:
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
     cpdef void account_inquiry(self) except *
-    cpdef void submit_order(self, Order order, PositionId position_id) except *
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order, PositionId position_id, bint register=*) except *
+    cpdef void submit_order(self, Order order, ClientPositionId position_id) except *
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order, ClientPositionId cl_pos_id, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self) except *
-    cpdef void flatten_position(self, PositionId position_id) except *
+    cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *
     cpdef void flatten_all_positions(self) except *
 
     cdef void _flatten_on_reject(self, OrderRejected event) except *

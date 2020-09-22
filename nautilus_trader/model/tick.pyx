@@ -385,12 +385,12 @@ cdef class QuoteTick(Tick):
         bool
 
         """
-        return (self.symbol.equals(other.symbol) and      # noqa (W504 - easier to read)
-                self.bid.equals(other.bid) and            # noqa (W504 - easier to read)
-                self.ask.equals(other.ask) and            # noqa (W504 - easier to read)
-                self.bid_size.equals(other.bid_size) and  # noqa (W504 - easier to read)
-                self.ask_size.equals(other.ask_size) and  # noqa (W504 - easier to read)
-                self.timestamp == other.timestamp)        # noqa (W504 - easier to read)
+        return self.symbol.equals(other.symbol) \
+            and self.bid.equals(other.bid) \
+            and self.ask.equals(other.ask) \
+            and self.bid_size.equals(other.bid_size) \
+            and self.ask_size.equals(other.ask_size) \
+            and self.timestamp == other.timestamp
 
     cpdef str to_string(self):
         """
@@ -535,12 +535,12 @@ cdef class TradeTick(Tick):
         bool
 
         """
-        return (self.symbol.equals(other.symbol) and      # noqa (W504 - easier to read)
-                self.price.equals(other.price) and        # noqa (W504 - easier to read)
-                self.size.equals(other.size) and          # noqa (W504 - easier to read)
-                self.maker == other.maker and             # noqa (W504 - easier to read)
-                self.match_id.equals(other.match_id) and  # noqa (W504 - easier to read)
-                self.timestamp == other.timestamp)        # noqa (W504 - easier to read)
+        return self.symbol.equals(other.symbol) \
+            and self.price.equals(other.price) \
+            and self.size.equals(other.size) \
+            and self.maker == other.maker \
+            and self.match_id.equals(other.match_id) \
+            and self.timestamp == other.timestamp
 
     cpdef str to_string(self):
         """

@@ -154,7 +154,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
                          clock,
                          initial_count)
 
-    cpdef OrderId generate(self):
+    cpdef ClientOrderId generate(self):
         """
         Return a unique order identifier.
 
@@ -163,7 +163,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         OrderId
 
         """
-        return OrderId(self._generate())
+        return ClientOrderId(self._generate())
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
@@ -202,7 +202,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
                          clock,
                          initial_count)
 
-    cpdef PositionId generate(self):
+    cpdef ClientPositionId generate(self):
         """
         Return a unique position identifier.
 
@@ -211,4 +211,4 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         PositionId
 
         """
-        return PositionId(self._generate())
+        return ClientPositionId(self._generate())

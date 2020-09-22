@@ -49,8 +49,8 @@ from nautilus_trader.model.events cimport OrderPartiallyFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -114,11 +114,11 @@ cdef class Order:
             initial_state=OrderState.INITIALIZED,
             state_parser=order_state_to_string)
 
-        self.id = event.order_id
-        self.id_broker = None               # Can be None
-        self.account_id = None              # Can be None
-        self.position_id_broker = None      # Can be None
-        self.execution_id = None            # Can be None
+        self.cl_ord_id = event.cl_ord_id
+        self.id = None                    # Can be None
+        self.account_id = None            # Can be None
+        self.position_id = None           # Can be None
+        self.execution_id = None          # Can be None
         self.symbol = event.symbol
         self.side = event.order_side
         self.type = event.order_type
@@ -126,8 +126,8 @@ cdef class Order:
         self.timestamp = event.timestamp
         self.time_in_force = event.time_in_force
         self.filled_quantity = Quantity.zero()
-        self.filled_timestamp = None        # Can be None
-        self.average_price = None           # Can be None
+        self.filled_timestamp = None      # Can be None
+        self.average_price = None         # Can be None
         self.slippage = Decimal64()
         self.init_id = event.id
 
@@ -147,7 +147,7 @@ cdef class Order:
         bool
 
         """
-        return self.id.equals(other.id)
+        return self.cl_ord_id.equals(other.cl_ord_id)
 
     cpdef OrderState state(self):
         """
@@ -289,7 +289,7 @@ cdef class Order:
         int
 
         """
-        return hash(self.id)
+        return hash(self.cl_ord_id)
 
     def __str__(self) -> str:
         """
@@ -301,7 +301,7 @@ cdef class Order:
 
         """
         return (f"{self.__class__.__name__}("
-                f"id={self.id.value}, "
+                f"cl_ord_id={self.cl_ord_id.value}, "
                 f"state={self._fsm.state_as_string()}, "
                 f"{self.status_string()})")
 
@@ -351,13 +351,15 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If event.order_id is not equal to the orders identifier.
+            If event.cl_ord_id is not equal to the orders cl_ord_id.
         ValueError
             If event.account_id is not equal to the orders account_id.
+        InvalidStateTrigger
+            If event is not a valid trigger from the current order.state.
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(self.id, event.order_id, "id", "event.order_id")
+        Condition.equal(self.cl_ord_id, event.cl_ord_id, "id", "event.order_id")
         if self.account_id is not None:
             Condition.equal(self.account_id, event.account_id, "account_id", "event.account_id")
 
@@ -407,7 +409,7 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _working(self, OrderWorking event) except *:
-        self.id_broker = event.order_id_broker
+        self.id = event.order_id
 
     cdef void _cancelled(self, OrderCancelled event) except *:
         pass  # Do nothing else
@@ -416,9 +418,11 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _modified(self, OrderModified event) except *:
+        # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
     cdef void _filled(self, OrderFillEvent event) except *:
+        # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
 
@@ -427,7 +431,7 @@ cdef class PassiveOrder(Order):
     The base class for all passive orders.
     """
     def __init__(self,
-                 OrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  OrderType order_type,  # 'type' hides keyword
@@ -443,10 +447,10 @@ cdef class PassiveOrder(Order):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order unique identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         symbol : Symbol
-            The order symbol identifier.
+            The order symbol.
         order_side : OrderSide (enum)
             The order side (BUY or SELL).
         order_type : OrderType (enum)
@@ -493,7 +497,7 @@ cdef class PassiveOrder(Order):
         options['ExpireTime'] = format_iso8601(expire_time) if not None else str(None)
 
         cdef OrderInitialized init_event = OrderInitialized(
-            order_id=order_id,
+            cl_ord_id=cl_ord_id,
             symbol=symbol,
             order_side=order_side,
             order_type=order_type,
@@ -524,12 +528,12 @@ cdef class PassiveOrder(Order):
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
     cdef void _modified(self, OrderModified event) except *:
-        self.id_broker = event.order_id_broker
+        self.id = event.order_id
         self.quantity = event.modified_quantity
         self.price = event.modified_price
 
     cdef void _filled(self, OrderFillEvent event) except *:
-        self.position_id_broker = event.position_id_broker
+        self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.liquidity_side = event.liquidity_side
@@ -563,7 +567,7 @@ cdef class MarketOrder(Order):
     """
     def __init__(
             self,
-            OrderId order_id not None,
+            ClientOrderId cl_ord_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity quantity not None,
@@ -575,10 +579,10 @@ cdef class MarketOrder(Order):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order unique identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         symbol : Symbol
-            The order symbol identifier.
+            The order symbol.
         order_side : OrderSide (enum)
             The order side (BUY or SELL).
         quantity : Quantity
@@ -595,6 +599,8 @@ cdef class MarketOrder(Order):
         ValueError
             If order_side is UNDEFINED.
         ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
             If time_in_force is other than DAY, IOC or FOC.
 
         """
@@ -602,7 +608,7 @@ cdef class MarketOrder(Order):
         Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force is DAY, IOC or FOC")
 
         cdef OrderInitialized init_event = OrderInitialized(
-            order_id=order_id,
+            cl_ord_id=cl_ord_id,
             symbol=symbol,
             order_side=order_side,
             order_type=OrderType.MARKET,
@@ -632,7 +638,7 @@ cdef class MarketOrder(Order):
         Condition.not_none(event, "event")
 
         return MarketOrder(
-            order_id=event.order_id,
+            cl_ord_id=event.cl_ord_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
@@ -657,7 +663,7 @@ cdef class MarketOrder(Order):
         raise NotImplemented("Cannot modify a market order")
 
     cdef void _filled(self, OrderFillEvent event) except *:
-        self.position_id_broker = event.position_id_broker
+        self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.filled_quantity = event.filled_quantity
@@ -674,7 +680,7 @@ cdef class LimitOrder(PassiveOrder):
     market.
     """
     def __init__(self,
-                 OrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  Quantity quantity not None,
@@ -690,10 +696,10 @@ cdef class LimitOrder(PassiveOrder):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order unique identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         symbol : Symbol
-            The order symbol identifier.
+            The order symbol.
         order_side : OrderSide (enum)
             The order side (BUY or SELL).
         quantity : Quantity
@@ -734,7 +740,7 @@ cdef class LimitOrder(PassiveOrder):
         }
 
         super().__init__(
-            order_id,
+            cl_ord_id,
             symbol,
             order_side,
             OrderType.LIMIT,
@@ -772,7 +778,7 @@ cdef class LimitOrder(PassiveOrder):
         cdef is_hidden = event.options['IsHidden'] == str(True)
 
         return LimitOrder(
-            order_id=event.order_id,
+            cl_ord_id=event.cl_ord_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
@@ -794,7 +800,7 @@ cdef class StopOrder(PassiveOrder):
     entry/exit point, the stop order becomes a market order.
     """
     def __init__(self,
-                 OrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  Quantity quantity not None,
@@ -808,10 +814,10 @@ cdef class StopOrder(PassiveOrder):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order unique identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         symbol : Symbol
-            The order symbol identifier.
+            The order symbol.
         order_side : OrderSide (enum)
             The order side (BUY or SELL).
         quantity : Quantity
@@ -840,7 +846,7 @@ cdef class StopOrder(PassiveOrder):
 
         """
         super().__init__(
-            order_id,
+            cl_ord_id,
             symbol,
             order_side,
             OrderType.STOP,
@@ -876,7 +882,7 @@ cdef class StopOrder(PassiveOrder):
         cdef Price price = Price.from_string(price_string)
 
         return StopOrder(
-            order_id=event.order_id,
+            cl_ord_id=event.cl_ord_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
@@ -914,7 +920,7 @@ cdef class BracketOrder:
             The take-profit (TP) 'child' order.
 
         """
-        self.id = BracketOrderId(f"B{entry.id.value}")
+        self.id = BracketOrderId(f"B{entry.cl_ord_id.value}")
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit

@@ -27,17 +27,17 @@ cdef class ExecutionClient:
     The base class for all execution clients.
     """
 
-    def __init__(self, ExecutionEngine exec_engine not None, Logger logger not None):
+    def __init__(self, ExecutionEngine engine not None, Logger logger not None):
         """
         Initialize a new instance of the ExecutionClient class.
 
-        :param exec_engine: The execution engine to connect to the client.
+        :param engine: The execution engine to connect to the client.
         :param logger: The logger for the component.
         """
-        self._exec_engine = exec_engine
+        self._engine = engine
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self.trader_id = exec_engine.trader_id
+        self.trader_id = engine.trader_id
         self.command_count = 0
         self.event_count = 0
 

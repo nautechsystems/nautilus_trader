@@ -29,7 +29,9 @@ jobs:
           python setup.py build_ext --inplace
 
       - name: Test
-        run: bash scripts/run_tests.sh
+        run: |
+          cd scripts
+          bash run_tests.sh
 
       - name: Publish Package
         env:

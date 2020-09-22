@@ -44,8 +44,8 @@ cdef class BacktestConfig:
         """
         Initialize a new instance of the BacktestConfig class.
 
-        :param tick_capacity: The length for the data clients internal ticks deque (> 0).
-        :param bar_capacity: The length for the data clients internal bars deque (> 0).
+        :param tick_capacity: The length for the data engines internal ticks deque (> 0).
+        :param bar_capacity: The length for the data engines internal bars deque (> 0).
         :param exec_db_type: The type for the execution database (can be the default 'in-memory' or redis).
         :param exec_db_flush: If the execution database should be flushed on each run.
         :param frozen_account: If the account should be frozen for testing (no pnl applied).

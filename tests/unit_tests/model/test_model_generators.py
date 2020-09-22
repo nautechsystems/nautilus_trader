@@ -18,9 +18,9 @@ import unittest
 from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.model.generators import OrderIdGenerator
 from nautilus_trader.model.generators import PositionIdGenerator
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import IdTag
-from nautilus_trader.model.identifiers import OrderId
-from nautilus_trader.model.identifiers import PositionId
 
 
 class OrderIdGeneratorTests(unittest.TestCase):
@@ -40,9 +40,9 @@ class OrderIdGeneratorTests(unittest.TestCase):
         result3 = self.order_id_generator.generate()
 
         # Assert
-        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), result1)
-        self.assertEqual(OrderId("O-19700101-000000-001-001-2"), result2)
-        self.assertEqual(OrderId("O-19700101-000000-001-001-3"), result3)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), result1)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), result2)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-3"), result3)
 
     def test_can_reset_id_generator(self):
         # Arrange
@@ -55,7 +55,7 @@ class OrderIdGeneratorTests(unittest.TestCase):
         result1 = self.order_id_generator.generate()
 
         # Assert
-        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), result1)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), result1)
 
 
 class PositionIdGeneratorTests(unittest.TestCase):
@@ -75,9 +75,9 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result3 = self.position_id_generator.generate()
 
         # Assert
-        self.assertEqual(PositionId("P-19700101-000000-001-001-1"), result1)
-        self.assertEqual(PositionId("P-19700101-000000-001-001-2"), result2)
-        self.assertEqual(PositionId("P-19700101-000000-001-001-3"), result3)
+        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-1"), result1)
+        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-2"), result2)
+        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-3"), result3)
 
     def test_can_reset_id_generator(self):
         # Arrange
@@ -90,4 +90,4 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result1 = self.position_id_generator.generate()
 
         # Assert
-        self.assertEqual(PositionId("P-19700101-000000-001-001-1"), result1)
+        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-1"), result1)

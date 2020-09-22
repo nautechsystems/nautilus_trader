@@ -41,7 +41,7 @@ cdef class Instrument:
                  int min_stop_distance,
                  int min_limit_distance_entry,
                  int min_limit_distance,
-                 Price tick_size not None,
+                 Decimal64 tick_size not None,
                  Quantity round_lot_size not None,
                  Quantity min_trade_size not None,
                  Quantity max_trade_size not None,
@@ -51,22 +51,41 @@ cdef class Instrument:
         """
         Initialize a new instance of the Instrument class.
 
-        :param symbol: The symbol.
-        :param quote_currency: The quote currency.
-        :param security_type: The security type.
-        :param price_precision: The price decimal precision.
-        :param size_precision: The trading size decimal precision.
-        :param min_stop_distance_entry: The minimum distance for stop entry orders.
-        :param min_stop_distance: The minimum tick distance for stop orders.
-        :param min_limit_distance_entry: The minimum distance for limit entry orders.
-        :param min_limit_distance: The minimum tick distance for limit orders.
-        :param tick_size: The tick size.
-        :param round_lot_size: The rounded lot size.
-        :param min_trade_size: The minimum possible trade size.
-        :param max_trade_size: The maximum possible trade size.
-        :param rollover_interest_buy: The rollover interest for long positions.
-        :param rollover_interest_sell: The rollover interest for short positions.
-        :param timestamp: The timestamp the instrument was created/updated at.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol.
+        quote_currency : Currency
+            The quote currency.
+        security_type : SecurityType
+            The security type.
+        price_precision : int
+            The price decimal precision.
+        size_precision : int
+            The trading size decimal precision.
+        min_stop_distance_entry : int
+            The minimum distance for stop entry orders.
+        min_stop_distance : int
+            The minimum tick distance for stop orders.
+        min_limit_distance_entry : int
+            The minimum distance for limit entry orders.
+        min_limit_distance : int
+            The minimum tick distance for limit orders.
+        tick_size : Decimal64
+            The tick size.
+        round_lot_size : Quantity
+            The rounded lot size.
+        min_trade_size : Quantity
+            The minimum possible trade size.
+        max_trade_size : Quantity
+            The maximum possible trade size.
+        rollover_interest_buy : Decimal64
+            The rollover interest for long positions.
+        rollover_interest_sell : Decimal64
+            The rollover interest for short positions.
+        timestamp : datetime
+            The timestamp the instrument was created/updated at.
+
         """
         Condition.not_equal(quote_currency, Currency.UNDEFINED, 'quote_currency', 'UNDEFINED')
         Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
@@ -188,20 +207,37 @@ cdef class ForexInstrument(Instrument):
         """
         Initialize a new instance of the ForexInstrument class.
 
-        :param symbol: The symbol.
-        :param price_precision: The price decimal precision.
-        :param size_precision: The trading size decimal precision.
-        :param min_stop_distance_entry: The minimum distance for stop entry orders.
-        :param min_stop_distance: The minimum tick distance for stop orders.
-        :param min_limit_distance_entry: The minimum distance for limit entry orders.
-        :param min_limit_distance: The minimum tick distance for limit orders.
-        :param tick_size: The tick size.
-        :param round_lot_size: The rounded lot size.
-        :param min_trade_size: The minimum possible trade size.
-        :param max_trade_size: The maximum possible trade size.
-        :param rollover_interest_buy: The rollover interest for long positions.
-        :param rollover_interest_sell: The rollover interest for short positions.
-        :param timestamp: The timestamp the instrument was created/updated at.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol.
+        price_precision : int
+            The price decimal precision.
+        size_precision : int
+            The trading size decimal precision.
+        min_stop_distance_entry : int
+            The minimum distance for stop entry orders.
+        min_stop_distance : int
+            The minimum tick distance for stop orders.
+        min_limit_distance_entry : int
+            The minimum distance for limit entry orders.
+        min_limit_distance : int
+            The minimum tick distance for limit orders.
+        tick_size : Decimal64
+            The tick size.
+        round_lot_size : Quantity
+            The rounded lot size.
+        min_trade_size : Quantity
+            The minimum possible trade size.
+        max_trade_size : Quantity
+            The maximum possible trade size.
+        rollover_interest_buy : Decimal64
+            The rollover interest for long positions.
+        rollover_interest_sell : Decimal64
+            The rollover interest for short positions.
+        timestamp : datetime
+            The timestamp the instrument was created/updated at.
+
         """
         super().__init__(
             symbol,

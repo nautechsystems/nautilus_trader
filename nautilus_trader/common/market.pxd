@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
@@ -80,7 +79,6 @@ cdef class BarBuilder:
 
 cdef class BarAggregator:
     cdef LoggerAdapter _log
-    cdef DataClient _client
     cdef BarHandler _handler
     cdef BarBuilder _builder
 

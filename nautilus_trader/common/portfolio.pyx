@@ -22,7 +22,7 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
@@ -48,8 +48,8 @@ cdef class Portfolio:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._positions_open = {}    # type: [Symbol, {PositionId, Position}]
-        self._positions_closed = {}  # type: [Symbol, {PositionId, Position}]
+        self._positions_open = {}    # type: [Symbol, {ClientPositionId, Position}]
+        self._positions_closed = {}  # type: [Symbol, {ClientPositionId, Position}]
 
         self.base_currency = Currency.USD  # Default
         self.daily_pnl_realized = Money(0, self.base_currency)
@@ -175,8 +175,8 @@ cdef class Portfolio:
         # Remove from positions closed if found
         cdef dict positions_closed = self._positions_closed.get(position.symbol)
         if positions_closed is not None:
-            if positions_closed.pop(position.id, None) is not None:
-                self._log.warning(f"{position.id} already found in closed positions).")
+            if positions_closed.pop(position.cl_pos_id, None) is not None:
+                self._log.warning(f"{position.cl_pos_id} already found in closed positions).")
             # Remove symbol from positions closed if empty
             if not self._positions_closed[position.symbol]:
                 del self._positions_closed[position.symbol]
@@ -187,10 +187,10 @@ cdef class Portfolio:
             positions_open = {}
             self._positions_open[position.symbol] = positions_open
 
-        if position.id in positions_open:
-            self._log.warning(f"The opened {position.id} already found in open positions.")
+        if position.cl_pos_id in positions_open:
+            self._log.warning(f"The opened {position.cl_pos_id} already found in open positions.")
         else:
-            positions_open[position.id] = position
+            positions_open[position.cl_pos_id] = position
 
     cdef void _handle_position_modified(self, PositionModified event) except *:
         cdef Position position = event.position
@@ -211,8 +211,8 @@ cdef class Portfolio:
         if positions_open is None:
             self._log.error(f"Cannot find {position.symbol.value} in positions open.")
         else:
-            if positions_open.pop(position.id, None) is None:
-                self._log.error(f"The closed {position.id} was not not found in open positions.")
+            if positions_open.pop(position.cl_pos_id, None) is None:
+                self._log.error(f"The closed {position.cl_pos_id} was not not found in open positions.")
             else:
                 # Remove symbol dictionary from positions open if empty
                 if not self._positions_open[position.symbol]:
@@ -224,10 +224,10 @@ cdef class Portfolio:
             positions_closed = {}
             self._positions_closed[position.symbol] = positions_closed
 
-        if position.id in positions_closed:
-            self._log.warning(f"The closed {position.id} already found in closed positions.")
+        if position.cl_pos_id in positions_closed:
+            self._log.warning(f"The closed {position.cl_pos_id} already found in closed positions.")
         else:
-            positions_closed[position.id] = position
+            positions_closed[position.cl_pos_id] = position
 
         # Increment PNL
         # TODO: Handle multiple currencies
