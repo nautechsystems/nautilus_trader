@@ -20,6 +20,11 @@ from nautilus_trader.common.execution_database cimport ExecutionDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
@@ -30,6 +35,7 @@ from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -65,6 +71,14 @@ cdef class ExecutionEngine:
 
     # --------------------------------------------------------------------------------------------------
     cdef void _execute_command(self, Command command) except *
+    cdef void _invalidate_order(self, Order order, str reason) except *
+    cdef void _deny_order(self, Order order, str reason) except *
+    cdef void _handle_account_inquiry(self, AccountInquiry command) except *
+    cdef void _handle_submit_order(self, SubmitOrder command) except *
+    cdef void _handle_modify_order(self, ModifyOrder command) except *
+    cdef void _handle_cancel_order(self, CancelOrder command) except *
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+
     cdef void _handle_event(self, Event event) except *
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
