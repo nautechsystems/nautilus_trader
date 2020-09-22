@@ -74,19 +74,19 @@ cdef class BracketOrderId(Identifier):
     pass
 
 
+cdef class ClientOrderId(Identifier):
+    pass
+
+
 cdef class OrderId(Identifier):
     pass
 
 
-cdef class OrderIdBroker(Identifier):
+cdef class ClientPositionId(Identifier):
     pass
 
 
 cdef class PositionId(Identifier):
-    pass
-
-
-cdef class PositionIdBroker(Identifier):
     pass
 
 

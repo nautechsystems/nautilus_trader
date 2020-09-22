@@ -19,8 +19,8 @@ from nautilus_trader.core.types import Identifier
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Brokerage
-from nautilus_trader.model.identifiers import OrderId
-from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -68,8 +68,8 @@ class IdentifierTests(unittest.TestCase):
 
     def test_mixed_identifier_equality(self):
         # Arrange
-        id1 = OrderId("O-123456")
-        id2 = PositionId("P-123456")
+        id1 = ClientOrderId("O-123456")
+        id2 = ClientPositionId("P-123456")
 
         # Act
         # Assert

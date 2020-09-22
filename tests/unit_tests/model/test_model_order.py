@@ -31,11 +31,11 @@ from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderPartiallyFilled
 from nautilus_trader.model.identifiers import BracketOrderId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
-from nautilus_trader.model.identifiers import OrderIdBroker
-from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -65,7 +65,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             MarketOrder,
-            OrderId("O-123456"),
+            ClientOrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(0),
@@ -79,7 +79,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             MarketOrder,
-            OrderId("O-123456"),
+            ClientOrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100),
@@ -93,7 +93,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             StopOrder,
-            OrderId("O-123456"),
+            ClientOrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -120,7 +120,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), order2.id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), order2.client_id)
 
     def test_limit_order_can_create_expected_decimal_price(self):
         # Arrange
@@ -269,8 +269,8 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertFalse(bracket_order.has_take_profit)
-        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), bracket_order.entry.id)
-        self.assertEqual(OrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.client_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.client_id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(Quantity(100000), bracket_order.entry.quantity)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
@@ -298,9 +298,9 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertTrue(bracket_order.has_take_profit)
         self.assertEqual(AUDUSD_FXCM, bracket_order.take_profit.symbol)
-        self.assertEqual(OrderId("O-19700101-000000-001-001-1"), bracket_order.entry.id)
-        self.assertEqual(OrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.id)
-        self.assertEqual(OrderId("O-19700101-000000-001-001-3"), bracket_order.take_profit.id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.client_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.client_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-3"), bracket_order.take_profit.client_id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(OrderSide.SELL, bracket_order.take_profit.side)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
@@ -410,7 +410,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         # print(order)
         self.assertEqual(OrderState.WORKING, order.state())
-        self.assertEqual(OrderIdBroker("B-19700101-000000-001-001-1"), order.id_broker)
+        self.assertEqual(OrderId('1'), order.id)
         self.assertFalse(order.is_completed())
         self.assertTrue(order.is_working())
         self.assertEqual(None, order.filled_timestamp)
@@ -504,8 +504,8 @@ class OrderTests(unittest.TestCase):
 
         modified = OrderModified(
             self.account_id,
-            order.id,
-            OrderIdBroker("SOME_BROKER_ID_2"),
+            order.client_id,
+            OrderId('1'),
             Quantity(120000),
             Price(1.00001, 5),
             UNIX_EPOCH,
@@ -521,7 +521,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.WORKING, order.state())
-        self.assertEqual(OrderIdBroker("SOME_BROKER_ID_2"), order.id_broker)
+        self.assertEqual(OrderId('1'), order.id)
         self.assertEqual(Quantity(120000), order.quantity)
         self.assertEqual(Price(1.00001, 5), order.price)
         self.assertTrue(order.is_working())
@@ -540,9 +540,10 @@ class OrderTests(unittest.TestCase):
 
         filled = OrderFilled(
             self.account_id,
-            order.id,
+            order.client_id,
+            OrderId('1'),
             ExecutionId("SOME_EXEC_ID_1"),
-            PositionIdBroker("SOME_EXEC_TICKET_1"),
+            PositionId("SOME_EXEC_TICKET_1"),
             order.symbol,
             order.side,
             order.quantity,
@@ -581,9 +582,10 @@ class OrderTests(unittest.TestCase):
 
         filled = OrderFilled(
             self.account_id,
-            order.id,
+            order.client_id,
+            OrderId('1'),
             ExecutionId("SOME_EXEC_ID_1"),
-            PositionIdBroker("SOME_EXEC_TICKET_1"),
+            PositionId("SOME_EXEC_TICKET_1"),
             order.symbol,
             order.side,
             order.quantity,
@@ -625,9 +627,10 @@ class OrderTests(unittest.TestCase):
 
         partially = OrderPartiallyFilled(
             self.account_id,
-            order.id,
+            order.client_id,
+            OrderId('1'),
             ExecutionId("SOME_EXEC_ID_1"),
-            PositionIdBroker("SOME_EXEC_TICKET_1"),
+            PositionId("SOME_EXEC_TICKET_1"),
             order.symbol,
             order.side,
             Quantity(50000),

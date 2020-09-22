@@ -80,7 +80,7 @@ cdef class OrderFactory:
 
     cpdef int count(self):
         """
-        Return the internal order_id generator count.
+        Return the internal order identifier generator count.
 
         Returns
         -------
@@ -91,7 +91,8 @@ cdef class OrderFactory:
 
     cpdef void set_count(self, int count) except *:
         """
-        System Method: Set the internal order_id generator count to the given count.
+        System Method: Set the internal order identifier generator count to the
+        given count.
 
         Parameters
         ----------
