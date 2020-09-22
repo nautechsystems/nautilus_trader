@@ -240,7 +240,7 @@ class TestStubs:
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -249,7 +249,7 @@ class TestStubs:
     def event_order_accepted(order) -> OrderAccepted:
         return OrderAccepted(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
@@ -259,7 +259,7 @@ class TestStubs:
     def event_order_rejected(order) -> OrderRejected:
         return OrderRejected(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             UNIX_EPOCH,
             "ORDER_REJECTED",
             uuid4(),
@@ -272,10 +272,10 @@ class TestStubs:
 
         return OrderFilled(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
-            ExecutionId(order.client_id.value.replace('O', 'E')),
-            PositionId(order.client_id.value.replace('P', 'T')),
+            ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
+            PositionId(order.cl_ord_id.value.replace('P', 'T')),
             order.symbol,
             order.side,
             order.quantity,
@@ -294,7 +294,7 @@ class TestStubs:
 
         return OrderWorking(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             order.symbol,
             order.side,
@@ -311,7 +311,7 @@ class TestStubs:
     def event_order_cancelled(order) -> OrderCancelled:
         return OrderCancelled(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
@@ -321,7 +321,7 @@ class TestStubs:
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
@@ -402,9 +402,9 @@ class TestStubs:
 
         order_filled = OrderFilled(
             TestStubs.account_id(),
-            order.client_id,
+            order.cl_ord_id,
             OrderId("1"),
-            ExecutionId(order.client_id.value.replace('O', 'E')),
+            ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
             PositionId(position.id.value.replace('P', 'T')),
             order.symbol,
             order.side,

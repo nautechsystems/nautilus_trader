@@ -49,8 +49,8 @@ from nautilus_trader.model.events cimport OrderPartiallyFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -114,11 +114,11 @@ cdef class Order:
             initial_state=OrderState.INITIALIZED,
             state_parser=order_state_to_string)
 
-        self.client_id = event.cl_ord_id
-        self.id = None                      # Can be None
-        self.account_id = None              # Can be None
-        self.position_id = None             # Can be None
-        self.execution_id = None            # Can be None
+        self.cl_ord_id = event.cl_ord_id
+        self.id = None                    # Can be None
+        self.account_id = None            # Can be None
+        self.position_id = None           # Can be None
+        self.execution_id = None          # Can be None
         self.symbol = event.symbol
         self.side = event.order_side
         self.type = event.order_type
@@ -126,8 +126,8 @@ cdef class Order:
         self.timestamp = event.timestamp
         self.time_in_force = event.time_in_force
         self.filled_quantity = Quantity.zero()
-        self.filled_timestamp = None        # Can be None
-        self.average_price = None           # Can be None
+        self.filled_timestamp = None      # Can be None
+        self.average_price = None         # Can be None
         self.slippage = Decimal64()
         self.init_id = event.id
 
@@ -147,7 +147,7 @@ cdef class Order:
         bool
 
         """
-        return self.client_id.equals(other.client_id)
+        return self.cl_ord_id.equals(other.cl_ord_id)
 
     cpdef OrderState state(self):
         """
@@ -289,7 +289,7 @@ cdef class Order:
         int
 
         """
-        return hash(self.client_id)
+        return hash(self.cl_ord_id)
 
     def __str__(self) -> str:
         """
@@ -301,7 +301,7 @@ cdef class Order:
 
         """
         return (f"{self.__class__.__name__}("
-                f"id={self.client_id.value}, "
+                f"cl_ord_id={self.cl_ord_id.value}, "
                 f"state={self._fsm.state_as_string()}, "
                 f"{self.status_string()})")
 
@@ -351,7 +351,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If event.order_id is not equal to the orders identifier.
+            If event.cl_ord_id is not equal to the orders cl_ord_id.
         ValueError
             If event.account_id is not equal to the orders account_id.
         InvalidStateTrigger
@@ -359,7 +359,7 @@ cdef class Order:
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(self.client_id, event.cl_ord_id, "id", "event.order_id")
+        Condition.equal(self.cl_ord_id, event.cl_ord_id, "id", "event.order_id")
         if self.account_id is not None:
             Condition.equal(self.account_id, event.account_id, "account_id", "event.account_id")
 
@@ -920,7 +920,7 @@ cdef class BracketOrder:
             The take-profit (TP) 'child' order.
 
         """
-        self.id = BracketOrderId(f"B{entry.client_id.value}")
+        self.id = BracketOrderId(f"B{entry.cl_ord_id.value}")
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit

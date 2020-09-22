@@ -151,8 +151,8 @@ class TestStrategy1(TradingStrategy):
                     OrderSide.BUY,
                     100000)
 
-                self.submit_order(buy_order, ClientPositionId(str(buy_order.client_id)))
-                self.position_id = buy_order.client_id
+                self.submit_order(buy_order, ClientPositionId(str(buy_order.cl_ord_id)))
+                self.position_id = buy_order.cl_ord_id
 
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
@@ -160,8 +160,8 @@ class TestStrategy1(TradingStrategy):
                     OrderSide.SELL,
                     100000)
 
-                self.submit_order(sell_order, ClientPositionId(str(sell_order.client_id)))
-                self.position_id = sell_order.client_id
+                self.submit_order(sell_order, ClientPositionId(str(sell_order.cl_ord_id)))
+                self.position_id = sell_order.cl_ord_id
 
     def on_instrument(self, instrument):
         self.object_storer.store(instrument)
@@ -415,7 +415,7 @@ class EMACross(TradingStrategy):
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         for order in self.orders_working().values():
-            if not self.is_stop_loss(order.client_id):
+            if not self.is_stop_loss(order.cl_ord_id):
                 return
 
             # SELL SIDE ORDERS

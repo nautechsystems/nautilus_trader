@@ -66,7 +66,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled = OrderFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("E123456"),
             PositionId("T123456"),
@@ -93,7 +93,7 @@ class PositionTests(unittest.TestCase):
         position = Position(ClientPositionId("P-123456"), order_filled)
 
         # Assert
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), position.from_cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), position.from_order)
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_quantity)
         self.assertEqual(OrderSide.BUY, position.entry_direction)
@@ -102,7 +102,7 @@ class PositionTests(unittest.TestCase):
         self.assertIsNone(position.open_duration)
         self.assertEqual(1.00001, position.average_open_price)
         self.assertEqual(1, position.event_count())
-        self.assertEqual([order.client_id], position.get_order_ids())
+        self.assertEqual([order.cl_ord_id], position.get_order_ids())
         self.assertEqual([ExecutionId("E123456")], position.get_execution_ids())
         self.assertEqual(ExecutionId("E123456"), position.last_execution_id())
         self.assertEqual(PositionId("T123456"), position.id)
@@ -128,7 +128,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled = OrderFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("E123456"),
             PositionId("T123456"),
@@ -185,7 +185,7 @@ class PositionTests(unittest.TestCase):
 
         order_partially_filled = OrderPartiallyFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("E123456"),
             PositionId("T123456"),
@@ -243,7 +243,7 @@ class PositionTests(unittest.TestCase):
 
         order_partially_filled1 = OrderPartiallyFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("E1"),
             PositionId("T123456"),
@@ -261,7 +261,7 @@ class PositionTests(unittest.TestCase):
 
         order_partially_filled2 = OrderPartiallyFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('2'),
             ExecutionId("E2"),
             PositionId("T123456"),
@@ -320,7 +320,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled1 = OrderFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("E1"),
             PositionId("T123456"),
@@ -339,7 +339,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled2 = OrderFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('2'),
             ExecutionId("E2"),
             PositionId("T123456"),
@@ -403,7 +403,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled1 = OrderFilled(
             self.account_id,
-            order1.client_id,
+            order1.cl_ord_id,
             OrderId('1'),
             ExecutionId("E123456"),
             PositionId("T123456"),
@@ -422,7 +422,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled2 = OrderPartiallyFilled(
             self.account_id,
-            order2.client_id,
+            order2.cl_ord_id,
             OrderId('2'),
             ExecutionId("E1234561"),
             PositionId("T123456"),
@@ -440,7 +440,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled3 = OrderPartiallyFilled(
             self.account_id,
-            order2.client_id,
+            order2.cl_ord_id,
             OrderId('2'),
             ExecutionId("E1234562"),
             PositionId("T123456"),
@@ -474,7 +474,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.0, position.average_open_price)
         self.assertEqual(3, position.event_count())
-        self.assertEqual([order1.client_id, order2.client_id], position.get_order_ids())
+        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.get_order_ids())
         self.assertEqual(ExecutionId("E1234562"), position.last_execution_id())
         self.assertEqual(PositionId("T123456"), position.id)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
@@ -506,7 +506,7 @@ class PositionTests(unittest.TestCase):
 
         order1_filled = OrderFilled(
             self.account_id,
-            order1.client_id,
+            order1.cl_ord_id,
             OrderId('1'),
             ExecutionId("E1"),
             PositionId("T123456"),
@@ -525,7 +525,7 @@ class PositionTests(unittest.TestCase):
 
         order2_filled = OrderFilled(
             self.account_id,
-            order2.client_id,
+            order2.cl_ord_id,
             OrderId('2'),
             ExecutionId("E2"),
             PositionId("T123456"),
@@ -557,7 +557,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.0, position.average_open_price)
         self.assertEqual(2, position.event_count())
-        self.assertEqual([order1.client_id, order2.client_id], position.get_order_ids())
+        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.get_order_ids())
         self.assertEqual([ExecutionId("E1"), ExecutionId("E2")], position.get_execution_ids()),
         self.assertEqual(ExecutionId("E2"), position.last_execution_id())
         self.assertEqual(PositionId("T123456"), position.id)
@@ -595,7 +595,7 @@ class PositionTests(unittest.TestCase):
 
         order1_filled = OrderFilled(
             self.account_id,
-            order1.client_id,
+            order1.cl_ord_id,
             OrderId("1"),
             ExecutionId("E1"),
             PositionId("T123456"),
@@ -612,7 +612,7 @@ class PositionTests(unittest.TestCase):
 
         order2_filled = OrderFilled(
             self.account_id,
-            order2.client_id,
+            order2.cl_ord_id,
             OrderId("2"),
             ExecutionId("E2"),
             PositionId("T123456"),
@@ -629,7 +629,7 @@ class PositionTests(unittest.TestCase):
 
         order3_filled = OrderFilled(
             self.account_id,
-            order3.client_id,
+            order3.cl_ord_id,
             OrderId("3"),
             ExecutionId("E3"),
             PositionId("T123456"),
@@ -663,7 +663,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.000005, position.average_open_price)
         self.assertEqual(3, position.event_count())
-        self.assertEqual([order1.client_id, order2.client_id, order3.client_id], position.get_order_ids())
+        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.get_order_ids())
         self.assertEqual(ExecutionId("E3"), position.last_execution_id())
         self.assertEqual(PositionId("T123456"), position.id)
         self.assertEqual(UNIX_EPOCH, position.closed_time)

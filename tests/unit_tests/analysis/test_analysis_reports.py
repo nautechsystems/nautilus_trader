@@ -75,7 +75,7 @@ class ReportProviderTests(unittest.TestCase):
 
         event = OrderFilled(
             self.account_id,
-            order1.client_id,
+            order1.cl_ord_id,
             OrderId("1"),
             ExecutionId("SOME_EXEC_ID_1"),
             PositionId("SOME_EXEC_TICKET_1"),
@@ -92,15 +92,15 @@ class ReportProviderTests(unittest.TestCase):
 
         order1.apply(event)
 
-        orders = {order1.client_id: order1,
-                  order2.client_id: order2}
+        orders = {order1.cl_ord_id: order1,
+                  order2.cl_ord_id: order2}
         # Act
         report = report_provider.generate_orders_report(orders)
 
         # Assert
         self.assertEqual(2, len(report))
-        self.assertEqual("order_id", report.index.name)
-        self.assertEqual(order1.client_id.value, report.index[0])
+        self.assertEqual("cl_ord_id", report.index.name)
+        self.assertEqual(order1.cl_ord_id.value, report.index[0])
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
@@ -139,7 +139,7 @@ class ReportProviderTests(unittest.TestCase):
 
         filled = OrderFilled(
             self.account_id,
-            order1.client_id,
+            order1.cl_ord_id,
             OrderId("1"),
             ExecutionId("SOME_EXEC_ID_1"),
             PositionId("SOME_EXEC_TICKET_1"),
@@ -156,15 +156,15 @@ class ReportProviderTests(unittest.TestCase):
 
         order1.apply(filled)
 
-        orders = {order1.client_id: order1,
-                  order2.client_id: order2}
+        orders = {order1.cl_ord_id: order1,
+                  order2.cl_ord_id: order2}
         # Act
         report = report_provider.generate_order_fills_report(orders)
 
         # Assert
         self.assertEqual(1, len(report))
-        self.assertEqual("order_id", report.index.name)
-        self.assertEqual(order1.client_id.value, report.index[0])
+        self.assertEqual("cl_ord_id", report.index.name)
+        self.assertEqual(order1.cl_ord_id.value, report.index[0])
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
@@ -179,16 +179,17 @@ class ReportProviderTests(unittest.TestCase):
         position1 = TestStubs.position_which_is_closed(number=1)
         position2 = TestStubs.position_which_is_closed(number=2)
 
-        positions = {position1.client_id: position1,
-                     position2.client_id: position2}
+        positions = {position1.cl_pos_id: position1,
+                     position2.cl_pos_id: position2}
 
         # Act
         report = report_provider.generate_positions_report(positions)
 
         # Assert
         self.assertEqual(2, len(report))
-        self.assertEqual("position_id", report.index.name)
-        self.assertEqual(position1.client_id.value, report.index[0])
+        self.assertEqual("cl_pos_id", report.index.name)
+        self.assertEqual(position1.cl_pos_id.value, report.index[0])
+        # self.assertEqual("1", report.iloc[0]["position_id"])
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
         self.assertEqual("BUY", report.iloc[0]["direction"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])

@@ -78,7 +78,7 @@ cdef class SubmitOrder(Command):
                  TraderId trader_id not None,
                  AccountId account_id not None,
                  StrategyId strategy_id not None,
-                 ClientPositionId position_id not None,
+                 ClientPositionId cl_pos_id not None,
                  Order order not None,
                  UUID command_id not None,
                  datetime command_timestamp not None):
@@ -93,8 +93,8 @@ cdef class SubmitOrder(Command):
             The account identifier for the inquiry.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        position_id : ClientPositionId
-            The position identifier associated with the order.
+        cl_pos_id : ClientPositionId
+            The client position identifier to associate with the order.
         order : Order
             The order to submit.
         command_id : UUID
@@ -108,7 +108,7 @@ cdef class SubmitOrder(Command):
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
-        self.position_id = position_id
+        self.cl_pos_id = cl_pos_id
         self.order = order
 
     def __str__(self) -> str:
@@ -124,8 +124,8 @@ cdef class SubmitOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
-                f"position_id={self.position_id.value}, "
-                f"order_id={self.order.client_id.value})")
+                f"cl_pos_id={self.cl_pos_id.value}, "
+                f"cl_ord_id={self.order.cl_ord_id.value})")
 
 
 cdef class SubmitBracketOrder(Command):
@@ -137,7 +137,7 @@ cdef class SubmitBracketOrder(Command):
                  TraderId trader_id not None,
                  AccountId account_id not None,
                  StrategyId strategy_id not None,
-                 ClientPositionId position_id not None,
+                 ClientPositionId cl_pos_id not None,
                  BracketOrder bracket_order not None,
                  UUID command_id not None,
                  datetime command_timestamp not None):
@@ -152,8 +152,8 @@ cdef class SubmitBracketOrder(Command):
             The account identifier for the inquiry.
         strategy_id : StrategyId
             The strategy identifier to associate with the order.
-        position_id : ClientPositionId
-            The position identifier to associate with the order.
+        cl_pos_id : ClientPositionId
+            The client position identifier to associate with the order.
         bracket_order : BracketOrder
             The bracket order to submit.
         command_id : UUID
@@ -167,7 +167,7 @@ cdef class SubmitBracketOrder(Command):
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
-        self.position_id = position_id
+        self.cl_pos_id = cl_pos_id
         self.bracket_order = bracket_order
 
     def __str__(self) -> str:
@@ -183,8 +183,8 @@ cdef class SubmitBracketOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
-                f"position_id={self.position_id.value}, "
-                f"order_id={self.bracket_order.id.value})")
+                f"position_id={self.cl_pos_id.value}, "
+                f"id={self.bracket_order.id.value})")
 
 
 cdef class ModifyOrder(Command):
@@ -195,7 +195,7 @@ cdef class ModifyOrder(Command):
     def __init__(self,
                  TraderId trader_id not None,
                  AccountId account_id not None,
-                 ClientOrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  Quantity modified_quantity not None,
                  Price modified_price not None,
                  UUID command_id not None,
@@ -209,8 +209,8 @@ cdef class ModifyOrder(Command):
             The trader identifier.
         account_id : AccountId
             The account identifier for the inquiry.
-        order_id : OrderId
-            The order identifier.
+        cl_ord_id : OrderId
+            The client order identifier.
         modified_quantity : Quantity
             The modified quantity for the order.
         modified_price :
@@ -225,7 +225,7 @@ cdef class ModifyOrder(Command):
 
         self.trader_id = trader_id
         self.account_id = account_id
-        self.order_id = order_id
+        self.cl_ord_id = cl_ord_id
         self.modified_quantity = modified_quantity
         self.modified_price = modified_price
 
@@ -241,7 +241,7 @@ cdef class ModifyOrder(Command):
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"order_id={self.order_id.value}, "
+                f"cl_ord_id={self.cl_ord_id.value}, "
                 f"quantity={self.modified_quantity.to_string_formatted()}, "
                 f"price={self.modified_price})")
 
@@ -254,7 +254,7 @@ cdef class CancelOrder(Command):
     def __init__(self,
                  TraderId trader_id not None,
                  AccountId account_id not None,
-                 ClientOrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """
@@ -266,8 +266,8 @@ cdef class CancelOrder(Command):
             The trader identifier.
         account_id : AccountId
             The account identifier for the inquiry.
-        order_id : OrderId
-            The order identifier.
+        cl_ord_id : OrderId
+            The client order identifier.
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -278,7 +278,7 @@ cdef class CancelOrder(Command):
 
         self.trader_id = trader_id
         self.account_id = account_id
-        self.order_id = order_id
+        self.cl_ord_id = cl_ord_id
 
     def __str__(self) -> str:
         """
@@ -292,4 +292,4 @@ cdef class CancelOrder(Command):
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"order_id={self.order_id.value})")
+                f"cl_ord_id={self.cl_ord_id.value})")

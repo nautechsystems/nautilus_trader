@@ -43,11 +43,11 @@ cdef class Position:
     cdef double _relative_quantity
     cdef int _precision
 
-    cdef readonly ClientPositionId client_id
+    cdef readonly ClientPositionId cl_pos_id
     cdef readonly PositionId id
     cdef readonly AccountId account_id
 
-    cdef readonly ClientOrderId from_cl_ord_id
+    cdef readonly ClientOrderId from_order
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
     cdef readonly Currency quote_currency

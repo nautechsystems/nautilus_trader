@@ -30,8 +30,8 @@ from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -260,7 +260,7 @@ cdef class OrderSubmitted(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
-                 ClientOrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  datetime submitted_time not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
@@ -271,8 +271,8 @@ cdef class OrderSubmitted(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        order_id : ClientOrderId
-            The order identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         submitted_time : datetime
             The order submitted time.
         event_id : UUID
@@ -281,7 +281,7 @@ cdef class OrderSubmitted(OrderEvent):
             The event timestamp.
 
         """
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
@@ -299,7 +299,7 @@ cdef class OrderSubmitted(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"order_id={self.cl_ord_id})")
+                f"cl_ord_id={self.cl_ord_id})")
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -400,7 +400,7 @@ cdef class OrderDenied(OrderEvent):
 
         """
         return (f"{self.__class__.__name__}("
-                f"order_id={self.cl_ord_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"reason={self.reason})")
 
 
@@ -460,7 +460,7 @@ cdef class OrderRejected(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"order_id={self.cl_ord_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"reason={self.reason})")
 
 
@@ -514,7 +514,7 @@ cdef class OrderAccepted(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id})")
 
 
@@ -1229,7 +1229,7 @@ cdef class PositionOpened(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
-                f"cl_pos_id={self.position.client_id}, "
+                f"cl_pos_id={self.position.cl_pos_id}, "
                 f"entry={order_side_to_string(self.position.entry_direction)}, "
                 f"avg_open={round(self.position.average_open_price, 5)}, "
                 f"{self.position.status_string()})")
@@ -1287,7 +1287,7 @@ cdef class PositionModified(PositionEvent):
         cdef str currency = currency_to_string(self.position.quote_currency)
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
-                f"cl_pos_id={self.position.client_id}, "
+                f"cl_pos_id={self.position.cl_pos_id}, "
                 f"position_id={order_side_to_string(self.position.entry_direction)}, "
                 f"avg_open={self.position.average_open_price}, "
                 f"realized_points={self.position.realized_points}, "
@@ -1349,7 +1349,7 @@ cdef class PositionClosed(PositionEvent):
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
-                f"cl_pos_id={self.position.client_id}, "
+                f"cl_pos_id={self.position.cl_pos_id}, "
                 f"position_id={self.position.id}, "
                 f"entry={order_side_to_string(self.position.entry_direction)}, "
                 f"duration={duration}, "

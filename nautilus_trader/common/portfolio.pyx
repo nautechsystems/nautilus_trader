@@ -175,8 +175,8 @@ cdef class Portfolio:
         # Remove from positions closed if found
         cdef dict positions_closed = self._positions_closed.get(position.symbol)
         if positions_closed is not None:
-            if positions_closed.pop(position.client_id, None) is not None:
-                self._log.warning(f"{position.client_id} already found in closed positions).")
+            if positions_closed.pop(position.cl_pos_id, None) is not None:
+                self._log.warning(f"{position.cl_pos_id} already found in closed positions).")
             # Remove symbol from positions closed if empty
             if not self._positions_closed[position.symbol]:
                 del self._positions_closed[position.symbol]
@@ -187,10 +187,10 @@ cdef class Portfolio:
             positions_open = {}
             self._positions_open[position.symbol] = positions_open
 
-        if position.client_id in positions_open:
-            self._log.warning(f"The opened {position.client_id} already found in open positions.")
+        if position.cl_pos_id in positions_open:
+            self._log.warning(f"The opened {position.cl_pos_id} already found in open positions.")
         else:
-            positions_open[position.client_id] = position
+            positions_open[position.cl_pos_id] = position
 
     cdef void _handle_position_modified(self, PositionModified event) except *:
         cdef Position position = event.position
@@ -211,8 +211,8 @@ cdef class Portfolio:
         if positions_open is None:
             self._log.error(f"Cannot find {position.symbol.value} in positions open.")
         else:
-            if positions_open.pop(position.client_id, None) is None:
-                self._log.error(f"The closed {position.client_id} was not not found in open positions.")
+            if positions_open.pop(position.cl_pos_id, None) is None:
+                self._log.error(f"The closed {position.cl_pos_id} was not not found in open positions.")
             else:
                 # Remove symbol dictionary from positions open if empty
                 if not self._positions_open[position.symbol]:
@@ -224,10 +224,10 @@ cdef class Portfolio:
             positions_closed = {}
             self._positions_closed[position.symbol] = positions_closed
 
-        if position.client_id in positions_closed:
-            self._log.warning(f"The closed {position.client_id} already found in closed positions.")
+        if position.cl_pos_id in positions_closed:
+            self._log.warning(f"The closed {position.cl_pos_id} already found in closed positions.")
         else:
-            positions_closed[position.client_id] = position
+            positions_closed[position.cl_pos_id] = position
 
         # Increment PNL
         # TODO: Handle multiple currencies
