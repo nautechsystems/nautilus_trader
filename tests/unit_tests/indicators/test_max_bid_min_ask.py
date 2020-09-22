@@ -9,13 +9,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from datetime import datetime
 from datetime import timedelta
 import unittest
 
 import pytz
 
-from nautilus_trader.indicators.max_bid_min_ask import MaxBidMinAsk
+from nautilus_trader.indicators.bid_ask_min_max import BidAskMinMax
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -23,22 +24,24 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 
 
-class MaxBidMinAskTests(unittest.TestCase):
+class BidAskMinMaxTests(unittest.TestCase):
     symbol = Symbol('SPY', Venue('TD Ameritrade'))
 
     def test_can_instantiate(self):
         # Arrange
-        indicator = MaxBidMinAsk(self.symbol, timedelta(minutes=5))
+        indicator = BidAskMinMax(self.symbol, timedelta(minutes=5))
 
         # Act
         # Assert
-        self.assertEqual(None, indicator.max_bid)
-        self.assertEqual(None, indicator.min_ask)
+        self.assertEqual(None, indicator.bids.min_price)
+        self.assertEqual(None, indicator.bids.max_price)
+        self.assertEqual(None, indicator.asks.min_price)
+        self.assertEqual(None, indicator.asks.max_price)
         self.assertEqual(False, indicator.initialized)
 
     def test_can_expire_items(self):
         # Arrange
-        indicator = MaxBidMinAsk(self.symbol, timedelta(minutes=5))
+        indicator = BidAskMinMax(self.symbol, timedelta(minutes=5))
 
         # Act + Assert
         indicator.handle_quote_tick(
@@ -51,8 +54,10 @@ class MaxBidMinAskTests(unittest.TestCase):
                 datetime(2020, 1, 1, 0, 0, 0, tzinfo=pytz.utc),
             )
         )
-        self.assertEqual(Price(1.0, 0), indicator.max_bid)
-        self.assertEqual(Price(2.0, 0), indicator.min_ask)
+        self.assertEqual(Price(1.0, 0), indicator.bids.min_price)
+        self.assertEqual(Price(1.0, 0), indicator.bids.max_price)
+        self.assertEqual(Price(2.0, 0), indicator.asks.min_price)
+        self.assertEqual(Price(2.0, 0), indicator.asks.max_price)
 
         # 5 min later (still in the window)
         indicator.handle_quote_tick(
@@ -65,8 +70,10 @@ class MaxBidMinAskTests(unittest.TestCase):
                 datetime(2020, 1, 1, 0, 5, 0, tzinfo=pytz.utc),
             )
         )
-        self.assertEqual(Price(1.0, 0), indicator.max_bid)
-        self.assertEqual(Price(2.0, 0), indicator.min_ask)
+        self.assertEqual(Price(0.9, 0), indicator.bids.min_price)
+        self.assertEqual(Price(1.0, 0), indicator.bids.max_price)
+        self.assertEqual(Price(2.0, 0), indicator.asks.min_price)
+        self.assertEqual(Price(2.1, 0), indicator.asks.max_price)
 
         # Allow the first item to expire out
         # This also tests that the new tick is the new min/max
@@ -80,5 +87,7 @@ class MaxBidMinAskTests(unittest.TestCase):
                 datetime(2020, 1, 1, 0, 5, 1, tzinfo=pytz.utc),
             )
         )
-        self.assertEqual(Price(0.95, 0), indicator.max_bid)
-        self.assertEqual(Price(2.05, 0), indicator.min_ask)
+        self.assertEqual(Price(0.90, 0), indicator.bids.min_price)
+        self.assertEqual(Price(0.95, 0), indicator.bids.max_price)
+        self.assertEqual(Price(2.05, 0), indicator.asks.min_price)
+        self.assertEqual(Price(2.10, 0), indicator.asks.max_price)

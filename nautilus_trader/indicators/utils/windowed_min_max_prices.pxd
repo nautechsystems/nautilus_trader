@@ -13,27 +13,26 @@
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef class MaxBidMinAsk(Indicator):
-    cdef readonly Symbol symbol
+cdef class WindowedMinMaxPrices:
+    """
+    Over the course of a defined lookback window, efficiently keep track
+    of the min/max values currently in the window.
+    """
+
     cdef readonly timedelta lookback
 
-    cdef readonly Price max_bid
-    cdef readonly Price min_ask
+    cdef readonly Price min_price
+    cdef readonly Price max_price
 
-    cdef object _bid_prices
-    cdef object _ask_prices
+    cdef object _min_prices
+    cdef object _max_prices
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *
-
+    cpdef void add_price(self, datetime ts, Price price)
     cpdef void reset(self)
 
-    cdef inline void _handle_bid_and_ask(self, Price bid, Price ask, datetime timestamp)
-    cdef inline void _prune_by_datetime_cutoff(self, object ts_prices, datetime cutoff)
-    cdef inline void _append_bid(self, Price bid, datetime timestamp)
-    cdef inline void _append_ask(self, Price ask, datetime timestamp)
+    cdef inline void _expire_stale_prices_by_cutoff(self, object ts_prices, datetime cutoff)
+    cdef inline void _add_min_price(self, datetime ts, Price price)
+    cdef inline void _add_max_price(self, datetime ts, Price price)
