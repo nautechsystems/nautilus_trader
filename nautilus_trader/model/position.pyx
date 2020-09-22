@@ -462,9 +462,12 @@ cdef class Position:
         self._precision = max(self._precision, event.filled_quantity.precision)
 
         if self.quote_currency != event.commission.currency:
-            self.commission.add(Money(event.commission.as_double() * event.average_price.as_double(), self.quote_currency))
+            self.commission = self.commission.add(
+                Money(event.commission.as_double() * event.average_price.as_double(),
+                self.quote_currency)
+            )
         else:
-            self.commission.add(event.commission)
+            self.commission = self.commission.add(event.commission)
 
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
