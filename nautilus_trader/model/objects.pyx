@@ -40,10 +40,20 @@ cdef class Quantity(Decimal64):
         """
         Initialize a new instance of the Quantity class.
 
-        :param value: The value of the quantity (>= 0).
-        :param precision: The decimal precision of the quantity (>= 0).
-        :raises ValueError: If the value is negative (< 0).
-        :raises ValueError: If the precision is negative (< 0).
+        Parameters
+        ----------
+        value : double
+            The value of the quantity (>= 0).
+        precision : int
+            The decimal precision of the quantity (>= 0).
+
+        Raises
+        ------
+        ValueError
+            If value is negative (< 0).
+        ValueError
+            If precision is negative (< 0).
+
         """
         Condition.not_negative(value, "value")
         super().__init__(value, precision)
@@ -69,7 +79,10 @@ cdef class Quantity(Decimal64):
         """
         Return a quantity of zero.
 
-        :return Money.
+        Returns
+        -------
+        Money
+
         """
         return _QUANTITY_ZERO
 
@@ -78,7 +91,10 @@ cdef class Quantity(Decimal64):
         """
         Return a quantity with a value of 1, and precision of 0.
 
-        :return Quantity.
+        Returns
+        -------
+        Quantity
+
         """
         return _QUANTITY_ONE
 
@@ -88,8 +104,15 @@ cdef class Quantity(Decimal64):
         Return a quantity from the given string. Precision will be inferred from the
         number of digits after the decimal place.
 
-        :param value: The string value to parse.
-        :return: Quantity.
+        Parameters
+        ----------
+        value : str
+            The string value to parse.
+
+        Returns
+        -------
+        Quantity
+
         """
         Condition.valid_string(value, "value")
 
@@ -99,8 +122,15 @@ cdef class Quantity(Decimal64):
         """
         Return a new quantity by adding the given quantity to this quantity.
 
-        :param other: The other quantity to add.
-        :return Quantity.
+        Parameters
+        ----------
+        other : Quantity
+            The other quantity to add.
+
+        Returns
+        -------
+        Quantity
+
         """
         return Quantity(self._value + other._value, max(self.precision, other.precision))
 
@@ -108,9 +138,20 @@ cdef class Quantity(Decimal64):
         """
         Return a new quantity by subtracting the quantity from this quantity.
 
-        :param other: The other quantity to subtract.
-        :raises ValueError: If value of the other decimal is greater than this price.
-        :return Quantity.
+        Parameters
+        ----------
+        other : Quantity
+            The other quantity to subtract.
+
+        Returns
+        -------
+        Quantity
+
+        Raises
+        ------
+        ValueError
+            If value of the other decimal is greater than this price.
+
         """
         return Quantity(self._value - other._value, max(self.precision, other.precision))
 
@@ -140,10 +181,20 @@ cdef class Price(Decimal64):
         """
         Initialize a new instance of the Price class.
 
-        :param value: The value of the price (>= 0).
-        :param precision: The decimal precision of the price (>= 0).
-        :raises ValueError: If the value is negative (< 0).
-        :raises ValueError: If the precision is negative (< 0).
+        Parameters
+        ----------
+        value : double
+            The value of the price (>= 0).
+        precision : int
+            The decimal precision of the price (>= 0).
+
+        Raises
+        ------
+        ValueError
+            If value is negative (< 0).
+        ValueError
+            If precision is negative (< 0).
+
         """
         Condition.not_negative(value, "value")
         super().__init__(value, precision)
@@ -170,8 +221,15 @@ cdef class Price(Decimal64):
         Return a price from the given string. Precision will be inferred from the
         number of digits after the decimal place.
 
-        :param value: The string value to parse.
-        :return: Price.
+        Parameters
+        ----------
+        value : str
+            The string value to parse.
+
+        Returns
+        -------
+        Price
+
         """
         Condition.valid_string(value, "value")
 
@@ -181,9 +239,20 @@ cdef class Price(Decimal64):
         """
         Return a new price by adding the given decimal to this price.
 
-        :param other: The other decimal to add (precision must be <= this decimals precision).
-        :raises ValueError: If the precision of the other decimal is not <= this precision.
-        :return Price.
+        Parameters
+        ----------
+        other : Decimal64
+            The other decimal to add (precision must be <= this decimals precision).
+
+        Returns
+        -------
+        Price
+
+        Raises
+        ------
+        ValueError
+            If precision of the other decimal is > this precision.
+
         """
         Condition.true(self.precision >= other.precision, "self.precision >= price.precision")
 
@@ -193,10 +262,22 @@ cdef class Price(Decimal64):
         """
         Return a new price by subtracting the decimal price from this price.
 
-        :param other: The other decimal to subtract (precision must be <= this decimals precision).
-        :raises ValueError: If the precision of the other decimal is not <= this precision.
-        :raises ValueError: If value of the other decimal is greater than this price.
-        :return Price.
+        Parameters
+        ----------
+        other : Decimal64
+            The other decimal to subtract (precision must be <= this decimals precision).
+
+        Returns
+        -------
+        Price
+
+        Raises
+        ------
+        ValueError
+            If precision of the other decimal is not <= this precision.
+        ValueError
+            If value of the other decimal is greater than this price.
+
         """
         Condition.true(self.precision >= other.precision, "self.precision >= price.precision")
 
@@ -213,8 +294,18 @@ cdef class Money(Decimal64):
         Initialize a new instance of the Money class.
         Note: The value is rounded to 2 decimal places of precision.
 
-        :param value: The value of the money.
-        :param currency: The currency of the money.
+        Parameters
+        ----------
+        value : double
+            The value of the money.
+        currency : Currency
+            The currency of the money.
+
+        Raises
+        ------
+        ValueError
+            If currency is UNDEFINED.
+
         """
         Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
         super().__init__(value, precision=2)
@@ -225,9 +316,20 @@ cdef class Money(Decimal64):
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
-        :param other: The other object.
-        :return bool.
-        :raises ValueError: If the other is not of type Money.
+        Parameters
+        ----------
+        other : Money
+            The other object.
+
+        Returns
+        -------
+        bool
+
+        Raises
+        ------
+        ValueError
+            If other is not of type Money.
+
         """
         return self.eq(other) and self.currency == other.currency
 
@@ -236,9 +338,17 @@ cdef class Money(Decimal64):
         """
         Return money parsed from the given string value.
 
-        :param value: The string value to parse.
-        :param currency: The currency for the money.
-        :return Money.
+        Parameters
+        ----------
+        value : str
+            The string value to parse.
+        currency : Currency
+            The currency for the money.
+
+        Returns
+        -------
+        Money
+
         """
         Condition.valid_string(value, "value")
 
@@ -248,9 +358,20 @@ cdef class Money(Decimal64):
         """
         Return new money by adding the given money to this money.
 
-        :param other: The other money to add.
-        :return Money.
-        :raises ValueError: If the other currency is not equal to this monies.
+        Parameters
+        ----------
+        other : Money
+            The other money to add.
+
+        Returns
+        -------
+        Money
+
+        Raises
+        ------
+        ValueError
+            If other currency is not equal to this monies.
+
         """
         Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
 
@@ -260,9 +381,20 @@ cdef class Money(Decimal64):
         """
         Return new money by subtracting the given money from this money.
 
-        :param other: The other money to subtract.
-        :return Money.
-        :raises ValueError: If the other currency is not equal to this money.
+        Parameters
+        ----------
+        other : Money
+            The other money to subtract.
+
+        Returns
+        -------
+        Money
+
+        Raises
+        ------
+        ValueError
+            If other currency is not equal to this money.
+
         """
         Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
 
@@ -271,6 +403,11 @@ cdef class Money(Decimal64):
     cpdef str to_string_formatted(self):
         """
         Return the formatted string representation of this object.
+
+        Returns
+        -------
+        str
+
         """
         return f"{self.to_string(format_commas=True)} {currency_to_string(self.currency)}"
 
