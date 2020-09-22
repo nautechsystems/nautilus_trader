@@ -36,7 +36,7 @@ from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Price, Money
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import TestStrategy1
@@ -463,10 +463,8 @@ class SimulatedBrokerTests(unittest.TestCase):
         position_id = strategy.position_id_generator.generate()
         strategy.submit_order(order, position_id)
 
-        # TODO: WIP
-        # commission = strategy.object_storer.get_store()[3].commission.as_double()
-        # filled_price = strategy.object_storer.get_store()[3].average_price.as_double()
-
-        # position = strategy.positions_open()[position_id]
-
-        # self.assertEqual(position.realized_pnl, -commission * filled_price)  # -180.01, -180.006
+        filled_price = strategy.object_storer.get_store()[3].average_price.as_double()
+        commission = strategy.object_storer.get_store()[3].commission.as_double()
+        commission = Money(-commission * filled_price, 392)
+        position = strategy.positions_open()[position_id]
+        self.assertEqual(position.realized_pnl, commission)
