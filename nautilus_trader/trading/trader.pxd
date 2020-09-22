@@ -16,7 +16,7 @@
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -31,7 +31,7 @@ cdef class Trader:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef DataClient _data_client
+    cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
     cdef FiniteStateMachine _fsm

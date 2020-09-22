@@ -17,7 +17,7 @@ import zmq
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -53,7 +53,7 @@ from nautilus_trader.serialization.data cimport Utf8TradeTickSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class LiveDataClient(DataClient):
+cdef class LiveDataEngine(DataEngine):
     """
     Provides a data client for live trading.
     """
@@ -216,7 +216,7 @@ cdef class LiveDataClient(DataClient):
         """
         Condition.not_none(strategy, "strategy")
 
-        strategy.register_data_client(self)
+        strategy.register_data_engine(self)
 
         self._log.info(f"Registered strategy {strategy}.")
 

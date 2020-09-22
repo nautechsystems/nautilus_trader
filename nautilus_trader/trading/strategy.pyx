@@ -15,7 +15,7 @@
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport create_component_fsm
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -138,8 +138,8 @@ cdef class TradingStrategy:
         self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
         # Registerable modules
-        self._data = None  # Initialized when registered with the data client
-        self._exec = None  # Initialized when registered with the execution engine
+        self._data_engine = None  # Initialized when registered with the data engine
+        self._exec_engine = None  # Initialized when registered with the execution engine
 
         self._fsm = create_component_fsm()
 
@@ -393,19 +393,19 @@ cdef class TradingStrategy:
             id_tag_strategy=self.id.order_id_tag,
             clock=self.clock)
 
-    cpdef void register_data_client(self, DataClient client) except *:
+    cpdef void register_data_engine(self, DataEngine engine) except *:
         """
-        Register the strategy with the given data client.
+        Register the strategy with the given data engine.
 
         Parameters
         ----------
-        client : DataClient
-            The data client to register.
+        engine : DataEngine
+            The data engine to register.
 
         """
-        Condition.not_none(client, "client")
+        Condition.not_none(engine, "engine")
 
-        self._data = client
+        self._data_engine = engine
 
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *:
         """
@@ -419,7 +419,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(engine, "engine")
 
-        self._exec = engine
+        self._exec_engine = engine
 
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
         """
@@ -787,16 +787,16 @@ cdef class TradingStrategy:
 
     cpdef list instrument_symbols(self):
         """
-        Return a list of all instrument symbols held by the data client.
+        Return a list of all instrument symbols held by the data engine.
 
         Returns
         -------
         List[Instrument]
 
         """
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        return self._data.instrument_symbols()
+        return self._data_engine.instrument_symbols()
 
     cpdef void get_quote_ticks(self, Symbol symbol) except *:
         """
@@ -809,13 +809,13 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.request_quote_ticks(
+        self._data_engine.request_quote_ticks(
             symbol=symbol,
             from_datetime=None,
             to_datetime=None,
-            limit=self._data.tick_capacity,
+            limit=self._data_engine.tick_capacity,
             callback=self.handle_quote_ticks)
 
     cpdef void get_trade_ticks(self, Symbol symbol) except *:
@@ -829,13 +829,13 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.request_trade_ticks(
+        self._data_engine.request_trade_ticks(
             symbol=symbol,
             from_datetime=None,
             to_datetime=None,
-            limit=self._data.tick_capacity,
+            limit=self._data_engine.tick_capacity,
             callback=self.handle_trade_ticks)
 
     cpdef void get_bars(self, BarType bar_type) except *:
@@ -849,13 +849,13 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.request_bars(
+        self._data_engine.request_bars(
             bar_type=bar_type,
             from_datetime=None,
             to_datetime=None,
-            limit=self._data.bar_capacity,
+            limit=self._data_engine.bar_capacity,
             callback=self.handle_bars)
 
     cpdef Instrument get_instrument(self, Symbol symbol):
@@ -872,9 +872,9 @@ cdef class TradingStrategy:
         Instrument or None
 
         """
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        return self._data.get_instrument(symbol)
+        return self._data_engine.get_instrument(symbol)
 
     cpdef dict get_instruments(self):
         """
@@ -885,9 +885,9 @@ cdef class TradingStrategy:
         Dict[Symbol, Instrument]
 
         """
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        return self._data.get_instruments()
+        return self._data_engine.get_instruments()
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -900,9 +900,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.subscribe_quote_ticks(symbol, self.handle_quote_tick)
+        self._data_engine.subscribe_quote_ticks(symbol, self.handle_quote_tick)
         self.log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
@@ -916,9 +916,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.subscribe_trade_ticks(symbol, self.handle_trade_tick)
+        self._data_engine.subscribe_trade_ticks(symbol, self.handle_trade_tick)
         self.log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
@@ -932,9 +932,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.subscribe_bars(bar_type, self.handle_bar)
+        self._data_engine.subscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Subscribed to {bar_type} <Bar> data.")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
@@ -948,9 +948,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.subscribe_instrument(symbol, self.handle_data)
+        self._data_engine.subscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Subscribed to {symbol} <Instrument> data.")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
@@ -964,9 +964,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.unsubscribe_quote_ticks(symbol, self.handle_quote_tick)
+        self._data_engine.unsubscribe_quote_ticks(symbol, self.handle_quote_tick)
         self.log.info(f"Unsubscribed from {symbol} <QuoteTick> data.")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
@@ -980,9 +980,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.unsubscribe_trade_ticks(symbol, self.handle_trade_tick)
+        self._data_engine.unsubscribe_trade_ticks(symbol, self.handle_trade_tick)
         self.log.info(f"Unsubscribed from {symbol} <TradeTick> data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
@@ -996,9 +996,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.unsubscribe_bars(bar_type, self.handle_bar)
+        self._data_engine.unsubscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
@@ -1012,9 +1012,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        self._data.unsubscribe_instrument(symbol, self.handle_data)
+        self._data_engine.unsubscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
 
     cpdef bint has_quote_ticks(self, Symbol symbol):
@@ -1032,9 +1032,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.has_quote_ticks(symbol)
+        return self._data_engine.has_quote_ticks(symbol)
 
     cpdef bint has_trade_ticks(self, Symbol symbol):
         """
@@ -1051,9 +1051,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.has_trade_ticks(symbol)
+        return self._data_engine.has_trade_ticks(symbol)
 
     cpdef bint has_bars(self, BarType bar_type):
         """
@@ -1070,9 +1070,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.has_bars(bar_type)
+        return self._data_engine.has_bars(bar_type)
 
     cpdef int quote_tick_count(self, Symbol symbol):
         """
@@ -1089,9 +1089,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.quote_tick_count(symbol)
+        return self._data_engine.quote_tick_count(symbol)
 
     cpdef int trade_tick_count(self, Symbol symbol):
         """
@@ -1108,9 +1108,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.trade_tick_count(symbol)
+        return self._data_engine.trade_tick_count(symbol)
 
     cpdef int bar_count(self, BarType bar_type):
         """
@@ -1127,9 +1127,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.bar_count(bar_type)
+        return self._data_engine.bar_count(bar_type)
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
@@ -1146,9 +1146,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.quote_ticks(symbol)
+        return self._data_engine.quote_ticks(symbol)
 
     cpdef list trade_ticks(self, Symbol symbol):
         """
@@ -1165,9 +1165,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.trade_ticks(symbol)
+        return self._data_engine.trade_ticks(symbol)
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -1184,9 +1184,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.bars(bar_type)
+        return self._data_engine.bars(bar_type)
 
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
@@ -1210,9 +1210,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.quote_tick(symbol, index)
+        return self._data_engine.quote_tick(symbol, index)
 
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
         """
@@ -1236,9 +1236,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.trade_tick(symbol, index)
+        return self._data_engine.trade_tick(symbol, index)
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """
@@ -1262,9 +1262,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data, "data client")
+        Condition.not_none(self._data_engine, "data client")
 
-        return self._data.bar(bar_type, index)
+        return self._data_engine.bar(bar_type, index)
 
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
@@ -1307,9 +1307,9 @@ cdef class TradingStrategy:
         Account
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.account
+        return self._exec_engine.account
 
     cpdef Portfolio portfolio(self):
         """
@@ -1320,9 +1320,9 @@ cdef class TradingStrategy:
         Portfolio
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.portfolio
+        return self._exec_engine.portfolio
 
     cpdef OrderSide get_opposite_side(self, OrderSide side):
         """
@@ -1393,9 +1393,9 @@ cdef class TradingStrategy:
             If price_type is UNDEFINED or LAST.
 
         """
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        return self._data.get_exchange_rate(
+        return self._data_engine.get_exchange_rate(
             from_currency=from_currency,
             to_currency=to_currency,
             price_type=price_type)
@@ -1425,14 +1425,14 @@ cdef class TradingStrategy:
             If price_type is UNDEFINED or LAST.
 
         """
-        Condition.not_none(self._data, "data_client")
+        Condition.not_none(self._data_engine, "data_client")
 
         cdef Account account = self.account()
         if account is None:
             self.log.error("Cannot get exchange rate (account is not initialized).")
             return 0.0
 
-        return self._data.get_exchange_rate(
+        return self._data_engine.get_exchange_rate(
             from_currency=quote_currency,
             to_currency=self.account().currency,
             price_type=price_type)
@@ -1452,9 +1452,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order_id, "order_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_order(order_id)
+        return self._exec_engine.database.get_order(order_id)
 
     cpdef dict orders(self):
         """
@@ -1465,9 +1465,9 @@ cdef class TradingStrategy:
         Dict[OrderId, Order]
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_orders(self.id)
+        return self._exec_engine.database.get_orders(self.id)
 
     cpdef dict orders_working(self):
         """
@@ -1478,9 +1478,9 @@ cdef class TradingStrategy:
         Dict[OrderId, Order]
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_orders_working(self.id)
+        return self._exec_engine.database.get_orders_working(self.id)
 
     cpdef set stop_loss_ids(self):
         """
@@ -1513,9 +1513,9 @@ cdef class TradingStrategy:
         Dict[OrderId, Order]
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_orders_completed(self.id)
+        return self._exec_engine.database.get_orders_completed(self.id)
 
     cpdef Position position(self, PositionId position_id):
         """
@@ -1532,9 +1532,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_position(position_id)
+        return self._exec_engine.database.get_position(position_id)
 
     cpdef Position position_for_order(self, OrderId order_id):
         """
@@ -1551,9 +1551,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order_id, "order_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_position_for_order(order_id)
+        return self._exec_engine.database.get_position_for_order(order_id)
 
     cpdef dict positions(self):
         """
@@ -1564,9 +1564,9 @@ cdef class TradingStrategy:
         Dict[PositionId, Position]
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_positions(self.id)
+        return self._exec_engine.database.get_positions(self.id)
 
     cpdef dict positions_open(self):
         """
@@ -1577,9 +1577,9 @@ cdef class TradingStrategy:
         Dict[PositionId, Position]
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_positions_open(self.id)
+        return self._exec_engine.database.get_positions_open(self.id)
 
     cpdef dict positions_closed(self):
         """
@@ -1590,9 +1590,9 @@ cdef class TradingStrategy:
         Dict[PositionId, Position]
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.get_positions_closed(self.id)
+        return self._exec_engine.database.get_positions_closed(self.id)
 
     cpdef bint position_exists(self, PositionId position_id):
         """
@@ -1609,9 +1609,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.position_exists(position_id)
+        return self._exec_engine.database.position_exists(position_id)
 
     cpdef bint order_exists(self, OrderId order_id):
         """
@@ -1628,9 +1628,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order_id, "order_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.order_exists(order_id)
+        return self._exec_engine.database.order_exists(order_id)
 
     cpdef bint is_stop_loss(self, OrderId order_id):
         """
@@ -1685,9 +1685,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order_id, "order_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.is_order_working(order_id)
+        return self._exec_engine.database.is_order_working(order_id)
 
     cpdef bint is_order_completed(self, OrderId order_id):
         """
@@ -1704,9 +1704,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order_id, "order_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.is_order_completed(order_id)
+        return self._exec_engine.database.is_order_completed(order_id)
 
     cpdef bint is_position_open(self, PositionId position_id):
         """
@@ -1723,9 +1723,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.is_position_open(position_id)
+        return self._exec_engine.database.is_position_open(position_id)
 
     cpdef bint is_position_closed(self, PositionId position_id):
         """
@@ -1742,9 +1742,9 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.is_position_closed(position_id)
+        return self._exec_engine.database.is_position_closed(position_id)
 
     cpdef bint is_flat(self):
         """
@@ -1756,9 +1756,9 @@ cdef class TradingStrategy:
         bool
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.is_strategy_flat(self.id)
+        return self._exec_engine.is_strategy_flat(self.id)
 
     cpdef int count_orders_working(self):
         """
@@ -1769,9 +1769,9 @@ cdef class TradingStrategy:
         int
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.count_orders_working(self.id)
+        return self._exec_engine.database.count_orders_working(self.id)
 
     cpdef int count_orders_completed(self):
         """
@@ -1782,9 +1782,9 @@ cdef class TradingStrategy:
         int
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.count_orders_completed(self.id)
+        return self._exec_engine.database.count_orders_completed(self.id)
 
     cpdef int count_orders_total(self):
         """
@@ -1795,9 +1795,9 @@ cdef class TradingStrategy:
         int
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.count_orders_total(self.id)
+        return self._exec_engine.database.count_orders_total(self.id)
 
     cpdef int count_positions_open(self):
         """
@@ -1808,9 +1808,9 @@ cdef class TradingStrategy:
         int
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.count_positions_open(self.id)
+        return self._exec_engine.database.count_positions_open(self.id)
 
     cpdef int count_positions_closed(self):
         """
@@ -1821,9 +1821,9 @@ cdef class TradingStrategy:
         int
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.count_positions_closed(self.id)
+        return self._exec_engine.database.count_positions_closed(self.id)
 
     cpdef int count_positions_total(self):
         """
@@ -1834,9 +1834,9 @@ cdef class TradingStrategy:
         int
 
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec.database.count_positions_total(self.id)
+        return self._exec_engine.database.count_positions_total(self.id)
 
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -1856,11 +1856,11 @@ cdef class TradingStrategy:
 
         self.log.info(f"state={self._fsm.state_as_string()}...")
 
-        if self._data is None:
-            self.log.error("Cannot start strategy (the data client is not registered).")
+        if self._data_engine is None:
+            self.log.error("Cannot start strategy (the data engine is not registered).")
             return
 
-        if self._exec is None:
+        if self._exec_engine is None:
             self.log.error("Cannot start strategy (the execution engine is not registered).")
             return
 
@@ -2043,16 +2043,16 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution service.
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
         cdef AccountInquiry command = AccountInquiry(
             self.trader_id,
-            self._exec.account_id,
+            self._exec_engine.account_id,
             self.uuid_factory.generate(),
             self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec.execute_command(command)
+        self._exec_engine.execute_command(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id) except *:
         """
@@ -2070,11 +2070,11 @@ cdef class TradingStrategy:
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
-            self._exec.account_id,
+            self._exec_engine.account_id,
             self.id,
             position_id,
             order,
@@ -2082,7 +2082,7 @@ cdef class TradingStrategy:
             self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec.execute_command(command)
+        self._exec_engine.execute_command(command)
 
     cpdef void submit_bracket_order(
             self,
@@ -2106,7 +2106,7 @@ cdef class TradingStrategy:
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(position_id, "position_id")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
         if register:
             self.register_stop_loss(bracket_order.stop_loss)
@@ -2115,7 +2115,7 @@ cdef class TradingStrategy:
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
             self.trader_id,
-            self._exec.account_id,
+            self._exec_engine.account_id,
             self.id,
             position_id,
             bracket_order,
@@ -2123,7 +2123,7 @@ cdef class TradingStrategy:
             self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec.execute_command(command)
+        self._exec_engine.execute_command(command)
 
     cpdef void modify_order(self, Order order, Quantity new_quantity=None, Price new_price=None) except *:
         """
@@ -2142,7 +2142,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
         if new_quantity is None and new_price is None:
             self.log.error("Cannot send command ModifyOrder (both new_quantity and new_price were None).")
@@ -2156,7 +2156,7 @@ cdef class TradingStrategy:
 
         cdef ModifyOrder command = ModifyOrder(
             self.trader_id,
-            self._exec.account_id,
+            self._exec_engine.account_id,
             order.id,
             new_quantity,
             new_price,
@@ -2164,7 +2164,7 @@ cdef class TradingStrategy:
             self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec.execute_command(command)
+        self._exec_engine.execute_command(command)
 
     cpdef void cancel_order(self, Order order) except *:
         """
@@ -2179,26 +2179,26 @@ cdef class TradingStrategy:
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
         cdef CancelOrder command = CancelOrder(
             self.trader_id,
-            self._exec.account_id,
+            self._exec_engine.account_id,
             order.id,
             self.uuid_factory.generate(),
             self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec.execute_command(command)
+        self._exec_engine.execute_command(command)
 
     cpdef void cancel_all_orders(self) except *:
         """
         Send a cancel order command for orders associated with this strategy
         which are not completed.
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        cdef dict working_orders = self._exec.database.get_orders_working(self.id)
+        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
         cdef int working_orders_count = len(working_orders)
         if working_orders_count == 0:
             self.log.info("No working orders to cancel.")
@@ -2211,13 +2211,13 @@ cdef class TradingStrategy:
         for order_id, order in working_orders.items():
             command = CancelOrder(
                 self.trader_id,
-                self._exec.account_id,
+                self._exec_engine.account_id,
                 order_id,
                 self.uuid_factory.generate(),
                 self.clock.utc_now())
 
             self.log.info(f"{CMD}{SENT} {command}.")
-            self._exec.execute_command(command)
+            self._exec_engine.execute_command(command)
 
     cpdef void flatten_position(self, PositionId position_id) except *:
         """
@@ -2237,13 +2237,13 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
         if position_id in self._flattening_ids:
             self.log.warning(f"Already flattening {position_id}.")
             return
 
-        cdef Position position = self._exec.database.get_position(position_id)
+        cdef Position position = self._exec_engine.database.get_position(position_id)
         if position is None:
             self.log.error(f"Cannot flatten position (cannot find {position_id} in cached positions.")
             return
@@ -2268,9 +2268,9 @@ cdef class TradingStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        Condition.not_none(self._exec, "execution_engine")
+        Condition.not_none(self._exec_engine, "execution_engine")
 
-        cdef dict positions = self._exec.database.get_positions_open(self.id)
+        cdef dict positions = self._exec_engine.database.get_positions_open(self.id)
         cdef int open_positions_count = len(positions)
         if open_positions_count == 0:
             self.log.info("No open positions to flatten.")
@@ -2299,12 +2299,12 @@ cdef class TradingStrategy:
             return  # Not a registered stop-loss
 
         # Find position_id for order
-        cdef PositionId position_id = self._exec.database.get_position_id(event.order_id)
+        cdef PositionId position_id = self._exec_engine.database.get_position_id(event.order_id)
         if position_id is None:
             self.log.error(f"Cannot find PositionId for {event.order_id}.")
             return
 
         # Flatten if open position
-        if self._exec.database.is_position_open(position_id):
+        if self._exec_engine.database.is_position_open(position_id):
             self.log.warning(f"Rejected {event.order_id} was a registered child order, now flattening {position_id}.")
             self.flatten_position(position_id)

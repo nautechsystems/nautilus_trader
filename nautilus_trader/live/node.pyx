@@ -39,7 +39,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.data cimport LiveDataClient
+from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecClient
 from nautilus_trader.live.execution_database cimport RedisExecutionDatabase
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
@@ -61,7 +61,7 @@ from nautilus_trader.trading.trader cimport Trader
 
 cdef class TradingNode:
     """
-    Provides a trading node to control a live Trader instance with a WebSocket API.
+    Provides a trading node to host a live trader instance.
     """
     cdef LiveClock _clock
     cdef LiveUUIDFactory _uuid_factory
@@ -72,7 +72,7 @@ cdef class TradingNode:
     cdef object _zmq_context
     cdef ExecutionDatabase _exec_db
     cdef LiveExecutionEngine _exec_engine
-    cdef LiveDataClient _data_client
+    cdef LiveDataEngine _data_engine
     cdef LiveExecClient _exec_client
 
     cdef double _check_residuals_delay
@@ -171,7 +171,8 @@ cdef class TradingNode:
         instrument_serializer = BsonInstrumentSerializer()
 
         self._venue = Venue(config_data["venue"])
-        self._data_client = LiveDataClient(
+
+        self._data_engine = LiveDataEngine(
             trader_id=self.trader_id,
             host=config_data["host"],
             data_req_port=config_data["data_req_port"],
@@ -185,8 +186,6 @@ cdef class TradingNode:
             response_serializer=response_serializer,
             data_serializer=data_serializer,
             instrument_serializer=instrument_serializer,
-            tick_capacity=config_data["tick_capacity"],
-            bar_capacity=config_data["bar_capacity"],
             clock=self._clock,
             uuid_factory=self._uuid_factory,
             logger=self._logger)
@@ -243,7 +242,7 @@ cdef class TradingNode:
             trader_id=self.trader_id,
             account_id=self.account_id,
             strategies=strategies,
-            data_client=self._data_client,
+            data_client=self._data_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
@@ -272,9 +271,9 @@ cdef class TradingNode:
         """
         Connect the trading node to its services.
         """
-        self._data_client.connect()
+        self._data_engine.connect()
         self._exec_client.connect()
-        self._data_client.update_instruments(self._venue)
+        self._data_engine.update_instruments(self._venue)
 
         account_inquiry = AccountInquiry(
             trader_id=self.trader_id,
@@ -308,7 +307,7 @@ cdef class TradingNode:
         """
         Disconnect the trading node from its services.
         """
-        self._data_client.disconnect()
+        self._data_engine.disconnect()
         self._exec_client.disconnect()
 
     cpdef void dispose(self) except *:
@@ -320,7 +319,7 @@ cdef class TradingNode:
         time.sleep(1.0)  # Hard coded delay to await graceful disconnection (refactor)
 
         self.trader.dispose()
-        self._data_client.dispose()
+        self._data_engine.dispose()
         self._exec_client.dispose()
 
         self._log.info("Disposed.")

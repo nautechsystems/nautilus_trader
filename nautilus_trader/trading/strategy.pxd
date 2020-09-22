@@ -15,7 +15,7 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
@@ -74,8 +74,8 @@ cdef class TradingStrategy:
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
-    cdef DataClient _data
-    cdef ExecutionEngine _exec
+    cdef DataEngine _data_engine
+    cdef ExecutionEngine _exec_engine
 
     cdef FiniteStateMachine _fsm
 
@@ -98,7 +98,7 @@ cdef class TradingStrategy:
 
 # -- REGISTRATION METHODS -------------------------------------------------------------------------#
     cpdef void register_trader(self, TraderId trader_id, Clock clock, UUIDFactory uuid_factory, Logger logger) except *
-    cpdef void register_data_client(self, DataClient client) except *
+    cpdef void register_data_engine(self, DataEngine engine) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *

@@ -21,7 +21,7 @@ import pytz
 from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.uuid import TestUUIDFactory
-from nautilus_trader.common.data import DataClient
+from nautilus_trader.common.data_engine import DataEngine
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -36,7 +36,7 @@ class DataClientTests(unittest.TestCase):
 
     def setUp(self):
         clock = TestClock()
-        self.client = DataClient(
+        self.client = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
             use_previous_close=False,
