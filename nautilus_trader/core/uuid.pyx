@@ -171,8 +171,8 @@ cdef class UUID:
         if bytes_le is not None:
             if len(bytes_le) != 16:
                 raise ValueError("bytes_le is not a 16-char string")
-            bytes_val = (bytes_le[4 - 1::-1] + bytes_le[6 - 1:4 - 1:-1] +  # noqa (W504 line break before binary operator)
-                         bytes_le[8 - 1:6 - 1:-1] + bytes_le[8:])
+            bytes_val = bytes_le[4 - 1::-1] + bytes_le[6 - 1:4 - 1:-1] \
+                + bytes_le[8 - 1:6 - 1:-1] + bytes_le[8:]
         if bytes_val is not None:
             if len(bytes_val) != 16:
                 raise ValueError("bytes is not a 16-char string")
@@ -195,8 +195,12 @@ cdef class UUID:
             if not 0 <= node < 1 << 48:
                 raise ValueError("field 6 out of range (need a 48-bit value)")
             clock_seq = (clock_seq_hi_variant << 8) | clock_seq_low
-            int_val = ((time_low << 96) | (time_mid << 80) |  # noqa (W504 line break before binary operator)
-                       (time_hi_version << 64) | (clock_seq << 48) | node)
+            int_val = \
+                (time_low << 96) \
+                | (time_mid << 80) \
+                | (time_hi_version << 64) \
+                | (clock_seq << 48) \
+                | node
 
         assert 0 <= int_val < 1 << 128, "int is out of range (need a 128-bit value)"
 
@@ -283,8 +287,10 @@ cdef class UUID:
     @property
     def bytes_le(self):
         cdef bytes bytes_val = self.bytes
-        return (bytes_val[4 - 1:: - 1] + bytes_val[6 - 1:4 - 1:-1] + bytes_val[8 - 1:6 - 1:-1] +  # noqa (W504 line break before binary operator)
-                bytes_val[8:])  # noqa (W504 line break before binary operator)
+        return bytes_val[4 - 1:: - 1] \
+            + bytes_val[6 - 1:4 - 1:-1] \
+            + bytes_val[8 - 1:6 - 1:-1] \
+            + bytes_val[8:]
 
     @property
     def fields(self):
@@ -313,13 +319,13 @@ cdef class UUID:
 
     @property
     def time(self):
-        return (((self.time_hi_version & 0x0fff) << 48) |  # noqa (W504 line break before binary operator)
-                (self.time_mid << 32) | self.time_low)     # noqa (W504 line break before binary operator)
+        return ((self.time_hi_version & 0x0fff) << 48) \
+            | (self.time_mid << 32) \
+            | self.time_low
 
     @property
     def clock_seq(self):
-        return (((self.clock_seq_hi_variant & 0x3f) << 8) |  # noqa (W504 line break before binary operator)
-                self.clock_seq_low)                          # noqa (W504 line break before binary operator)
+        return ((self.clock_seq_hi_variant & 0x3f) << 8) | self.clock_seq_low
 
     @property
     def node(self):

@@ -161,9 +161,9 @@ cdef class BarSpecification:
         bool
 
         """
-        return (self.step == other.step and                # noqa (W504 - easier to read)
-                self.aggregation == other.aggregation and  # noqa (W504 - easier to read)
-                self.price_type == other.price_type)       # noqa (W504 - easier to read)
+        return self.step == other.step \
+            and self.aggregation == other.aggregation \
+            and self.price_type == other.price_type
 
     cpdef str to_string(self):
         """
@@ -545,12 +545,12 @@ cdef class Bar:
         bool
 
         """
-        return (self.open.equals(other.open) and      # noqa (W504)
-                self.high.equals(other.high) and      # noqa (W504)
-                self.low.equals(other.low) and        # noqa (W504)
-                self.close.equals(other.close) and    # noqa (W504)
-                self.volume.equals(other.volume) and  # noqa (W504)
-                self.timestamp == other.timestamp)    # noqa (W504)
+        return self.open.equals(other.open) \
+            and self.high.equals(other.high) \
+            and self.low.equals(other.low) \
+            and self.close.equals(other.close) \
+            and self.volume.equals(other.volume) \
+            and self.timestamp == other.timestamp
 
     cpdef str to_string(self):
         """
