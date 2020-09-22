@@ -45,7 +45,7 @@ cdef class Position:
         self._order_ids = {event.order_id}          # type: {OrderId}
         self._execution_ids = [event.execution_id]  # type: [ExecutionId]
         self._events = [event]                      # type: [OrderFillEvent]
-        self._fill_prices = {}                      # type: {OrderId, Price}
+        self._fill_prices = {}                     # type: {OrderId, Price}
         self._buy_quantities = {}                   # type: {OrderId, Quantity}
         self._sell_quantities = {}                  # type: {OrderId, Quantity}
 
@@ -66,6 +66,7 @@ cdef class Position:
         self.realized_return = 0.0
         self.realized_pnl = Money(0, event.quote_currency)
         self.realized_pnl_last = Money(0, event.quote_currency)
+        self._commission = Money(0, event.quote_currency)
 
         self.quantity = Quantity.zero()                  # Initialized in _update()
         self.peak_quantity = Quantity.zero()             # Initialized in _update()
@@ -460,6 +461,10 @@ cdef class Position:
         self._fill_prices[event.order_id] = event.average_price
         self._precision = max(self._precision, event.filled_quantity.precision)
 
+        commission = Money(event.commission.as_double() * event.average_price.as_double(), self.quote_currency) \
+            if self.quote_currency != event.commission.currency else event.commission
+        self._commission = self._commission.add(commission)
+
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
         else:  # event.order_side == OrderSide.SELL:
@@ -498,6 +503,9 @@ cdef class Position:
             self.realized_points = self._calculate_points(self.average_open_price, self.average_close_price)
             self.realized_return = self._calculate_return(self.average_open_price, self.average_close_price)
             self.realized_pnl = self._calculate_pnl(self.average_open_price, self.average_close_price, self._buy_quantity)
+            self.realized_pnl = self.realized_pnl.sub(self._commission)
+        else:
+            self.realized_pnl = self.realized_pnl.sub(self._commission)
 
     cdef void _handle_sell_order_fill(self, OrderFillEvent event) except *:
         self._sell_quantities[event.order_id] = event.filled_quantity
@@ -516,6 +524,9 @@ cdef class Position:
             self.realized_points = self._calculate_points(self.average_open_price, self.average_close_price)
             self.realized_return = self._calculate_return(self.average_open_price, self.average_close_price)
             self.realized_pnl = self._calculate_pnl(self.average_open_price, self.average_close_price, self._sell_quantity)
+            self.realized_pnl = self.realized_pnl.sub(self._commission)
+        else:
+            self.realized_pnl = self.realized_pnl.sub(self._commission)
 
     cdef double _calculate_average_price(self, dict fills, Quantity total_quantity):
         cdef double cumulative_price = 0.0
