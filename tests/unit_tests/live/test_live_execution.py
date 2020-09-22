@@ -166,7 +166,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         time.sleep(0.5)
         # # Assert
-        self.assertEqual(order, self.strategy.order(order.client_id))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
         self.assertEqual(2, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
@@ -187,8 +187,8 @@ class LiveExecutionTests(unittest.TestCase):
 
         time.sleep(0.5)
         # Assert
-        self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.client_id))
-        self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.client_id))
+        self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.cl_ord_id))
+        self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.cl_ord_id))
         self.assertEqual(2, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
@@ -206,7 +206,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         time.sleep(1.0)
         # Assert
-        self.assertEqual(order, self.strategy.order(order.client_id))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
         self.assertEqual(3, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
@@ -226,7 +226,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         time.sleep(1.0)
         # Assert
-        self.assertEqual(order, self.strategy.order(order.client_id))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
         self.assertEqual(3, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))

@@ -60,10 +60,10 @@ from nautilus_trader.model.events cimport OrderPartiallyFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal64
@@ -194,7 +194,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return MsgPackSerializer.serialize({})  # Null order
 
         cdef dict package = {
-            ID: order.client_id.value,
+            ID: order.cl_ord_id.value,
             SYMBOL: order.symbol.value,
             ORDER_SIDE: self.convert_snake_to_camel(order_side_to_string(order.side)),
             ORDER_TYPE: self.convert_snake_to_camel(order_type_to_string(order.type)),
@@ -314,26 +314,26 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[CLIENT_POSITION_ID] = command.position_id.value
+            package[CLIENT_POSITION_ID] = command.cl_pos_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitBracketOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[CLIENT_POSITION_ID] = command.position_id.value
+            package[CLIENT_POSITION_ID] = command.cl_pos_id.value
             package[ENTRY] = self.order_serializer.serialize(command.bracket_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
         elif isinstance(command, ModifyOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
-            package[CLIENT_ORDER_ID] = command.order_id.value
+            package[CLIENT_ORDER_ID] = command.cl_ord_id.value
             package[MODIFIED_QUANTITY] = command.modified_quantity.to_string()
             package[MODIFIED_PRICE] = command.modified_price.to_string()
         elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
-            package[CLIENT_ORDER_ID] = command.order_id.value
+            package[CLIENT_ORDER_ID] = command.cl_ord_id.value
         else:
             raise RuntimeError("Cannot serialize command (unrecognized command).")
 

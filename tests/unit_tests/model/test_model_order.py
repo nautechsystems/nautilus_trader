@@ -120,7 +120,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), order2.client_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), order2.cl_ord_id)
 
     def test_limit_order_can_create_expected_decimal_price(self):
         # Arrange
@@ -203,8 +203,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         # Assert
-        self.assertEqual("MarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
-        self.assertTrue(repr(order).startswith("<MarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at"))  # noqa
+        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
+        self.assertTrue(repr(order).startswith("<MarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at"))  # noqa
 
     def test_can_initialize_limit_order(self):
         # Arrange
@@ -269,8 +269,8 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertFalse(bracket_order.has_take_profit)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.client_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.client_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.cl_ord_id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(Quantity(100000), bracket_order.entry.quantity)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
@@ -298,9 +298,9 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertTrue(bracket_order.has_take_profit)
         self.assertEqual(AUDUSD_FXCM, bracket_order.take_profit.symbol)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.client_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.client_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-3"), bracket_order.take_profit.client_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-3"), bracket_order.take_profit.cl_ord_id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(OrderSide.SELL, bracket_order.take_profit.side)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
@@ -329,8 +329,8 @@ class OrderTests(unittest.TestCase):
             Price(1.00010, 5))
 
         # Assert
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
-        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
+        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
         self.assertTrue(repr(bracket_order).endswith(">"))
 
     def test_can_apply_order_submitted_event_to_order(self):
@@ -504,7 +504,7 @@ class OrderTests(unittest.TestCase):
 
         modified = OrderModified(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             Quantity(120000),
             Price(1.00001, 5),
@@ -540,7 +540,7 @@ class OrderTests(unittest.TestCase):
 
         filled = OrderFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("SOME_EXEC_ID_1"),
             PositionId("SOME_EXEC_TICKET_1"),
@@ -582,7 +582,7 @@ class OrderTests(unittest.TestCase):
 
         filled = OrderFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("SOME_EXEC_ID_1"),
             PositionId("SOME_EXEC_TICKET_1"),
@@ -627,7 +627,7 @@ class OrderTests(unittest.TestCase):
 
         partially = OrderPartiallyFilled(
             self.account_id,
-            order.client_id,
+            order.cl_ord_id,
             OrderId('1'),
             ExecutionId("SOME_EXEC_ID_1"),
             PositionId("SOME_EXEC_TICKET_1"),

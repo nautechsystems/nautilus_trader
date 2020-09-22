@@ -60,7 +60,7 @@ cdef class ReportProvider:
 
         cdef list orders_all = [self._order_to_dict(o) for o in orders.values()]
 
-        return pd.DataFrame(data=orders_all).set_index("order_id")
+        return pd.DataFrame(data=orders_all).set_index("cl_ord_id")
 
     cpdef object generate_order_fills_report(self, dict orders: {ClientOrderId, Order}):
         """
@@ -85,7 +85,7 @@ cdef class ReportProvider:
             self._order_to_dict(o) for o in orders.values() if o.state() == OrderState.FILLED
         ]
 
-        return pd.DataFrame(data=filled_orders).set_index("order_id")
+        return pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
 
     cpdef object generate_positions_report(self, dict positions: {ClientPositionId, Position}):
         """
@@ -107,7 +107,7 @@ cdef class ReportProvider:
 
         cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed()]
 
-        return pd.DataFrame(data=trades).set_index("position_id")
+        return pd.DataFrame(data=trades).set_index("cl_pos_id")
 
     cpdef object generate_account_report(self, list events, datetime start=None, datetime end=None):
         """
@@ -117,9 +117,9 @@ cdef class ReportProvider:
         ----------
         events : List[AccountState]
             The accounts state events list.
-        start : datetime
+        start : datetime, optional
             The start of the account reports period.
-        end : datetime
+        end : datetime, optional
             The end of the account reports period.
 
         Returns
@@ -143,7 +143,8 @@ cdef class ReportProvider:
         return pd.DataFrame(data=account_events).set_index("timestamp")
 
     cdef dict _order_to_dict(self, Order order):
-        return {"order_id": order.client_id.value,
+        return {"cl_ord_id": order.cl_ord_id.value,
+                "order_id": order.id.value,
                 "symbol": order.symbol.code,
                 "side": order_side_to_string(order.side),
                 "type": order_type_to_string(order.type),
@@ -154,7 +155,8 @@ cdef class ReportProvider:
                 "timestamp": order.last_event().timestamp}
 
     cdef dict _position_to_dict(self, Position position):
-        return {"position_id": position.client_id.value,
+        return {"cl_pos_id": position.cl_pos_id.value,
+                "position_id": position.id.value,
                 "symbol": position.symbol.code,
                 "direction": order_side_to_string(position.entry_direction),
                 "peak_quantity": position.peak_quantity,

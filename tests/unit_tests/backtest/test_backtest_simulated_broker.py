@@ -36,7 +36,8 @@ from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.objects import Price, Money
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import TestStrategy1
@@ -149,7 +150,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price(90.003, 3), strategy.order(order.client_id).average_price)
+        self.assertEqual(Price(90.003, 3), strategy.order(order.cl_ord_id).average_price)
 
     def test_submit_limit_order(self):
         # Arrange
@@ -267,7 +268,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.modify_order(order, order.quantity, Price(96.714, 3))
 
         # Assert
-        self.assertEqual(Price(96.714, 3), strategy.order(order.client_id).price)
+        self.assertEqual(Price(96.714, 3), strategy.order(order.cl_ord_id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
@@ -300,7 +301,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price(85.100, 3))
 
         # Assert
-        self.assertEqual(Price(85.100, 3), strategy.order(bracket_order.stop_loss.client_id).price)
+        self.assertEqual(Price(85.100, 3), strategy.order(bracket_order.stop_loss.cl_ord_id).price)
         self.assertEqual(9, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 

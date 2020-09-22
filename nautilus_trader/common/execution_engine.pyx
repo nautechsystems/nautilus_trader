@@ -221,7 +221,7 @@ cdef class ExecutionEngine:
     cdef void _invalidate_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
-            order.client_id,
+            order.cl_ord_id,
             reason,
             self._uuid_factory.generate(),
             self._clock.utc_now())
@@ -231,7 +231,7 @@ cdef class ExecutionEngine:
     cdef void _deny_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderDenied denied = OrderDenied(
-            order.client_id,
+            order.cl_ord_id,
             reason,
             self._uuid_factory.generate(),
             self._clock.utc_now())
@@ -243,39 +243,39 @@ cdef class ExecutionEngine:
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
         # Validate order identifier
-        if self.database.order_exists(command.order.client_id):
-            self._invalidate_order(command.order, f"order_id already exists")
+        if self.database.order_exists(command.order.cl_ord_id):
+            self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Cannot submit order
 
         # Submit order
-        self.database.add_order(command.order, command.strategy_id, command.position_id)
+        self.database.add_order(command.order, command.strategy_id, command.cl_pos_id)
         self._exec_client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         # Validate order identifiers
-        if self.database.order_exists(command.bracket_order.entry.client_id):
-            self._invalidate_order(command.bracket_order.entry, f"order_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "parent order_id already exists")
+        if self.database.order_exists(command.bracket_order.entry.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
             if command.bracket_order.has_take_profit:
-                self._invalidate_order(command.bracket_order.take_profit, "parent order_id already exists")
+                self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
             return  # Cannot submit order
-        if self.database.order_exists(command.bracket_order.stop_loss.client_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO order_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "order_id already exists")
+        if self.database.order_exists(command.bracket_order.stop_loss.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
             if command.bracket_order.has_take_profit:
-                self._invalidate_order(command.bracket_order.take_profit, "OCO order_id already exists")
+                self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
             return  # Cannot submit order
-        if command.bracket_order.has_take_profit and self.database.order_exists(command.bracket_order.take_profit.client_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO order_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "OCO order_id already exists")
-            self._invalidate_order(command.bracket_order.take_profit, "order_id already exists")
+        if command.bracket_order.has_take_profit and self.database.order_exists(command.bracket_order.take_profit.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
             return  # Cannot submit order
 
         # Submit order
-        self.database.add_order(command.bracket_order.entry, command.strategy_id, command.position_id)
-        self.database.add_order(command.bracket_order.stop_loss, command.strategy_id, command.position_id)
+        self.database.add_order(command.bracket_order.entry, command.strategy_id, command.cl_pos_id)
+        self.database.add_order(command.bracket_order.stop_loss, command.strategy_id, command.cl_pos_id)
         if command.bracket_order.has_take_profit:
-            self.database.add_order(command.bracket_order.take_profit, command.strategy_id, command.position_id)
+            self.database.add_order(command.bracket_order.take_profit, command.strategy_id, command.cl_pos_id)
         self._exec_client.submit_bracket_order(command)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:

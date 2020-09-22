@@ -18,8 +18,8 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -49,10 +49,10 @@ cdef class Position:
         self._buy_quantities = {}                   # type: {ClientOrderId, Quantity}
         self._sell_quantities = {}                  # type: {ClientOrderId, Quantity}
 
-        self.client_id = cl_pos_id
+        self.cl_pos_id = cl_pos_id
         self.id = event.position_id
         self.account_id = event.account_id
-        self.from_cl_ord_id = event.cl_ord_id
+        self.from_order = event.cl_ord_id
         self.symbol = event.symbol
         self.quote_currency = event.quote_currency
         self.entry_direction = event.order_side
@@ -147,7 +147,7 @@ cdef class Position:
         bool
 
         """
-        return self.client_id.equals(other.client_id)
+        return self.cl_pos_id.equals(other.cl_pos_id)
 
     cpdef str to_string(self):
         """
@@ -158,7 +158,7 @@ cdef class Position:
         str
 
         """
-        return f"Position(id={self.client_id.value}) {self.status_string()}"
+        return f"Position(id={self.cl_pos_id.value}) {self.status_string()}"
 
     cpdef str market_position_as_string(self):
         """
@@ -461,11 +461,10 @@ cdef class Position:
         self._fill_prices[event.cl_ord_id] = event.average_price
         self._precision = max(self._precision, event.filled_quantity.precision)
 
+        cdef double new_commission
         if self.quote_currency != event.commission.currency:
-            self.commission = self.commission.add(
-                Money(event.commission.as_double() * event.average_price.as_double(),
-                self.quote_currency)
-            )
+            new_commission = event.commission.as_double() * event.average_price.as_double()
+            self.commission = self.commission.add(Money(new_commission, self.quote_currency))
         else:
             self.commission = self.commission.add(event.commission)
 

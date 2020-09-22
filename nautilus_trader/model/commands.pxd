@@ -34,7 +34,7 @@ cdef class SubmitOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly StrategyId strategy_id
-    cdef readonly ClientPositionId position_id
+    cdef readonly ClientPositionId cl_pos_id
     cdef readonly Order order
 
 
@@ -42,14 +42,14 @@ cdef class SubmitBracketOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly StrategyId strategy_id
-    cdef readonly ClientPositionId position_id
+    cdef readonly ClientPositionId cl_pos_id
     cdef readonly BracketOrder bracket_order
 
 
 cdef class ModifyOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
-    cdef readonly ClientOrderId order_id
+    cdef readonly ClientOrderId cl_ord_id
     cdef readonly Quantity modified_quantity
     cdef readonly Price modified_price
 
@@ -57,4 +57,4 @@ cdef class ModifyOrder(Command):
 cdef class CancelOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
-    cdef readonly ClientOrderId order_id
+    cdef readonly ClientOrderId cl_ord_id

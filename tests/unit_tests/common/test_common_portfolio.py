@@ -78,9 +78,9 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({AUDUSD_FXCM}, self.portfolio.symbols_open())
         self.assertEqual(set(), self.portfolio.symbols_closed())
         self.assertEqual({AUDUSD_FXCM}, self.portfolio.symbols_all())
-        self.assertEqual({position.client_id: position}, self.portfolio.positions_open())
+        self.assertEqual({position.cl_pos_id: position}, self.portfolio.positions_open())
         self.assertEqual({}, self.portfolio.positions_closed())
-        self.assertEqual({position.client_id: position}, self.portfolio.positions_all())
+        self.assertEqual({position.cl_pos_id: position}, self.portfolio.positions_all())
         self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
         self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
 
@@ -137,11 +137,11 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(set(), self.portfolio.symbols_closed())
         self.assertEqual({AUDUSD_FXCM, GBPUSD_FXCM}, self.portfolio.symbols_all())
         self.assertEqual(
-            {position1.client_id: position1, position2.client_id: position2},
+            {position1.cl_pos_id: position1, position2.cl_pos_id: position2},
             self.portfolio.positions_open())
         self.assertEqual({}, self.portfolio.positions_closed())
         self.assertEqual(
-            {position1.client_id: position1, position2.client_id: position2},
+            {position1.cl_pos_id: position1, position2.cl_pos_id: position2},
             self.portfolio.positions_all())
         self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
         self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
@@ -172,9 +172,9 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({AUDUSD_FXCM}, self.portfolio.symbols_open())
         self.assertEqual(set(), self.portfolio.symbols_closed())
         self.assertEqual({AUDUSD_FXCM}, self.portfolio.symbols_all())
-        self.assertEqual({position.client_id: position}, self.portfolio.positions_open())
+        self.assertEqual({position.cl_pos_id: position}, self.portfolio.positions_open())
         self.assertEqual({}, self.portfolio.positions_closed())
-        self.assertEqual({position.client_id: position}, self.portfolio.positions_all())
+        self.assertEqual({position.cl_pos_id: position}, self.portfolio.positions_all())
         self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
         self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
 
@@ -205,8 +205,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({AUDUSD_FXCM}, self.portfolio.symbols_closed())
         self.assertEqual({AUDUSD_FXCM}, self.portfolio.symbols_all())
         self.assertEqual({}, self.portfolio.positions_open())
-        self.assertEqual({position.client_id: position}, self.portfolio.positions_closed())
-        self.assertEqual({position.client_id: position}, self.portfolio.positions_all())
+        self.assertEqual({position.cl_pos_id: position}, self.portfolio.positions_closed())
+        self.assertEqual({position.cl_pos_id: position}, self.portfolio.positions_all())
         # TODO: Multiple currencies
         # self.assertEqual(Money(10.00, Currency.USD), self.portfolio.daily_pnl_realized)
         # self.assertEqual(Money(10.00, Currency.USD), self.portfolio.total_pnl_realized)
@@ -255,12 +255,12 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({GBPUSD_FXCM}, self.portfolio.symbols_closed())
         self.assertEqual({AUDUSD_FXCM, GBPUSD_FXCM}, self.portfolio.symbols_all())
         self.assertEqual(
-            {position1.client_id: position1, position2.client_id: position2},
+            {position1.cl_pos_id: position1, position2.cl_pos_id: position2},
             self.portfolio.positions_open()
         )
-        self.assertEqual({position3.client_id: position3}, self.portfolio.positions_closed())
+        self.assertEqual({position3.cl_pos_id: position3}, self.portfolio.positions_closed())
         self.assertEqual(
-            {position1.client_id: position1, position2.client_id: position2, position3.client_id: position3},
+            {position1.cl_pos_id: position1, position2.cl_pos_id: position2, position3.cl_pos_id: position3},
             self.portfolio.positions_all()
         )
         # TODO: Multiple currencies

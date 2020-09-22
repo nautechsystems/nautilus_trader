@@ -52,7 +52,7 @@ cdef class Order:
     cdef list _events
     cdef FiniteStateMachine _fsm
 
-    cdef readonly ClientOrderId client_id
+    cdef readonly ClientOrderId cl_ord_id
     cdef readonly OrderId id
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
