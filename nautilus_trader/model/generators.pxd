@@ -15,8 +15,8 @@
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.identifiers cimport IdTag
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 
 
 cdef class IdentifierGenerator:
@@ -35,8 +35,8 @@ cdef class IdentifierGenerator:
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
-    cpdef OrderId generate(self)
+    cpdef ClientOrderId generate(self)
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
-    cpdef PositionId generate(self)
+    cpdef ClientPositionId generate(self)

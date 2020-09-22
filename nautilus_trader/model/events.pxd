@@ -25,9 +25,9 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport AccountNumber
 from nautilus_trader.model.identifiers cimport Brokerage
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport OrderIdBroker
-from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal64
@@ -52,7 +52,7 @@ cdef class AccountState(Event):
 
 
 cdef class OrderEvent(Event):
-    cdef readonly OrderId order_id
+    cdef readonly ClientOrderId cl_ord_id
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -65,11 +65,11 @@ cdef class OrderInitialized(OrderEvent):
 
 
 cdef class OrderInvalid(OrderEvent):
-    cdef readonly invalid_reason
+    cdef readonly reason
 
 
 cdef class OrderDenied(OrderEvent):
-    cdef readonly denied_reason
+    cdef readonly reason
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -80,18 +80,18 @@ cdef class OrderSubmitted(OrderEvent):
 cdef class OrderRejected(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
-    cdef readonly str rejected_reason
+    cdef readonly str reason
 
 
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
-    cdef readonly OrderIdBroker order_id_broker
+    cdef readonly OrderId order_id
     cdef readonly datetime accepted_time
 
 
 cdef class OrderWorking(OrderEvent):
     cdef readonly AccountId account_id
-    cdef readonly OrderIdBroker order_id_broker
+    cdef readonly OrderId order_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
@@ -105,23 +105,25 @@ cdef class OrderWorking(OrderEvent):
 cdef class OrderCancelReject(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
-    cdef readonly str rejected_response_to
-    cdef readonly str rejected_reason
+    cdef readonly str response_to
+    cdef readonly str reason
 
 
 cdef class OrderCancelled(OrderEvent):
     cdef readonly AccountId account_id
+    cdef readonly OrderId order_id
     cdef readonly datetime cancelled_time
 
 
 cdef class OrderExpired(OrderEvent):
     cdef readonly AccountId account_id
+    cdef readonly OrderId order_id
     cdef readonly datetime expired_time
 
 
 cdef class OrderModified(OrderEvent):
     cdef readonly AccountId account_id
-    cdef readonly OrderIdBroker order_id_broker
+    cdef readonly OrderId order_id
     cdef readonly Quantity modified_quantity
     cdef readonly Price modified_price
     cdef readonly datetime modified_time
@@ -129,8 +131,9 @@ cdef class OrderModified(OrderEvent):
 
 cdef class OrderFillEvent(OrderEvent):
     cdef readonly AccountId account_id
+    cdef readonly OrderId order_id
     cdef readonly ExecutionId execution_id
-    cdef readonly PositionIdBroker position_id_broker
+    cdef readonly PositionId position_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity

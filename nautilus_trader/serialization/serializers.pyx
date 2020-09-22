@@ -60,11 +60,11 @@ from nautilus_trader.model.events cimport OrderPartiallyFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport OrderIdBroker
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
@@ -194,7 +194,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return MsgPackSerializer.serialize({})  # Null order
 
         cdef dict package = {
-            ID: order.id.value,
+            ID: order.cl_ord_id.value,
             SYMBOL: order.symbol.value,
             ORDER_SIDE: self.convert_snake_to_camel(order_side_to_string(order.side)),
             ORDER_TYPE: self.convert_snake_to_camel(order_type_to_string(order.type)),
@@ -229,7 +229,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if not unpacked:
             return None  # Null order
 
-        cdef OrderId order_id = OrderId(unpacked[ID].decode(UTF8))
+        cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID].decode(UTF8))
         cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8))
         cdef OrderSide order_side = order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
         cdef OrderType order_type = order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
@@ -240,7 +240,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.MARKET:
             return MarketOrder(
-                order_id=order_id,
+                cl_ord_id=cl_ord_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -250,7 +250,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.LIMIT:
             return LimitOrder(
-                order_id=order_id,
+                cl_ord_id=cl_ord_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -264,7 +264,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.STOP:
             return StopOrder(
-                order_id=order_id,
+                cl_ord_id=cl_ord_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -314,26 +314,26 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[POSITION_ID] = command.position_id.value
+            package[CLIENT_POSITION_ID] = command.cl_pos_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitBracketOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[POSITION_ID] = command.position_id.value
+            package[CLIENT_POSITION_ID] = command.cl_pos_id.value
             package[ENTRY] = self.order_serializer.serialize(command.bracket_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
         elif isinstance(command, ModifyOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
-            package[ORDER_ID] = command.order_id.value
+            package[CLIENT_ORDER_ID] = command.cl_ord_id.value
             package[MODIFIED_QUANTITY] = command.modified_quantity.to_string()
             package[MODIFIED_PRICE] = command.modified_price.to_string()
         elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
-            package[ORDER_ID] = command.order_id.value
+            package[CLIENT_ORDER_ID] = command.cl_ord_id.value
         else:
             raise RuntimeError("Cannot serialize command (unrecognized command).")
 
@@ -367,7 +367,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
-                PositionId(unpacked[POSITION_ID].decode(UTF8)),
+                ClientPositionId(unpacked[CLIENT_POSITION_ID].decode(UTF8)),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp)
@@ -376,7 +376,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
-                PositionId(unpacked[POSITION_ID].decode(UTF8)),
+                ClientPositionId(unpacked[CLIENT_POSITION_ID].decode(UTF8)),
                 BracketOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
                              self.order_serializer.deserialize(unpacked[STOP_LOSS]),
                              self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
@@ -386,7 +386,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             return ModifyOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 Quantity.from_string(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
                 command_id,
@@ -395,7 +395,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             return CancelOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 command_id,
                 command_timestamp)
         else:
@@ -442,7 +442,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[MARGIN_RATIO] = event.margin_ratio.to_string()
             package[MARGIN_CALL_STATUS] = event.margin_call_status
         elif isinstance(event, OrderInitialized):
-            package[ORDER_ID] = event.order_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
@@ -450,29 +450,29 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[OPTIONS] = MsgPackSerializer.serialize(event.options)
         elif isinstance(event, OrderSubmitted):
-            package[ORDER_ID] = event.order_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[SUBMITTED_TIME] = convert_datetime_to_string(event.submitted_time)
         elif isinstance(event, OrderInvalid):
-            package[ORDER_ID] = event.order_id.value
-            package[INVALID_REASON] = event.invalid_reason
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[REASON] = event.reason
         elif isinstance(event, OrderDenied):
-            package[ORDER_ID] = event.order_id.value
-            package[DENIED_REASON] = event.denied_reason
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[REASON] = event.reason
         elif isinstance(event, OrderAccepted):
             package[ACCOUNT_ID] = event.account_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[ACCEPTED_TIME] = convert_datetime_to_string(event.accepted_time)
         elif isinstance(event, OrderRejected):
-            package[ORDER_ID] = event.order_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
-            package[REJECTED_REASON] = event.rejected_reason
+            package[REASON] = event.reason
         elif isinstance(event, OrderWorking):
-            package[ORDER_ID] = event.order_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[ORDER_ID_BROKER] = event.order_id_broker.value
+            package[ORDER_ID] = event.order_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
@@ -482,31 +482,34 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
             package[WORKING_TIME] = convert_datetime_to_string(event.working_time)
         elif isinstance(event, OrderCancelReject):
-            package[ORDER_ID] = event.order_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
-            package[REJECTED_RESPONSE_TO] = event.rejected_response_to
-            package[REJECTED_REASON] = event.rejected_reason
+            package[RESPONSE_TO] = event.response_to
+            package[REASON] = event.reason
         elif isinstance(event, OrderCancelled):
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[CANCELLED_TIME] = convert_datetime_to_string(event.cancelled_time)
         elif isinstance(event, OrderModified):
-            package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[ORDER_ID_BROKER] = event.order_id_broker.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[ORDER_ID] = event.order_id.value
             package[MODIFIED_TIME] = convert_datetime_to_string(event.modified_time)
             package[MODIFIED_QUANTITY] = event.modified_quantity.to_string()
             package[MODIFIED_PRICE] = event.modified_price.to_string()
         elif isinstance(event, OrderExpired):
-            package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[ORDER_ID] = event.order_id.value
             package[EXPIRED_TIME] = convert_datetime_to_string(event.expired_time)
         elif isinstance(event, OrderPartiallyFilled):
-            package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
-            package[POSITION_ID_BROKER] = event.position_id_broker.value
+            package[POSITION_ID] = event.position_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
@@ -517,10 +520,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         elif isinstance(event, OrderFilled):
-            package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
-            package[POSITION_ID_BROKER] = event.position_id_broker.value
+            package[POSITION_ID] = event.position_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_quantity.to_string()
@@ -568,7 +572,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
         elif event_type == OrderInitialized.__name__:
             return OrderInitialized(
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
@@ -580,43 +584,43 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[SUBMITTED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         elif event_type == OrderInvalid.__name__:
             return OrderInvalid(
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                unpacked[INVALID_REASON].decode(UTF8),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
+                unpacked[REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
         elif event_type == OrderDenied.__name__:
             return OrderDenied(
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                unpacked[DENIED_REASON].decode(UTF8),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
+                unpacked[REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
         elif event_type == OrderAccepted.__name__:
             return OrderAccepted(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                OrderIdBroker(unpacked[ORDER_ID_BROKER].decode(UTF8)),
                 convert_string_to_datetime(unpacked[ACCEPTED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp)
         elif event_type == OrderRejected.__name__:
             return OrderRejected(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[REJECTED_TIME].decode(UTF8)),
-                unpacked[REJECTED_REASON].decode(UTF8),
+                unpacked[REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
         elif event_type == OrderWorking.__name__:
             return OrderWorking(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                OrderIdBroker(unpacked[ORDER_ID_BROKER].decode(UTF8)),
                 Symbol.from_string(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
@@ -630,6 +634,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif event_type == OrderCancelled.__name__:
             return OrderCancelled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[CANCELLED_TIME].decode(UTF8)),
                 event_id,
@@ -637,17 +642,17 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif event_type == OrderCancelReject.__name__:
             return OrderCancelReject(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[REJECTED_TIME].decode(UTF8)),
-                unpacked[REJECTED_RESPONSE_TO].decode(UTF8),
-                unpacked[REJECTED_REASON].decode(UTF8),
+                unpacked[RESPONSE_TO].decode(UTF8),
+                unpacked[REASON].decode(UTF8),
                 event_id,
                 event_timestamp)
         elif event_type == OrderModified.__name__:
             return OrderModified(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                OrderIdBroker(unpacked[ORDER_ID_BROKER].decode(UTF8)),
                 Quantity.from_string(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME].decode(UTF8)),
@@ -656,6 +661,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif event_type == OrderExpired.__name__:
             return OrderExpired(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXPIRED_TIME].decode(UTF8)),
                 event_id,
@@ -664,9 +670,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             currency = currency_from_string(unpacked[CURRENCY].decode(UTF8))
             return OrderPartiallyFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
-                PositionIdBroker(unpacked[POSITION_ID_BROKER].decode(UTF8)),
+                PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
@@ -682,9 +689,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             currency = currency_from_string(unpacked[CURRENCY].decode(UTF8))
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
-                PositionIdBroker(unpacked[POSITION_ID_BROKER].decode(UTF8)),
+                PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),

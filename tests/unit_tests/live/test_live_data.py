@@ -20,7 +20,7 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.live.clock import LiveClock
-from nautilus_trader.live.data import LiveDataClient
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.factories import LiveUUIDFactory
 from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.model.bar import Bar
@@ -111,7 +111,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.tick_publisher.start()
         time.sleep(0.1)
 
-        self.data_client = LiveDataClient(
+        self.data_engine = LiveDataEngine(
             trader_id=TraderId("Tester", "000"),
             host='127.0.0.1',
             data_req_port=TEST_DATA_REQ_PORT,
@@ -131,12 +131,12 @@ class LiveDataClientTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger)
 
-        self.data_client.connect()
+        self.data_engine.connect()
         time.sleep(0.1)
 
     # Fixture Tear Down
     def tearDown(self):
-        self.data_client.disconnect()
+        self.data_engine.disconnect()
         self.data_server.stop()
         self.data_publisher.stop()
         self.tick_publisher.stop()
@@ -149,21 +149,21 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.subscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_engine.subscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_quote_ticks())
+        self.assertIn(AUDUSD_FXCM, self.data_engine.subscribed_quote_ticks())
 
     def test_unsubscribe_quote_ticks(self):
         # Arrange
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.subscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
-        self.data_client.unsubscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_engine.subscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_engine.unsubscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_quote_ticks())
+        self.assertNotIn(AUDUSD_FXCM, self.data_engine.subscribed_quote_ticks())
 
     def test_receives_published_quote_tick_data(self):
         # Arrange
@@ -178,7 +178,7 @@ class LiveDataClientTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.data_client.subscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_engine.subscribe_quote_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         time.sleep(0.1)
         self.tick_publisher.publish(f"Quote:{AUDUSD_FXCM}", Utf8QuoteTickSerializer.py_serialize(tick))
@@ -194,10 +194,10 @@ class LiveDataClientTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
         # Act
-        self.data_client.subscribe_bars(bar_type, handler=data_receiver.store_2)
+        self.data_engine.subscribe_bars(bar_type, handler=data_receiver.store_2)
 
         # Assert
-        self.assertIn(bar_type, self.data_client.subscribed_bars())
+        self.assertIn(bar_type, self.data_engine.subscribed_bars())
 
     def test_unsubscribe_bar_data(self):
         # Arrange
@@ -205,32 +205,32 @@ class LiveDataClientTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
         # Act
-        self.data_client.subscribe_bars(bar_type, handler=data_receiver.store_2)
-        self.data_client.unsubscribe_bars(bar_type, handler=data_receiver.store_2)
+        self.data_engine.subscribe_bars(bar_type, handler=data_receiver.store_2)
+        self.data_engine.unsubscribe_bars(bar_type, handler=data_receiver.store_2)
 
         # Assert
-        self.assertNotIn(bar_type, self.data_client.subscribed_quote_ticks())
+        self.assertNotIn(bar_type, self.data_engine.subscribed_quote_ticks())
 
     def test_subscribe_instrument(self):
         # Arrange
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.subscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_engine.subscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_instruments())
+        self.assertIn(AUDUSD_FXCM, self.data_engine.subscribed_instruments())
 
     def test_unsubscribe_instrument(self):
         # Arrange
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.subscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
-        self.data_client.unsubscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_engine.subscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_engine.unsubscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_instruments())
+        self.assertNotIn(AUDUSD_FXCM, self.data_engine.subscribed_instruments())
 
     def test_receives_published_instrument_data(self):
         # Arrange
@@ -239,7 +239,7 @@ class LiveDataClientTests(unittest.TestCase):
         serializer = BsonInstrumentSerializer()
 
         # Act
-        self.data_client.subscribe_instrument(instrument.symbol, handler=data_receiver.store)
+        self.data_engine.subscribe_instrument(instrument.symbol, handler=data_receiver.store)
 
         time.sleep(0.1)
         self.data_publisher.publish(f"Instrument:{instrument.symbol.value}", serializer.serialize(instrument))
@@ -254,7 +254,7 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.request_quote_ticks(
+        self.data_engine.request_quote_ticks(
             AUDUSD_FXCM,
             UNIX_EPOCH,
             UNIX_EPOCH,
@@ -270,7 +270,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         data_receiver = ObjectStorer()
 
-        self.data_client.request_quote_ticks(
+        self.data_engine.request_quote_ticks(
             AUDUSD_FXCM,
             UNIX_EPOCH,
             UNIX_EPOCH,
@@ -295,12 +295,12 @@ class LiveDataClientTests(unittest.TestCase):
             data,
             "QuoteTick[]",
             "BSON",
-            self.data_client.last_request_id,
+            self.data_engine.last_request_id,
             uuid4(),
             UNIX_EPOCH)
 
         # Act
-        self.data_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_engine.client_id)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
@@ -313,7 +313,7 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
-        self.data_client.request_bars(
+        self.data_engine.request_bars(
             bar_type,
             UNIX_EPOCH,
             UNIX_EPOCH,
@@ -336,12 +336,12 @@ class LiveDataClientTests(unittest.TestCase):
             data,
             "Bar[]",
             "BSON",
-            self.data_client.last_request_id,
+            self.data_engine.last_request_id,
             uuid4(),
             UNIX_EPOCH)
 
         # Act
-        self.data_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_engine.client_id)
 
         time.sleep(0.2)
         response = data_receiver.get_store()[0]
@@ -354,7 +354,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         data_receiver = ObjectStorer()
 
-        self.data_client.request_instrument(GBPUSD_FXCM, data_receiver.store)
+        self.data_engine.request_instrument(GBPUSD_FXCM, data_receiver.store)
 
         time.sleep(0.1)
 
@@ -366,12 +366,12 @@ class LiveDataClientTests(unittest.TestCase):
             data,
             "Instrument[]",
             "BSON",
-            self.data_client.last_request_id,
+            self.data_engine.last_request_id,
             uuid4(),
             UNIX_EPOCH)
 
         # Act
-        self.data_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_engine.client_id)
 
         time.sleep(0.2)
         response = data_receiver.get_store()[0]
@@ -383,8 +383,8 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         data_receiver = ObjectStorer()
 
-        self.data_client.connect()
-        self.data_client.request_instruments(Venue('FXCM'), data_receiver.store)
+        self.data_engine.connect()
+        self.data_engine.request_instruments(Venue('FXCM'), data_receiver.store)
 
         time.sleep(0.1)
 
@@ -396,12 +396,12 @@ class LiveDataClientTests(unittest.TestCase):
             data,
             "Instrument[]",
             "BSON",
-            self.data_client.last_request_id,
+            self.data_engine.last_request_id,
             uuid4(),
             UNIX_EPOCH)
 
         # Act
-        self.data_server.send_response(data_response, self.data_client.client_id)
+        self.data_server.send_response(data_response, self.data_engine.client_id)
 
         time.sleep(0.2)
         response = data_receiver.get_store()[0]

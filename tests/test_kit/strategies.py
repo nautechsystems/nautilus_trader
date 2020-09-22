@@ -24,7 +24,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
-from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick import QuoteTick
@@ -151,8 +151,8 @@ class TestStrategy1(TradingStrategy):
                     OrderSide.BUY,
                     100000)
 
-                self.submit_order(buy_order, PositionId(str(buy_order.id)))
-                self.position_id = buy_order.id
+                self.submit_order(buy_order, ClientPositionId(str(buy_order.cl_ord_id)))
+                self.position_id = buy_order.cl_ord_id
 
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
@@ -160,8 +160,8 @@ class TestStrategy1(TradingStrategy):
                     OrderSide.SELL,
                     100000)
 
-                self.submit_order(sell_order, PositionId(str(sell_order.id)))
-                self.position_id = sell_order.id
+                self.submit_order(sell_order, ClientPositionId(str(sell_order.cl_ord_id)))
+                self.position_id = sell_order.cl_ord_id
 
     def on_instrument(self, instrument):
         self.object_storer.store(instrument)
@@ -204,7 +204,7 @@ class EMACross(TradingStrategy):
                  sl_atr_multiple: float=2.0,
                  extra_id_tag: str=""):
         """
-        Initialize a new instance of the EMACrossPy class.
+        Initialize a new instance of the EMACross class.
 
         :param symbol: The symbol for the strategy.
         :param bar_spec: The bar specification for the strategy.
@@ -289,12 +289,12 @@ class EMACross(TradingStrategy):
             return  # Wait for ticks...
 
         # Check average spread
-        average_spread = self.spread_analyzer.average_spread
+        average_spread = self.spread_analyzer.average
         if average_spread == 0.0:
             self.log.warning(f"average_spread == {average_spread} (not initialized).")
             return  # Protect divide by zero
 
-        spread_buffer = max(average_spread, self.spread_analyzer.current_spread)
+        spread_buffer = max(average_spread, self.spread_analyzer.current)
         sl_buffer = self.atr.value * self.SL_atr_multiple
 
         # Check liquidity
@@ -415,7 +415,7 @@ class EMACross(TradingStrategy):
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         for order in self.orders_working().values():
-            if not self.is_stop_loss(order.id):
+            if not self.is_stop_loss(order.cl_ord_id):
                 return
 
             # SELL SIDE ORDERS

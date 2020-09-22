@@ -25,7 +25,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 
 cdef class ExecutionClient:
     cdef LoggerAdapter _log
-    cdef ExecutionEngine _exec_engine
+    cdef ExecutionEngine _engine
 
     cdef readonly TraderId trader_id
     cdef readonly int command_count

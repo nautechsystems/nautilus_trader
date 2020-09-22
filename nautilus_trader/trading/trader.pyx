@@ -16,7 +16,7 @@
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.component cimport create_component_fsm
-from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -37,7 +37,7 @@ cdef class Trader:
                  TraderId trader_id not None,
                  AccountId account_id not None,
                  list strategies not None,
-                 DataClient data_client not None,
+                 DataEngine data_engine not None,
                  ExecutionEngine exec_engine not None,
                  Clock clock not None,
                  UUIDFactory uuid_factory not None,
@@ -53,10 +53,10 @@ cdef class Trader:
             The account identifier for the trader.
         strategies : List[TradingStrategy]
             The initial strategies for the trader.
-        data_client : DataClient
-            The data client to register the traders strategies with.
+        data_engine : DataEngine
+            The data engine to register the traders strategies with.
         exec_engine : ExecutionEngine
-            The execution engine to register the traders strategies with trader.
+            The execution engine to register the traders strategies with.
         clock : Clock
             The clock for the trader.
         uuid_factory : UUIDFactory
@@ -86,7 +86,7 @@ cdef class Trader:
         self.id = trader_id
         self.account_id = account_id
         self._log = LoggerAdapter(f"Trader-{self.id.value}", logger)
-        self._data_client = data_client
+        self._data_engine = data_engine
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
 
@@ -154,8 +154,8 @@ cdef class Trader:
                 self._uuid_factory,
                 self._log.get_logger())
 
-            # Wire data client into strategy
-            self._data_client.register_strategy(strategy)
+            # Wire data engine into strategy
+            self._data_engine.register_strategy(strategy)
 
             # Wire execution engine into strategy
             self._exec_engine.register_strategy(strategy)

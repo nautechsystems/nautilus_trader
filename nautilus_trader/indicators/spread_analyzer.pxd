@@ -21,8 +21,8 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 cdef class SpreadAnalyzer(Indicator):
     cdef readonly Symbol symbol
     cdef readonly int capacity
-    cdef readonly double current_spread
-    cdef readonly double average_spread
+    cdef readonly double current
+    cdef readonly double average
 
     cdef object _spreads
 

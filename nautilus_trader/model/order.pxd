@@ -39,9 +39,9 @@ from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport BracketOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport OrderIdBroker
-from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -52,11 +52,11 @@ cdef class Order:
     cdef list _events
     cdef FiniteStateMachine _fsm
 
+    cdef readonly ClientOrderId cl_ord_id
     cdef readonly OrderId id
-    cdef readonly OrderIdBroker id_broker
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
-    cdef readonly PositionIdBroker position_id_broker
+    cdef readonly PositionId position_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide side
     cdef readonly OrderType type

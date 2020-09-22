@@ -35,14 +35,16 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
@@ -92,7 +94,7 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-    # -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *:
         """
@@ -167,7 +169,7 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-    # -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef list registered_strategies(self):
         """
@@ -197,27 +199,90 @@ cdef class ExecutionEngine:
         """
         return self.database.count_positions_open() == 0
 
-    # --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
         if isinstance(command, AccountInquiry):
-            self._exec_client.account_inquiry(command)
+            self._handle_account_inquiry(command)
         elif isinstance(command, SubmitOrder):
-            self.database.add_order(command.order, command.strategy_id, command.position_id)
-            self._exec_client.submit_order(command)
+            self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
-            self.database.add_order(command.bracket_order.entry, command.strategy_id, command.position_id)
-            self.database.add_order(command.bracket_order.stop_loss, command.strategy_id, command.position_id)
-            if command.bracket_order.has_take_profit:
-                self.database.add_order(command.bracket_order.take_profit, command.strategy_id, command.position_id)
-            self._exec_client.submit_bracket_order(command)
+            self._handle_submit_bracket_order(command)
         elif isinstance(command, ModifyOrder):
-            self._exec_client.modify_order(command)
+            self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
-            self._exec_client.cancel_order(command)
+            self._handle_cancel_order(command)
+        else:
+            self._log.error(f"Cannot handle command ({command} is unrecognized).")
+
+    cdef void _invalidate_order(self, Order order, str reason) except *:
+        # Generate event
+        cdef OrderInvalid invalid = OrderInvalid(
+            order.cl_ord_id,
+            reason,
+            self._uuid_factory.generate(),
+            self._clock.utc_now())
+
+        self._handle_event(invalid)
+
+    cdef void _deny_order(self, Order order, str reason) except *:
+        # Generate event
+        cdef OrderDenied denied = OrderDenied(
+            order.cl_ord_id,
+            reason,
+            self._uuid_factory.generate(),
+            self._clock.utc_now())
+
+        self._handle_event(denied)
+
+    cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
+        self._exec_client.account_inquiry(command)
+
+    cdef void _handle_submit_order(self, SubmitOrder command) except *:
+        # Validate order identifier
+        if self.database.order_exists(command.order.cl_ord_id):
+            self._invalidate_order(command.order, f"cl_ord_id already exists")
+            return  # Cannot submit order
+
+        # Submit order
+        self.database.add_order(command.order, command.strategy_id, command.cl_pos_id)
+        self._exec_client.submit_order(command)
+
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+        # Validate order identifiers
+        if self.database.order_exists(command.bracket_order.entry.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
+            if command.bracket_order.has_take_profit:
+                self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
+            return  # Cannot submit order
+        if self.database.order_exists(command.bracket_order.stop_loss.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
+            if command.bracket_order.has_take_profit:
+                self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
+            return  # Cannot submit order
+        if command.bracket_order.has_take_profit and self.database.order_exists(command.bracket_order.take_profit.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
+            return  # Cannot submit order
+
+        # Submit order
+        self.database.add_order(command.bracket_order.entry, command.strategy_id, command.cl_pos_id)
+        self.database.add_order(command.bracket_order.stop_loss, command.strategy_id, command.cl_pos_id)
+        if command.bracket_order.has_take_profit:
+            self.database.add_order(command.bracket_order.take_profit, command.strategy_id, command.cl_pos_id)
+        self._exec_client.submit_bracket_order(command)
+
+    cdef void _handle_modify_order(self, ModifyOrder command) except *:
+        self._exec_client.modify_order(command)
+
+    cdef void _handle_cancel_order(self, CancelOrder command) except *:
+        self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
@@ -232,9 +297,11 @@ cdef class ExecutionEngine:
             self._handle_position_event(event)
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
+        else:
+            self._log.error(f"Cannot handle event ({event} is unrecognized).")
 
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
-        cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.order_id)
+        cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.cl_ord_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {event}, "
                             f"{strategy_id.to_string(with_class=True)} "
@@ -244,10 +311,10 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, strategy_id)
 
     cdef void _handle_order_event(self, OrderEvent event) except *:
-        cdef Order order = self.database.get_order(event.order_id)
+        cdef Order order = self.database.get_order(event.cl_ord_id)
         if order is None:
             self._log.warning(f"Cannot apply event {event} to any order, "
-                              f"{event.order_id.to_string(with_class=True)} "
+                              f"{event.cl_ord_id.to_string(with_class=True)} "
                               f"not found in cache.")
             return  # Cannot process event further
 
@@ -262,20 +329,20 @@ cdef class ExecutionEngine:
             self._handle_order_fill(event)
             return
 
-        self._send_to_strategy(event, self.database.get_strategy_for_order(event.order_id))
+        self._send_to_strategy(event, self.database.get_strategy_for_order(event.cl_ord_id))
 
     cdef void _handle_order_fill(self, OrderFillEvent event) except *:
-        cdef PositionId position_id = self.database.get_position_id(event.order_id)
+        cdef ClientPositionId position_id = self.database.get_client_position_id(event.cl_ord_id)
         if position_id is None:
-            position_id = self.database.get_position_id_for_broker_id(event.position_id_broker)
+            position_id = self.database.get_client_position_id_for_id(event.position_id)
 
         if position_id is None:
             self._log.error(f"Cannot process event {event}, "
-                            f"PositionId for {event.order_id.to_string(with_class=True)} "
+                            f"PositionId for {event.cl_ord_id.to_string(with_class=True)} "
                             f"not found.")
             return  # Cannot process event further
 
-        cdef Position position = self.database.get_position_for_order(event.order_id)
+        cdef Position position = self.database.get_position_for_order(event.cl_ord_id)
         cdef StrategyId strategy_id = self.database.get_strategy_for_position(position_id)
         # position could still be None here
 

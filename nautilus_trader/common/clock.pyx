@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import cython
 import numpy as np
 import pytz
 
@@ -334,6 +335,8 @@ cdef class Clock:
         else:
             self._stack = None
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef void _update_timing(self) except *:
         if self.timer_count == 0:
             self.next_event_time = None

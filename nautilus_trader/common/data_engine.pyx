@@ -13,14 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# cython: boundscheck=False
-# cython: wraparound=False
+import cython
 
 from cpython.datetime cimport datetime
 
 from collections import deque
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.data_client cimport DataClient
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.handlers cimport InstrumentHandler
 from nautilus_trader.common.handlers cimport QuoteTickHandler
@@ -51,9 +51,9 @@ cdef list _TIME_BARS = [
 ]
 
 
-cdef class DataClient:
+cdef class DataEngine:
     """
-    The base class for all data clients.
+    Provides a data engine for managing many data clients.
     """
 
     def __init__(self,
@@ -64,10 +64,10 @@ cdef class DataClient:
                  UUIDFactory uuid_factory not None,
                  Logger logger not None):
         """
-        Initialize a new instance of the DataClient class.
+        Initialize a new instance of the DataEngine class.
 
-        :param tick_capacity: The length for the internal ticks deque (> 0).
-        :param bar_capacity: The length for the internal bars deque (> 0).
+        :param tick_capacity: The length for the internal ticks deque per symbol (> 0).
+        :param bar_capacity: The length for the internal bars deque per symbol (> 0).
         :param use_previous_close: If bar aggregators should use the previous close.
         :param clock: The clock for the component.
         :param uuid_factory: The UUID factory for the component.
@@ -80,8 +80,16 @@ cdef class DataClient:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter("DataClient", logger)
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._use_previous_close = True
         self._exchange_calculator = ExchangeRateCalculator()
+
+        self.tick_capacity = tick_capacity  # Per symbol
+        self.bar_capacity = bar_capacity    # Per symbol
+
+        self._clients = {}              # type: {Venue, DataClient}
+
+        # Cached data
         self._quote_ticks = {}          # type: {Symbol, [QuoteTick]}
         self._trade_ticks = {}          # type: {Symbol, [TradeTick]}
         self._quote_tick_handlers = {}  # type: {Symbol, [QuoteTickHandler]}
@@ -92,40 +100,91 @@ cdef class DataClient:
         self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
         self._instruments = {}          # type: {Symbol, Instrument}
 
-        self.tick_capacity = tick_capacity
-        self.bar_capacity = bar_capacity
-        self.use_previous_close = True
-
         self._log.info("Initialized.")
-
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
 
     cpdef void connect(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Connect all data clients.
+        """
+        self._log.info("Connecting all clients...")
+
+        cdef DataClient client
+        for client in self._clients:
+            client.connect()
 
     cpdef void disconnect(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Disconnect all data clients.
+        """
+        self._log.info("Disconnecting all clients...")
+
+        cdef DataClient client
+        for client in self._clients:
+            client.disconnect()
 
     cpdef void reset(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Reset all data clients.
+        """
+        self._log.info("Resetting all clients...")
+
+        cdef DataClient client
+        for client in self._clients:
+            client.reset()
 
     cpdef void dispose(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Dispose all data clients.
+        """
+        self._log.info("Disposing all clients...")
+
+        cdef DataClient client
+        for client in self._clients:
+            client.dispose()
+
+    cpdef void update_instruments(self, Venue venue) except *:
+        """
+        Update all instruments for the given venue.
+        """
+        Condition.is_in(venue, self._clients, "venue", "_clients")
+
+        self._clients[venue].request_instruments(self._internal_update_instruments)
+
+    cpdef void update_instruments_all(self) except *:
+        """
+        Update all instruments for every venue.
+        """
+        cdef DataClient client
+        for client in self._clients.values():
+            client.request_instruments(self._internal_update_instruments)
+
+    cpdef void _internal_update_instruments(self, list instruments) except *:
+        # Handle all instruments individually
+        cdef Instrument instrument
+        for instrument in instruments:
+            self.handle_instrument(instrument)
 
     cpdef void request_quote_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable) except *:  # noqa (E125)
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable,
+    ) except *:
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+
+        self._clients[symbol.venue].request_quote_ticks(
+            symbol,
+            from_datetime,
+            to_datetime,
+            limit,
+            callback)
 
     cpdef void request_trade_ticks(
             self,
@@ -133,79 +192,167 @@ cdef class DataClient:
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback: callable) except *:  # noqa (E125)
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+            callback: callable,
+    ) except *:
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+
+        self._clients[symbol.venue].request_trade_ticks(
+            symbol,
+            from_datetime,
+            to_datetime,
+            limit,
+            callback)
 
     cpdef void request_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable) except *:  # noqa (E125)
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+            self,
+            BarType bar_type,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable,
+    ) except *:
+        """
+        TBD.
+        """
+        Condition.is_in(bar_type.symbol.venue, self._clients, "venue", "_clients")
+
+        self._clients[bar_type.symbol.venue].request_bars(
+            bar_type,
+            from_datetime,
+            to_datetime,
+            limit,
+            callback)
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+
+        self._clients[symbol.venue].request_instrument(symbol, callback)
 
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(venue, self._clients, "venue", "_clients")
+
+        self._clients[venue].request_instruments(venue, callback)
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+
+        self._add_quote_tick_handler(symbol, handler)
+        self._clients[symbol.venue].subscribe_quote_ticks(symbol)
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+
+        self._add_trade_tick_handler(symbol, handler)
+        self._clients[symbol.venue].subscribe_trade_ticks(symbol)
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(bar_type.symbol.venue, self._clients, "venue", "_clients")
+
+        self._add_bar_handler(bar_type, handler)
+        self._clients[bar_type.symbol.venue].subscribe_bars(bar_type)
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
+
+        self._add_instrument_handler(symbol, handler)
+        self._clients[symbol.venue].subscribe_instrument(symbol)
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
+
+        self._clients[symbol.venue].unsubscribe_quote_ticks(symbol)
+        self._remove_quote_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+
+        self._clients[symbol.venue].unsubscribe_trade_ticks(symbol)
+        self._remove_trade_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(bar_type.symbol.venue, self._clients, "venue", "_clients")
+
+        self._clients[bar_type.symbol.venue].unsubscribe_bars(bar_type)
+        self._remove_bar_handler(bar_type, handler)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        TBD.
+        """
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
 
-    cpdef void update_instruments(self, Venue venue) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
+        self._clients[symbol.venue].unsubscribe_instrument(symbol)
+        self._remove_instrument_handler(symbol, handler)
 
 # --REGISTRATION METHODS ------------------------------------------------------------------------- #
+
+    cpdef void register_data_client(self, DataClient client) except *:
+        """
+        Register the given data client with the data engine.
+
+        Parameters
+        ----------
+        client : DataClient
+            The client to register.
+
+        Raises
+        ------
+        ValueError
+            If client.venue is already registered.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.not_in(client.venue, self._clients, "client", "_clients")
+
+        self._clients[client.venue] = client
+
+        self._log.info(f"Registered {client}.")
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
         Register the given trade strategy with the data client.
 
-        :param strategy: The strategy to register.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to register.
+
         """
         Condition.not_none(strategy, "strategy")
 
-        strategy.register_data_client(self)
+        strategy.register_data_engine(self)
 
         self._log.info(f"Registered {strategy}.")
-
 
 # -- HANDLER METHODS ----------------------------------------------------------------------------- #
 
@@ -238,6 +385,8 @@ cdef class DataClient:
             for handler in tick_handlers:
                 handler.handle(tick)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_quote_ticks(self, list ticks) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
@@ -280,6 +429,8 @@ cdef class DataClient:
             for handler in tick_handlers:
                 handler.handle(tick)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
@@ -320,6 +471,8 @@ cdef class DataClient:
             for handler in bar_handlers:
                 handler.handle(bar_type, bar)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
         System method. Handle the given bar type and bars by handling
@@ -355,7 +508,6 @@ cdef class DataClient:
         cdef Instrument instrument
         for instrument in instruments:
             self.handle_instrument(instrument)
-
 
 # -- QUERY METHODS ------------------------------------------------------------------------------- #
 
@@ -393,7 +545,7 @@ cdef class DataClient:
 
     cpdef list instrument_symbols(self):
         """
-        Return all instrument symbols held by the data client.
+        Return all instrument symbols held by the data engine.
 
         :return List[Symbol].
         """
@@ -421,7 +573,7 @@ cdef class DataClient:
 
     cpdef bint has_quote_ticks(self, Symbol symbol):
         """
-        Return a value indicating whether the data client has quote ticks for
+        Return a value indicating whether the data engine has quote ticks for
         the given symbol.
 
         :param symbol: The symbol for the ticks.
@@ -433,7 +585,7 @@ cdef class DataClient:
 
     cpdef bint has_trade_ticks(self, Symbol symbol):
         """
-        Return a value indicating whether the data client has trade ticks for
+        Return a value indicating whether the data engine has trade ticks for
         the given symbol.
 
         :param symbol: The symbol for the ticks.
@@ -445,7 +597,7 @@ cdef class DataClient:
 
     cpdef bint has_bars(self, BarType bar_type):
         """
-        Return a value indicating whether the data client has bars for the given
+        Return a value indicating whether the data engine has bars for the given
         bar type.
 
         :param bar_type: The bar type for the bars.
@@ -531,7 +683,7 @@ cdef class DataClient:
         :param symbol: The symbol for the tick to get.
         :param index: The optional index for the tick to get.
         :return QuoteTick.
-        :raises ValueError: If the data clients quote ticks does not contain the symbol.
+        :raises ValueError: If the data engine quote ticks does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
         Condition.not_none(symbol, "symbol")
@@ -546,7 +698,7 @@ cdef class DataClient:
         :param symbol: The symbol for the tick to get.
         :param index: The optional index for the tick to get.
         :return TradeTick.
-        :raises ValueError: If the data clients trade ticks does not contain the symbol.
+        :raises ValueError: If the data engine trade ticks does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
         Condition.not_none(symbol, "symbol")
@@ -561,7 +713,7 @@ cdef class DataClient:
         :param bar_type: The bar type to get.
         :param index: The optional index for the bar to get.
         :return Bar.
-        :raises ValueError: If the data clients bars does not contain the bar type.
+        :raises ValueError: If the data engine bars does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
         """
         Condition.not_none(bar_type, "bar_type")
@@ -602,7 +754,7 @@ cdef class DataClient:
                 aggregator = TimeBarAggregator(
                     bar_type=bar_type,
                     handler=self.handle_bar,
-                    use_previous_close=self.use_previous_close,
+                    use_previous_close=self._use_previous_close,
                     clock=self._clock,
                     logger=self._log.get_logger())
 
@@ -839,7 +991,6 @@ cdef class DataClient:
 
 # ------------------------------------------------------------------------------------------------ #
 
-
 cdef class BulkTickBarBuilder:
     """
     Provides a temporary builder for tick bars from a bulk tick order.
@@ -866,6 +1017,8 @@ cdef class BulkTickBarBuilder:
         self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
         self.callback = callback
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
         Receives the bulk list of ticks and builds aggregated tick
@@ -903,6 +1056,8 @@ cdef class BulkTimeBarUpdater:
         self.aggregator = aggregator
         self.start_time = self.aggregator.next_close - self.aggregator.interval
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
         Receives the bulk list of ticks and updates the aggregator.

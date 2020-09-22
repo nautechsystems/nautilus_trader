@@ -29,13 +29,17 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.common.data_client cimport DataClient
 
 
-cdef class DataClient:
+cdef class DataEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef bint _use_previous_close
     cdef ExchangeRateCalculator _exchange_calculator
+    cdef dict _clients
+
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _quote_tick_handlers
@@ -48,34 +52,38 @@ cdef class DataClient:
 
     cdef readonly int tick_capacity
     cdef readonly int bar_capacity
-    cdef readonly bint use_previous_close
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
+    cpdef void update_instruments(self, Venue venue) except *
+    cpdef void update_instruments_all(self) except *
+    cpdef void _internal_update_instruments(self, list instruments) except *
     cpdef void request_quote_ticks(
         self,
         Symbol symbol,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback) except *
+        callback,
+    ) except *
     cpdef void request_trade_ticks(
         self,
         Symbol symbol,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback) except *
+        callback
+    ) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback) except *
+        callback
+    ) except *
     cpdef void request_instrument(self, Symbol symbol, callback) except *
     cpdef void request_instruments(self, Venue venue, callback) except *
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler) except *
@@ -86,12 +94,14 @@ cdef class DataClient:
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler) except *
     cpdef void unsubscribe_bars(self, BarType bar_type, handler) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler) except *
-    cpdef void update_instruments(self, Venue venue) except *
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+
+    cpdef void register_data_client(self, DataClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
 
 # -- HANDLER METHODS ----------------------------------------------------------------------------- #
+
     cpdef void handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
     cpdef void handle_quote_ticks(self, list ticks) except *
     cpdef void handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
@@ -102,6 +112,7 @@ cdef class DataClient:
     cpdef void handle_instruments(self, list instruments) except *
 
 # -- QUERY METHODS ------------------------------------------------------------------------------- #
+
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
@@ -125,7 +136,9 @@ cdef class DataClient:
         self,
         Currency from_currency,
         Currency to_currency,
-        PriceType price_type=*)
+        PriceType price_type=*,
+    )
+
 # ------------------------------------------------------------------------------------------------ #
 
     cdef void _start_generating_bars(self, BarType bar_type, handler) except *
@@ -144,5 +157,6 @@ cdef class DataClient:
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback) except *
+        callback,
+    ) except *
     cdef void _reset(self) except *

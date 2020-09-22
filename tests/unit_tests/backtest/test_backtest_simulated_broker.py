@@ -25,7 +25,7 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
-from nautilus_trader.common.data import DataClient
+from nautilus_trader.common.data_engine import DataEngine
 from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
 from nautilus_trader.common.execution_engine import ExecutionEngine
 from nautilus_trader.common.portfolio import Portfolio
@@ -36,6 +36,7 @@ from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.data import TestDataProvider
@@ -63,7 +64,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger(self.clock)
 
-        self.data_client = DataClient(
+        self.data_client = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
             use_previous_close=False,
@@ -109,7 +110,7 @@ class SimulatedBrokerTests(unittest.TestCase):
 
         self.exec_engine.register_client(self.exec_client)
 
-    def test_can_account_collateral_inquiry(self):
+    def test_account_collateral_inquiry(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -125,7 +126,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, len(strategy.account().get_events()))
 
-    def test_can_submit_market_order(self):
+    def test_submit_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -149,9 +150,9 @@ class SimulatedBrokerTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price(90.003, 3), strategy.order(order.id).average_price)
+        self.assertEqual(Price(90.003, 3), strategy.order(order.cl_ord_id).average_price)
 
-    def test_can_submit_limit_order(self):
+    def test_submit_limit_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -178,7 +179,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
         self.assertEqual(Price(80.000, 3), order.price)
 
-    def test_can_submit_bracket_market_order(self):
+    def test_submit_bracket_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -209,7 +210,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderFilled))
         self.assertEqual(Price(80.000, 3), bracket_order.stop_loss.price)
 
-    def test_can_submit_bracket_stop_order(self):
+    def test_submit_bracket_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -242,7 +243,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         print(strategy.object_storer.get_store())
         self.assertTrue(isinstance(strategy.object_storer.get_store()[5], OrderWorking))
 
-    def test_can_modify_stop_order(self):
+    def test_modify_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -267,11 +268,11 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.modify_order(order, order.quantity, Price(96.714, 3))
 
         # Assert
-        self.assertEqual(Price(96.714, 3), strategy.order(order.id).price)
+        self.assertEqual(Price(96.714, 3), strategy.order(order.cl_ord_id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
-    def test_can_modify_bracket_order_working_stop_loss(self):
+    def test_modify_bracket_order_working_stop_loss(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -300,7 +301,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price(85.100, 3))
 
         # Assert
-        self.assertEqual(Price(85.100, 3), strategy.order(bracket_order.stop_loss.id).price)
+        self.assertEqual(Price(85.100, 3), strategy.order(bracket_order.stop_loss.cl_ord_id).price)
         self.assertEqual(9, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 
@@ -428,7 +429,43 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.submit_order(top_up_order, position_id)
         strategy.submit_order(reduce_order, position_id)
 
+        commission_percent = basis_points_as_percentage(self.config.commission_rate_bp)
+        self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
+                         order.filled_quantity.as_double() * commission_percent)
+        self.assertEqual(strategy.object_storer.get_store()[7].commission.as_double(),
+                         top_up_order.filled_quantity.as_double() * commission_percent)
+        self.assertEqual(strategy.object_storer.get_store()[11].commission.as_double(),
+                         reduce_order.filled_quantity.as_double() * commission_percent)
+
         position = strategy.positions_open()[position_id]
-        expected_commission = position.quantity.as_double() * basis_points_as_percentage(self.config.commission_rate_bp)
+        expected_commission = position.quantity.as_double() * commission_percent
         self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
                          strategy.account().cash_balance.as_double())
+
+    def test_realized_pnl(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        order = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        # Act
+        position_id = strategy.position_id_generator.generate()
+        strategy.submit_order(order, position_id)
+
+        filled_price = strategy.object_storer.get_store()[3].average_price.as_double()
+        commission = strategy.object_storer.get_store()[3].commission.as_double()
+        commission = Money(-commission * filled_price, 392)
+        position = strategy.positions_open()[position_id]
+        self.assertEqual(position.realized_pnl, commission)

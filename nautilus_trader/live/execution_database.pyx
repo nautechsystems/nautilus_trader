@@ -24,9 +24,9 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport LimitOrder
@@ -163,14 +163,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return
 
         cdef bytes key_bytes
-        cdef OrderId order_id
+        cdef ClientOrderId order_id
         cdef Order order
         for key_bytes in order_keys:
-            order_id = OrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            order_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             order = self.load_order(order_id)
 
             if order:
-                self._cached_orders[order.id] = order
+                self._cached_orders[order.cl_ord_id] = order
 
         self._log.info(f"Cached {len(self._cached_orders)} order(s).")
 
@@ -187,15 +187,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return
 
         cdef bytes key_bytes
-        cdef PositionId position_id
+        cdef ClientPositionId position_id
         cdef Position position
 
         for key_bytes in position_keys:
-            position_id = PositionId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            position_id = ClientPositionId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             position = self.load_position(position_id)
 
             if position:
-                self._cached_positions[position.id] = position
+                self._cached_positions[position.cl_pos_id] = position
 
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
 
@@ -222,7 +222,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added Account(id={account.id.value}).")
 
-    cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
+    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId position_id) except *:
         """
         Add the given order to the execution database indexed with the given strategy and position
         identifiers.
@@ -230,44 +230,44 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order: The order to add.
         :param strategy_id: The strategy_id to index for the order.
         :param position_id: The position_id to index for the order.
-        :raises ValueError: If the order_id is already contained in the cached_orders.
+        :raises ValueError: If the order.cl_ord_id is already contained in the cached_orders.
         """
         Condition.not_none(order, "order")
         Condition.not_none(strategy_id, "strategy_id")
         Condition.not_none(position_id, "position_id")
-        Condition.not_in(order.id, self._cached_orders, "order.id", "cached_orders")
+        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.id", "cached_orders")
 
-        self._cached_orders[order.id] = order
+        self._cached_orders[order.cl_ord_id] = order
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event()))  # 0
-        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)          # 1
-        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)          # 2
+        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))  # 0
+        pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=position_id.value)          # 1
+        pipe.hset(name=self.key_index_order_strategy, key=order.cl_ord_id.value, value=strategy_id.value)          # 2
         pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)    # 3
-        pipe.sadd(self.key_index_orders, order.id.value)                                                    # 4
-        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)                       # 5
-        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)                       # 6
+        pipe.sadd(self.key_index_orders, order.cl_ord_id.value)                                                    # 4
+        pipe.sadd(self.key_index_position_orders + position_id.value, order.cl_ord_id.value)                       # 5
+        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 6
         pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)                 # 7
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
         if reply[0] > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {order.id} already existed in the orders and was appended to.")
+            self._log.error(f"The {order.cl_ord_id} already existed in the orders and was appended to.")
         if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-            self._log.error(f"The {order.id} already existed in index_order_position and was overwritten.")
+            self._log.error(f"The {order.cl_ord_id} already existed in index_order_position and was overwritten.")
         if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-            self._log.error(f"The {order.id} already existed in index_order_strategy and was overwritten.")
+            self._log.error(f"The {order.cl_ord_id} already existed in index_order_strategy and was overwritten.")
         # reply[3] index_position_strategy does not need to be checked as there will be multiple writes for bracket orders
         if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {order.id} already existed in index_orders.")
+            self._log.error(f"The {order.cl_ord_id} already existed in index_orders.")
         if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {order.id} already existed in index_position_orders.")
+            self._log.error(f"The {order.cl_ord_id} already existed in index_position_orders.")
         if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {order.id} already existed in index_strategy_orders.")
+            self._log.error(f"The {order.cl_ord_id} already existed in index_strategy_orders.")
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
 
-        self._log.debug(f"Added Order(id={order.id.value}).")
+        self._log.debug(f"Added Order(id={order.cl_ord_id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -279,29 +279,29 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
         Condition.not_none(strategy_id, "strategy_id")
-        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
+        Condition.not_in(position.cl_pos_id, self._cached_positions, "position.id", "cached_positions")
 
-        self._cached_positions[position.id] = position
+        self._cached_positions[position.cl_pos_id] = position
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event()))
-        pipe.hset(name=self.key_index_broker_position, key=position.id_broker.value, value=position.id.value)
-        pipe.sadd(self.key_index_positions, position.id.value)
-        pipe.sadd(self.key_index_positions_open, position.id.value)
+        pipe.rpush(self.key_positions + position.cl_pos_id.value, self._event_serializer.serialize(position.last_event()))
+        pipe.hset(name=self.key_index_broker_position, key=position.id.value, value=position.cl_pos_id.value)
+        pipe.sadd(self.key_index_positions, position.cl_pos_id.value)
+        pipe.sadd(self.key_index_positions_open, position.cl_pos_id.value)
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
         if reply[0] > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {position.id_broker} already existed in the index_broker_position and was overwritten.")
+            self._log.error(f"The {position.id} already existed in the index_broker_position and was overwritten.")
         if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {position.id} already existed in index_positions.")
+            self._log.error(f"The {position.cl_pos_id} already existed in index_positions.")
         if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {position.id} already existed in index_positions.")
+            self._log.error(f"The {position.cl_pos_id} already existed in index_positions.")
         if reply[3] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {position.id} already existed in index_positions_open.")
+            self._log.error(f"The {position.cl_pos_id} already existed in index_positions_open.")
 
-        self._log.debug(f"Added Position(id={position.id.value}).")
+        self._log.debug(f"Added Position(id={position.cl_pos_id.value}).")
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -344,20 +344,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event()))
+        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))
         if order.is_working():
-            pipe.sadd(self.key_index_orders_working, order.id.value)
-            pipe.srem(self.key_index_orders_completed, order.id.value)
+            pipe.sadd(self.key_index_orders_working, order.cl_ord_id.value)
+            pipe.srem(self.key_index_orders_completed, order.cl_ord_id.value)
         elif order.is_completed():
-            pipe.sadd(self.key_index_orders_completed, order.id.value)
-            pipe.srem(self.key_index_orders_working, order.id.value)
+            pipe.sadd(self.key_index_orders_completed, order.cl_ord_id.value)
+            pipe.srem(self.key_index_orders_working, order.cl_ord_id.value)
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
         if reply[0] == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Order(id={order.id.value}) did not already exist.")
+            self._log.error(f"The updated Order(id={order.cl_ord_id.value}) did not already exist.")
 
-        self._log.debug(f"Updated Order(id={order.id.value}).")
+        self._log.debug(f"Updated Order(id={order.cl_ord_id.value}).")
 
     cpdef void update_position(self, Position position) except *:
         """
@@ -369,20 +369,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event()))
+        pipe.rpush(self.key_positions + position.cl_pos_id.value, self._event_serializer.serialize(position.last_event()))
         if position.is_closed():
-            pipe.sadd(self.key_index_positions_closed, position.id.value)
-            pipe.srem(self.key_index_positions_open, position.id.value)
+            pipe.sadd(self.key_index_positions_closed, position.cl_pos_id.value)
+            pipe.srem(self.key_index_positions_open, position.cl_pos_id.value)
         else:
-            pipe.sadd(self.key_index_positions_open, position.id.value)
-            pipe.srem(self.key_index_positions_closed, position.id.value)
+            pipe.sadd(self.key_index_positions_open, position.cl_pos_id.value)
+            pipe.srem(self.key_index_positions_closed, position.cl_pos_id.value)
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
         if reply[0] == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
+            self._log.error(f"The updated Position(id={position.cl_pos_id.value}) did not already exist.")
 
-        self._log.debug(f"Updated Position(id={position.id.value}).")
+        self._log.debug(f"Updated Position(id={position.cl_pos_id.value}).")
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
@@ -421,11 +421,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef AccountState last_event = self._event_serializer.deserialize(events.pop())
         return Account(event=last_event)
 
-    cpdef Order load_order(self, OrderId order_id):
+    cpdef Order load_order(self, ClientOrderId order_id):
         """
         Load the order associated with the given order_id (if found).
 
-        :param order_id: The order_id to load.
+        :param order_id: The order identifier to load.
         :return: Order or None.
         """
         Condition.not_none(order_id, "order_id")
@@ -454,7 +454,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             order.apply(self._event_serializer.deserialize(event_bytes))
         return order
 
-    cpdef Position load_position(self, PositionId position_id):
+    cpdef Position load_position(self, ClientPositionId position_id):
         """
         Load the position associated with the given position_id (if found).
 
@@ -471,7 +471,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return None
 
         cdef OrderFillEvent initial = self._event_serializer.deserialize(events.pop(0))
-        cdef Position position = Position(position_id=position_id, event=initial)
+        cdef Position position = Position(cl_pos_id=position_id, event=initial)
 
         cdef bytes event_bytes
         for event_bytes in events:
@@ -507,10 +507,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Flushed database.")
 
     cdef set _decode_set_to_order_ids(self, set original):
-        return {OrderId(element.decode(_UTF8)) for element in original}
+        return {ClientOrderId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_position_ids(self, set original):
-        return {PositionId(element.decode(_UTF8)) for element in original}
+        return {ClientPositionId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_strategy_ids(self, list original):
         return {StrategyId.from_string(element.decode(_UTF8).rsplit(':', 2)[1]) for element in original}
@@ -611,7 +611,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
         return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
 
-    cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
+    cpdef StrategyId get_strategy_for_order(self, ClientOrderId order_id):
         """
         Return the strategy_id associated with the given order_id (if found).
 
@@ -623,7 +623,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=order_id.value)
         return StrategyId.from_string(strategy_id.decode(_UTF8))
 
-    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+    cpdef StrategyId get_strategy_for_position(self, ClientPositionId position_id):
         """
         Return the strategy_id associated with the given position_id (if found).
 
@@ -635,7 +635,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes strategy_id = self._redis.hget(name=self.key_index_position_strategy, key=position_id.value)
         return StrategyId.from_string(strategy_id.decode(_UTF8))
 
-    cpdef Order get_order(self, OrderId order_id):
+    cpdef Order get_order(self, ClientOrderId order_id):
         """
         Return the order matching the given identifier (if found).
 
@@ -681,7 +681,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef Order order
         for order in cached_orders.values():
             if order.is_working():
-                orders[order.id] = order
+                orders[order.cl_ord_id] = order
             else:
                 self._log.error(f"Order indexed as working found not working, "
                                 f"state={order.state_as_string()}.")
@@ -707,14 +707,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef Order order
         for order in cached_orders.values():
             if order.is_completed():
-                orders[order.id] = order
+                orders[order.cl_ord_id] = order
             else:
                 self._log.error(f"Order indexed as completed found not completed, "
                                 f"state={order.state_as_string()}.")
 
         return orders
 
-    cpdef Position get_position(self, PositionId position_id):
+    cpdef Position get_position(self, ClientPositionId position_id):
         """
         Return the position associated with the given position_id (if found, else None).
 
@@ -725,24 +725,24 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._cached_positions.get(position_id)
 
-    cpdef Position get_position_for_order(self, OrderId order_id):
+    cpdef Position get_position_for_order(self, ClientOrderId cl_ord_id):
         """
         Return the position associated with the given order_id (if found, else None).
 
-        :param order_id: The order_id for the position.
+        :param cl_ord_id: The client order identifier for the position.
         :return Position or None.
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "order_id")
 
-        cdef PositionId position_id = self.get_position_id(order_id)
+        cdef ClientPositionId position_id = self.get_client_position_id(cl_ord_id)
         if position_id is None:
-            self._log.warning(f"Cannot get Position for {order_id.to_string(with_class=True)} "
+            self._log.warning(f"Cannot get Position for {cl_ord_id.to_string(with_class=True)} "
                               f"(no matching PositionId found in database).")
             return None
 
         return self._cached_positions.get(position_id)
 
-    cpdef PositionId get_position_id(self, OrderId order_id):
+    cpdef ClientPositionId get_client_position_id(self, ClientOrderId order_id):
         """
         Return the position associated with the given order_id (if found, else None).
 
@@ -757,24 +757,24 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                               f"(no matching PositionId found in database).")
             return position_id_bytes
 
-        return PositionId(position_id_bytes.decode(_UTF8))
+        return ClientPositionId(position_id_bytes.decode(_UTF8))
 
-    cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker):
+    cpdef ClientPositionId get_client_position_id_for_id(self, PositionId position_id):
         """
         Return the position associated with the given order_id (if found, else None).
 
-        :param position_id_broker: The broker position_id.
+        :param position_id: The broker position_id.
         :return PositionId or None.
         """
-        Condition.not_none(position_id_broker, "position_id_broker")
+        Condition.not_none(position_id, "position_id")
 
-        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id_broker.value)
+        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id.value)
         if position_id_bytes is None:
-            self._log.warning(f"Cannot get PositionId for {position_id_broker.to_string(with_class=True)} "
+            self._log.warning(f"Cannot get ClientPositionId for {position_id.to_string(with_class=True)} "
                               f"(no matching PositionId found in database).")
             return position_id_bytes
 
-        return PositionId(position_id_bytes.decode(_UTF8))
+        return ClientPositionId(position_id_bytes.decode(_UTF8))
 
     cpdef dict get_positions(self, StrategyId strategy_id=None):
         """
@@ -814,7 +814,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef Position position
         for position in cached_positions.values():
             if position.is_open():
-                positions[position.id] = position
+                positions[position.cl_pos_id] = position
             else:
                 self._log.error(f"Position indexed as open found not open, "
                                 f"state={position.market_position_as_string()}.")
@@ -841,14 +841,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef Position position
         for position in cached_positions.values():
             if position.is_closed():
-                positions[position.id] = position
+                positions[position.cl_pos_id] = position
             else:
                 self._log.error(f"Position indexed as closed found not closed, "
                                 f"state={position.market_position_as_string()}.")
 
         return positions
 
-    cpdef bint order_exists(self, OrderId order_id):
+    cpdef bint order_exists(self, ClientOrderId order_id):
         """
         Return a value indicating whether an order with the given identifier exists.
 
@@ -859,7 +859,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_orders, value=order_id.value)
 
-    cpdef bint is_order_working(self, OrderId order_id):
+    cpdef bint is_order_working(self, ClientOrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is working.
 
@@ -870,7 +870,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_orders_working, value=order_id.value)
 
-    cpdef bint is_order_completed(self, OrderId order_id):
+    cpdef bint is_order_completed(self, ClientOrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is completed.
 
@@ -881,7 +881,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_orders_completed, value=order_id.value)
 
-    cpdef bint position_exists(self, PositionId position_id):
+    cpdef bint position_exists(self, ClientPositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists.
 
@@ -892,7 +892,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_positions, value=position_id.value)
 
-    cpdef bint position_exists_for_order(self, OrderId order_id):
+    cpdef bint position_exists_for_order(self, ClientOrderId order_id):
         """
         Return a value indicating whether there is a position associated with the given
         order_id.
@@ -908,7 +908,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return False
         return self._redis.sismember(name=self.key_index_positions, value=position_id)
 
-    cpdef bint position_indexed_for_order(self, OrderId order_id):
+    cpdef bint position_indexed_for_order(self, ClientOrderId order_id):
         """
         Return a value indicating whether there is a position_id indexed for the
         given order_id.
@@ -920,7 +920,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.hexists(name=self.key_index_order_position, key=order_id.value)
 
-    cpdef bint is_position_open(self, PositionId position_id):
+    cpdef bint is_position_open(self, ClientPositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists
         and is open.
@@ -932,7 +932,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_positions_open, value=position_id.value)
 
-    cpdef bint is_position_closed(self, PositionId position_id):
+    cpdef bint is_position_closed(self, ClientPositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists
         and is closed.
