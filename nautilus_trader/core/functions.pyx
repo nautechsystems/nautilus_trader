@@ -16,12 +16,16 @@
 import gc
 import sys
 
+import cython
+
 from libc.math cimport pow
 from libc.math cimport sqrt
 
 from nautilus_trader.core.correctness cimport Condition
 
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cpdef double fast_mean(list values):
     """
     Return the average value of the iterable.
@@ -48,6 +52,8 @@ cpdef double fast_mean(list values):
     return total / length
 
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cpdef double fast_mean_iterated(
         list values,
         double next_value,
@@ -102,6 +108,8 @@ cpdef double fast_std(list values):
     return fast_std_with_mean(values, fast_mean(values))
 
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
 cpdef double fast_std_with_mean(list values, double mean):
     """
     Return the standard deviation from the given values and mean.

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import cython
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.data_engine cimport DataEngine
@@ -582,6 +584,8 @@ cdef class TradingStrategy:
                 if self.reraise_exceptions:
                     raise ex  # Re-raise
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_quote_ticks(self, list ticks) except *:
         """
         System method. Handle the given list of ticks by handling each tick
@@ -639,6 +643,8 @@ cdef class TradingStrategy:
                 if self.reraise_exceptions:
                     raise ex  # Re-raise
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks) except *:
         """
         System method. Handle the given list of ticks by handling each tick
@@ -699,6 +705,8 @@ cdef class TradingStrategy:
                 if self.reraise_exceptions:
                     raise ex  # Re-raise
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
         System method. Handle the given bar type and bars by handling each bar
