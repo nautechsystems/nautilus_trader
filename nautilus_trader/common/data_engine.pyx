@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import cython
+
 from cpython.datetime cimport datetime
 
 from collections import deque
@@ -383,6 +385,8 @@ cdef class DataEngine:
             for handler in tick_handlers:
                 handler.handle(tick)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_quote_ticks(self, list ticks) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
@@ -425,6 +429,8 @@ cdef class DataEngine:
             for handler in tick_handlers:
                 handler.handle(tick)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
@@ -465,6 +471,8 @@ cdef class DataEngine:
             for handler in bar_handlers:
                 handler.handle(bar_type, bar)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
         System method. Handle the given bar type and bars by handling
@@ -1009,6 +1017,8 @@ cdef class BulkTickBarBuilder:
         self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
         self.callback = callback
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
         Receives the bulk list of ticks and builds aggregated tick
@@ -1046,6 +1056,8 @@ cdef class BulkTimeBarUpdater:
         self.aggregator = aggregator
         self.start_time = self.aggregator.next_close - self.aggregator.interval
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
         Receives the bulk list of ticks and updates the aggregator.
