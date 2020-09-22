@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
@@ -78,7 +78,7 @@ cdef class SubmitOrder(Command):
                  TraderId trader_id not None,
                  AccountId account_id not None,
                  StrategyId strategy_id not None,
-                 PositionId position_id not None,
+                 ClientPositionId position_id not None,
                  Order order not None,
                  UUID command_id not None,
                  datetime command_timestamp not None):
@@ -93,7 +93,7 @@ cdef class SubmitOrder(Command):
             The account identifier for the inquiry.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        position_id : PositionId
+        position_id : ClientPositionId
             The position identifier associated with the order.
         order : Order
             The order to submit.
@@ -125,7 +125,7 @@ cdef class SubmitOrder(Command):
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
                 f"position_id={self.position_id.value}, "
-                f"order_id={self.order.id.value})")
+                f"order_id={self.order.client_id.value})")
 
 
 cdef class SubmitBracketOrder(Command):
@@ -137,7 +137,7 @@ cdef class SubmitBracketOrder(Command):
                  TraderId trader_id not None,
                  AccountId account_id not None,
                  StrategyId strategy_id not None,
-                 PositionId position_id not None,
+                 ClientPositionId position_id not None,
                  BracketOrder bracket_order not None,
                  UUID command_id not None,
                  datetime command_timestamp not None):
@@ -152,7 +152,7 @@ cdef class SubmitBracketOrder(Command):
             The account identifier for the inquiry.
         strategy_id : StrategyId
             The strategy identifier to associate with the order.
-        position_id : PositionId
+        position_id : ClientPositionId
             The position identifier to associate with the order.
         bracket_order : BracketOrder
             The bracket order to submit.
@@ -195,7 +195,7 @@ cdef class ModifyOrder(Command):
     def __init__(self,
                  TraderId trader_id not None,
                  AccountId account_id not None,
-                 OrderId order_id not None,
+                 ClientOrderId order_id not None,
                  Quantity modified_quantity not None,
                  Price modified_price not None,
                  UUID command_id not None,
@@ -254,7 +254,7 @@ cdef class CancelOrder(Command):
     def __init__(self,
                  TraderId trader_id not None,
                  AccountId account_id not None,
-                 OrderId order_id not None,
+                 ClientOrderId order_id not None,
                  UUID command_id not None,
                  datetime command_timestamp not None):
         """

@@ -16,9 +16,9 @@
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
@@ -37,7 +37,7 @@ cdef class ExecutionDatabase:
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *
-    cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
+    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId position_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
     cpdef void update_account(self, Account account) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
@@ -45,8 +45,8 @@ cdef class ExecutionDatabase:
     cpdef void update_position(self, Position position) except *
     cpdef void load_strategy(self, TradingStrategy strategy) except *
     cpdef Account load_account(self, AccountId account_id)
-    cpdef Order load_order(self, OrderId order_id)
-    cpdef Position load_position(self, PositionId position_id)
+    cpdef Order load_order(self, ClientOrderId order_id)
+    cpdef Position load_position(self, ClientPositionId position_id)
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
@@ -63,27 +63,27 @@ cdef class ExecutionDatabase:
     cpdef set get_position_ids(self, StrategyId strategy_id=*)
     cpdef set get_position_open_ids(self, StrategyId strategy_id=*)
     cpdef set get_position_closed_ids(self, StrategyId strategy_id=*)
-    cpdef StrategyId get_strategy_for_order(self, OrderId order_id)
-    cpdef StrategyId get_strategy_for_position(self, PositionId position_id)
-    cpdef Order get_order(self, OrderId order_id)
+    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id)
+    cpdef StrategyId get_strategy_for_position(self, ClientPositionId cl_pos_id)
+    cpdef Order get_order(self, ClientOrderId cl_ord_id)
     cpdef dict get_orders(self, StrategyId strategy_id=*)
     cpdef dict get_orders_working(self, StrategyId strategy_id=*)
     cpdef dict get_orders_completed(self, StrategyId strategy_id=*)
-    cpdef Position get_position(self, PositionId position_id)
-    cpdef Position get_position_for_order(self, OrderId order_id)
-    cpdef PositionId get_position_id(self, OrderId order_id)
-    cpdef PositionId get_position_id_for_broker_id(self, PositionIdBroker position_id_broker)
+    cpdef Position get_position(self, ClientPositionId cl_pos_id)
+    cpdef Position get_position_for_order(self, ClientOrderId cl_ord_id)
+    cpdef ClientPositionId get_client_position_id(self, ClientOrderId cl_ord_id)
+    cpdef ClientPositionId get_client_position_id_for_id(self, PositionId position_id)
     cpdef dict get_positions(self, StrategyId strategy_id=*)
     cpdef dict get_positions_open(self, StrategyId strategy_id=*)
     cpdef dict get_positions_closed(self, StrategyId strategy_id=*)
-    cpdef bint order_exists(self, OrderId order_id)
-    cpdef bint is_order_working(self, OrderId order_id)
-    cpdef bint is_order_completed(self, OrderId order_id)
-    cpdef bint position_exists(self, PositionId position_id)
-    cpdef bint position_exists_for_order(self, OrderId order_id)
-    cpdef bint position_indexed_for_order(self, OrderId order_id)
-    cpdef bint is_position_open(self, PositionId position_id)
-    cpdef bint is_position_closed(self, PositionId position_id)
+    cpdef bint order_exists(self, ClientOrderId cl_ord_id)
+    cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
+    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
+    cpdef bint position_exists(self, ClientPositionId cl_pos_id)
+    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id)
+    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id)
+    cpdef bint is_position_open(self, ClientPositionId cl_pos_id)
+    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id)
     cpdef int count_orders_total(self, StrategyId strategy_id=*)
     cpdef int count_orders_working(self, StrategyId strategy_id=*)
     cpdef int count_orders_completed(self, StrategyId strategy_id=*)

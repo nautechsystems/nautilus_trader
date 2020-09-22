@@ -31,8 +31,8 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport PositionIdBroker
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
@@ -145,7 +145,7 @@ cdef class OrderEvent(Event):
     """
 
     def __init__(self,
-                 OrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -153,8 +153,8 @@ cdef class OrderEvent(Event):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -163,7 +163,7 @@ cdef class OrderEvent(Event):
         """
         super().__init__(event_id, event_timestamp)
 
-        self.order_id = order_id
+        self.cl_ord_id = cl_ord_id
 
     def __str__(self) -> str:
         """
@@ -174,7 +174,7 @@ cdef class OrderEvent(Event):
         str
 
         """
-        return f"{self.__class__.__name__}(order_id={self.order_id})"
+        return f"{self.__class__.__name__}(cl_ord_id={self.cl_ord_id})"
 
     def __repr__(self) -> str:
         """
@@ -195,7 +195,7 @@ cdef class OrderInitialized(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  OrderType order_type,
@@ -209,8 +209,8 @@ cdef class OrderInitialized(OrderEvent):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -241,7 +241,7 @@ cdef class OrderInitialized(OrderEvent):
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
         Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
@@ -260,7 +260,7 @@ cdef class OrderSubmitted(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
-                 OrderId order_id not None,
+                 ClientOrderId order_id not None,
                  datetime submitted_time not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
@@ -271,7 +271,7 @@ cdef class OrderSubmitted(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        order_id : OrderId
+        order_id : ClientOrderId
             The order identifier.
         submitted_time : datetime
             The order submitted time.
@@ -299,7 +299,7 @@ cdef class OrderSubmitted(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"order_id={self.order_id})")
+                f"order_id={self.cl_ord_id})")
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -308,8 +308,8 @@ cdef class OrderInvalid(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id not None,
-                 str invalid_reason not None,
+                 ClientOrderId cl_ord_id not None,
+                 str reason not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -317,9 +317,9 @@ cdef class OrderInvalid(OrderEvent):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order identifier.
-        invalid_reason : str
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+        reason : str
             The order invalid reason.
         event_id : UUID
             The event identifier.
@@ -332,12 +332,12 @@ cdef class OrderInvalid(OrderEvent):
             If invalid_reason is not a valid_string.
 
         """
-        Condition.valid_string(invalid_reason, "invalid_reason")
-        super().__init__(order_id,
+        Condition.valid_string(reason, "invalid_reason")
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
-        self.invalid_reason = invalid_reason
+        self.reason = reason
 
     def __str__(self) -> str:
         """
@@ -349,8 +349,8 @@ cdef class OrderInvalid(OrderEvent):
 
         """
         return (f"{self.__class__.__name__}("
-                f"order_id={self.order_id}, "
-                f"invalid_reason={self.invalid_reason})")
+                f"cl_ord_id={self.cl_ord_id}, "
+                f"reason={self.reason})")
 
 
 cdef class OrderDenied(OrderEvent):
@@ -359,8 +359,8 @@ cdef class OrderDenied(OrderEvent):
     """
 
     def __init__(self,
-                 OrderId order_id not None,
-                 str denied_reason not None,
+                 ClientOrderId cl_ord_id not None,
+                 str reason not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -368,9 +368,9 @@ cdef class OrderDenied(OrderEvent):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order identifier.
-        denied_reason : str
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+        reason : str
             The order denied reason.
         event_id : UUID
             The event identifier.
@@ -383,12 +383,12 @@ cdef class OrderDenied(OrderEvent):
             If denied_reason is not a valid_string.
 
         """
-        Condition.valid_string(denied_reason, "denied_reason")
-        super().__init__(order_id,
+        Condition.valid_string(reason, "denied_reason")
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
-        self.denied_reason = denied_reason
+        self.reason = reason
 
     def __str__(self) -> str:
         """
@@ -400,8 +400,8 @@ cdef class OrderDenied(OrderEvent):
 
         """
         return (f"{self.__class__.__name__}("
-                f"order_id={self.order_id}, "
-                f"denied_reason={self.denied_reason})")
+                f"order_id={self.cl_ord_id}, "
+                f"reason={self.reason})")
 
 
 cdef class OrderRejected(OrderEvent):
@@ -411,9 +411,9 @@ cdef class OrderRejected(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
-                 OrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  datetime rejected_time not None,
-                 str rejected_reason not None,
+                 str reason not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -423,11 +423,11 @@ cdef class OrderRejected(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        order_id : OrderId
-            The order identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         rejected_time : datetime
             The order rejected time.
-        rejected_reason : datetime
+        reason : datetime
             The order rejected reason.
         event_id : UUID
             The event identifier.
@@ -440,14 +440,14 @@ cdef class OrderRejected(OrderEvent):
             If rejected_reason is not a valid_string.
 
         """
-        Condition.valid_string(rejected_reason, "rejected_reason")
-        super().__init__(order_id,
+        Condition.valid_string(reason, "rejected_reason")
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
         self.rejected_time = rejected_time
-        self.rejected_reason = rejected_reason
+        self.reason = reason
 
     def __str__(self) -> str:
         """
@@ -460,8 +460,8 @@ cdef class OrderRejected(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"order_id={self.order_id}, "
-                f"rejected_reason={self.rejected_reason})")
+                f"order_id={self.cl_ord_id}, "
+                f"reason={self.reason})")
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -471,8 +471,8 @@ cdef class OrderAccepted(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
-                 OrderIdBroker order_id_broker not None,
                  datetime accepted_time not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
@@ -483,10 +483,10 @@ cdef class OrderAccepted(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
-        order_id_broker : OrderIdBroker
-            The broker order identifier.
+            The broker/exchange order identifier.
         accepted_time : datetime
             The order accepted time.
         event_id : UUID
@@ -495,12 +495,12 @@ cdef class OrderAccepted(OrderEvent):
             The event timestamp.
 
         """
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
-        self.order_id_broker = order_id_broker
+        self.order_id = order_id
         self.accepted_time = accepted_time
 
     def __str__(self) -> str:
@@ -514,6 +514,7 @@ cdef class OrderAccepted(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
+                f"cl_ord_id={self.account_id}, "
                 f"order_id={self.order_id})")
 
 
@@ -524,8 +525,8 @@ cdef class OrderWorking(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
-                 OrderIdBroker order_id_broker not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  OrderType order_type,
@@ -543,10 +544,10 @@ cdef class OrderWorking(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
-        order_id_broker : OrderIdBroker
-            The broker order identifier.
+            The broker/exchange order identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -583,12 +584,12 @@ cdef class OrderWorking(OrderEvent):
         Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         Condition.type_or_none(expire_time, datetime, "expire_time")
 
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
-        self.order_id_broker = order_id_broker
+        self.order_id = order_id
         self.symbol = symbol
         self.order_side = order_side
         self.order_type = order_type
@@ -610,6 +611,7 @@ cdef class OrderWorking(OrderEvent):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
                 f"{order_side_to_string(self.order_side)} {self.quantity.to_string_formatted()} "
                 f"{self.symbol} {order_type_to_string(self.order_type)} @ "
@@ -623,10 +625,10 @@ cdef class OrderCancelReject(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
-                 OrderId order_id not None,
+                 ClientOrderId cl_ord_id not None,
                  datetime rejected_time not None,
-                 str rejected_response_to not None,
-                 str rejected_reason not None,
+                 str response_to not None,
+                 str reason not None,
                  UUID event_id not None,
                  datetime event_timestamp not None):
         """
@@ -636,13 +638,13 @@ cdef class OrderCancelReject(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        order_id : OrderId
-            The order identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         rejected_time : datetime
             The order cancel reject time.
-        rejected_response_to : str
+        response_to : str
             The order cancel reject response.
-        rejected_reason : str
+        reason : str
             The order cancel reject reason.
         event_id : UUID
             The event identifier.
@@ -657,16 +659,16 @@ cdef class OrderCancelReject(OrderEvent):
             If rejected_reason is not a valid string.
 
         """
-        Condition.valid_string(rejected_response_to, "rejected_response_to")
-        Condition.valid_string(rejected_reason, "rejected_reason")
-        super().__init__(order_id,
+        Condition.valid_string(response_to, "rejected_response_to")
+        Condition.valid_string(reason, "rejected_reason")
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
         self.rejected_time = rejected_time
-        self.rejected_response_to = rejected_response_to
-        self.rejected_reason = rejected_reason
+        self.response_to = response_to
+        self.reason = reason
 
     def __str__(self) -> str:
         """
@@ -679,9 +681,9 @@ cdef class OrderCancelReject(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"order_id={self.order_id}, "
-                f"response_to={self.rejected_response_to}, "
-                f"reason={self.rejected_reason})")
+                f"cl_ord_id={self.cl_ord_id}, "
+                f"response_to={self.response_to}, "
+                f"reason={self.reason})")
 
 
 cdef class OrderCancelled(OrderEvent):
@@ -691,6 +693,7 @@ cdef class OrderCancelled(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
                  datetime cancelled_time not None,
                  UUID event_id not None,
@@ -702,20 +705,24 @@ cdef class OrderCancelled(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
-        :param cancelled_time: The event order cancelled time.
+            The broker/exchange order identifier.
+        cancelled_time : datetime
+            The event order cancelled time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
 
         """
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
+        self.order_id = order_id
         self.cancelled_time = cancelled_time
 
     def __str__(self) -> str:
@@ -729,6 +736,7 @@ cdef class OrderCancelled(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id})")
 
 
@@ -739,8 +747,8 @@ cdef class OrderModified(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
-                 OrderIdBroker order_id_broker not None,
                  Quantity modified_quantity not None,
                  Price modified_price not None,
                  datetime modified_time not None,
@@ -753,10 +761,10 @@ cdef class OrderModified(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
-        order_id_broker : OrderIdBroker
-            The order broker identifier.
+            The broker/exchange order identifier.
         modified_quantity : Quantity
             The modified quantity.
         modified_price : Price
@@ -769,12 +777,12 @@ cdef class OrderModified(OrderEvent):
             The event timestamp.
 
         """
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
-        self.order_id_broker = order_id_broker
+        self.order_id = order_id
         self.modified_quantity = modified_quantity
         self.modified_price = modified_price
         self.modified_time = modified_time
@@ -790,6 +798,7 @@ cdef class OrderModified(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
+                f"cl_order_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
                 f"quantity={self.modified_quantity.to_string_formatted()}, "
                 f"price={self.modified_price})")
@@ -802,6 +811,7 @@ cdef class OrderExpired(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
                  datetime expired_time not None,
                  UUID event_id not None,
@@ -813,8 +823,10 @@ cdef class OrderExpired(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
+            The broker/exchange order identifier.
         expired_time : datetime
             The order expired time.
         event_id : UUID
@@ -823,11 +835,12 @@ cdef class OrderExpired(OrderEvent):
             The event timestamp.
 
         """
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
+        self.order_id = order_id
         self.expired_time = expired_time
 
     def __str__(self) -> str:
@@ -841,6 +854,7 @@ cdef class OrderExpired(OrderEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id})")
 
 
@@ -851,9 +865,10 @@ cdef class OrderFillEvent(OrderEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
                  ExecutionId execution_id not None,
-                 PositionIdBroker position_id_broker not None,
+                 PositionId position_id not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  Quantity filled_quantity not None,
@@ -871,12 +886,14 @@ cdef class OrderFillEvent(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
+            The broker/exchange order identifier.
         execution_id : ExecutionId
-            The order execution identifier.
-        position_id_broker : PositionIdBroker
-            The broker position identifier.
+            The execution identifier.
+        position_id : PositionId
+            The broker/exchange position identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -909,13 +926,14 @@ cdef class OrderFillEvent(OrderEvent):
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(liquidity_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
-        super().__init__(order_id,
+        super().__init__(cl_ord_id,
                          event_id,
                          event_timestamp)
 
         self.account_id = account_id
+        self.order_id = order_id
         self.execution_id = execution_id
-        self.position_id_broker = position_id_broker
+        self.position_id = position_id
         self.symbol = symbol
         self.order_side = order_side
         self.filled_quantity = filled_quantity
@@ -933,9 +951,10 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
                  ExecutionId execution_id not None,
-                 PositionIdBroker position_id_broker not None,
+                 PositionId position_id not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  Quantity filled_quantity not None,
@@ -954,12 +973,14 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
+            The broker/exchange order identifier.
         execution_id : ExecutionId
-            The order execution identifier.
-        position_id_broker : PositionIdBroker
-            The broker position identifier.
+            The execution identifier.
+        position_id : PositionId
+            The broker/exchange position identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -984,9 +1005,10 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         """
         # Enums checked in base class
         super().__init__(account_id,
+                         cl_ord_id,
                          order_id,
                          execution_id,
-                         position_id_broker,
+                         position_id,
                          symbol,
                          order_side,
                          filled_quantity,
@@ -1011,6 +1033,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
@@ -1028,9 +1051,10 @@ cdef class OrderFilled(OrderFillEvent):
 
     def __init__(self,
                  AccountId account_id not None,
+                 ClientOrderId cl_ord_id not None,
                  OrderId order_id not None,
                  ExecutionId execution_id not None,
-                 PositionIdBroker position_id_broker not None,
+                 PositionId position_id not None,
                  Symbol symbol not None,
                  OrderSide order_side,
                  Quantity filled_quantity not None,
@@ -1048,12 +1072,14 @@ cdef class OrderFilled(OrderFillEvent):
         ----------
         account_id : AccountId
             The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
         order_id : OrderId
-            The order identifier.
+            The broker/exchange order identifier.
         execution_id : ExecutionId
-            The order execution identifier.
-        position_id_broker : PositionIdBroker
-            The broker position identifier.
+            The execution identifier.
+        position_id : PositionId
+            The broker/exchange position identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -1076,9 +1102,10 @@ cdef class OrderFilled(OrderFillEvent):
         """
         # Enums checked in base class
         super().__init__(account_id,
+                         cl_ord_id,
                          order_id,
                          execution_id,
-                         position_id_broker,
+                         position_id,
                          symbol,
                          order_side,
                          filled_quantity,
@@ -1101,6 +1128,7 @@ cdef class OrderFilled(OrderFillEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
@@ -1201,7 +1229,7 @@ cdef class PositionOpened(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
+                f"cl_pos_id={self.position.client_id}, "
                 f"entry={order_side_to_string(self.position.entry_direction)}, "
                 f"avg_open={round(self.position.average_open_price, 5)}, "
                 f"{self.position.status_string()})")
@@ -1259,8 +1287,8 @@ cdef class PositionModified(PositionEvent):
         cdef str currency = currency_to_string(self.position.quote_currency)
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
-                f"entry={order_side_to_string(self.position.entry_direction)}, "
+                f"cl_pos_id={self.position.client_id}, "
+                f"position_id={order_side_to_string(self.position.entry_direction)}, "
                 f"avg_open={self.position.average_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
@@ -1321,6 +1349,7 @@ cdef class PositionClosed(PositionEvent):
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
+                f"cl_pos_id={self.position.client_id}, "
                 f"position_id={self.position.id}, "
                 f"entry={order_side_to_string(self.position.entry_direction)}, "
                 f"duration={duration}, "

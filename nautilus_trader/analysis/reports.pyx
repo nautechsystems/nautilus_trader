@@ -23,8 +23,8 @@ from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 
@@ -39,14 +39,14 @@ cdef class ReportProvider:
         Initialize a new instance of the ReportProvider class.
         """
 
-    cpdef object generate_orders_report(self, dict orders: {OrderId, Order}):
+    cpdef object generate_orders_report(self, dict orders: {ClientOrderId, Order}):
         """
         Return an orders report dataframe.
 
         Parameters
         ----------
         orders : Dict[OrderId, Order]
-            The dictionary of order_ids and order objects.
+            The dictionary of client order identifiers and order objects.
 
         Returns
         -------
@@ -62,14 +62,14 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=orders_all).set_index("order_id")
 
-    cpdef object generate_order_fills_report(self, dict orders: {OrderId, Order}):
+    cpdef object generate_order_fills_report(self, dict orders: {ClientOrderId, Order}):
         """
         Return an order fills report dataframe.
 
         Parameters
         ----------
         orders : Dict[OrderId, Order]
-            The dictionary of order_ids and order objects.
+            The dictionary of client order identifiers and order objects.
 
         Returns
         -------
@@ -87,7 +87,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=filled_orders).set_index("order_id")
 
-    cpdef object generate_positions_report(self, dict positions: {PositionId, Position}):
+    cpdef object generate_positions_report(self, dict positions: {ClientPositionId, Position}):
         """
         Return a positions report dataframe.
 
@@ -143,7 +143,7 @@ cdef class ReportProvider:
         return pd.DataFrame(data=account_events).set_index("timestamp")
 
     cdef dict _order_to_dict(self, Order order):
-        return {"order_id": order.id.value,
+        return {"order_id": order.client_id.value,
                 "symbol": order.symbol.code,
                 "side": order_side_to_string(order.side),
                 "type": order_type_to_string(order.type),
@@ -154,7 +154,7 @@ cdef class ReportProvider:
                 "timestamp": order.last_event().timestamp}
 
     cdef dict _position_to_dict(self, Position position):
-        return {"position_id": position.id.value,
+        return {"position_id": position.client_id.value,
                 "symbol": position.symbol.code,
                 "direction": order_side_to_string(position.entry_direction),
                 "peak_quantity": position.peak_quantity,

@@ -22,9 +22,9 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -43,11 +43,11 @@ cdef class Position:
     cdef double _relative_quantity
     cdef int _precision
 
+    cdef readonly ClientPositionId client_id
     cdef readonly PositionId id
-    cdef readonly PositionIdBroker id_broker
     cdef readonly AccountId account_id
 
-    cdef readonly OrderId from_order_id
+    cdef readonly ClientOrderId from_cl_ord_id
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
     cdef readonly Currency quote_currency

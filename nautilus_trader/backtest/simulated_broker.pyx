@@ -55,10 +55,10 @@ from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport OrderIdBroker
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport PositionIdBroker
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Decimal64
@@ -142,10 +142,10 @@ cdef class SimulatedBroker:
         self.fill_model = fill_model
 
         self._market = {}               # type: {Symbol, QuoteTick}
-        self._working_orders = {}       # type: {OrderId, Order}
-        self._child_orders = {}         # type: {OrderId, [Order]}
-        self._oco_orders = {}           # type: {OrderId, OrderId}
-        self._position_oco_orders = {}  # type: {PositionId, [OrderId]}
+        self._working_orders = {}       # type: {ClientOrderId, Order}
+        self._child_orders = {}         # type: {ClientOrderId, [Order]}
+        self._oco_orders = {}           # type: {ClientOrderId, ClientOrderId}
+        self._position_oco_orders = {}  # type: {ClientPositionId, [ClientOrderId]}
 
         self._set_slippages()
         self._set_min_distances()
@@ -209,10 +209,10 @@ cdef class SimulatedBroker:
         self.total_rollover = Money(0, self.account_currency)
 
         self._market = {}               # type: {Symbol, QuoteTick}
-        self._working_orders = {}       # type: {OrderId, PassiveOrder}
-        self._child_orders = {}         # type: {OrderId, [PassiveOrder]}
-        self._oco_orders = {}           # type: {OrderId, OrderId}
-        self._position_oco_orders = {}  # type: {PositionId, [OrderId]}
+        self._working_orders = {}       # type: {ClientOrderId, PassiveOrder}
+        self._child_orders = {}         # type: {ClientOrderId, [PassiveOrder]}
+        self._oco_orders = {}           # type: {ClientOrderId, ClientOrderId}
+        self._position_oco_orders = {}  # type: {ClientPositionId, [ClientOrderId]}
 
         self._log.info("Reset.")
 
@@ -290,7 +290,7 @@ cdef class SimulatedBroker:
             return
 
         # Simulate market
-        cdef OrderId order_id
+        cdef ClientOrderId order_id
         cdef Order order
         cdef Instrument instrument
         for order in self._working_orders.copy().values():  # Copies list to avoid resize during loop
@@ -305,7 +305,7 @@ cdef class SimulatedBroker:
             if order.side == OrderSide.BUY:
                 if order.type == OrderType.STOP:
                     if tick.ask.ge(order.price) or self._is_marginal_buy_stop_fill(order.price, tick):
-                        del self._working_orders[order.id]  # Remove order from working orders
+                        del self._working_orders[order.client_id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(
                                 order,
@@ -319,7 +319,7 @@ cdef class SimulatedBroker:
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.ask.le(order.price) or self._is_marginal_buy_limit_fill(order.price, tick):
-                        del self._working_orders[order.id]  # Remove order from working orders
+                        del self._working_orders[order.client_id]  # Remove order from working orders
                         self._fill_order(
                             order,
                             order.price,
@@ -328,7 +328,7 @@ cdef class SimulatedBroker:
             elif order.side == OrderSide.SELL:
                 if order.type == OrderType.STOP:
                     if tick.bid.le(order.price) or self._is_marginal_sell_stop_fill(order.price, tick):
-                        del self._working_orders[order.id]  # Remove order from working orders
+                        del self._working_orders[order.client_id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(
                                 order,
@@ -342,7 +342,7 @@ cdef class SimulatedBroker:
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.bid.ge(order.price) or self._is_marginal_sell_limit_fill(order.price, tick):
-                        del self._working_orders[order.id]  # Remove order from working orders
+                        del self._working_orders[order.client_id]  # Remove order from working orders
                         self._fill_order(
                             order,
                             order.price,
@@ -351,8 +351,8 @@ cdef class SimulatedBroker:
 
             # Check for order expiry
             if order.expire_time is not None and time_now >= order.expire_time:
-                if order.id in self._working_orders:  # Order may have been removed since loop started
-                    del self._working_orders[order.id]
+                if order.client_id in self._working_orders:  # Order may have been removed since loop started
+                    del self._working_orders[order.client_id]
                     self._expire_order(order)
 
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
@@ -524,11 +524,11 @@ cdef class SimulatedBroker:
         self._position_oco_orders[command.position_id] = []
         if command.bracket_order.has_take_profit:
             bracket_orders.append(command.bracket_order.take_profit)
-            self._oco_orders[command.bracket_order.take_profit.id] = command.bracket_order.stop_loss.id
-            self._oco_orders[command.bracket_order.stop_loss.id] = command.bracket_order.take_profit.id
+            self._oco_orders[command.bracket_order.take_profit.client_id] = command.bracket_order.stop_loss.client_id
+            self._oco_orders[command.bracket_order.stop_loss.client_id] = command.bracket_order.take_profit.client_id
             self._position_oco_orders[command.position_id].append(command.bracket_order.take_profit)
 
-        self._child_orders[command.bracket_order.entry.id] = bracket_orders
+        self._child_orders[command.bracket_order.entry.client_id] = bracket_orders
         self._position_oco_orders[command.position_id].append(command.bracket_order.stop_loss)
 
         # Generate command
@@ -560,7 +560,8 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
             command.account_id,
-            order.id,
+            order.client_id,
+            OrderId(order.client_id.value.replace('O', 'B')),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now())
@@ -628,8 +629,8 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderModified modified = OrderModified(
             command.account_id,
+            order.client_id,
             order.id,
-            order.id_broker,
             command.modified_quantity,
             command.modified_price,
             self._clock.utc_now(),
@@ -656,7 +657,7 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             self._account.id,
-            order.id,
+            order.client_id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now())
@@ -667,8 +668,8 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
             self._account.id,
-            order.id,
-            OrderIdBroker("B" + order.id.value),
+            order.client_id,
+            OrderId(order.client_id.value.replace('O', 'B')),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now())
@@ -683,19 +684,19 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
             self._account.id,
-            order.id,
+            order.client_id,
             self._clock.utc_now(),
             reason,
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
         self.exec_engine.handle_event(rejected)
-        self._check_oco_order(order.id)
-        self._clean_up_child_orders(order.id)
+        self._check_oco_order(order.client_id)
+        self._clean_up_child_orders(order.client_id)
 
     cdef void _cancel_reject_order(
             self,
-            OrderId order_id,
+            ClientOrderId order_id,
             str response,
             str reason) except *:
         # Generate event
@@ -714,6 +715,7 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderExpired expired = OrderExpired(
             self._account.id,
+            order.client_id,
             order.id,
             order.expire_time,
             self._uuid_factory.generate(),
@@ -721,24 +723,24 @@ cdef class SimulatedBroker:
 
         self.exec_engine.handle_event(expired)
 
-        cdef OrderId first_child_order_id
-        cdef OrderId other_oco_order_id
-        if order.id in self._child_orders:
+        cdef ClientOrderId first_child_order_id
+        cdef ClientOrderId other_oco_order_id
+        if order.client_id in self._child_orders:
             # Remove any unprocessed bracket child order OCO identifiers
-            first_child_order_id = self._child_orders[order.id][0].id
+            first_child_order_id = self._child_orders[order.client_id][0].client_id
             if first_child_order_id in self._oco_orders:
                 other_oco_order_id = self._oco_orders[first_child_order_id]
                 del self._oco_orders[first_child_order_id]
                 del self._oco_orders[other_oco_order_id]
         else:
-            self._check_oco_order(order.id)
-        self._clean_up_child_orders(order.id)
+            self._check_oco_order(order.client_id)
+        self._clean_up_child_orders(order.client_id)
 
     cdef void _process_order(self, Order order) except *:
         """
         Work the given order.
         """
-        Condition.not_in(order.id, self._working_orders, "order.id", "working_orders")
+        Condition.not_in(order.client_id, self._working_orders, "order.id", "working_orders")
 
         cdef Instrument instrument = self.instruments[order.symbol]
 
@@ -834,13 +836,13 @@ cdef class SimulatedBroker:
 
     cdef void _work_order(self, Order order) except *:
         # Order now becomes working
-        self._working_orders[order.id] = order
+        self._working_orders[order.client_id] = order
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
             self._account.id,
-            order.id,
-            OrderIdBroker(order.id.value.replace('O', 'B')),
+            order.client_id,
+            OrderId(order.client_id.value.replace('O', 'B')),
             order.symbol,
             order.side,
             order.type,
@@ -881,9 +883,10 @@ cdef class SimulatedBroker:
         cdef Money commission = self._calculate_commission(order, fill_price)
         cdef OrderFilled filled = OrderFilled(
             self._account.id,
-            order.id,
-            ExecutionId("E-" + order.id.value),
-            PositionIdBroker("ET-" + order.id.value),
+            order.client_id,
+            OrderId(order.client_id.value.replace('O', 'B')),
+            ExecutionId("E-" + order.client_id.value),
+            PositionId("ET-" + order.client_id.value),
             order.symbol,
             order.side,
             order.quantity,
@@ -895,36 +898,36 @@ cdef class SimulatedBroker:
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        cdef Position position = self.exec_engine.database.get_position_for_order(order.id)
+        cdef Position position = self.exec_engine.database.get_position_for_order(order.client_id)
         self.adjust_account(filled, position)
 
         self.exec_engine.handle_event(filled)
-        self._check_oco_order(order.id)
+        self._check_oco_order(order.client_id)
 
         # Work any bracket child orders
-        if order.id in self._child_orders:
-            for child_order in self._child_orders[order.id]:
+        if order.client_id in self._child_orders:
+            for child_order in self._child_orders[order.client_id]:
                 if not child_order.is_completed():  # The order may already be cancelled or rejected
                     self._process_order(child_order)
-            del self._child_orders[order.id]
+            del self._child_orders[order.client_id]
 
         if position is not None and position.is_closed():
-            oco_orders = self._position_oco_orders.get(position.id)
+            oco_orders = self._position_oco_orders.get(position.client_id)
             if oco_orders is not None:
-                for order in self._position_oco_orders[position.id]:
+                for order in self._position_oco_orders[position.client_id]:
                     if order.is_working():
                         self._cancel_order(order)
-                del self._position_oco_orders[position.id]
+                del self._position_oco_orders[position.client_id]
 
-    cdef void _clean_up_child_orders(self, OrderId order_id) except *:
+    cdef void _clean_up_child_orders(self, ClientOrderId order_id) except *:
         # Clean up any residual child orders from the completed order associated
         # with the given identifier.
         if order_id in self._child_orders:
             del self._child_orders[order_id]
 
-    cdef void _check_oco_order(self, OrderId order_id) except *:
+    cdef void _check_oco_order(self, ClientOrderId order_id) except *:
         # Check held OCO orders and remove any paired with the given order_id
-        cdef OrderId oco_order_id
+        cdef ClientOrderId oco_order_id
         cdef Order oco_order
 
         if order_id in self._oco_orders:
@@ -944,7 +947,7 @@ cdef class SimulatedBroker:
                 self._cancel_oco_order(self._working_orders[oco_order_id], order_id)
                 del self._working_orders[oco_order_id]
 
-    cdef void _reject_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *:
+    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
 
@@ -955,7 +958,7 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderRejected event = OrderRejected(
             self._account.id,
-            order.id,
+            order.client_id,
             self._clock.utc_now(),
             f"OCO order rejected from {oco_order_id}",
             self._uuid_factory.generate(),
@@ -963,7 +966,7 @@ cdef class SimulatedBroker:
 
         self.exec_engine.handle_event(event)
 
-    cdef void _cancel_oco_order(self, PassiveOrder order, OrderId oco_order_id) except *:
+    cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
         if order.state() != OrderState.WORKING:
@@ -973,12 +976,13 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
             self._account.id,
+            order.client_id,
             order.id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._log.debug(f"Cancelling {order.id} OCO order from {oco_order_id}.")
+        self._log.debug(f"Cancelling {order.client_id} OCO order from {oco_order_id}.")
         self.exec_engine.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
@@ -989,10 +993,11 @@ cdef class SimulatedBroker:
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
             self._account.id,
+            order.client_id,
             order.id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._log.debug(f"Cancelling {order.id} as linked position closed.")
+        self._log.debug(f"Cancelling {order.client_id} as linked position closed.")
         self.exec_engine.handle_event(event)

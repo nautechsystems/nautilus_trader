@@ -48,8 +48,8 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import MatchId
-from nautilus_trader.model.identifiers import OrderIdBroker
-from nautilus_trader.model.identifiers import PositionIdBroker
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -240,7 +240,7 @@ class TestStubs:
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
             TestStubs.account_id(),
-            order.id,
+            order.client_id,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -249,8 +249,8 @@ class TestStubs:
     def event_order_accepted(order) -> OrderAccepted:
         return OrderAccepted(
             TestStubs.account_id(),
-            order.id,
-            OrderIdBroker(order.id.value.replace('O', 'B')),
+            order.client_id,
+            OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -259,7 +259,7 @@ class TestStubs:
     def event_order_rejected(order) -> OrderRejected:
         return OrderRejected(
             TestStubs.account_id(),
-            order.id,
+            order.client_id,
             UNIX_EPOCH,
             "ORDER_REJECTED",
             uuid4(),
@@ -272,9 +272,10 @@ class TestStubs:
 
         return OrderFilled(
             TestStubs.account_id(),
-            order.id,
-            ExecutionId(order.id.value.replace('O', 'E')),
-            PositionIdBroker(order.id.value.replace('P', 'T')),
+            order.client_id,
+            OrderId('1'),
+            ExecutionId(order.client_id.value.replace('O', 'E')),
+            PositionId(order.client_id.value.replace('P', 'T')),
             order.symbol,
             order.side,
             order.quantity,
@@ -293,8 +294,8 @@ class TestStubs:
 
         return OrderWorking(
             TestStubs.account_id(),
-            order.id,
-            OrderIdBroker(order.id.value.replace('O', 'B')),
+            order.client_id,
+            OrderId('1'),
             order.symbol,
             order.side,
             order.type,
@@ -310,7 +311,8 @@ class TestStubs:
     def event_order_cancelled(order) -> OrderCancelled:
         return OrderCancelled(
             TestStubs.account_id(),
-            order.id,
+            order.client_id,
+            OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -319,7 +321,8 @@ class TestStubs:
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
             TestStubs.account_id(),
-            order.id,
+            order.client_id,
+            OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)
@@ -359,8 +362,7 @@ class TestStubs:
         generator = PositionIdGenerator(
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
-            clock=LiveClock()
-        )
+            clock=LiveClock())
 
         for _i in range(number - 1):
             generator.generate()
@@ -368,19 +370,17 @@ class TestStubs:
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
-            clock=LiveClock()
-        )
+            clock=LiveClock())
 
         order = order_factory.market(
             TestStubs.symbol_audusd_fxcm(),
             OrderSide.BUY,
-            Quantity(100000)
-        )
+            Quantity(100000))
 
         order_filled = TestStubs.event_order_filled(order, entry_price)
 
         position_id = generator.generate()
-        position = Position(position_id=position_id, event=order_filled)
+        position = Position(cl_pos_id=position_id, event=order_filled)
 
         return position
 
@@ -402,9 +402,10 @@ class TestStubs:
 
         order_filled = OrderFilled(
             TestStubs.account_id(),
-            order.id,
-            ExecutionId(order.id.value.replace('O', 'E')),
-            PositionIdBroker(position.id.value.replace('P', 'T')),
+            order.client_id,
+            OrderId("1"),
+            ExecutionId(order.client_id.value.replace('O', 'E')),
+            PositionId(position.id.value.replace('P', 'T')),
             order.symbol,
             order.side,
             order.quantity,
