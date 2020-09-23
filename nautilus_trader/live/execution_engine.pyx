@@ -49,7 +49,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Initialize a new instance of the LiveExecutionEngine class.
 
-        :param trader_id: The trader_id for the engine.
+        :param trader_id: The trader identifier for the engine.
         :param account_id: The account_id for the engine.
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.

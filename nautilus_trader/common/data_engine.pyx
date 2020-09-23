@@ -53,7 +53,7 @@ cdef list _TIME_BARS = [
 
 cdef class DataEngine:
     """
-    Provides a data engine for managing many data clients.
+    Provides a generic data engine for managing many data clients.
     """
 
     def __init__(
@@ -63,19 +63,33 @@ cdef class DataEngine:
             bint use_previous_close,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            Logger logger not None
+            Logger logger not None,
     ):
         """
         Initialize a new instance of the DataEngine class.
 
-        :param tick_capacity: The length for the internal ticks deque per symbol (> 0).
-        :param bar_capacity: The length for the internal bars deque per symbol (> 0).
-        :param use_previous_close: If bar aggregators should use the previous close.
-        :param clock: The clock for the component.
-        :param uuid_factory: The UUID factory for the component.
-        :param logger: The logger for the component.
-        :raises ValueError: If the tick_capacity is not positive (> 0).
-        :raises ValueError: If the bar_capacity is not positive (> 0).
+        Parameters
+        ----------
+        tick_capacity : int
+            The length for the internal ticks deque per symbol (> 0).
+        bar_capacity : int
+            The length for the internal bars deque per symbol (> 0).
+        use_previous_close : bool
+            If bar aggregators should use the previous close.
+        clock : Clock
+            The clock for the component.
+        uuid_factory : UUIDFactory
+            The UUID factory for the component.
+        logger : Logger
+            The logger for the component.
+
+        Raises
+        ------
+        ValueError
+            If tick_capacity is not positive (> 0).
+        ValueError
+            If bar_capacity is not positive (> 0).
+
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
         Condition.positive_int(bar_capacity, "bar_capacity")
@@ -330,7 +344,7 @@ cdef class DataEngine:
         Raises
         ------
         ValueError
-            If client.venue is already registered.
+            If client is already registered.
 
         """
         Condition.not_none(client, "client")
@@ -359,6 +373,19 @@ cdef class DataEngine:
 # -- HANDLER METHODS ----------------------------------------------------------------------------- #
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
+        """
+        Handle the given tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick to handle.
+        send_to_handlers : bool
+            If the tick should be sent to any registered handlers.
+
+        """
+        Condition.not_none(tick, "tick")
+
         cdef Symbol symbol = tick.symbol
 
         # Update ticks and spreads
@@ -390,6 +417,17 @@ cdef class DataEngine:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void handle_quote_ticks(self, list ticks) except *:
+        """
+        Handle the given ticks by handling each tick individually.
+
+        Parameters
+        ----------
+        ticks : List[QuoteTick]
+            The received ticks to handle.
+
+        """
+        Condition.not_none(ticks, "tick")
+
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -403,6 +441,19 @@ cdef class DataEngine:
             self.handle_quote_tick(ticks[i], send_to_handlers=False)
 
     cpdef void handle_trade_tick(self, TradeTick tick, bint send_to_handlers=True) except *:
+        """
+        Handle the given tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The received tick to handle.
+        send_to_handlers : bool
+            If the tick should be sent to any registered handlers.
+
+        """
+        Condition.not_none(tick, "tick")
+
         cdef Symbol symbol = tick.symbol
 
         # Update ticks
@@ -434,6 +485,17 @@ cdef class DataEngine:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks) except *:
+        """
+        Handle the given ticks by handling each tick individually.
+
+        Parameters
+        ----------
+        ticks : List[TradeTick]
+            The received ticks to handle.
+
+        """
+        Condition.not_none(ticks, "ticks")
+
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -447,6 +509,22 @@ cdef class DataEngine:
             self.handle_trade_tick(ticks[i], send_to_handlers=False)
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=True) except *:
+        """
+        Handle the given bar type and bar.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the received bar.
+        bar : Bar
+            The received bar to handle.
+        send_to_handlers : bool
+            If the bar should be sent to any registered handlers.
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(bar, "bar")
+
         # Update ticks
         bars = self._bars.get(bar_type)
 
@@ -477,8 +555,15 @@ cdef class DataEngine:
     @cython.wraparound(False)
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
-        System method. Handle the given bar type and bars by handling
-        each bar individually.
+        Handle the given bar type and bars by handling each bar individually.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the received bars.
+        bars : List[Bar]
+            The received bars to handle.
+
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bars, "bars")  # Can be empty
@@ -495,7 +580,15 @@ cdef class DataEngine:
             self.handle_bar(bar_type, bars[i], send_to_handlers=False)
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
-        # Handle the given instrument by sending it to all instrument handlers for that symbol
+        """
+        Handle the given instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The received instrument to handle.
+
+        """
         self._instruments[instrument.symbol] = instrument
         self._log.info(f"Updated instrument {instrument.symbol}")
 
@@ -506,7 +599,15 @@ cdef class DataEngine:
                 handler.handle(instrument)
 
     cpdef void handle_instruments(self, list instruments) except *:
-        # Handle all instruments individually
+        """
+        Handle the given instruments by handling each instrument individually.
+
+        Parameters
+        ----------
+        instruments : Instrument
+            The received instruments to handle.
+
+        """
         cdef Instrument instrument
         for instrument in instruments:
             self.handle_instrument(instrument)
@@ -517,7 +618,10 @@ cdef class DataEngine:
         """
         Return the list of quote tick symbols subscribed to.
 
-        :return List[Symbol].
+        Returns
+        -------
+        List[Symbol]
+
         """
         return list(self._quote_tick_handlers.keys())
 
@@ -525,7 +629,10 @@ cdef class DataEngine:
         """
         Return the list of trade tick symbols subscribed to.
 
-        :return List[Symbol].
+        Returns
+        -------
+        List[Symbol]
+
         """
         return list(self._trade_tick_handlers.keys())
 
@@ -533,7 +640,10 @@ cdef class DataEngine:
         """
         Return the list of bar types subscribed to.
 
-        :return List[BarType].
+        Returns
+        -------
+        List[BarType]
+
         """
         return list(self._bar_handlers.keys())
 
@@ -541,7 +651,10 @@ cdef class DataEngine:
         """
         Return the list of instruments subscribed to.
 
-        :return List[Symbol].
+        Returns
+        -------
+        List[Symbol]
+
         """
         return list(self._instrument_handlers.keys())
 
@@ -549,7 +662,9 @@ cdef class DataEngine:
         """
         Return all instrument symbols held by the data engine.
 
-        :return List[Symbol].
+        Returns
+        -------
+        List[Symbol]
         """
         return list(self._instruments.keys())
 
@@ -557,7 +672,10 @@ cdef class DataEngine:
         """
         Return a dictionary of all instruments for the given venue.
 
-        :return Dict[Symbol, Instrument].
+        Returns
+        -------
+        Dict[Symbol, Instrument]
+
         """
         return {instrument.symbol: instrument for instrument in self._instruments}
 
@@ -565,9 +683,20 @@ cdef class DataEngine:
         """
         Return the instrument corresponding to the given symbol (if found).
 
-        :param symbol: The symbol of the instrument to return.
-        :raises ValueError: If the instrument is not found.
-        :return Instrument.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol of the instrument to return.
+
+        Returns
+        -------
+        Instrument
+
+        Raises
+        ------
+        ValueError
+            If instrument is not found.
+
         """
         Condition.is_in(symbol, self._instruments, "symbol", "instruments")
 
@@ -578,8 +707,15 @@ cdef class DataEngine:
         Return a value indicating whether the data engine has quote ticks for
         the given symbol.
 
-        :param symbol: The symbol for the ticks.
-        :return bool.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(symbol, "symbol")
 
@@ -590,8 +726,15 @@ cdef class DataEngine:
         Return a value indicating whether the data engine has trade ticks for
         the given symbol.
 
-        :param symbol: The symbol for the ticks.
-        :return bool.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(symbol, "symbol")
 
@@ -602,8 +745,15 @@ cdef class DataEngine:
         Return a value indicating whether the data engine has bars for the given
         bar type.
 
-        :param bar_type: The bar type for the bars.
-        :return bool.
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the bars.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(bar_type, "bar_type")
 
@@ -613,8 +763,15 @@ cdef class DataEngine:
         """
         Return the count of quote ticks for the given symbol.
 
-        :param symbol: The symbol for the ticks.
-        :return int.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        int
+
         """
         Condition.not_none(symbol, "symbol")
 
@@ -624,8 +781,15 @@ cdef class DataEngine:
         """
         Return the count of trade ticks for the given symbol.
 
-        :param symbol: The symbol for the ticks.
-        :return int.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        int
+
         """
         Condition.not_none(symbol, "symbol")
 
@@ -635,8 +799,15 @@ cdef class DataEngine:
         """
         Return the count of bars for the given bar type.
 
-        :param bar_type: The bar type to count.
-        :return int.
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to count.
+
+        Returns
+        -------
+        int
+
         """
         Condition.not_none(bar_type, "bar_type")
 
@@ -646,8 +817,15 @@ cdef class DataEngine:
         """
         Return the quote ticks for the given symbol (returns a shallow copy of the internal deque).
 
-        :param symbol: The symbol for the ticks to get.
-        :return List[QuoteTick].
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks to get.
+
+        Returns
+        -------
+        List[QuoteTick]
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
@@ -658,8 +836,15 @@ cdef class DataEngine:
         """
         Return the trade ticks for the given symbol (returns a shallow copy of the internal deque).
 
-        :param symbol: The symbol for the ticks to get.
-        :return List[TradeTick].
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks to get.
+
+        Returns
+        -------
+        List[TradeTick]
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
@@ -670,8 +855,15 @@ cdef class DataEngine:
         """
         Return the bars for the given bar type (returns a shallow copy of the internal deque).
 
-        :param bar_type: The bar type to get.
-        :return List[Bar].
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to get.
+
+        Returns
+        -------
+        List[Bar]
+
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.is_in(bar_type, self._bars, "bar_type", "bars")
@@ -682,11 +874,24 @@ cdef class DataEngine:
         """
         Return the quote tick for the given symbol at the given index or last if no index specified.
 
-        :param symbol: The symbol for the tick to get.
-        :param index: The optional index for the tick to get.
-        :return QuoteTick.
-        :raises ValueError: If the data engine quote ticks does not contain the symbol.
-        :raises IndexError: If the tick index is out of range.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the tick to get.
+        index : int, optional
+            The index for the tick to get.
+
+        Returns
+        -------
+        QuoteTick
+
+        Raises
+        ------
+        ValueError
+            If the data engines quote ticks does not contain the symbol.
+        IndexError
+            If tick index is out of range.
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
@@ -697,11 +902,24 @@ cdef class DataEngine:
         """
         Return the trade tick for the given symbol at the given index or last if no index specified.
 
-        :param symbol: The symbol for the tick to get.
-        :param index: The optional index for the tick to get.
-        :return TradeTick.
-        :raises ValueError: If the data engine trade ticks does not contain the symbol.
-        :raises IndexError: If the tick index is out of range.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the tick to get.
+        index : int
+            The optional index for the tick to get.
+
+        Returns
+        -------
+        TradeTick
+
+        Raises
+        ------
+        ValueError
+            If the data engines trade ticks does not contain the symbol.
+        IndexError
+            If tick index is out of range.
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
@@ -712,11 +930,24 @@ cdef class DataEngine:
         """
         Return the bar for the given bar type at the given index or last if no index specified.
 
-        :param bar_type: The bar type to get.
-        :param index: The optional index for the bar to get.
-        :return Bar.
-        :raises ValueError: If the data engine bars does not contain the bar type.
-        :raises IndexError: If the bar index is out of range.
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to get.
+        index : int
+            The optional index for the bar to get.
+
+        Returns
+        -------
+        Bar
+
+        Raises
+        ------
+        ValueError
+            If the data engines bars does not contain the bar type.
+        IndexError
+            If bar index is out of range.
+
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.is_in(bar_type, self._bars, "bar_type", "bars")
@@ -731,11 +962,24 @@ cdef class DataEngine:
         """
         Return the calculated exchange rate for the given currencies.
 
-        :param from_currency: The currency to convert from.
-        :param to_currency: The currency to convert to.
-        :param price_type: The price type for the exchange rate (default=MID).
-        :return float.
-        :raises ValueError: If the price_type is UNDEFINED or LAST.
+        Parameters
+        ----------
+        from_currency : Currency
+            The currency to convert from.
+        to_currency : Currency
+            The currency to convert to.
+        price_type : PriceType
+            The price type for the exchange rate (default=MID).
+
+        Returns
+        -------
+        float
+
+        Raises
+        ------
+        ValueError
+            If price_type is UNDEFINED or LAST.
+
         """
         cdef Symbol symbol
         cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._quote_ticks.items() if len(ticks) > 0}
@@ -746,7 +990,8 @@ cdef class DataEngine:
             to_currency=to_currency,
             price_type=price_type,
             bid_rates=bid_rates,
-            ask_rates=ask_rates)
+            ask_rates=ask_rates,
+        )
 
     cdef void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:
@@ -1010,14 +1255,25 @@ cdef class BulkTickBarBuilder:
             self,
             BarType bar_type not None,
             Logger logger not None,
-            callback not None):
+            callback not None: callable,
+    ):
         """
         Initialize a new instance of the BulkTickBarBuilder class.
 
-        :param bar_type: The bar_type to build.
-        :param logger: The logger for the bar aggregator.
-        :param callback: The callback to send the built bars to.
-        :raises ValueError: If the callback is not type callable.
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar_type to build.
+        logger : Logger
+            The logger for the bar aggregator.
+        callback : Callable
+            The callback to send the built bars to.
+
+        Raises
+        ------
+        ValueError
+            If callback is not of type callable.
+
         """
         Condition.callable(callback, "callback")
 
@@ -1032,8 +1288,14 @@ cdef class BulkTickBarBuilder:
         Receives the bulk list of ticks and builds aggregated tick
         bars. Then sends the bar type and bars list on to the registered callback.
 
-        :param ticks: The bulk ticks for aggregation into tick bars.
+        Parameters
+        ----------
+        ticks : List[Tick]
+            The bulk ticks for aggregation into tick bars.
+
         """
+        Condition.not_none(ticks, "ticks")
+
         cdef int i
         if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
             for i in range(len(ticks)):
@@ -1059,7 +1321,11 @@ cdef class BulkTimeBarUpdater:
         """
         Initialize a new instance of the BulkTimeBarUpdater class.
 
-        :param aggregator: The time bar aggregator to update.
+        Parameters
+        ----------
+        aggregator : TimeBarAggregator
+            The time bar aggregator to update.
+
         """
         self.aggregator = aggregator
         self.start_time = self.aggregator.next_close - self.aggregator.interval
@@ -1070,7 +1336,11 @@ cdef class BulkTimeBarUpdater:
         """
         Receives the bulk list of ticks and updates the aggregator.
 
-        :param ticks: The bulk ticks for updating the aggregator.
+        Parameters
+        ----------
+        ticks : List[Tick]
+            The bulk ticks for updating the aggregator.
+
         """
         cdef int i
         if self.aggregator.bar_type.spec.price_type == PriceType.LAST:

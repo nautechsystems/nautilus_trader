@@ -32,11 +32,22 @@ cdef class IdentifierCache:
 
     cpdef TraderId get_trader_id(self, str value):
         """
-        Return the cached trader_id.
+        Return the cached trader identifier.
 
-        :param value: The value to be parsed to a trader_id.
-        :return: TraderId or None.
-        :raises: ValueError: If the string is invalid.
+        Parameters
+        ----------
+        value : str
+            The value to be parsed to a trader identifier.
+
+        Returns
+        -------
+        TraderId or None
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         Condition.valid_string(value, "value")
 
@@ -46,9 +57,20 @@ cdef class IdentifierCache:
         """
         Return the cached account.
 
-        :param value: The value to be parsed to a account_id.
-        :return: AccountId or None.
-        :raises: ValueError: If the string is invalid.
+        Parameters
+        ----------
+        value : str
+            The value to be parsed to an account identifier.
+
+        Returns
+        -------
+        AccountId or None
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         Condition.valid_string(value, "value")
 
@@ -56,11 +78,20 @@ cdef class IdentifierCache:
 
     cpdef StrategyId get_strategy_id(self, str value):
         """
-        Return the cached strategy_id.
+        Return the cached strategy identifier.
 
-        :param value: The value to be parsed to a strategy_id.
-        :return: StrategyId or None.
-        :raises: ValueError: If the string is invalid.
+        value : str
+            The value to be parsed to a strategy identifier.
+
+        Returns
+        -------
+        StrategyId or None
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         Condition.valid_string(value, "value")
 
@@ -70,9 +101,20 @@ cdef class IdentifierCache:
         """
         Return the cached symbol.
 
-        :param value: The value to be parsed to a symbol.
-        :return: Symbol or None.
-        :raises: ValueError: If the string is invalid.
+        Parameters
+        ----------
+        value : str
+            The value to be parsed to a symbol.
+
+        Returns
+        -------
+        Symbol or None
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
         """
         Condition.valid_string(value, "value")
 
