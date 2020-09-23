@@ -43,14 +43,6 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef list _TIME_BARS = [
-    BarAggregation.SECOND,
-    BarAggregation.MINUTE,
-    BarAggregation.HOUR,
-    BarAggregation.DAY,
-]
-
-
 cdef class DataEngine:
     """
     Provides a generic data engine for managing many data clients.
@@ -200,7 +192,8 @@ cdef class DataEngine:
             from_datetime,
             to_datetime,
             limit,
-            callback)
+            callback,
+        )
 
     cpdef void request_trade_ticks(
             self,
@@ -220,7 +213,8 @@ cdef class DataEngine:
             from_datetime,
             to_datetime,
             limit,
-            callback)
+            callback,
+        )
 
     cpdef void request_bars(
             self,
@@ -240,7 +234,8 @@ cdef class DataEngine:
             from_datetime,
             to_datetime,
             limit,
-            callback)
+            callback,
+        )
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
@@ -250,7 +245,7 @@ cdef class DataEngine:
 
         self._clients[symbol.venue].request_instrument(symbol, callback)
 
-    cpdef void request_instruments(self, Venue venue, callback: callable) except *:
+    cpdef void request_instruments(self, Venue venue, callback) except *:
         """
         TBD.
         """
@@ -997,7 +992,7 @@ cdef class DataEngine:
         if bar_type not in self._bar_aggregators:
             if bar_type.spec.aggregation == BarAggregation.TICK:
                 aggregator = TickBarAggregator(bar_type, self.handle_bar, self._log.get_logger())
-            elif bar_type.spec.aggregation in _TIME_BARS:
+            elif bar_type.is_time_aggregated():
                 aggregator = TimeBarAggregator(
                     bar_type=bar_type,
                     handler=self.handle_bar,

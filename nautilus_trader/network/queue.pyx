@@ -15,6 +15,7 @@
 
 import threading
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.network.socket cimport Socket
 
@@ -55,7 +56,7 @@ cdef class MessageQueueInbound:
             self,
             int expected_frames,
             Socket socket not None,
-            frames_receiver: callable,
+            frames_receiver not None: callable,
             LoggerAdapter logger not None,
     ):
         """
@@ -67,11 +68,22 @@ cdef class MessageQueueInbound:
             The expected frames received at this queues port.
         socket: Socket
             The socket for the queue.
-        frames_receiver : callable
+        frames_receiver : Callable
             The handler method for receiving frames.
         logger : LoggerAdapter
             The logger for the component.
+
+        Raises
+        ------
+        ValueError
+            If expected_frames is not positive (>0).
+        TypeError
+            If frames_receiver is not of type Callable.
+
         """
+        Condition.positive_int(expected_frames, "expected_frames")
+        Condition.callable(frames_receiver, "frames_receiver")
+
         self._log = logger
         self._expected_frames = expected_frames
         self._socket = socket

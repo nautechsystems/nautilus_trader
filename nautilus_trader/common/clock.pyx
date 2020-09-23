@@ -169,8 +169,8 @@ cdef class Clock:
             The name for the alert (must be unique for this clock).
         alert_time : datetime
             The time for the alert.
-        handler : callable
-            The optional handler to receive time events (must be Callable).
+        handler : callable, optional
+            The handler to receive time events (must be Callable).
 
         Raises
         ------
