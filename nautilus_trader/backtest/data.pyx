@@ -185,11 +185,12 @@ cdef class BacktestDataEngine(DataEngine):
         super().__init__(
             tick_capacity=tick_capacity,
             bar_capacity=bar_capacity,
-            use_previous_close=False,  # To correctly reproduce historical data bars
             clock=clock,
             uuid_factory=TestUUIDFactory(),
             logger=logger,
         )
+
+        self.set_use_previous_close(False)  # To correctly reproduce historical data bars
 
         # Check data integrity
         data.check_integrity()

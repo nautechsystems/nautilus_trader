@@ -53,6 +53,7 @@ cdef class DataEngine:
     cdef readonly int tick_capacity
     cdef readonly int bar_capacity
 
+    cpdef void set_use_previous_close(self, bint setting)
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *

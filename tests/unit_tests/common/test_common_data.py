@@ -36,13 +36,13 @@ class DataClientTests(unittest.TestCase):
 
     def setUp(self):
         clock = TestClock()
-        self.client = DataEngine(
+        self.data_engine = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
-            use_previous_close=False,
             clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(clock))
+            logger=TestLogger(clock),
+        )
 
     def test_get_exchange_rate_returns_correct_rate(self):
         # Arrange
@@ -52,12 +52,13 @@ class DataClientTests(unittest.TestCase):
             Price(110.80010, 5),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
 
-        self.client.handle_quote_tick(tick)
+        self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.client.get_exchange_rate(Currency.JPY, Currency.USD)
+        result = self.data_engine.get_exchange_rate(Currency.JPY, Currency.USD)
 
         # Assert
         self.assertEqual(0.009025266685348969, result)
@@ -70,12 +71,13 @@ class DataClientTests(unittest.TestCase):
             Price(0.80010, 5),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
 
-        self.client.handle_quote_tick(tick)
+        self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.client.get_exchange_rate(Currency.AUD, Currency.USD)
+        result = self.data_engine.get_exchange_rate(Currency.AUD, Currency.USD)
 
         # Assert
         self.assertEqual(0.80005, result)

@@ -52,7 +52,6 @@ cdef class DataEngine:
             self,
             int tick_capacity,
             int bar_capacity,
-            bint use_previous_close,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
@@ -66,9 +65,6 @@ cdef class DataEngine:
             The length for the internal ticks deque per symbol (> 0).
         bar_capacity : int
             The length for the internal bars deque per symbol (> 0).
-        use_previous_close : bool
-            If bar aggregators should use the previous closing price.
-            This is set to False for backtesting to ensure accurate historical bars.
         clock : Clock
             The clock for the component.
         uuid_factory : UUIDFactory
@@ -110,6 +106,21 @@ cdef class DataEngine:
         self._instruments = {}          # type: {Symbol, Instrument}
 
         self._log.info("Initialized.")
+
+    cpdef void set_use_previous_close(self, bint setting):
+        """
+        Set if bar aggregators should use the previous closing price.
+        This should be set to False for backtesting to ensure generated bars
+        match the historical data.
+
+        Parameters
+        ----------
+        setting : bool
+            The value to set.
+
+        """
+        self._use_previous_close = setting
+        self._log.info(f"Set `use_previous_close` to {setting}.")
 
     cpdef void connect(self) except *:
         """

@@ -118,7 +118,6 @@ cdef class LiveDataEngine(DataEngine):
         super().__init__(
             tick_capacity=tick_capacity,
             bar_capacity=bar_capacity,
-            use_previous_close=True,
             clock=clock,
             uuid_factory=uuid_factory,
             logger=logger,
