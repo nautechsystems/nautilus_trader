@@ -36,12 +36,14 @@ cdef class OrderFactory:
     A factory class which provides different order types.
     """
 
-    def __init__(self,
-                 IdTag id_tag_trader not None,
-                 IdTag id_tag_strategy not None,
-                 Clock clock=None,
-                 UUIDFactory uuid_factory=None,
-                 int initial_count=0):
+    def __init__(
+            self,
+            IdTag id_tag_trader not None,
+            IdTag id_tag_strategy not None,
+            Clock clock=None,
+            UUIDFactory uuid_factory=None,
+            int initial_count=0,
+    ):
         """
         Initialize a new instance of the OrderFactory class.
 
@@ -113,7 +115,8 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            TimeInForce time_in_force=TimeInForce.DAY):
+            TimeInForce time_in_force=TimeInForce.DAY,
+    ):
         """
         Create a new market order.
 
@@ -160,7 +163,8 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None,
             bint is_post_only=True,
-            bint is_hidden=False):
+            bint is_hidden=False,
+    ):
         """
         Create a new limit order.
 
@@ -219,7 +223,8 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None):
+            datetime expire_time=None,
+    ):
         """
         Create a new stop-market order.
 
@@ -263,13 +268,15 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now())
+            timestamp=self._clock.utc_now(),
+        )
 
     cpdef BracketOrder bracket(
             self,
             Order entry_order,
             Price stop_loss,
-            Price take_profit=None):
+            Price take_profit=None,
+    ):
         """
         Create a bracket order from the given entry.
 
@@ -318,7 +325,8 @@ cdef class OrderFactory:
             entry_order.quantity,
             stop_loss,
             TimeInForce.GTC,
-            expire_time=None)
+            expire_time=None,
+        )
 
         cdef Order take_profit_order = None
         if take_profit is not None:
@@ -328,6 +336,7 @@ cdef class OrderFactory:
                 entry_order.quantity,
                 take_profit,
                 TimeInForce.GTC,
-                expire_time=None)
+                expire_time=None,
+            )
 
         return BracketOrder(entry_order, stop_loss_order, take_profit_order)

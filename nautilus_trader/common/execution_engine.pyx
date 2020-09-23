@@ -56,14 +56,16 @@ cdef class ExecutionEngine:
     Provides a generic execution engine.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 ExecutionDatabase database not None,
-                 Portfolio portfolio not None,
-                 Clock clock not None,
-                 UUIDFactory uuid_factory not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            ExecutionDatabase database not None,
+            Portfolio portfolio not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger not None
+    ):
         """
         Initialize a new instance of the ExecutionEngine class.
 
