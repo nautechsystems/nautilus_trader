@@ -28,10 +28,12 @@ cdef class FiniteStateMachine:
     Provides a generic finite state machine.
     """
 
-    def __init__(self,
-                 dict state_transition_table not None,
-                 object initial_state not None,
-                 state_parser not None=str):
+    def __init__(
+            self,
+            dict state_transition_table not None,
+            object initial_state not None,
+            state_parser not None=str,
+    ):
         """
         Initialize a new instance of the FiniteStateMachine class.
 

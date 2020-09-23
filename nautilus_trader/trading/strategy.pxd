@@ -97,7 +97,13 @@ cdef class TradingStrategy:
     cpdef void on_dispose(self) except *
 
 # -- REGISTRATION METHODS -------------------------------------------------------------------------#
-    cpdef void register_trader(self, TraderId trader_id, Clock clock, UUIDFactory uuid_factory, Logger logger) except *
+    cpdef void register_trader(
+        self,
+        TraderId trader_id,
+        Clock clock,
+        UUIDFactory uuid_factory,
+        Logger logger,
+    ) except *
     cpdef void register_data_engine(self, DataEngine engine) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
@@ -157,11 +163,13 @@ cdef class TradingStrategy:
         self,
         Currency from_currency,
         Currency to_currency,
-        PriceType price_type=*)
+        PriceType price_type=*,
+    )
     cpdef double get_exchange_rate_for_account(
         self,
         Currency quote_currency,
-        PriceType price_type=*)
+        PriceType price_type=*,
+    )
     cpdef Order order(self, ClientOrderId cl_ord_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)
@@ -199,7 +207,12 @@ cdef class TradingStrategy:
     cpdef void load(self, dict state) except *
     cpdef void account_inquiry(self) except *
     cpdef void submit_order(self, Order order, ClientPositionId position_id) except *
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order, ClientPositionId cl_pos_id, bint register=*) except *
+    cpdef void submit_bracket_order(
+        self,
+        BracketOrder bracket_order,
+        ClientPositionId cl_pos_id,
+        bint register=*,
+    ) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self) except *

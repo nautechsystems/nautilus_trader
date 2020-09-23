@@ -35,41 +35,14 @@ cdef class Indicator:
         self.initialized = False
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
-        """
-        Update the indicator with the given quote tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The update tick to handle.
-
-        """
         # Abstract method
         raise NotImplementedError(f"Cannot handle {repr(tick)}, method not implemented in subclass")
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
-        """
-        Update the indicator with the given trade tick.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The update tick to handle.
-
-        """
         # Abstract method
         raise NotImplementedError(f"Cannot handle {repr(tick)}, method not implemented in subclass")
 
     cpdef void handle_bar(self, Bar bar) except *:
-        """
-        Update the indicator with the given bar.
-
-        Parameters
-        ----------
-        bar : Bar
-            The update bar to handle.
-
-        """
         # Abstract method
         raise NotImplementedError(f"Cannot handle {repr(bar)}, method not implemented in subclass")
 

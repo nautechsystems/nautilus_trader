@@ -68,7 +68,8 @@ cdef class PositionSizer:
             double commission_rate_bp=0.0,
             double hard_limit=0.0,
             int units=1,
-            int unit_batch_size=0):
+            int unit_batch_size=0,
+    ):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -79,7 +80,8 @@ cdef class PositionSizer:
             self,
             double equity,
             double risk_bp,
-            double commission_rate_bp):
+            double commission_rate_bp,
+    ):
         if equity <= 0.0:
             return 0.0
         cdef double risk_money = equity * basis_points_as_percentage(risk_bp)
@@ -115,7 +117,8 @@ cdef class FixedRiskSizer(PositionSizer):
             double commission_rate_bp=0.0,
             double hard_limit=0.0,
             int units=1,
-            int unit_batch_size=0):
+            int unit_batch_size=0,
+    ):
         """
         Calculate the position size quantity.
 

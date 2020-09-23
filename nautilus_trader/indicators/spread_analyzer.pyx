@@ -89,7 +89,8 @@ cdef class SpreadAnalyzer(Indicator):
             next_value=spread,
             current_value=self.average,
             expected_length=self.capacity,
-            drop_left=False)
+            drop_left=False,
+        )
 
     cpdef void reset(self):
         """

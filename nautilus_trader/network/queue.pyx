@@ -24,9 +24,11 @@ cdef class MessageQueueOutbound:
     Provides a non-blocking outbound message queue.
     """
 
-    def __init__(self,
-                 Socket socket not None,
-                 LoggerAdapter logger not None):
+    def __init__(
+            self,
+            Socket socket not None,
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the MessageQueueOutbound class.
 
@@ -49,11 +51,13 @@ cdef class MessageQueueInbound:
     Provides a non-blocking inbound message queue.
     """
 
-    def __init__(self,
-                 int expected_frames,
-                 Socket socket not None,
-                 frames_receiver: callable,
-                 LoggerAdapter logger not None):
+    def __init__(
+            self,
+            int expected_frames,
+            Socket socket not None,
+            frames_receiver: callable,
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the MessageQueueInbound class.
 

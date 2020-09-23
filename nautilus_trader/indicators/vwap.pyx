@@ -49,10 +49,15 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self.update_raw(
             bar.close.as_double(),
             bar.volume.as_double(),
-            bar.timestamp
+            bar.timestamp,
         )
 
-    cpdef void update_raw(self, double price, double volume, datetime timestamp) except *:
+    cpdef void update_raw(
+            self,
+            double price,
+            double volume,
+            datetime timestamp,
+    ) except *:
         """
         Update the indicator with the given raw values.
 

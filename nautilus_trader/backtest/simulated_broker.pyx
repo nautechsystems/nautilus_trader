@@ -79,14 +79,16 @@ cdef class SimulatedBroker:
     Provides a simulated brokerage.
     """
 
-    def __init__(self,
-                 ExecutionEngine exec_engine not None,
-                 dict instruments not None: {Symbol, Instrument},
-                 BacktestConfig config not None,
-                 FillModel fill_model not None,
-                 TestClock clock not None,
-                 TestUUIDFactory uuid_factory not None,
-                 TestLogger logger not None):
+    def __init__(
+            self,
+            ExecutionEngine exec_engine not None,
+            dict instruments not None: {Symbol, Instrument},
+            BacktestConfig config not None,
+            FillModel fill_model not None,
+            TestClock clock not None,
+            TestUUIDFactory uuid_factory not None,
+            TestLogger logger not None,
+    ):
         """
         Initialize a new instance of the SimulatedBroker class.
 
@@ -231,7 +233,8 @@ cdef class SimulatedBroker:
             Decimal64(),
             'N',
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
     cpdef datetime time_now(self):
         """
@@ -278,7 +281,8 @@ cdef class SimulatedBroker:
                 rollover_local.year,
                 rollover_local.month,
                 rollover_local.day,
-                17)).astimezone(pytz.utc)
+                17),
+            ).astimezone(pytz.utc)
 
         # Check for and apply any rollover interest
         if not self.rollover_applied and time_now >= self.rollover_time:
@@ -310,12 +314,14 @@ cdef class SimulatedBroker:
                             self._fill_order(
                                 order,
                                 order.price.add(self._slippages[order.symbol]),
-                                LiquiditySide.TAKER)
+                                LiquiditySide.TAKER,
+                            )
                         else:
                             self._fill_order(
                                 order,
                                 order.price,
-                                LiquiditySide.TAKER)
+                                LiquiditySide.TAKER,
+                            )
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.ask.le(order.price) or self._is_marginal_buy_limit_fill(order.price, tick):
@@ -323,7 +329,8 @@ cdef class SimulatedBroker:
                         self._fill_order(
                             order,
                             order.price,
-                            LiquiditySide.MAKER)
+                            LiquiditySide.MAKER,
+                        )
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type == OrderType.STOP:
@@ -333,12 +340,14 @@ cdef class SimulatedBroker:
                             self._fill_order(
                                 order,
                                 order.price.sub(self._slippages[order.symbol]),
-                                LiquiditySide.TAKER)
+                                LiquiditySide.TAKER,
+                            )
                         else:
                             self._fill_order(
                                 order,
                                 order.price,
-                                LiquiditySide.TAKER)
+                                LiquiditySide.TAKER,
+                            )
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
                     if tick.bid.ge(order.price) or self._is_marginal_sell_limit_fill(order.price, tick):
@@ -346,7 +355,8 @@ cdef class SimulatedBroker:
                         self._fill_order(
                             order,
                             order.price,
-                            LiquiditySide.MAKER)
+                            LiquiditySide.MAKER,
+                        )
                         continue  # Continue loop to next order
 
             # Check for order expiry
@@ -364,7 +374,8 @@ cdef class SimulatedBroker:
             to_currency=self._account.currency,
             price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
             bid_rates=self._build_current_bid_rates(),
-            ask_rates=self._build_current_ask_rates())
+            ask_rates=self._build_current_ask_rates(),
+        )
 
         cdef MarketPosition direction
         cdef Money pnl = Money(0, self.account_currency)
@@ -381,7 +392,8 @@ cdef class SimulatedBroker:
                 open_price=position.average_open_price,
                 close_price=event.average_price.as_double(),
                 quantity=event.filled_quantity,
-                exchange_rate=exchange_rate)
+                exchange_rate=exchange_rate,
+            )
 
         self.total_commissions = self.total_commissions.sub(event.commission)
         pnl = pnl.sub(event.commission)
@@ -402,7 +414,8 @@ cdef class SimulatedBroker:
                 margin_ratio=Decimal64(),
                 margin_call_status='N',
                 event_id=self._uuid_factory.generate(),
-                event_timestamp=self._clock.utc_now())
+                event_timestamp=self._clock.utc_now(),
+            )
 
             self.exec_engine.handle_event(account_event)
 
@@ -457,7 +470,8 @@ cdef class SimulatedBroker:
                     to_currency=self._account.currency,
                     price_type=PriceType.MID,
                     bid_rates=self._build_current_bid_rates(),
-                    ask_rates=self._build_current_ask_rates())
+                    ask_rates=self._build_current_ask_rates(),
+                )
                 rollover = mid_price * position.quantity.as_double() * interest_rate * exchange_rate
                 # Apply any bank and broker spread markup (basis points)
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
@@ -486,7 +500,8 @@ cdef class SimulatedBroker:
                 margin_ratio=Decimal64(),
                 margin_call_status='N',
                 event_id=self._uuid_factory.generate(),
-                event_timestamp=self._clock.utc_now())
+                event_timestamp=self._clock.utc_now(),
+            )
 
             self.exec_engine.handle_event(account_event)
 
@@ -507,7 +522,8 @@ cdef class SimulatedBroker:
             self._account.margin_ratio,
             self._account.margin_call_status,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(event)
 
@@ -564,7 +580,8 @@ cdef class SimulatedBroker:
             OrderId(order.cl_ord_id.value.replace('O', 'B')),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         # Remove from working orders (checked it was in dictionary above)
         del self._working_orders[command.cl_ord_id]
@@ -635,7 +652,8 @@ cdef class SimulatedBroker:
             command.modified_price,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(modified)
 
@@ -660,7 +678,8 @@ cdef class SimulatedBroker:
             order.cl_ord_id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(submitted)
 
@@ -672,7 +691,8 @@ cdef class SimulatedBroker:
             OrderId(order.cl_ord_id.value.replace('O', 'B')),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(accepted)
 
@@ -688,7 +708,8 @@ cdef class SimulatedBroker:
             self._clock.utc_now(),
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(rejected)
         self._check_oco_order(order.cl_ord_id)
@@ -707,7 +728,8 @@ cdef class SimulatedBroker:
             response,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(cancel_reject)
 
@@ -719,7 +741,8 @@ cdef class SimulatedBroker:
             order.id,
             order.expire_time,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(expired)
 
@@ -852,7 +875,8 @@ cdef class SimulatedBroker:
             order.expire_time,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(working)
 
@@ -863,14 +887,16 @@ cdef class SimulatedBroker:
             to_currency=self._account.currency,
             price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
             bid_rates=self._build_current_bid_rates(),
-            ask_rates=self._build_current_ask_rates())
+            ask_rates=self._build_current_ask_rates(),
+        )
 
         cdef Money commission = self.commission_calculator.calculate(
             symbol=order.symbol,
             filled_quantity=order.quantity,
             filled_price=fill_price,
             exchange_rate=exchange_rate,
-            currency=self.account_currency)
+            currency=self.account_currency,
+        )
 
         return commission
 
@@ -896,7 +922,8 @@ cdef class SimulatedBroker:
             self.instruments[order.symbol].quote_currency,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         cdef Position position = self.exec_engine.database.get_position_for_order(order.cl_ord_id)
         self.adjust_account(filled, position)
@@ -962,7 +989,8 @@ cdef class SimulatedBroker:
             self._clock.utc_now(),
             f"OCO order rejected from {oco_order_id}",
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.exec_engine.handle_event(event)
 
@@ -980,7 +1008,8 @@ cdef class SimulatedBroker:
             order.id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} OCO order from {oco_order_id}.")
         self.exec_engine.handle_event(event)
@@ -997,7 +1026,8 @@ cdef class SimulatedBroker:
             order.id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} as linked position closed.")
         self.exec_engine.handle_event(event)

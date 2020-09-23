@@ -25,10 +25,12 @@ cdef class Message:
     The base class for all messages.
     """
 
-    def __init__(self,
-                 MessageType message_type,
-                 UUID identifier not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            MessageType message_type,
+            UUID identifier not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the Message class.
 
@@ -164,9 +166,11 @@ cdef class Document(Message):
     The base class for all documents.
     """
 
-    def __init__(self,
-                 UUID identifier not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            UUID identifier not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the Document class.
 
@@ -186,9 +190,11 @@ cdef class Event(Message):
     The base class for all events.
     """
 
-    def __init__(self,
-                 UUID identifier not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            UUID identifier not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the Event class.
 
@@ -228,10 +234,12 @@ cdef class Response(Message):
     The base class for all responses.
     """
 
-    def __init__(self,
-                 UUID correlation_id not None,
-                 UUID identifier not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            UUID correlation_id not None,
+            UUID identifier not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the Response class.
 

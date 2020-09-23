@@ -30,11 +30,13 @@ cdef class AccountInquiry(Command):
     Represents a request for account status.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 UUID command_id not None,
-                 datetime command_timestamp not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
         """
         Initialize a new instance of the AccountInquiry class.
 
@@ -74,14 +76,16 @@ cdef class SubmitOrder(Command):
     Represents a command to submit the given order.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 StrategyId strategy_id not None,
-                 ClientPositionId cl_pos_id not None,
-                 Order order not None,
-                 UUID command_id not None,
-                 datetime command_timestamp not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            StrategyId strategy_id not None,
+            ClientPositionId cl_pos_id not None,
+            Order order not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
         """
         Initialize a new instance of the SubmitOrder class.
 
@@ -133,14 +137,16 @@ cdef class SubmitBracketOrder(Command):
     Represents a command to submit a bracket order consisting of parent and child orders.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 StrategyId strategy_id not None,
-                 ClientPositionId cl_pos_id not None,
-                 BracketOrder bracket_order not None,
-                 UUID command_id not None,
-                 datetime command_timestamp not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            StrategyId strategy_id not None,
+            ClientPositionId cl_pos_id not None,
+            BracketOrder bracket_order not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
         """
         Initialize a new instance of the SubmitBracketOrder class.
 
@@ -192,14 +198,16 @@ cdef class ModifyOrder(Command):
     Represents a command to modify an order with the given modified price.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 ClientOrderId cl_ord_id not None,
-                 Quantity modified_quantity not None,
-                 Price modified_price not None,
-                 UUID command_id not None,
-                 datetime command_timestamp not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            ClientOrderId cl_ord_id not None,
+            Quantity modified_quantity not None,
+            Price modified_price not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
         """
         Initialize a new instance of the ModifyOrder class.
 
@@ -251,12 +259,14 @@ cdef class CancelOrder(Command):
     Represents a command to cancel an order.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 ClientOrderId cl_ord_id not None,
-                 UUID command_id not None,
-                 datetime command_timestamp not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            ClientOrderId cl_ord_id not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
         """
         Initialize a new instance of the CancelOrder class.
 

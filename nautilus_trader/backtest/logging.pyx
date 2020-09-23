@@ -26,17 +26,19 @@ cdef class TestLogger(Logger):
     """
     __test__ = False
 
-    def __init__(self,
-                 Clock clock not None,
-                 str name=None,
-                 bint bypass_logging=False,
-                 LogLevel level_console=LogLevel.DEBUG,
-                 LogLevel level_file=LogLevel.DEBUG,
-                 LogLevel level_store=LogLevel.WARNING,
-                 bint console_prints=True,
-                 bint log_thread=False,
-                 bint log_to_file=False,
-                 str log_file_path not None="log/"):
+    def __init__(
+            self,
+            Clock clock not None,
+            str name=None,
+            bint bypass_logging=False,
+            LogLevel level_console=LogLevel.DEBUG,
+            LogLevel level_file=LogLevel.DEBUG,
+            LogLevel level_store=LogLevel.WARNING,
+            bint console_prints=True,
+            bint log_thread=False,
+            bint log_to_file=False,
+            str log_file_path not None="log/",
+    ):
         """
         Initialize a new instance of the TestLogger class.
 
@@ -54,16 +56,18 @@ cdef class TestLogger(Logger):
         """
         if log_file_path is "":
             log_file_path = "log/"
-        super().__init__(clock,
-                         name,
-                         bypass_logging,
-                         level_console,
-                         level_file,
-                         level_store,
-                         console_prints,
-                         log_thread,
-                         log_to_file,
-                         log_file_path)
+        super().__init__(
+            clock,
+            name,
+            bypass_logging,
+            level_console,
+            level_file,
+            level_store,
+            console_prints,
+            log_thread,
+            log_to_file,
+            log_file_path,
+        )
 
     cpdef void log(self, LogMessage message) except *:
         """

@@ -35,12 +35,14 @@ cdef class TestTimer(Timer):
     """
     __test__ = False
 
-    def __init__(self,
-                 str name not None,
-                 callback not None,
-                 timedelta interval not None,
-                 datetime start_time not None,
-                 datetime stop_time=None):
+    def __init__(
+            self,
+            str name not None,
+            callback not None,
+            timedelta interval not None,
+            datetime start_time not None,
+            datetime stop_time=None
+    ):
         """
         Initialize a new instance of the TestTimer class.
 
@@ -163,10 +165,12 @@ cdef class TestClock(Clock):
             timedelta interval,
             datetime now,
             datetime start_time,
-            datetime stop_time):
+            datetime stop_time,
+    ):
         return TestTimer(
             name=name,
             callback=callback,
             interval=interval,
             start_time=start_time,
-            stop_time=stop_time)
+            stop_time=stop_time,
+        )

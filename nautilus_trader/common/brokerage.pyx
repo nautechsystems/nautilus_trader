@@ -36,10 +36,12 @@ cdef class CommissionCalculator:
     Provides commission calculations.
     """
 
-    def __init__(self,
-                 dict rates=None,
-                 double default_rate_bp=0.20,
-                 Money minimum=None):
+    def __init__(
+            self,
+            dict rates=None,
+            double default_rate_bp=0.20,
+            Money minimum=None,
+    ):
         """
         Initialize a new instance of the CommissionCalculator class.
 
@@ -65,7 +67,8 @@ cdef class CommissionCalculator:
             Quantity filled_quantity,
             Price filled_price,
             double exchange_rate,
-            Currency currency):
+            Currency currency,
+    ):
         """
         Return the calculated commission for the given arguments.
 

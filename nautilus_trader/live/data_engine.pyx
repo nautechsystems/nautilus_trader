@@ -55,30 +55,32 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class LiveDataEngine(DataEngine):
     """
-    Provides a data client for live trading.
+    Provides a data engine for live trading.
     """
 
-    def __init__(self,
-                 TraderId trader_id,
-                 str host not None,
-                 int data_req_port,
-                 int data_res_port,
-                 int data_pub_port,
-                 int tick_pub_port,
-                 Compressor compressor not None,
-                 EncryptionSettings encryption not None,
-                 DictionarySerializer header_serializer not None,
-                 RequestSerializer request_serializer not None,
-                 ResponseSerializer response_serializer not None,
-                 DataSerializer data_serializer not None,
-                 InstrumentSerializer instrument_serializer not None,
-                 int tick_capacity,
-                 int bar_capacity,
-                 LiveClock clock not None,
-                 LiveUUIDFactory uuid_factory not None,
-                 LiveLogger logger not None):
+    def __init__(
+            self,
+            TraderId trader_id,
+            str host not None,
+            int data_req_port,
+            int data_res_port,
+            int data_pub_port,
+            int tick_pub_port,
+            Compressor compressor not None,
+            EncryptionSettings encryption not None,
+            DictionarySerializer header_serializer not None,
+            RequestSerializer request_serializer not None,
+            ResponseSerializer response_serializer not None,
+            DataSerializer data_serializer not None,
+            InstrumentSerializer instrument_serializer not None,
+            int tick_capacity,
+            int bar_capacity,
+            LiveClock clock not None,
+            LiveUUIDFactory uuid_factory not None,
+            LiveLogger logger not None,
+        ):
         """
-        Initialize a new instance of the LiveDataClient class.
+        Initialize a new instance of the LiveDataEngine class.
 
         :param trader_id: The trader identifier for the client.
         :param host: The server host.
@@ -119,7 +121,8 @@ cdef class LiveDataEngine(DataEngine):
             use_previous_close=True,
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
         self._correlation_index = {}  # type: {UUID, callable}
 
@@ -139,7 +142,8 @@ cdef class LiveDataEngine(DataEngine):
             encryption,
             clock,
             uuid_factory,
-            self._log)
+            self._log,
+        )
 
         self._data_client.register_handler(self._handle_response)
 
@@ -151,7 +155,8 @@ cdef class LiveDataEngine(DataEngine):
             encryption,
             clock,
             uuid_factory,
-            self._log)
+            self._log,
+        )
 
         self._data_subscriber.register_handler(self._handle_sub_msg)
 
@@ -163,7 +168,8 @@ cdef class LiveDataEngine(DataEngine):
             encryption,
             clock,
             uuid_factory,
-            self._log)
+            self._log,
+        )
 
         self._tick_subscriber.register_handler(self._handle_tick_msg)
 
@@ -226,7 +232,8 @@ cdef class LiveDataEngine(DataEngine):
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback: callable) except *:
+            callback: callable,
+    ) except *:
         """
         Request quote ticks for the given symbol and query parameters.
 
@@ -247,7 +254,7 @@ cdef class LiveDataEngine(DataEngine):
             SYMBOL: symbol.value,
             FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
             TO_DATETIME: format_iso8601(to_datetime) if to_datetime is not None else str(None),
-            LIMIT: str(limit)
+            LIMIT: str(limit),
         }
 
         cdef str limit_string = "None" if limit == 0 else f"(limit={limit})"
@@ -266,7 +273,8 @@ cdef class LiveDataEngine(DataEngine):
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback: callable) except *:
+            callback: callable,
+    ) except *:
         """
         Request trade ticks for the given symbol and query parameters.
 
@@ -287,7 +295,7 @@ cdef class LiveDataEngine(DataEngine):
             SYMBOL: symbol.value,
             FROM_DATETIME: format_iso8601(from_datetime) if from_datetime is not None else str(None),
             TO_DATETIME: format_iso8601(to_datetime) if to_datetime is not None else str(None),
-            LIMIT: str(limit)
+            LIMIT: str(limit),
         }
 
         cdef str limit_string = "None" if limit == 0 else f"(limit={limit})"
@@ -306,7 +314,8 @@ cdef class LiveDataEngine(DataEngine):
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback: callable) except *:
+            callback: callable,
+    ) except *:
         """
         Request bars for the given bar type and query parameters.
 
