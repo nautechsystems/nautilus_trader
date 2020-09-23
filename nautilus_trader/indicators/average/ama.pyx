@@ -33,11 +33,13 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     low. The AMA will increase lag when the price swings increase.
     """
 
-    def __init__(self,
-                 int period_er,
-                 int period_alpha_fast,
-                 int period_alpha_slow,
-                 PriceType price_type=PriceType.UNDEFINED):
+    def __init__(
+            self,
+            int period_er,
+            int period_alpha_fast,
+            int period_alpha_slow,
+            PriceType price_type=PriceType.UNDEFINED,
+    ):
         """
         Initialize a new instance of the AdaptiveMovingAverage class.
 

@@ -27,12 +27,14 @@ cdef class VolatilityRatio(Indicator):
     Different moving average types can be selected for the inner ATR calculations.
     """
 
-    def __init__(self,
-                 int fast_period,
-                 int slow_period,
-                 ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
-                 bint use_previous=True,
-                 double value_floor=0.0):
+    def __init__(
+            self,
+            int fast_period,
+            int slow_period,
+            ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
+            bint use_previous=True,
+            double value_floor=0.0,
+    ):
         """
         Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
@@ -46,11 +48,15 @@ cdef class VolatilityRatio(Indicator):
         Condition.positive_int(slow_period, "slow_period")
         Condition.true(slow_period > fast_period, "slow_period > fast_period")
         Condition.not_negative(value_floor, "value_floor")
-        super().__init__(params=[fast_period,
-                                 slow_period,
-                                 ma_type.name,
-                                 use_previous,
-                                 value_floor])
+        super().__init__(
+            params=[
+                fast_period,
+                slow_period,
+                ma_type.name,
+                use_previous,
+                value_floor
+            ]
+        )
 
         self._fast_period = fast_period
         self._slow_period = slow_period
@@ -69,10 +75,15 @@ cdef class VolatilityRatio(Indicator):
         self.update_raw(
             bar.high.as_double(),
             bar.low.as_double(),
-            bar.close.as_double()
+            bar.close.as_double(),
         )
 
-    cpdef void update_raw(self, double high, double low, double close) except *:
+    cpdef void update_raw(
+            self,
+            double high,
+            double low,
+            double close,
+    ) except *:
         """
         Update the indicator with the given raw value.
 

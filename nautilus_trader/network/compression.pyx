@@ -22,22 +22,10 @@ cdef class Compressor:
     """
 
     cpdef bytes compress(self, bytes data):
-        """
-        Compress the given data.
-
-        :param data: The data to compress.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bytes decompress(self, bytes data):
-        """
-        Decompress the given data.
-
-        :param data: The data to decompress.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 

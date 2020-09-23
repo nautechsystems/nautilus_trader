@@ -30,13 +30,15 @@ cdef class LiveTimer(Timer):
     Provides a timer for live trading.
     """
 
-    def __init__(self,
-                 str name not None,
-                 callback not None,
-                 timedelta interval not None,
-                 datetime now not None,
-                 datetime start_time not None,
-                 datetime stop_time=None):
+    def __init__(
+            self,
+            str name not None,
+            callback not None,
+            timedelta interval not None,
+            datetime now not None,
+            datetime start_time not None,
+            datetime stop_time=None,
+    ):
         """
         Initialize a new instance of the LiveTimer class.
 
@@ -90,7 +92,8 @@ cdef class LiveTimer(Timer):
         timer = TimerThread(
             interval=(self.next_time - now).total_seconds(),
             function=self.callback,
-            args=[self])
+            args=[self],
+        )
         timer.daemon = True
         timer.start()
 
@@ -106,7 +109,7 @@ cdef class LiveClock(Clock):
         """
         Initialize a new instance of the LiveClock class.
         """
-        super().__init__(LiveUUIDFactory())  # Instantiation inside constructor?
+        super().__init__(LiveUUIDFactory())
 
     cpdef datetime utc_now(self):
         """
@@ -131,14 +134,16 @@ cdef class LiveClock(Clock):
             timedelta interval,
             datetime now,
             datetime start_time,
-            datetime stop_time):
+            datetime stop_time,
+    ):
         return LiveTimer(
             name=name,
             callback=self._raise_time_event,
             interval=interval,
             now=now,
             start_time=start_time,
-            stop_time=stop_time)
+            stop_time=stop_time,
+        )
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
         cdef datetime now = self.utc_now()

@@ -112,7 +112,8 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
-            state_parser=order_state_to_string)
+            state_parser=order_state_to_string,
+        )
 
         self.cl_ord_id = event.cl_ord_id
         self.id = None                    # Can be None
@@ -430,18 +431,20 @@ cdef class PassiveOrder(Order):
     """
     The base class for all passive orders.
     """
-    def __init__(self,
-                 ClientOrderId cl_ord_id not None,
-                 Symbol symbol not None,
-                 OrderSide order_side,
-                 OrderType order_type,  # 'type' hides keyword
-                 Quantity quantity not None,
-                 Price price not None,
-                 TimeInForce time_in_force,
-                 datetime expire_time,  # Can be None
-                 UUID init_id not None,
-                 datetime timestamp not None,
-                 dict options not None):
+    def __init__(
+            self,
+            ClientOrderId cl_ord_id not None,
+            Symbol symbol not None,
+            OrderSide order_side,
+            OrderType order_type,  # 'type' hides keyword
+            Quantity quantity not None,
+            Price price not None,
+            TimeInForce time_in_force,
+            datetime expire_time,  # Can be None
+            UUID init_id not None,
+            datetime timestamp not None,
+            dict options not None,
+    ):
         """
         Initialize a new instance of the PassiveOrder class.
 
@@ -505,7 +508,8 @@ cdef class PassiveOrder(Order):
             time_in_force=time_in_force,
             event_id=init_id,
             event_timestamp=timestamp,
-            options=options)
+            options=options,
+        )
         super().__init__(init_event)
 
         self.price = price
@@ -573,7 +577,8 @@ cdef class MarketOrder(Order):
             Quantity quantity not None,
             TimeInForce time_in_force,
             UUID init_id not None,
-            datetime timestamp not None):
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the MarketOrder class.
 
@@ -616,7 +621,8 @@ cdef class MarketOrder(Order):
             time_in_force=time_in_force,
             event_id=init_id,
             event_timestamp=timestamp,
-            options={})
+            options={},
+        )
 
         super().__init__(init_event)
 
@@ -644,7 +650,8 @@ cdef class MarketOrder(Order):
             quantity=event.quantity,
             time_in_force=event.time_in_force,
             init_id=event.id,
-            timestamp=event.timestamp)
+            timestamp=event.timestamp,
+        )
 
     cpdef str status_string(self):
         """
@@ -679,18 +686,20 @@ cdef class LimitOrder(PassiveOrder):
     a chance the order may not be executed if it is placed deep out of the
     market.
     """
-    def __init__(self,
-                 ClientOrderId cl_ord_id not None,
-                 Symbol symbol not None,
-                 OrderSide order_side,
-                 Quantity quantity not None,
-                 Price price not None,
-                 TimeInForce time_in_force,
-                 datetime expire_time,  # Can be None
-                 UUID init_id not None,
-                 datetime timestamp not None,
-                 bint is_post_only=True,
-                 bint is_hidden=False):
+    def __init__(
+            self,
+            ClientOrderId cl_ord_id not None,
+            Symbol symbol not None,
+            OrderSide order_side,
+            Quantity quantity not None,
+            Price price not None,
+            TimeInForce time_in_force,
+            datetime expire_time,  # Can be None
+            UUID init_id not None,
+            datetime timestamp not None,
+            bint is_post_only=True,
+            bint is_hidden=False,
+    ):
         """
         Initialize a new instance of the LimitOrder class.
 
@@ -750,7 +759,8 @@ cdef class LimitOrder(PassiveOrder):
             expire_time,
             init_id,
             timestamp,
-            options)
+            options,
+        )
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized event):
@@ -788,7 +798,8 @@ cdef class LimitOrder(PassiveOrder):
             init_id=event.id,
             timestamp=event.timestamp,
             is_post_only=is_post_only,
-            is_hidden=is_hidden)
+            is_hidden=is_hidden,
+        )
 
 
 cdef class StopOrder(PassiveOrder):
@@ -799,16 +810,18 @@ cdef class StopOrder(PassiveOrder):
     traders loss or take a profit. Once the price crosses the predefined
     entry/exit point, the stop order becomes a market order.
     """
-    def __init__(self,
-                 ClientOrderId cl_ord_id not None,
-                 Symbol symbol not None,
-                 OrderSide order_side,
-                 Quantity quantity not None,
-                 Price price not None,
-                 TimeInForce time_in_force,
-                 datetime expire_time,  # Can be None
-                 UUID init_id not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            ClientOrderId cl_ord_id not None,
+            Symbol symbol not None,
+            OrderSide order_side,
+            Quantity quantity not None,
+            Price price not None,
+            TimeInForce time_in_force,
+            datetime expire_time,  # Can be None
+            UUID init_id not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the StopOrder class.
 
@@ -856,7 +869,8 @@ cdef class StopOrder(PassiveOrder):
             expire_time,
             init_id,
             timestamp,
-            options={})
+            options={},
+        )
 
     @staticmethod
     cdef StopOrder create(OrderInitialized event):
@@ -890,7 +904,8 @@ cdef class StopOrder(PassiveOrder):
             time_in_force=event.time_in_force,
             expire_time=expire_time,
             init_id=event.id,
-            timestamp=event.timestamp)
+            timestamp=event.timestamp,
+        )
 
 
 cdef class BracketOrder:
@@ -903,10 +918,12 @@ cdef class BracketOrder:
     Once the 'parent' entry order is triggered the 'child' OCO orders being a
     STOP and optional LIMIT automatically become working on the brokers side.
     """
-    def __init__(self,
-                 Order entry not None,
-                 StopOrder stop_loss not None,
-                 LimitOrder take_profit=None):
+    def __init__(
+            self,
+            Order entry not None,
+            StopOrder stop_loss not None,
+            LimitOrder take_profit=None,
+    ):
         """
         Initialize a new instance of the BracketOrder class.
 

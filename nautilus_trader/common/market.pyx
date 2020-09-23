@@ -209,7 +209,8 @@ cdef class TickDataWrangler:
             Price(values[1], self.instrument.price_precision),
             Quantity(values[2], self.instrument.size_precision),
             Quantity(values[3], self.instrument.size_precision),
-            timestamp)
+            timestamp,
+        )
 
     cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp):
         """
@@ -222,7 +223,8 @@ cdef class TickDataWrangler:
             Price(values[1], self.instrument.price_precision),
             Quantity.one(),
             Quantity.one(),
-            timestamp)
+            timestamp,
+        )
 
 
 cdef class BarDataWrangler:
@@ -312,12 +314,14 @@ cdef class BarDataWrangler:
     cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
-        return Bar(Price(values[0], self._precision),
-                   Price(values[1], self._precision),
-                   Price(values[2], self._precision),
-                   Price(values[3], self._precision),
-                   Quantity(values[4] * self._volume_multiple),
-                   timestamp)
+        return Bar(
+            Price(values[0], self._precision),
+            Price(values[1], self._precision),
+            Price(values[2], self._precision),
+            Price(values[3], self._precision),
+            Quantity(values[4] * self._volume_multiple),
+            timestamp,
+        )
 
 
 cdef class BarBuilder:
@@ -422,7 +426,8 @@ cdef class BarBuilder:
             low_price=self._low,
             close_price=self._close,
             volume=self._volume,
-            timestamp=close_time)
+            timestamp=close_time,
+        )
 
         self._last_close = self._close
         self._reset()
@@ -513,7 +518,8 @@ cdef class BarAggregator:
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._builder = BarBuilder(
             bar_spec=self.bar_type.spec,
-            use_previous_close=use_previous_close)
+            use_previous_close=use_previous_close,
+        )
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         # Abstract method

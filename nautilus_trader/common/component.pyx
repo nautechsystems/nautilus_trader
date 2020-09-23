@@ -43,5 +43,5 @@ cpdef FiniteStateMachine create_component_fsm():
     return FiniteStateMachine(
         state_transition_table=get_state_transition_table(),
         initial_state=ComponentState.INITIALIZED,
-        state_parser=component_state_to_string
+        state_parser=component_state_to_string,
     )

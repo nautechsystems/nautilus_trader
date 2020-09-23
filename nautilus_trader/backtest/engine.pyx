@@ -58,11 +58,13 @@ cdef class BacktestEngine:
     on historical data.
     """
 
-    def __init__(self,
-                 BacktestDataContainer data not None,
-                 list strategies not None: [TradingStrategy],
-                 BacktestConfig config=None,
-                 FillModel fill_model=None):
+    def __init__(
+            self,
+            BacktestDataContainer data not None,
+            list strategies not None: [TradingStrategy],
+            BacktestConfig config=None,
+            FillModel fill_model=None,
+    ):
         """
         Initialize a new instance of the BacktestEngine class.
 
@@ -99,7 +101,8 @@ cdef class BacktestEngine:
             console_prints=True,
             log_thread=config.log_thread,
             log_to_file=config.log_to_file,
-            log_file_path=config.log_file_path)
+            log_file_path=config.log_file_path,
+        )
 
         self.log = LoggerAdapter(component_name=self.__class__.__name__, logger=self.logger)
 
@@ -113,7 +116,8 @@ cdef class BacktestEngine:
             console_prints=config.console_prints,
             log_thread=config.log_thread,
             log_to_file=config.log_to_file,
-            log_file_path=config.log_file_path)
+            log_file_path=config.log_file_path,
+        )
 
         nautilus_header(self.log)
         self.log.info("=================================================================")
@@ -122,7 +126,8 @@ cdef class BacktestEngine:
         if config.exec_db_type == "in-memory":
             self.exec_db = InMemoryExecutionDatabase(
                 trader_id=self.trader_id,
-                logger=self.test_logger)
+                logger=self.test_logger,
+            )
         elif config.exec_db_type == "redis":
             self.exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
@@ -130,7 +135,8 @@ cdef class BacktestEngine:
                 port=6379,
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
-                logger=self.test_logger)
+                logger=self.test_logger,
+            )
         else:
             raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
                              f"(can be either \"in-memory\" or \"redis\")")
@@ -143,12 +149,14 @@ cdef class BacktestEngine:
             tick_capacity=config.tick_capacity,
             bar_capacity=config.bar_capacity,
             clock=self.test_clock,
-            logger=self.test_logger)
+            logger=self.test_logger,
+        )
 
         self.portfolio = Portfolio(
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
-            logger=self.test_logger)
+            logger=self.test_logger,
+        )
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -159,7 +167,8 @@ cdef class BacktestEngine:
             portfolio=self.portfolio,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
-            logger=self.test_logger)
+            logger=self.test_logger,
+        )
 
         self.broker = SimulatedBroker(
             exec_engine=self.exec_engine,
@@ -168,11 +177,13 @@ cdef class BacktestEngine:
             fill_model=fill_model,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
-            logger=self.test_logger)
+            logger=self.test_logger,
+        )
 
         self.exec_client = BacktestExecClient(
             broker=self.broker,
-            logger=self.test_logger)
+            logger=self.test_logger,
+        )
 
         self.exec_engine.register_client(self.exec_client)
 
@@ -184,7 +195,8 @@ cdef class BacktestEngine:
             exec_engine=self.exec_engine,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
-            logger=self.test_logger)
+            logger=self.test_logger,
+        )
 
         self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
 
@@ -200,7 +212,8 @@ cdef class BacktestEngine:
             datetime stop=None,
             FillModel fill_model=None,
             list strategies=None,
-            bint print_log_store=True) except *:
+            bint print_log_store=True
+    ) except *:
         """
         Run a backtest from the start datetime to the stop datetime.
         Note: If start datetime is None will run from the start of the data.
@@ -377,7 +390,8 @@ cdef class BacktestEngine:
             self,
             datetime run_started,
             datetime start,
-            datetime stop) except *:
+            datetime stop,
+    ) except *:
         self.log.info("=================================================================")
         self.log.info(" BACKTEST RUN")
         self.log.info("=================================================================")
@@ -398,7 +412,8 @@ cdef class BacktestEngine:
             datetime run_started,
             datetime run_finished,
             datetime start,
-            datetime stop) except *:
+            datetime stop,
+    ) except *:
         self.log.info("=================================================================")
         self.log.info(" BACKTEST DIAGNOSTICS")
         self.log.info("=================================================================")

@@ -32,12 +32,14 @@ cdef class FuzzyCandle:
     """
     Represents a fuzzy candle.
     """
-    def __init__(self,
-                 CandleDirection direction,
-                 CandleSize size,
-                 CandleBodySize body_size,
-                 CandleWickSize upper_wick_size,
-                 CandleWickSize lower_wick_size):
+    def __init__(
+            self,
+            CandleDirection direction,
+            CandleSize size,
+            CandleBodySize body_size,
+            CandleWickSize upper_wick_size,
+            CandleWickSize lower_wick_size,
+    ):
 
         self.direction = direction
         self.size = size
@@ -135,12 +137,14 @@ cdef class FuzzyCandlesticks(Indicator):
 
     """
 
-    def __init__(self,
-                 int period,
-                 double threshold1=0.5,
-                 double threshold2=1.0,
-                 double threshold3=2.0,
-                 double threshold4=3.0):
+    def __init__(
+            self,
+            int period,
+            double threshold1=0.5,
+            double threshold2=1.0,
+            double threshold3=2.0,
+            double threshold4=3.0,
+    ):
         """
         Initialize a new instance of the FuzzyCandlesticks class.
 
@@ -202,7 +206,7 @@ cdef class FuzzyCandlesticks(Indicator):
             bar.open.as_double(),
             bar.high.as_double(),
             bar.low.as_double(),
-            bar.close.as_double()
+            bar.close.as_double(),
         )
 
     cpdef void update_raw(
@@ -210,7 +214,8 @@ cdef class FuzzyCandlesticks(Indicator):
             double open_price,
             double high_price,
             double low_price,
-            double close_price):
+            double close_price,
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -273,7 +278,8 @@ cdef class FuzzyCandlesticks(Indicator):
             lower_wick_size=self._fuzzify_wick_size(
                 self._lower_wick_percents[0],
                 mean_lower_wick,
-                sd_lower_wick_percents))
+                sd_lower_wick_percents),
+        )
 
         # Create fuzzy candle as np array
         self.vector = [

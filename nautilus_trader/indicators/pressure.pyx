@@ -29,10 +29,12 @@ cdef class Pressure(Indicator):
     to move the market across a relative range (multiple of ATR).
     """
 
-    def __init__(self,
-                 int period,
-                 ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-                 double atr_floor=0.0):
+    def __init__(
+            self,
+            int period,
+            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+            double atr_floor=0.0,
+    ):
         """
         Initialize a new instance of the Pressure class.
 
@@ -42,9 +44,13 @@ cdef class Pressure(Indicator):
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(atr_floor, "atr_floor")
-        super().__init__(params=[period,
-                                 ma_type.name,
-                                 atr_floor])
+        super().__init__(
+            params=[
+                period,
+                ma_type.name,
+                atr_floor,
+            ]
+        )
 
         self.period = period
         self._atr = AverageTrueRange(period, MovingAverageType.EXPONENTIAL, atr_floor)
@@ -64,7 +70,7 @@ cdef class Pressure(Indicator):
             bar.high.as_double(),
             bar.low.as_double(),
             bar.close.as_double(),
-            bar.volume.as_double()
+            bar.volume.as_double(),
         )
 
     cpdef void update_raw(
@@ -72,7 +78,8 @@ cdef class Pressure(Indicator):
             double high,
             double low,
             double close,
-            double volume) except *:
+            double volume,
+    ) except *:
         """
         Update the indicator with the given raw values.
 

@@ -63,14 +63,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     Provides an execution database utilizing Redis.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 str host not None,
-                 int port,
-                 CommandSerializer command_serializer not None,
-                 EventSerializer event_serializer not None,
-                 Logger logger not None,
-                 bint load_caches=True):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            str host not None,
+            int port,
+            CommandSerializer command_serializer not None,
+            EventSerializer event_serializer not None,
+            Logger logger not None,
+            bint load_caches=True,
+    ):
         """
         Initialize a new instance of the RedisExecutionDatabase class.
 
@@ -789,7 +791,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
-            # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
@@ -807,7 +808,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         try:
             cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
-            # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         cdef dict positions = {}
@@ -834,7 +834,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         try:
             cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
-            # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         cdef dict positions = {}

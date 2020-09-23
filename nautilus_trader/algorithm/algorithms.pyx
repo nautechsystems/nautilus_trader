@@ -216,13 +216,15 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
     A trailing stop algorithm based on the number of bars back.
     """
 
-    def __init__(self,
-                 list bars,
-                 int bars_back,
-                 double sl_atr_multiple,
-                 AverageTrueRange atr,
-                 Order order,
-                 BarType bar_type):
+    def __init__(
+            self,
+            list bars,
+            int bars_back,
+            double sl_atr_multiple,
+            AverageTrueRange atr,
+            Order order,
+            BarType bar_type
+    ):
         """
         Initialize a new instance of the BarsBackTrail class.
 
@@ -240,8 +242,10 @@ cdef class BarsBackTrail(BarTrailingStopAlgorithm):
             The bar type for the algorithm.
 
         """
-        super().__init__(order,
-                         bar_type)
+        super().__init__(
+            order,
+            bar_type,
+        )
 
         self._bars_back = bars_back
         self._sl_atr_multiple = sl_atr_multiple

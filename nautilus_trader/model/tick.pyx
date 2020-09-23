@@ -35,9 +35,11 @@ cdef class Tick:
     The base class for all ticks.
     """
 
-    def __init__(self,
-                 Symbol symbol not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            Symbol symbol not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the Tick class.
 
@@ -53,43 +55,14 @@ cdef class Tick:
         self.timestamp = timestamp
 
     cpdef bint equals(self, Tick other):
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef str to_string(self):
-        """
-        Returns a string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef str to_serializable_string(self):
-        """
-        Return a serializable string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -233,13 +206,15 @@ cdef class QuoteTick(Tick):
     Represents a single quote tick in a financial market.
     """
 
-    def __init__(self,
-                 Symbol symbol not None,
-                 Price bid not None,
-                 Price ask not None,
-                 Quantity bid_size not None,
-                 Quantity ask_size not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            Symbol symbol not None,
+            Price bid not None,
+            Price ask not None,
+            Quantity bid_size not None,
+            Quantity ask_size not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the QuoteTick class.
 
@@ -345,7 +320,8 @@ cdef class QuoteTick(Tick):
             Price.from_string(pieces[1]),
             Quantity.from_string(pieces[2]),
             Quantity.from_string(pieces[3]),
-            datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc))
+            datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
+        )
 
     @staticmethod
     def py_from_serializable_string(Symbol symbol, str values):
@@ -429,13 +405,15 @@ cdef class TradeTick(Tick):
     Represents a single trade tick in a financial market.
     """
 
-    def __init__(self,
-                 Symbol symbol not None,
-                 Price price not None,
-                 Quantity size not None,
-                 Maker maker,
-                 MatchId match_id not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            Symbol symbol not None,
+            Price price not None,
+            Quantity size not None,
+            Maker maker,
+            MatchId match_id not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the TradeTick class.
 
@@ -495,7 +473,8 @@ cdef class TradeTick(Tick):
             Quantity.from_string(pieces[1]),
             maker_from_string(pieces[2]),
             MatchId(pieces[3]),
-            datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc))
+            datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
+        )
 
     @staticmethod
     def py_from_serializable_string(Symbol symbol, str values):

@@ -379,7 +379,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
                 max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
                 rollover_interest_buy=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
                 rollover_interest_sell=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
-                timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
+                timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]),
+            )
 
         return Instrument(
             symbol=Symbol.from_string(deserialized[SYMBOL]),
@@ -397,7 +398,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
             rollover_interest_buy=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
             rollover_interest_sell=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
-            timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
+            timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]),
+        )
 
 
 cdef class DataMapper:

@@ -157,7 +157,8 @@ cdef class Clock:
             self,
             str name,
             datetime alert_time,
-            handler: callable=None) except *:
+            handler: callable=None,
+    ) except *:
         """
         Set a time alert for the given time. When the time is reached the
         handler will be passed the TimeEvent containing the timers unique label.
@@ -208,7 +209,8 @@ cdef class Clock:
             timedelta interval,
             datetime start_time=None,
             datetime stop_time=None,
-            handler=None) except *:
+            handler=None,
+    ) except *:
         """
         Set a timer with the given interval. The timer will run from the start
         time (optionally until the stop time). When the intervals are reached the
@@ -265,7 +267,8 @@ cdef class Clock:
             callback=handler,
             now=now,
             start_time=start_time,
-            stop_time=stop_time)
+            stop_time=stop_time,
+        )
         self._add_timer(timer, handler)
 
     cpdef void cancel_timer(self, str name) except *:
@@ -311,7 +314,8 @@ cdef class Clock:
             timedelta interval,
             datetime now,
             datetime start_time,
-            datetime stop_time):
+            datetime stop_time,
+    ):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 

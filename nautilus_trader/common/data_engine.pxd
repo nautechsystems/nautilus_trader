@@ -74,7 +74,7 @@ cdef class DataEngine:
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback
+        callback,
     ) except *
     cpdef void request_bars(
         self,
@@ -82,7 +82,7 @@ cdef class DataEngine:
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback
+        callback,
     ) except *
     cpdef void request_instrument(self, Symbol symbol, callback) except *
     cpdef void request_instruments(self, Venue venue, callback) except *

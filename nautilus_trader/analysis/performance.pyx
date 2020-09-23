@@ -137,10 +137,11 @@ cdef class PerformanceAnalyzer:
         self._returns.loc[index_date] += value
 
     cpdef void add_positions(
-            self,
-            datetime timestamp,
-            list positions,
-            Money cash_balance) except *:
+        self,
+        datetime timestamp,
+        list positions,
+        Money cash_balance,
+    ) except *:
         """
         Add end of day positions data to the analyzer.
 

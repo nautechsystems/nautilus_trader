@@ -801,7 +801,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
-            # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
@@ -819,7 +818,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
-            # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
@@ -837,7 +835,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
         except KeyError as ex:
-            # This should never happen
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions

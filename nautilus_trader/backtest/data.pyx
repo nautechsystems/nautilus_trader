@@ -86,7 +86,13 @@ cdef class BacktestDataContainer:
         self.ticks[symbol] = data
         self.ticks = dict(sorted(self.ticks.items()))
 
-    cpdef void add_bars(self, Symbol symbol, BarAggregation aggregation, PriceType price_type, data: pd.DataFrame) except *:
+    cpdef void add_bars(
+            self,
+            Symbol symbol,
+            BarAggregation aggregation,
+            PriceType price_type,
+            data: pd.DataFrame
+    ) except *:
         """
         Add the bar data to the container.
 
@@ -155,12 +161,14 @@ cdef class BacktestDataEngine(DataEngine):
     Provides a data engine for backtesting.
     """
 
-    def __init__(self,
-                 BacktestDataContainer data not None,
-                 int tick_capacity,
-                 int bar_capacity,
-                 TestClock clock not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            BacktestDataContainer data not None,
+            int tick_capacity,
+            int bar_capacity,
+            TestClock clock not None,
+            Logger logger not None
+    ):
         """
         Initialize a new instance of the BacktestDataEngine class.
 
@@ -180,7 +188,8 @@ cdef class BacktestDataEngine(DataEngine):
             use_previous_close=False,  # To correctly reproduce historical data bars
             clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=logger)
+            logger=logger,
+        )
 
         # Check data integrity
         data.check_integrity()
@@ -213,7 +222,8 @@ cdef class BacktestDataEngine(DataEngine):
                 instrument=instrument,
                 data_ticks=None if symbol not in self._data.ticks else self._data.ticks[symbol],
                 data_bars_bid=None if symbol not in self._data.bars_bid else self._data.bars_bid[symbol],
-                data_bars_ask=None if symbol not in self._data.bars_ask else self._data.bars_ask[symbol])
+                data_bars_ask=None if symbol not in self._data.bars_ask else self._data.bars_ask[symbol],
+            )
 
             # Build data
             wrangler.build(counter)
@@ -355,12 +365,13 @@ cdef class BacktestDataEngine(DataEngine):
             event_handler.handle()
 
     cpdef void request_quote_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            callback: callable) except *:
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback: callable,
+    ) except *:
         """
         Request the historical quote ticks for the given parameters from the data service.
 
@@ -379,12 +390,13 @@ cdef class BacktestDataEngine(DataEngine):
         self._log.info(f"Simulated request quote ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
     cpdef void request_trade_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            callback: callable) except *:
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback: callable,
+    ) except *:
         """
         Request the historical trade ticks for the given parameters from the data service.
 
@@ -403,12 +415,13 @@ cdef class BacktestDataEngine(DataEngine):
         self._log.info(f"Simulated request trade ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
     cpdef void request_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            callback: callable) except *:
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback: callable,
+    ) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
