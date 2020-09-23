@@ -136,7 +136,10 @@ cdef class SimulatedBroker:
 
         self._account = Account(self.reset_account_event())
         self.exchange_calculator = ExchangeRateCalculator()
-        self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
+        self.commission_calculator = CommissionCalculator(
+            default_taker_rate_bp=config.commission_taker_bp,
+            default_maker_rate_bp=config.commission_maker_bp
+        )
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0  # Bank + Broker spread markup
         self.total_commissions = Money(0, self.account_currency)
@@ -880,7 +883,7 @@ cdef class SimulatedBroker:
 
         self.exec_engine.handle_event(working)
 
-    cdef Money _calculate_commission(self, Order order, Price fill_price):
+    cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side):
         cdef Instrument instrument = self.instruments[order.symbol]
         cdef double exchange_rate = self.exchange_calculator.get_rate(
             from_currency=instrument.quote_currency,
@@ -896,6 +899,7 @@ cdef class SimulatedBroker:
             filled_price=fill_price,
             exchange_rate=exchange_rate,
             currency=self.account_currency,
+            liquidity_side=liquidity_side
         )
 
         return commission
@@ -906,7 +910,7 @@ cdef class SimulatedBroker:
             Price fill_price,
             LiquiditySide liquidity_side) except *:
         # Generate event
-        cdef Money commission = self._calculate_commission(order, fill_price)
+        cdef Money commission = self._calculate_commission(order, fill_price, liquidity_side)
         cdef OrderFilled filled = OrderFilled(
             self._account.id,
             order.cl_ord_id,
