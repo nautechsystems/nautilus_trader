@@ -113,6 +113,7 @@ cdef class DataEngine:
 
 # -- QUERY METHODS ------------------------------------------------------------------------------- #
 
+    cpdef list registered_venues(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)

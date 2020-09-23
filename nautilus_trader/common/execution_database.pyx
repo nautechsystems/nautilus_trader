@@ -36,8 +36,13 @@ cdef class ExecutionDatabase:
         """
         Initialize a new instance of the ExecutionDatabase class.
 
-        :param trader_id: The trader_id for the component.
-        :param logger: The logger for the component.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier for the component.
+        logger : Logger
+            The logger for the component.
+
         """
         self.trader_id = trader_id
         self._log = LoggerAdapter(self.__class__.__name__, logger)
