@@ -31,9 +31,11 @@ cdef class LogStore:
     Provides a process and thread safe log store.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 LogSerializer serializer not None=MsgPackLogSerializer()):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            LogSerializer serializer not None=MsgPackLogSerializer(),
+    ):
         """
         Initialize a new instance of the LogStore class.
 
@@ -66,18 +68,20 @@ cdef class LiveLogger(Logger):
     Provides a thread safe logger for live concurrent operations.
     """
 
-    def __init__(self,
-                 LiveClock clock not None,
-                 str name=None,
-                 bint bypass_logging=False,
-                 LogLevel level_console=LogLevel.INFO,
-                 LogLevel level_file=LogLevel.DEBUG,
-                 LogLevel level_store=LogLevel.WARNING,
-                 bint console_prints=True,
-                 bint log_thread=False,
-                 bint log_to_file=False,
-                 str log_file_path not None="logs/",
-                 LogStore store=None):
+    def __init__(
+            self,
+            LiveClock clock not None,
+            str name=None,
+            bint bypass_logging=False,
+            LogLevel level_console=LogLevel.INFO,
+            LogLevel level_file=LogLevel.DEBUG,
+            LogLevel level_store=LogLevel.WARNING,
+            bint console_prints=True,
+            bint log_thread=False,
+            bint log_to_file=False,
+            str log_file_path not None="logs/",
+            LogStore store=None,
+    ):
         """
         Initialize a new instance of the LiveLogger class.
 
@@ -93,16 +97,17 @@ cdef class LiveLogger(Logger):
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
         """
-        super().__init__(clock,
-                         name,
-                         bypass_logging,
-                         level_console,
-                         level_file,
-                         level_store,
-                         console_prints,
-                         log_thread,
-                         log_to_file,
-                         log_file_path)
+        super().__init__(
+            clock,
+            name,
+            bypass_logging,
+            level_console,
+            level_file,
+            level_store,
+            console_prints,
+            log_thread,
+            log_to_file,
+            log_file_path)
 
         self._store = store
         self._queue = queue.Queue()
@@ -124,7 +129,3 @@ cdef class LiveLogger(Logger):
         while True:
             message = self._queue.get()
             self._log(message)
-
-            # Scaffolding for a future LogStash implementation
-            # if self._store is not None and message.level >= self._log_level_store:
-            #     self._store.store(message)

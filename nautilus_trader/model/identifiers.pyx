@@ -27,9 +27,11 @@ cdef class Symbol(Identifier):
     fund level.
     """
 
-    def __init__(self,
-                 str code,
-                 Venue venue not None):
+    def __init__(
+            self,
+            str code,
+            Venue venue not None,
+    ):
         """
         Initialize a new instance of the Symbol class.
 
@@ -364,10 +366,12 @@ cdef class AccountId(Identifier):
     combination must be unique at the fund level.
     """
 
-    def __init__(self,
-                 str broker,
-                 str account_number,
-                 AccountType account_type):
+    def __init__(
+            self,
+            str broker,
+            str account_number,
+            AccountType account_type,
+    ):
         """
         Initialize a new instance of the AccountId class.
 

@@ -22,7 +22,8 @@ cpdef double fast_mean_iterated(
     double next_value,
     double current_value,
     int expected_length,
-    bint drop_left=*)
+    bint drop_left=*,
+)
 cpdef double fast_std(list values)
 cpdef double fast_std_with_mean(list values, double mean)
 cpdef double basis_points_as_percentage(double basis_points)

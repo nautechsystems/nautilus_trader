@@ -26,10 +26,12 @@ cdef class HilbertSignalNoiseRatio(Indicator):
     An indicator which calculates the amplitude of a signal.
     """
 
-    def __init__(self,
-                 int period=7,
-                 double range_floor=0.00001,
-                 double amplitude_floor=0.001):
+    def __init__(
+            self,
+            int period=7,
+            double range_floor=0.00001,
+            double amplitude_floor=0.001,
+    ):
         """
         Initialize a new instance of the HilbertSignalNoiseRatio class.
 

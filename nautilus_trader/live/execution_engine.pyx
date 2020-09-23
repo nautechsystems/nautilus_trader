@@ -36,14 +36,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     Provides a process and thread safe execution engine utilizing Redis.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 ExecutionDatabase database not None,
-                 Portfolio portfolio not None,
-                 Clock clock not None,
-                 UUIDFactory uuid_factory not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            ExecutionDatabase database not None,
+            Portfolio portfolio not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger not None,
+    ):
         """
         Initialize a new instance of the LiveExecutionEngine class.
 
@@ -62,7 +64,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             portfolio=portfolio,
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
         self._queue = queue.Queue()
         self._thread = threading.Thread(target=self._process, daemon=True)

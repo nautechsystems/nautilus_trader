@@ -56,13 +56,30 @@ cdef class BacktestEngine:
     cdef readonly timedelta time_to_initialize
     cdef readonly int iteration
 
-    cpdef void run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*) except *
+    cpdef void run(
+        self,
+        datetime start=*,
+        datetime stop=*,
+        FillModel fill_model=*,
+        list strategies=*,
+        bint print_log_store=*,
+    ) except *
     cpdef void advance_time(self, datetime timestamp) except *
     cpdef list get_log_store(self)
     cpdef void print_log_store(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
-
     cdef void _backtest_memory(self) except *
-    cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop) except *
-    cdef void _backtest_footer(self, datetime run_started, datetime run_finished, datetime start, datetime stop) except *
+    cdef void _backtest_header(
+        self,
+        datetime run_started,
+        datetime start,
+        datetime stop,
+    ) except *
+    cdef void _backtest_footer(
+        self,
+        datetime run_started,
+        datetime run_finished,
+        datetime start,
+        datetime stop,
+    ) except *

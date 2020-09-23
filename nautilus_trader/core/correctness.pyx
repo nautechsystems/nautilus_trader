@@ -150,7 +150,8 @@ cdef class Condition:
             object argument,
             object expected,
             str param,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the argument is of the specified type.
 
@@ -186,7 +187,8 @@ cdef class Condition:
             object argument,
             object expected,
             str param,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the argument is of the specified type, or is None.
 
@@ -272,7 +274,8 @@ cdef class Condition:
             object argument2,
             str param1,
             str param2,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the objects are equal.
 
@@ -312,7 +315,8 @@ cdef class Condition:
             object object2,
             str param1,
             str param2,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the objects are not equal.
 
@@ -350,7 +354,8 @@ cdef class Condition:
             list argument,
             type expected_type,
             str param,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the list only contains types of the given expected type.
 
@@ -389,7 +394,8 @@ cdef class Condition:
             type key_type,
             type value_type,
             str param,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
@@ -423,7 +429,8 @@ cdef class Condition:
             object collection,
             str param1,
             str param2,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the element is contained within the specified collection.
 
@@ -464,7 +471,8 @@ cdef class Condition:
             object collection,
             str param1,
             str param2,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the element is not contained within the specified collection.
 
@@ -683,7 +691,8 @@ cdef class Condition:
             double start,
             double end,
             str param,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the real number value is within the specified range (inclusive).
 
@@ -722,7 +731,8 @@ cdef class Condition:
             int start,
             int end,
             str param,
-            ex_type=None) except *:
+            ex_type=None,
+    ) except *:
         """
         Check the integer value is within the specified range (inclusive).
 

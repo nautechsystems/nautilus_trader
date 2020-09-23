@@ -394,7 +394,8 @@ cdef class ExecutionEngine:
             strategy_id,
             event,
             self._uuid_factory.generate(),
-            event.timestamp)
+            event.timestamp,
+        )
 
         self._send_to_strategy(event, strategy_id)
         self.handle_event(position_opened)
@@ -405,7 +406,8 @@ cdef class ExecutionEngine:
             strategy_id,
             event,
             self._uuid_factory.generate(),
-            event.timestamp)
+            event.timestamp,
+        )
 
         self._send_to_strategy(event, strategy_id)
         self.handle_event(position_modified)
@@ -417,7 +419,8 @@ cdef class ExecutionEngine:
             strategy_id,
             event,
             self._uuid_factory.generate(),
-            event.timestamp)
+            event.timestamp,
+        )
 
         self._send_to_strategy(event, strategy_id)
         self.handle_event(position_closed)

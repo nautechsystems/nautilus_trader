@@ -49,7 +49,8 @@ cdef class Clock:
         timedelta interval,
         datetime start_time=*,
         datetime stop_time=*,
-        handler=*) except *
+        handler=*,
+    ) except *
     cpdef void cancel_timer(self, str name) except *
     cpdef void cancel_all_timers(self) except *
 
@@ -60,7 +61,8 @@ cdef class Clock:
         timedelta interval,
         datetime now,
         datetime start_time,
-        datetime stop_time)
+        datetime stop_time,
+    )
     cdef void _add_timer(self, Timer timer, handler) except *
     cdef void _remove_timer(self, Timer timer) except *
     cdef void _update_stack(self) except *

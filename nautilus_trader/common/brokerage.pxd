@@ -34,7 +34,8 @@ cdef class CommissionCalculator:
         Quantity filled_quantity,
         Price filled_price,
         double exchange_rate,
-        Currency currency)
+        Currency currency
+    )
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value)
 
     cdef double _get_commission_rate(self, Symbol symbol)

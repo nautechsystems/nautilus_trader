@@ -29,13 +29,14 @@ cdef class KeltnerPosition(Indicator):
     'extension' of a market from the mean, as a multiple of volatility.
     """
 
-    def __init__(self,
-                 int period,
-                 double k_multiplier,
-                 ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-                 ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
-                 bint use_previous=True,
-                 double atr_floor=0.0):
+    def __init__(
+            self,
+            int period,
+            double k_multiplier,
+            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+            ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
+            bint use_previous=True,
+            double atr_floor=0.0):
         """
         Initialize a new instance of the KeltnerChannel class.
 
@@ -49,12 +50,16 @@ cdef class KeltnerPosition(Indicator):
         Condition.positive_int(period, "period")
         Condition.positive(k_multiplier, "k_multiplier")
         Condition.not_negative(atr_floor, "atr_floor")
-        super().__init__(params=[period,
-                                 k_multiplier,
-                                 ma_type.name,
-                                 ma_type_atr.name,
-                                 use_previous,
-                                 atr_floor])
+        super().__init__(
+            params=[
+                period,
+                k_multiplier,
+                ma_type.name,
+                ma_type_atr.name,
+                use_previous,
+                atr_floor
+            ]
+        )
         self._period = period
         self._kc = KeltnerChannel(
             period,
@@ -62,7 +67,8 @@ cdef class KeltnerPosition(Indicator):
             ma_type,
             ma_type_atr,
             use_previous,
-            atr_floor)
+            atr_floor,
+        )
         self.value = 0.0
 
     @property
@@ -93,7 +99,12 @@ cdef class KeltnerPosition(Indicator):
             bar.close.as_double(),
         )
 
-    cpdef void update_raw(self, double high, double low, double close) except *:
+    cpdef void update_raw(
+            self,
+            double high,
+            double low,
+            double close,
+    ) except *:
         """
         Update the indicator with the given raw value.
 

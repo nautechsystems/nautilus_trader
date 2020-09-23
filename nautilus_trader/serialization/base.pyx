@@ -61,22 +61,10 @@ cdef class DictionarySerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, dict dictionary):
-        """
-        Serialize the given dictionary with string keys and values to bytes.
-
-        :param dictionary: The dictionary to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict deserialize(self, bytes dictionary_bytes):
-        """
-        Deserialize the given bytes to a dictionary with string keys and values.
-
-        :param dictionary_bytes: The dictionary bytes to deserialize.
-        :return Dict.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -93,22 +81,10 @@ cdef class DataSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, dict data):
-        """
-        Serialize the given data mapping to bytes.
-
-        :param data: The data to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict deserialize(self, bytes data_bytes):
-        """
-        Deserialize the given bytes to a mapping of data.
-
-        :param data_bytes: The data bytes to deserialize.
-        :return Dict.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -125,22 +101,10 @@ cdef class InstrumentSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Instrument instrument):
-        """
-        Serialize the given event to bytes.
-
-        :param instrument: The instrument to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Instrument deserialize(self, bytes instrument_bytes):
-        """
-        Deserialize the given instrument bytes to an instrument.
-
-        :param instrument_bytes: The bytes to deserialize.
-        :return Instrument.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -157,22 +121,11 @@ cdef class OrderSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Order order):
-        """
-        Serialize the given order to bytes.
-
-        :param order: The order to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Order deserialize(self, bytes order_bytes):
-        """
-        Deserialize the given bytes to an order.
-
-        :param order_bytes: The bytes to deserialize.
-        :return Order.
-        """
+        # Abstract method
         raise NotImplementedError("method must be implemented in the subclass ")
 
 
@@ -188,22 +141,10 @@ cdef class CommandSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Command command):
-        """
-        Serialize the given command to bytes.
-
-        :param command: The command to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Command deserialize(self, bytes command_bytes):
-        """
-        Deserialize the given bytes to a command.
-
-        :param command_bytes: The command bytes to deserialize.
-        :return Command.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -220,22 +161,10 @@ cdef class EventSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Event event):
-        """
-        Serialize the given event to bytes.
-
-        :param event: The event to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Event deserialize(self, bytes event_bytes):
-        """
-        Deserialize the given bytes to an event.
-
-        :param event_bytes: The bytes to deserialize.
-        :return Event.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -252,22 +181,10 @@ cdef class RequestSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Request request):
-        """
-        Serialize the given request to bytes.
-
-        :param request: The request to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Request deserialize(self, bytes request_bytes):
-        """
-        Deserialize the given bytes to a request.
-
-        :param request_bytes: The bytes to deserialize.
-        :return Request.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -284,22 +201,10 @@ cdef class ResponseSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Response response):
-        """
-        Serialize the given response to bytes.
-
-        :param response: The response to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Response deserialize(self, bytes response_bytes):
-        """
-        Deserialize the given bytes to a response.
-
-        :param response_bytes: The bytes to deserialize.
-        :return Response.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -316,21 +221,9 @@ cdef class LogSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, LogMessage message):
-        """
-        Serialize the given message to bytes.
-
-        :param message: The message to serialize.
-        :return bytes.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef LogMessage deserialize(self, bytes message_bytes):
-        """
-        Deserialize the given bytes to a response.
-
-        :param message_bytes: The bytes to deserialize.
-        :return LogMessage.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")

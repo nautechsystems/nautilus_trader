@@ -44,7 +44,8 @@ cdef class Socket:
             int port,
             int socket_type,
             EncryptionSettings encryption not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the Socket class.
 
@@ -154,7 +155,8 @@ cdef class ClientSocket(Socket):
             int port,
             int socket_type,
             EncryptionSettings encryption not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the ClientSocket class.
 
@@ -207,7 +209,8 @@ cdef class SubscriberSocket(ClientSocket):
             str host not None,
             int port,
             EncryptionSettings encryption not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the SubscriberSocket class.
 
@@ -227,7 +230,8 @@ cdef class SubscriberSocket(ClientSocket):
             port,
             zmq.SUB,
             encryption,
-            logger)
+            logger,
+        )
 
     cpdef void subscribe(self, str topic) except *:
         """
@@ -263,7 +267,8 @@ cdef class ServerSocket(Socket):
             int port,
             int socket_type,
             EncryptionSettings encryption not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the ServerSocket class.
 
@@ -282,7 +287,8 @@ cdef class ServerSocket(Socket):
             port,
             socket_type,
             encryption,
-            logger)
+            logger,
+        )
 
     cpdef void connect(self) except *:
         """

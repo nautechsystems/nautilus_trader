@@ -24,12 +24,14 @@ cdef class IdentifierGenerator:
     Provides a generator for unique identifier strings.
     """
 
-    def __init__(self,
-                 str prefix not None,
-                 IdTag id_tag_trader not None,
-                 IdTag id_tag_strategy not None,
-                 Clock clock not None,
-                 int initial_count=0):
+    def __init__(
+            self,
+            str prefix not None,
+            IdTag id_tag_trader not None,
+            IdTag id_tag_strategy not None,
+            Clock clock not None,
+            int initial_count=0,
+    ):
         """
         Initialize a new instance of the IdentifierGenerator class.
 
@@ -123,11 +125,13 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     Provides a generator for unique OrderId(s).
     """
 
-    def __init__(self,
-                 IdTag id_tag_trader not None,
-                 IdTag id_tag_strategy not None,
-                 Clock clock not None,
-                 int initial_count=0):
+    def __init__(
+            self,
+            IdTag id_tag_trader not None,
+            IdTag id_tag_strategy not None,
+            Clock clock not None,
+            int initial_count=0,
+    ):
         """
         Initialize a new instance of the OrderIdGenerator class.
 
@@ -171,11 +175,13 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     Provides a generator for unique PositionId(s).
     """
 
-    def __init__(self,
-                 IdTag id_tag_trader not None,
-                 IdTag id_tag_strategy not None,
-                 Clock clock not None,
-                 int initial_count=0):
+    def __init__(
+            self,
+            IdTag id_tag_trader not None,
+            IdTag id_tag_strategy not None,
+            Clock clock not None,
+            int initial_count=0,
+    ):
         """
         Initialize a new instance of the PositionIdGenerator class.
 

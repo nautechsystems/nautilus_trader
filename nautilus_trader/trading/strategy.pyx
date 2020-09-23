@@ -81,12 +81,14 @@ cdef class TradingStrategy:
     The base class for all trading strategies.
     """
 
-    def __init__(self,
-                 str order_id_tag not None,
-                 bint flatten_on_stop=True,
-                 bint flatten_on_reject=True,
-                 bint cancel_all_orders_on_stop=True,
-                 bint reraise_exceptions=True):
+    def __init__(
+            self,
+            str order_id_tag not None,
+            bint flatten_on_stop=True,
+            bint flatten_on_reject=True,
+            bint cancel_all_orders_on_stop=True,
+            bint reraise_exceptions=True,
+    ):
         """
         Initialize a new instance of the TradingStrategy class.
 
@@ -357,7 +359,8 @@ cdef class TradingStrategy:
             TraderId trader_id,
             Clock clock,
             UUIDFactory uuid_factory,
-            Logger logger) except *:
+            Logger logger,
+    ) except *:
         """
         Register the strategy with a trader.
 
@@ -388,12 +391,14 @@ cdef class TradingStrategy:
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
             clock=self.clock,
-            uuid_factory=self.uuid_factory)
+            uuid_factory=self.uuid_factory,
+        )
 
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
-            clock=self.clock)
+            clock=self.clock,
+        )
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
         """
@@ -1378,7 +1383,8 @@ cdef class TradingStrategy:
             self,
             Currency from_currency,
             Currency to_currency,
-            PriceType price_type=PriceType.MID):
+            PriceType price_type=PriceType.MID,
+    ):
         """
         Return the calculated exchange rate for the given currencies.
 
@@ -1411,7 +1417,8 @@ cdef class TradingStrategy:
     cpdef double get_exchange_rate_for_account(
             self,
             Currency quote_currency,
-            PriceType price_type=PriceType.MID):
+            PriceType price_type=PriceType.MID,
+    ):
         """
         Return the calculated exchange rate for the give trading instrument quote
         currency to the account currency.
@@ -2008,7 +2015,7 @@ cdef class TradingStrategy:
         """
         cpdef dict state = {
             "OrderIdCount": self.order_factory.count(),
-            "PositionIdCount": self.position_id_generator.count
+            "PositionIdCount": self.position_id_generator.count,
         }
 
         try:
@@ -2087,7 +2094,8 @@ cdef class TradingStrategy:
             cl_pos_id,
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now())
+            self.clock.utc_now(),
+        )
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
@@ -2128,7 +2136,8 @@ cdef class TradingStrategy:
             cl_pos_id,
             bracket_order,
             self.uuid_factory.generate(),
-            self.clock.utc_now())
+            self.clock.utc_now(),
+        )
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
@@ -2169,7 +2178,8 @@ cdef class TradingStrategy:
             new_quantity,
             new_price,
             self.uuid_factory.generate(),
-            self.clock.utc_now())
+            self.clock.utc_now(),
+        )
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
@@ -2194,7 +2204,8 @@ cdef class TradingStrategy:
             self._exec_engine.account_id,
             order.cl_ord_id,
             self.uuid_factory.generate(),
-            self.clock.utc_now())
+            self.clock.utc_now(),
+        )
 
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
@@ -2222,7 +2233,8 @@ cdef class TradingStrategy:
                 self._exec_engine.account_id,
                 order_id,
                 self.uuid_factory.generate(),
-                self.clock.utc_now())
+                self.clock.utc_now(),
+            )
 
             self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute_command(command)
@@ -2263,7 +2275,8 @@ cdef class TradingStrategy:
         cdef Order order = self.order_factory.market(
             position.symbol,
             self.get_flatten_side(position.market_position),
-            position.quantity)
+            position.quantity,
+        )
 
         self._flattening_ids.add(cl_pos_id)
 
