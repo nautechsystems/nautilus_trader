@@ -38,8 +38,8 @@ cdef class BarSpecification:
     def __init__(
             self,
             int step,
-            BarAggregation aggregation not None,
-            PriceType price_type not None,
+            BarAggregation aggregation,
+            PriceType price_type,
     ):
         """
         Initialize a new instance of the BarSpecification class.
