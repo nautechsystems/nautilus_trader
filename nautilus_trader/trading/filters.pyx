@@ -340,7 +340,8 @@ cdef class NewsEvent:
             datetime timestamp,
             impact,
             name,
-            currency):
+            currency,
+    ):
         """
 
         Parameters
@@ -369,7 +370,8 @@ cdef class EconomicNewsEventFilter:
             self,
             list currencies not None,
             list impacts not None,
-            str news_csv_path not None="default"):
+            str news_csv_path not None="default",
+    ):
         """
         Initialize a new instance of the EconomicNewsEventFilter class.
 

@@ -33,14 +33,16 @@ cdef class Condition:
         object argument,
         object expected,
         str param,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void type_or_none(
         object argument,
         object expected,
         str param,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void callable(object argument, str param, ex_type=*) except *
@@ -54,7 +56,8 @@ cdef class Condition:
         object argument2,
         str param1,
         str param2,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void not_equal(
@@ -62,14 +65,16 @@ cdef class Condition:
         object argument2,
         str param1,
         str param2,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void list_type(
         list argument,
         type expected_type,
         str param,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void dict_types(
@@ -77,7 +82,8 @@ cdef class Condition:
         type key_type,
         type value_type,
         str param,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void is_in(
@@ -85,7 +91,8 @@ cdef class Condition:
         object collection,
         str param1,
         str param2,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void not_in(
@@ -93,7 +100,8 @@ cdef class Condition:
         object collection,
         str param1,
         str param2,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void empty(object collection, str param, ex_type=*) except *
@@ -119,7 +127,8 @@ cdef class Condition:
         double start,
         double end,
         str param,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void in_range_int(
@@ -127,7 +136,8 @@ cdef class Condition:
         int start,
         int end,
         str param,
-        ex_type=*) except *
+        ex_type=*,
+    ) except *
 
     @staticmethod
     cdef void valid_string(str argument, str param, ex_type=*) except *

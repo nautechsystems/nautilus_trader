@@ -26,10 +26,12 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     Different moving average types can be selected for the inner calculation.
     """
 
-    def __init__(self,
-                 int fast_period,
-                 int slow_period,
-                 ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL):
+    def __init__(
+            self,
+            int fast_period,
+            int slow_period,
+            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+    ):
         """
         Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
@@ -40,9 +42,13 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
         Condition.true(slow_period > fast_period, "slow_period > fast_period")
-        super().__init__(params=[fast_period,
-                                 slow_period,
-                                 ma_type.name])
+        super().__init__(
+            params=[
+                fast_period,
+                slow_period,
+                ma_type.name
+            ]
+        )
 
         self._fast_period = fast_period
         self._slow_period = slow_period

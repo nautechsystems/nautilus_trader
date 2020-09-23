@@ -88,7 +88,8 @@ cdef class TradingNode:
     def __init__(
             self,
             str config_path="config.json",
-            list strategies=None):
+            list strategies=None,
+    ):
         """
         Initialize a new instance of the TradingNode class.
 
@@ -120,12 +121,14 @@ cdef class TradingNode:
         # Setup identifiers
         self.trader_id = TraderId(
             name=config_trader["name"],
-            order_id_tag=config_trader["id_tag"])
+            order_id_tag=config_trader["id_tag"],
+        )
 
         self.account_id = AccountId(
             broker=config_account["broker"],
             account_number=config_account["account_number"],
-            account_type=account_type_from_string(config_account["account_type"]))
+            account_type=account_type_from_string(config_account["account_type"]),
+        )
 
         # Setup logging
         self._log_store = LogStore(trader_id=self.trader_id)
@@ -139,7 +142,9 @@ cdef class TradingNode:
             log_thread=True,
             log_to_file=config_log["log_to_file"],
             log_file_path=config_log["log_file_path"],
-            store=self._log_store)
+            store=self._log_store,
+        )
+
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
         self._log_header()
         self._log.info("Starting...")
@@ -188,12 +193,14 @@ cdef class TradingNode:
             instrument_serializer=instrument_serializer,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
-            logger=self._logger)
+            logger=self._logger,
+        )
 
         self.portfolio = Portfolio(
             clock=self._clock,
             uuid_factory=self._uuid_factory,
-            logger=self._logger)
+            logger=self._logger,
+        )
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -204,11 +211,13 @@ cdef class TradingNode:
                 port=config_exec_db["port"],
                 command_serializer=command_serializer,
                 event_serializer=event_serializer,
-                logger=self._logger)
+                logger=self._logger,
+            )
         else:
             self._exec_db = InMemoryExecutionDatabase(
                 trader_id=self.trader_id,
-                logger=self._logger)
+                logger=self._logger,
+            )
 
         self._exec_engine = LiveExecutionEngine(
             trader_id=self.trader_id,
@@ -217,7 +226,8 @@ cdef class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
-            logger=self._logger)
+            logger=self._logger,
+        )
 
         self._exec_client = LiveExecClient(
             exec_engine=self._exec_engine,
@@ -234,7 +244,8 @@ cdef class TradingNode:
             event_serializer=event_serializer,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
-            logger=self._logger)
+            logger=self._logger,
+        )
 
         self._exec_engine.register_client(self._exec_client)
 
@@ -279,7 +290,9 @@ cdef class TradingNode:
             trader_id=self.trader_id,
             account_id=self.account_id,
             command_id=self._uuid_factory.generate(),
-            command_timestamp=self._clock.utc_now())
+            command_timestamp=self._clock.utc_now(),
+        )
+
         self._exec_client.account_inquiry(account_inquiry)
         time.sleep(0.5)  # Hard coded delay to await instruments and account updates (refactor)
 

@@ -57,7 +57,8 @@ cdef class ServerNode:
             Compressor compressor not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the ServerNode class.
 
@@ -106,7 +107,8 @@ cdef class MessageServer(ServerNode):
             EncryptionSettings encryption not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the MessageServer class.
 
@@ -129,32 +131,37 @@ cdef class MessageServer(ServerNode):
             compressor,
             clock,
             uuid_factory,
-            logger)
+            logger,
+        )
 
         self._socket_inbound = ServerSocket(
             server_id,
             recv_port,
             zmq.ROUTER,  # noqa (zmq reference)
             encryption,
-            self._log)
+            self._log,
+        )
 
         self._socket_outbound = ServerSocket(
             server_id,
             send_port,
             zmq.ROUTER,  # noqa (zmq reference)
             encryption,
-            self._log)
+            self._log,
+        )
 
         expected_frames = 3  # [sender, header, body]
         self._queue_inbound = MessageQueueInbound(
             expected_frames,
             self._socket_inbound,
             self._recv_frames,
-            self._log)
+            self._log,
+        )
 
         self._queue_outbound = MessageQueueOutbound(
             self._socket_outbound,
-            self._log)
+            self._log,
+        )
 
         self._header_serializer = header_serializer
         self._request_serializer = request_serializer
@@ -220,7 +227,12 @@ cdef class MessageServer(ServerNode):
 
         self._handlers[message_type] = handler
 
-    cpdef void send_rejected(self, str rejected_message, UUID correlation_id, ClientId receiver) except *:
+    cpdef void send_rejected(
+            self,
+            str rejected_message,
+            UUID correlation_id,
+            ClientId receiver,
+    ) except *:
         """
         Send a MessageRejected response.
 
@@ -240,7 +252,8 @@ cdef class MessageServer(ServerNode):
             rejected_message,
             correlation_id,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.send_response(response, receiver)
 
@@ -260,7 +273,8 @@ cdef class MessageServer(ServerNode):
             original.__class__.__name__,
             original.id,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.send_response(response, receiver)
 
@@ -279,7 +293,7 @@ cdef class MessageServer(ServerNode):
 
         cdef dict header = {
             MESSAGE_TYPE: message_type_to_string(response.message_type).title(),
-            TYPE: response.__class__.__name__
+            TYPE: response.__class__.__name__,
         }
 
         self._send(receiver, header, self._response_serializer.serialize(response))
@@ -297,7 +311,7 @@ cdef class MessageServer(ServerNode):
         """
         cdef dict header = {
             MESSAGE_TYPE: _STRING,
-            TYPE: _TYPE_UTF8
+            TYPE: _TYPE_UTF8,
         }
 
         self._send(receiver, header, message.encode(UTF8))
@@ -404,7 +418,8 @@ cdef class MessageServer(ServerNode):
             session_id,
             request.id,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self.send_response(response, client_id)
 
@@ -414,14 +429,16 @@ cdef class MessagePublisher(ServerNode):
     Provides an asynchronous messaging publisher.
     """
 
-    def __init__(self,
-                 ServerId server_id,
-                 int port,
-                 Compressor compressor not None,
-                 EncryptionSettings encryption not None,
-                 Clock clock not None,
-                 UUIDFactory uuid_factory not None,
-                 LoggerAdapter logger not None):
+    def __init__(
+            self,
+            ServerId server_id,
+            int port,
+            Compressor compressor not None,
+            EncryptionSettings encryption not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the MessagePublisher class.
 
@@ -438,14 +455,16 @@ cdef class MessagePublisher(ServerNode):
             compressor,
             clock,
             uuid_factory,
-            logger)
+            logger,
+        )
 
         self._socket = ServerSocket(
             server_id,
             port,
             zmq.PUB,
             encryption,
-            self._log)
+            self._log,
+        )
 
         self._queue = MessageQueueOutbound(self._socket, self._log)
 

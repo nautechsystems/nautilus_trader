@@ -59,7 +59,8 @@ cdef class ClientNode:
             Compressor compressor not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the ClientNode class.
 
@@ -134,7 +135,8 @@ cdef class MessageClient(ClientNode):
             EncryptionSettings encryption not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            LoggerAdapter logger not None):
+            LoggerAdapter logger not None,
+    ):
         """
         Initialize a new instance of the MessageClient class.
 
@@ -162,7 +164,8 @@ cdef class MessageClient(ClientNode):
             compressor,
             clock,
             uuid_factory,
-            logger)
+            logger,
+        )
 
         self._socket_outbound = ClientSocket(
             client_id,
@@ -170,7 +173,8 @@ cdef class MessageClient(ClientNode):
             server_req_port,
             zmq.DEALER,  # noqa (zmq reference)
             encryption,
-            self._log)
+            self._log,
+        )
 
         self._socket_inbound = ClientSocket(
             client_id,
@@ -178,18 +182,21 @@ cdef class MessageClient(ClientNode):
             server_res_port,
             zmq.DEALER,  # noqa (zmq reference)
             encryption,
-            self._log)
+            self._log,
+        )
 
         self._queue_outbound = MessageQueueOutbound(
             self._socket_outbound,
-            self._log)
+            self._log,
+        )
 
         expected_frames = 2  # [header, body]
         self._queue_inbound = MessageQueueInbound(
             expected_frames,
             self._socket_inbound,
             self._recv_frames,
-            self._log)
+            self._log,
+        )
 
         self._header_serializer = header_serializer
         self._request_serializer = request_serializer
@@ -218,13 +225,15 @@ cdef class MessageClient(ClientNode):
             self.client_id,
             SessionId.create(self.client_id, timestamp, "None").value,
             self._uuid_factory.generate(),
-            timestamp)
+            timestamp,
+        )
 
         # Set check connected alert
         self._clock.set_time_alert(
             connect.id.value + _IS_CONNECTED,
             timestamp + timedelta(seconds=2),
-            self._check_connection)
+            self._check_connection,
+        )
 
         self.send_message(connect, self._request_serializer.serialize(connect))
 
@@ -242,13 +251,15 @@ cdef class MessageClient(ClientNode):
             self.client_id,
             self.session_id,
             self._uuid_factory.generate(),
-            timestamp)
+            timestamp,
+        )
 
         # Set check disconnected alert
         self._clock.set_time_alert(
             disconnect.id.value + _IS_DISCONNECTED,
             timestamp + timedelta(seconds=2),
-            self._check_connection)
+            self._check_connection,
+        )
 
         self.send_message(disconnect, self._request_serializer.serialize(disconnect))
 
@@ -307,7 +318,7 @@ cdef class MessageClient(ClientNode):
 
         cdef dict header = {
             MESSAGE_TYPE: message_type_to_string(message_type).title(),
-            TYPE: class_name
+            TYPE: class_name,
         }
 
         # Compress frames
@@ -416,7 +427,8 @@ cdef class MessageSubscriber(ClientNode):
             EncryptionSettings encryption not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            LoggerAdapter logger):
+            LoggerAdapter logger,
+    ):
         """
         Initialize a new instance of the MessageSubscriber class.
 
@@ -439,7 +451,8 @@ cdef class MessageSubscriber(ClientNode):
             compressor,
             clock,
             uuid_factory,
-            logger)
+            logger,
+        )
 
         self.register_handler(self._no_subscriber_handler)
 
@@ -448,14 +461,16 @@ cdef class MessageSubscriber(ClientNode):
             host,
             port,
             encryption,
-            self._log)
+            self._log,
+        )
 
         expected_frames = 2  # [topic, body]
         self._queue = MessageQueueInbound(
             expected_frames,
             self._socket,
             self._recv_frames,
-            self._log)
+            self._log,
+        )
 
     cpdef bint is_connected(self):
         return True  # TODO: Keep alive heartbeat polling

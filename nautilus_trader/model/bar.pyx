@@ -35,10 +35,12 @@ cdef class BarSpecification:
     """
     Represents the specification of a financial market trade bar.
     """
-    def __init__(self,
-                 int step,
-                 BarAggregation aggregation,
-                 PriceType price_type):
+    def __init__(
+            self,
+            int step,
+            BarAggregation aggregation,
+            PriceType price_type,
+    ):
         """
         Initialize a new instance of the BarSpecification class.
 
@@ -97,7 +99,8 @@ cdef class BarSpecification:
         return BarSpecification(
             int(split[0]),
             bar_aggregation_from_string(split[1]),
-            price_type_from_string(split[2]))
+            price_type_from_string(split[2]),
+        )
 
     @staticmethod
     def py_from_string(str value) -> BarSpecification:
@@ -248,9 +251,11 @@ cdef class BarType:
     Represents a financial market symbol and bar specification.
     """
 
-    def __init__(self,
-                 Symbol symbol not None,
-                 BarSpecification bar_spec not None):
+    def __init__(
+            self,
+            Symbol symbol not None,
+            BarSpecification bar_spec not None,
+    ):
         """
         Initialize a new instance of the BarType class.
 
@@ -294,7 +299,8 @@ cdef class BarType:
         cdef BarSpecification bar_spec = BarSpecification(
             int(split[1]),
             bar_aggregation_from_string(split[2]),
-            price_type_from_string(split[3]))
+            price_type_from_string(split[3]),
+        )
 
         return BarType(symbol, bar_spec)
 
@@ -435,14 +441,16 @@ cdef class Bar:
     Represents a financial market trade bar.
     """
 
-    def __init__(self,
-                 Price open_price not None,
-                 Price high_price not None,
-                 Price low_price not None,
-                 Price close_price not None,
-                 Quantity volume not None,
-                 datetime timestamp not None,
-                 bint check=False):
+    def __init__(
+            self,
+            Price open_price not None,
+            Price high_price not None,
+            Price low_price not None,
+            Price close_price not None,
+            Quantity volume not None,
+            datetime timestamp not None,
+            bint check=False,
+    ):
         """
         Initialize a new instance of the Bar class.
 
@@ -505,12 +513,14 @@ cdef class Bar:
 
         cdef list pieces = value.split(',', maxsplit=5)
 
-        return Bar(Price.from_string(pieces[0]),
-                   Price.from_string(pieces[1]),
-                   Price.from_string(pieces[2]),
-                   Price.from_string(pieces[3]),
-                   Quantity.from_string(pieces[4]),
-                   datetime.fromtimestamp(long(pieces[5]) / 1000, pytz.utc))
+        return Bar(
+            Price.from_string(pieces[0]),
+            Price.from_string(pieces[1]),
+            Price.from_string(pieces[2]),
+            Price.from_string(pieces[3]),
+            Quantity.from_string(pieces[4]),
+            datetime.fromtimestamp(long(pieces[5]) / 1000, pytz.utc),
+        )
 
     @staticmethod
     def py_from_serializable_string(str value) -> Bar:

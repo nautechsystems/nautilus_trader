@@ -26,9 +26,11 @@ cdef class RelativeStrengthIndex(Indicator):
     An indicator which calculates a relative strength index (RSI) across a rolling window.
     """
 
-    def __init__(self,
-                 int period,
-                 ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL):
+    def __init__(
+            self,
+            int period,
+            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+    ):
         """
         Initialize a new instance of the RelativeStrengthIndex class.
 

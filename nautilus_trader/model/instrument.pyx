@@ -31,23 +31,25 @@ cdef class Instrument:
     Represents a tradeable financial market instrument.
     """
 
-    def __init__(self,
-                 Symbol symbol not None,
-                 Currency quote_currency,
-                 SecurityType security_type,
-                 int price_precision,
-                 int size_precision,
-                 int min_stop_distance_entry,
-                 int min_stop_distance,
-                 int min_limit_distance_entry,
-                 int min_limit_distance,
-                 Decimal64 tick_size not None,
-                 Quantity round_lot_size not None,
-                 Quantity min_trade_size not None,
-                 Quantity max_trade_size not None,
-                 Decimal64 rollover_interest_buy not None,
-                 Decimal64 rollover_interest_sell not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            Symbol symbol not None,
+            Currency quote_currency,
+            SecurityType security_type,
+            int price_precision,
+            int size_precision,
+            int min_stop_distance_entry,
+            int min_stop_distance,
+            int min_limit_distance_entry,
+            int min_limit_distance,
+            Decimal64 tick_size not None,
+            Quantity round_lot_size not None,
+            Quantity min_trade_size not None,
+            Quantity max_trade_size not None,
+            Decimal64 rollover_interest_buy not None,
+            Decimal64 rollover_interest_sell not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the Instrument class.
 
@@ -189,21 +191,23 @@ cdef class ForexInstrument(Instrument):
     Represents a tradeable FOREX currency pair.
     """
 
-    def __init__(self,
-                 Symbol symbol not None,
-                 int price_precision,
-                 int size_precision,
-                 int min_stop_distance_entry,
-                 int min_stop_distance,
-                 int min_limit_distance_entry,
-                 int min_limit_distance,
-                 Price tick_size not None,
-                 Quantity round_lot_size not None,
-                 Quantity min_trade_size not None,
-                 Quantity max_trade_size not None,
-                 Decimal64 rollover_interest_buy not None,
-                 Decimal64 rollover_interest_sell not None,
-                 datetime timestamp not None):
+    def __init__(
+            self,
+            Symbol symbol not None,
+            int price_precision,
+            int size_precision,
+            int min_stop_distance_entry,
+            int min_stop_distance,
+            int min_limit_distance_entry,
+            int min_limit_distance,
+            Price tick_size not None,
+            Quantity round_lot_size not None,
+            Quantity min_trade_size not None,
+            Quantity max_trade_size not None,
+            Decimal64 rollover_interest_buy not None,
+            Decimal64 rollover_interest_sell not None,
+            datetime timestamp not None,
+    ):
         """
         Initialize a new instance of the ForexInstrument class.
 
@@ -255,6 +259,7 @@ cdef class ForexInstrument(Instrument):
             max_trade_size,
             rollover_interest_buy,
             rollover_interest_sell,
-            timestamp)
+            timestamp,
+        )
 
         self.base_currency = currency_from_string(symbol.code[:3])

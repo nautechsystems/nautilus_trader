@@ -28,11 +28,13 @@ cdef class Connect(Request):
     Represents a request to connect to a session.
     """
 
-    def __init__(self,
-                 ClientId client_id not None,
-                 str authentication not None,
-                 UUID request_id not None,
-                 datetime request_timestamp not None):
+    def __init__(
+            self,
+            ClientId client_id not None,
+            str authentication not None,
+            UUID request_id not None,
+            datetime request_timestamp not None,
+    ):
         """
         Initialize a new instance of the Connect class.
 
@@ -52,13 +54,15 @@ cdef class Connected(Response):
     Represents a response confirming connection to a session.
     """
 
-    def __init__(self,
-                 str message not None,
-                 ServerId server_id not None,
-                 SessionId session_id not None,
-                 UUID correlation_id not None,
-                 UUID response_id not None,
-                 datetime response_timestamp not None):
+    def __init__(
+            self,
+            str message not None,
+            ServerId server_id not None,
+            SessionId session_id not None,
+            UUID correlation_id not None,
+            UUID response_id not None,
+            datetime response_timestamp not None,
+    ):
         """
         Initialize a new instance of the Connected class.
 
@@ -81,11 +85,13 @@ cdef class Disconnect(Request):
     Represents a request to disconnect from a session.
     """
 
-    def __init__(self,
-                 ClientId client_id not None,
-                 SessionId session_id not None,
-                 UUID request_id not None,
-                 datetime request_timestamp not None):
+    def __init__(
+            self,
+            ClientId client_id not None,
+            SessionId session_id not None,
+            UUID request_id not None,
+            datetime request_timestamp not None,
+    ):
         """
         Initialize a new instance of the Disconnect class.
 
@@ -105,13 +111,15 @@ cdef class Disconnected(Response):
     Represents a response confirming disconnection from a session.
     """
 
-    def __init__(self,
-                 str message not None,
-                 ServerId server_id not None,
-                 SessionId session_id not None,
-                 UUID correlation_id not None,
-                 UUID response_id not None,
-                 datetime response_timestamp not None):
+    def __init__(
+            self,
+            str message not None,
+            ServerId server_id not None,
+            SessionId session_id not None,
+            UUID correlation_id not None,
+            UUID response_id not None,
+            datetime response_timestamp not None,
+    ):
         """
         Initialize a new instance of the Disconnected class.
 
@@ -134,11 +142,13 @@ cdef class MessageReceived(Response):
     Represents a response acknowledging receipt of a message.
     """
 
-    def __init__(self,
-                 str received_type,
-                 UUID correlation_id not None,
-                 UUID response_id not None,
-                 datetime response_timestamp not None):
+    def __init__(
+            self,
+            str received_type,
+            UUID correlation_id not None,
+            UUID response_id not None,
+            datetime response_timestamp not None,
+    ):
         """
         Initialize a new instance of the MessageReceived class.
 
@@ -172,11 +182,13 @@ cdef class MessageRejected(Response):
     Represents a response indicating rejection of a message.
     """
 
-    def __init__(self,
-                 str rejected_message not None,  # Could be an empty string
-                 UUID correlation_id not None,
-                 UUID response_id not None,
-                 datetime response_timestamp not None):
+    def __init__(
+            self,
+            str rejected_message not None,  # Could be an empty string
+            UUID correlation_id not None,
+            UUID response_id not None,
+            datetime response_timestamp not None,
+    ):
         """
         Initialize a new instance of the MessageRejected class.
 
@@ -209,11 +221,13 @@ cdef class QueryFailure(Response):
     Represents a response indicating a query failure.
     """
 
-    def __init__(self,
-                 str failure_message not None,  # Could be an empty string
-                 UUID correlation_id not None,
-                 UUID response_id not None,
-                 datetime response_timestamp not None):
+    def __init__(
+            self,
+            str failure_message not None,  # Could be an empty string
+            UUID correlation_id not None,
+            UUID response_id not None,
+            datetime response_timestamp not None,
+    ):
         """
         Initialize a new instance of the QueryFailure class.
 
@@ -246,10 +260,12 @@ cdef class DataRequest(Request):
     Represents a request for data.
     """
 
-    def __init__(self,
-                 dict query not None,
-                 UUID request_id not None,
-                 datetime request_timestamp not None):
+    def __init__(
+            self,
+            dict query not None,
+            UUID request_id not None,
+            datetime request_timestamp not None,
+    ):
         """
         Initialize a new instance of the DataRequest class.
 
@@ -267,13 +283,15 @@ cdef class DataResponse(Response):
     Represents a data response.
     """
 
-    def __init__(self,
-                 bytes data not None,
-                 str data_type not None,
-                 str data_encoding not None,
-                 UUID correlation_id not None,
-                 UUID response_id not None,
-                 datetime response_timestamp not None):
+    def __init__(
+            self,
+            bytes data not None,
+            str data_type not None,
+            str data_encoding not None,
+            UUID correlation_id not None,
+            UUID response_id not None,
+            datetime response_timestamp not None,
+    ):
         """
         Initialize a new instance of the DataResponse class.
 

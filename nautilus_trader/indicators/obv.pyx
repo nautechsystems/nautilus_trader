@@ -49,14 +49,15 @@ cdef class OnBalanceVolume(Indicator):
         self.update_raw(
             bar.open.as_double(),
             bar.close.as_double(),
-            bar.volume.as_double()
+            bar.volume.as_double(),
         )
 
     cpdef void update_raw(
             self,
             double open_price,
             double close_price,
-            double volume) except *:
+            double volume,
+    ) except *:
         """
         Update the indicator with the given raw values.
 

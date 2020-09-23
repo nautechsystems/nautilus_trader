@@ -168,11 +168,6 @@ cdef class Logger:
         self._logger.addHandler(self._log_file_handler)
 
     cpdef void log(self, LogMessage message) except *:
-        """
-        Log the given log message.
-
-        :param message: The log message to log.
-        """
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 

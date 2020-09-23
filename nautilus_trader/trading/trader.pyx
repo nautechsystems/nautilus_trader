@@ -33,15 +33,17 @@ cdef class Trader:
     Provides a trader for managing a portfolio of trading strategies.
     """
 
-    def __init__(self,
-                 TraderId trader_id not None,
-                 AccountId account_id not None,
-                 list strategies not None,
-                 DataEngine data_engine not None,
-                 ExecutionEngine exec_engine not None,
-                 Clock clock not None,
-                 UUIDFactory uuid_factory not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            list strategies not None,
+            DataEngine data_engine not None,
+            ExecutionEngine exec_engine not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger not None,
+    ):
         """
         Initialize a new instance of the Trader class.
 
@@ -152,7 +154,8 @@ cdef class Trader:
                 self.id,
                 self._clock.__class__(),  # Clock per strategy
                 self._uuid_factory,
-                self._log.get_logger())
+                self._log.get_logger(),
+            )
 
             # Wire data engine into strategy
             self._data_engine.register_strategy(strategy)
@@ -287,7 +290,8 @@ cdef class Trader:
             trader_id=self.id,
             account_id=self.account_id,
             command_id=self._uuid_factory.generate(),
-            command_timestamp=self._clock.utc_now())
+            command_timestamp=self._clock.utc_now(),
+        )
 
         self._exec_engine.execute_command(command)
 

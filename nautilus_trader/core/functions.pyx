@@ -59,7 +59,8 @@ cpdef double fast_mean_iterated(
         double next_value,
         double current_value,
         int expected_length,
-        bint drop_left=True):
+        bint drop_left=True,
+):
     """
     Return the calculated average from the given inputs.
 

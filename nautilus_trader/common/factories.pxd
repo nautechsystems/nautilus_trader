@@ -44,7 +44,8 @@ cdef class OrderFactory:
         Symbol symbol,
         OrderSide order_side,
         Quantity quantity,
-        TimeInForce time_in_force=*)
+        TimeInForce time_in_force=*,
+    )
 
     cpdef LimitOrder limit(
         self,
@@ -55,7 +56,8 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint is_post_only=*,
-        bint is_hidden=*)
+        bint is_hidden=*,
+    )
 
     cpdef StopOrder stop(
         self,
@@ -64,10 +66,12 @@ cdef class OrderFactory:
         Quantity quantity,
         Price price,
         TimeInForce time_in_force=*,
-        datetime expire_time=*)
+        datetime expire_time=*,
+    )
 
     cpdef BracketOrder bracket(
         self,
         Order entry_order,
         Price stop_loss,
-        Price take_profit=*)
+        Price take_profit=*,
+    )

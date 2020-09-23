@@ -756,7 +756,8 @@ cdef class DataEngine:
                     handler=self.handle_bar,
                     use_previous_close=self._use_previous_close,
                     clock=self._clock,
-                    logger=self._log.get_logger())
+                    logger=self._log.get_logger(),
+                )
 
                 bulk_updater = BulkTimeBarUpdater(aggregator)
 
@@ -765,7 +766,8 @@ cdef class DataEngine:
                     from_datetime=aggregator.get_start_time(),
                     to_datetime=None,  # Max
                     limit=0,  # No limit
-                    callback=bulk_updater.receive)
+                    callback=bulk_updater.receive,
+                )
 
             # Add aggregator and subscribe to QuoteTick updates
             self._bar_aggregators[bar_type] = aggregator
@@ -961,21 +963,24 @@ cdef class DataEngine:
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback) except *:
+            callback
+    ) except *:
         # Bulk build tick bars
         cdef int ticks_to_order = bar_type.spec.step * limit
 
         cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
             bar_type,
             self._log.get_logger(),
-            callback)
+            callback
+        )
 
         self.request_quote_ticks(
             bar_type.symbol,
             from_datetime,
             to_datetime,
             ticks_to_order,
-            bar_builder.receive)
+            bar_builder.receive
+        )
 
     cdef void _reset(self) except *:
         # Reset the class to its initial state

@@ -105,7 +105,9 @@ cdef class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_closed()]
+        cdef list trades = [
+            self._position_to_dict(p) for p in positions.values() if p.is_closed()
+        ]
 
         return pd.DataFrame(data=trades).set_index("cl_pos_id")
 
@@ -134,8 +136,9 @@ cdef class ReportProvider:
         if end is None:
             end = events[-1].timestamp
 
-        cdef list account_events = [self._account_state_to_dict(e) for e in events
-                                    if start <= e.timestamp <= end]
+        cdef list account_events = [
+            self._account_state_to_dict(e) for e in events if start <= e.timestamp <= end
+        ]
 
         if not account_events:
             return pd.DataFrame()
@@ -143,34 +146,40 @@ cdef class ReportProvider:
         return pd.DataFrame(data=account_events).set_index("timestamp")
 
     cdef dict _order_to_dict(self, Order order):
-        return {"cl_ord_id": order.cl_ord_id.value,
-                "order_id": order.id.value,
-                "symbol": order.symbol.code,
-                "side": order_side_to_string(order.side),
-                "type": order_type_to_string(order.type),
-                "quantity": order.quantity,
-                "avg_price": "None" if order.average_price is None
-                else order.average_price.as_double(),
-                "slippage": order.slippage.as_double(),
-                "timestamp": order.last_event().timestamp}
+        return {
+            "cl_ord_id": order.cl_ord_id.value,
+            "order_id": order.id.value,
+            "symbol": order.symbol.code,
+            "side": order_side_to_string(order.side),
+            "type": order_type_to_string(order.type),
+            "quantity": order.quantity,
+            "avg_price": "None" if order.average_price is None
+            else order.average_price.as_double(),
+            "slippage": order.slippage.as_double(),
+            "timestamp": order.last_event().timestamp,
+        }
 
     cdef dict _position_to_dict(self, Position position):
-        return {"cl_pos_id": position.cl_pos_id.value,
-                "position_id": position.id.value,
-                "symbol": position.symbol.code,
-                "direction": order_side_to_string(position.entry_direction),
-                "peak_quantity": position.peak_quantity,
-                "opened_time": position.opened_time,
-                "closed_time": position.closed_time,
-                "duration": position.open_duration,
-                "avg_open_price": position.average_open_price,
-                "avg_close_price": position.average_close_price,
-                "realized_points": position.realized_points,
-                "realized_return": position.realized_return,
-                "realized_pnl": position.realized_pnl.as_double(),
-                "currency": currency_to_string(position.quote_currency)}
+        return {
+            "cl_pos_id": position.cl_pos_id.value,
+            "position_id": position.id.value,
+            "symbol": position.symbol.code,
+            "direction": order_side_to_string(position.entry_direction),
+            "peak_quantity": position.peak_quantity,
+            "opened_time": position.opened_time,
+            "closed_time": position.closed_time,
+            "duration": position.open_duration,
+            "avg_open_price": position.average_open_price,
+            "avg_close_price": position.average_close_price,
+            "realized_points": position.realized_points,
+            "realized_return": position.realized_return,
+            "realized_pnl": position.realized_pnl.as_double(),
+            "currency": currency_to_string(position.quote_currency),
+        }
 
     cdef dict _account_state_to_dict(self, AccountState event):
-        return {"timestamp": event.timestamp,
-                "cash_balance": event.cash_balance.as_double(),
-                "margin_used": event.margin_used_maintenance.as_double()}
+        return {
+            "timestamp": event.timestamp,
+            "cash_balance": event.cash_balance.as_double(),
+            "margin_used": event.margin_used_maintenance.as_double(),
+        }

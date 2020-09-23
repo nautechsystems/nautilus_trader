@@ -63,7 +63,8 @@ cdef class LiveExecClient(ExecutionClient):
             EventSerializer event_serializer not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            Logger logger not None):
+            Logger logger not None,
+    ):
         """
         Initialize a new instance of the LiveExecClient class.
 
@@ -110,7 +111,8 @@ cdef class LiveExecClient(ExecutionClient):
             encryption,
             clock,
             uuid_factory,
-            self._log)
+            self._log,
+        )
 
         self._event_subscriber = MessageSubscriber(
             self.client_id,
@@ -120,7 +122,8 @@ cdef class LiveExecClient(ExecutionClient):
             encryption,
             clock,
             uuid_factory,
-            self._log)
+            self._log,
+        )
 
         self._event_subscriber.register_handler(self._recv_event)
 

@@ -9,6 +9,7 @@
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-downloads](https://img.shields.io/pypi/dm/nautilus_trader)
+[![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 **BETA**
 
@@ -37,7 +38,8 @@ Note that initial compilation may take several minutes due to the quantity of ex
 
 ## Features
 
-- **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport, MsgPack wire serialization.
+- **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport with MsgPack serialization.
+- **Reliable:** Redis provides performant state persistence for the live `ExecutionEngine`.
 - **Flexible:** Any FIX or REST broker API can be integrated into the platform, with no changes to your strategy scripts.
 - **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
@@ -85,6 +87,15 @@ initial compilation may take several minutes due to the quantity of extensions.
     $ python setup.py build_ext --inplace
 
 All tests can be run via the `run_tests.sh` script, or through pytest.
+
+## Code Style
+
+_Black_ is a PEP-8 compliant opinionated formatter.
+
+> https://github.com/psf/black
+
+We philosophically agree with _Black_, however it does not currently run over
+Cython code. So you could say we are "handcrafting towards" _Blacks_ stylistic conventions.
 
 ## Support
 

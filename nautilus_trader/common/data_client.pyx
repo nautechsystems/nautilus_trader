@@ -34,12 +34,14 @@ cdef class DataClient:
     The base class for all data clients.
     """
 
-    def __init__(self,
-                 Venue venue not None,
-                 DataEngine engine not None,
-                 Clock clock not None,
-                 UUIDFactory uuid_factory not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            Venue venue not None,
+            DataEngine engine not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger not None,
+    ):
         """
         Initialize a new instance of the DataClient class.
 
