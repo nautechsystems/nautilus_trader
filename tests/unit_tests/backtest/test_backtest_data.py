@@ -47,7 +47,8 @@ class BacktestDataEngineTests(unittest.TestCase):
             tick_capacity=1000,
             bar_capacity=1000,
             clock=self.test_clock,
-            logger=TestLogger(self.test_clock))
+            logger=TestLogger(self.test_clock),
+        )
 
         # Act
         # Assert

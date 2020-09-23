@@ -66,13 +66,13 @@ class TradingStrategyTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger(self.clock)
 
-        self.data_client = DataEngine(
+        self.data_engine = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
-            use_previous_close=True,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
+        self.data_engine.set_use_previous_close(False)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -123,7 +123,7 @@ class TradingStrategyTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger)
 
-        self.strategy.register_data_engine(self.data_client)
+        self.strategy.register_data_engine(self.data_engine)
         self.strategy.register_execution_engine(self.exec_engine)
 
         print("\n")
@@ -238,7 +238,7 @@ class TradingStrategyTests(unittest.TestCase):
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
-        self.data_client.handle_bar(bar_type, bar)
+        self.data_engine.handle_bar(bar_type, bar)
 
         # Act
         result = self.strategy.bars(bar_type)
@@ -265,7 +265,7 @@ class TradingStrategyTests(unittest.TestCase):
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
-        self.data_client.handle_bar(bar_type, bar)
+        self.data_engine.handle_bar(bar_type, bar)
 
         # Act
         # Assert
@@ -281,7 +281,7 @@ class TradingStrategyTests(unittest.TestCase):
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
-        self.data_client.handle_bar(bar_type, bar)
+        self.data_engine.handle_bar(bar_type, bar)
 
         # Act
         result = self.strategy.bar(bar_type, 0)
@@ -303,7 +303,7 @@ class TradingStrategyTests(unittest.TestCase):
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.data_client.handle_quote_tick(tick)
+        self.data_engine.handle_quote_tick(tick)
 
         # Act
         result = self.strategy.quote_tick(tick.symbol, 0)
@@ -320,7 +320,7 @@ class TradingStrategyTests(unittest.TestCase):
             MatchId("123456789"),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
 
-        self.data_client.handle_trade_tick(tick)
+        self.data_engine.handle_trade_tick(tick)
 
         # Act
         result = self.strategy.trade_tick(tick.symbol, 0)
@@ -410,7 +410,7 @@ class TradingStrategyTests(unittest.TestCase):
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         result1 = strategy.state()
@@ -433,7 +433,7 @@ class TradingStrategyTests(unittest.TestCase):
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -514,7 +514,7 @@ class TradingStrategyTests(unittest.TestCase):
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         alert_time = datetime.now(pytz.utc) + timedelta(milliseconds=200)
@@ -537,7 +537,7 @@ class TradingStrategyTests(unittest.TestCase):
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
