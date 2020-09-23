@@ -38,8 +38,8 @@ cdef class BarSpecification:
     def __init__(
             self,
             int step,
-            BarAggregation aggregation,
-            PriceType price_type,
+            BarAggregation aggregation not None,
+            PriceType price_type not None,
     ):
         """
         Initialize a new instance of the BarSpecification class.
@@ -246,6 +246,14 @@ cdef class BarSpecification:
         return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
 
+cdef list _TIME_BARS = [
+    BarAggregation.SECOND,
+    BarAggregation.MINUTE,
+    BarAggregation.HOUR,
+    BarAggregation.DAY,
+]
+
+
 cdef class BarType:
     """
     Represents a financial market symbol and bar specification.
@@ -325,6 +333,17 @@ cdef class BarType:
 
         """
         return BarType.from_string(value)
+
+    cdef bint is_time_aggregated(self):
+        """
+        Return a value indicating whether the aggregation is a measure of time.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.spec.aggregation in _TIME_BARS
 
     cdef str aggregation_string(self):
         """
