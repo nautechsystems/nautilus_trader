@@ -123,7 +123,12 @@ cdef class Account:
 
     cpdef list get_events(self):
         """
-        :return List[Event].
+        Return the events received by the account.
+
+        Returns
+        -------
+        List[Event]
+
         """
         return self._events.copy()
 

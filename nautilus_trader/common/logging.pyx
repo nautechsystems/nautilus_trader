@@ -254,7 +254,7 @@ cdef class LoggerAdapter:
 
     cpdef Logger get_logger(self):
         """
-        System method. Return the encapsulated logger
+        Return the encapsulated logger
 
         :return logging.logger.
         """

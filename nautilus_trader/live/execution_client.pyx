@@ -44,7 +44,7 @@ cdef str _EVENT = 'Event'
 cdef class LiveExecClient(ExecutionClient):
     """
     Provides an execution client for live trading utilizing a ZMQ transport
-    to the execution service.
+    to an execution service.
     """
 
     def __init__(

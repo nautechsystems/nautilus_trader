@@ -149,7 +149,8 @@ class TestStrategy1(TradingStrategy):
                 buy_order = self.order_factory.market(
                     self.bar_type.symbol,
                     OrderSide.BUY,
-                    100000)
+                    100000,
+                )
 
                 self.submit_order(buy_order, ClientPositionId(str(buy_order.cl_ord_id)))
                 self.position_id = buy_order.cl_ord_id
@@ -158,7 +159,8 @@ class TestStrategy1(TradingStrategy):
                 sell_order = self.order_factory.market(
                     self.bar_type.symbol,
                     OrderSide.SELL,
-                    100000)
+                    100000,
+                )
 
                 self.submit_order(sell_order, ClientPositionId(str(sell_order.cl_ord_id)))
                 self.position_id = sell_order.cl_ord_id
@@ -194,15 +196,17 @@ class EMACross(TradingStrategy):
     placed for that direction with a trailing stop and profit target at 1R risk.
     """
 
-    def __init__(self,
-                 symbol: Symbol,
-                 bar_spec: BarSpecification,
-                 risk_bp: float=10.0,
-                 fast_ema: int=10,
-                 slow_ema: int=20,
-                 atr_period: int=20,
-                 sl_atr_multiple: float=2.0,
-                 extra_id_tag: str=""):
+    def __init__(
+            self,
+            symbol: Symbol,
+            bar_spec: BarSpecification,
+            risk_bp: float=10.0,
+            fast_ema: int=10,
+            slow_ema: int=20,
+            atr_period: int=20,
+            sl_atr_multiple: float=2.0,
+            extra_id_tag: str=""
+    ):
         """
         Initialize a new instance of the EMACross class.
 
@@ -327,7 +331,8 @@ class EMACross(TradingStrategy):
         try:
             exchange_rate = self.get_exchange_rate_for_account(
                 quote_currency=self.quote_currency,
-                price_type=PriceType.ASK)
+                price_type=PriceType.ASK,
+            )
         except ValueError as ex:
             self.log.error(ex)
 
@@ -343,7 +348,8 @@ class EMACross(TradingStrategy):
             commission_rate_bp=0.15,
             hard_limit=20000000,
             units=1,
-            unit_batch_size=10000)
+            unit_batch_size=10000,
+        )
 
         if position_size == 0:
             self.log.info("Insufficient equity for BUY signal.")
@@ -355,12 +361,14 @@ class EMACross(TradingStrategy):
             quantity=position_size,
             price=price_entry,
             time_in_force=TimeInForce.GTD,
-            expire_time=bar.timestamp + timedelta(minutes=1))
+            expire_time=bar.timestamp + timedelta(minutes=1),
+        )
 
         bracket_order = self.order_factory.bracket(
             entry_order=entry_order,
             stop_loss=price_stop_loss,
-            take_profit=price_take_profit)
+            take_profit=price_take_profit,
+        )
 
         self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 
@@ -376,7 +384,8 @@ class EMACross(TradingStrategy):
         try:
             exchange_rate = self.get_exchange_rate_for_account(
                 quote_currency=self.quote_currency,
-                price_type=PriceType.BID)
+                price_type=PriceType.BID,
+            )
         except ValueError as ex:
             self.log.error(ex)
 
@@ -392,7 +401,8 @@ class EMACross(TradingStrategy):
             commission_rate_bp=0.15,
             hard_limit=20000000,
             units=1,
-            unit_batch_size=10000)
+            unit_batch_size=10000,
+        )
 
         if position_size == 0:
             self.log.info("Insufficient equity for SELL signal.")
@@ -404,12 +414,14 @@ class EMACross(TradingStrategy):
             quantity=position_size,
             price=price_entry,
             time_in_force=TimeInForce.GTD,
-            expire_time=bar.timestamp + timedelta(minutes=1))
+            expire_time=bar.timestamp + timedelta(minutes=1),
+        )
 
         bracket_order = self.order_factory.bracket(
             entry_order=entry_order,
             stop_loss=price_stop_loss,
-            take_profit=price_take_profit)
+            take_profit=price_take_profit,
+        )
 
         self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
 

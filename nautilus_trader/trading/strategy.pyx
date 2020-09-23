@@ -72,7 +72,7 @@ cdef tuple _ORDER_COMPLETION_TRIGGERS = (
     OrderRejected,
     OrderCancelled,
     OrderExpired,
-    OrderFilled
+    OrderFilled,
 )
 
 
@@ -559,7 +559,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """"
-        System method. Handle the given tick.
+        Handle the given tick.
 
         Parameters
         ----------
@@ -593,8 +593,7 @@ cdef class TradingStrategy:
     @cython.wraparound(False)
     cpdef void handle_quote_ticks(self, list ticks) except *:
         """
-        System method. Handle the given list of ticks by handling each tick
-        individually.
+        Handle the given list of ticks by handling each tick individually.
 
         Parameters
         ----------
@@ -618,7 +617,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
         """"
-        System method. Handle the given tick.
+        Handle the given tick.
 
         Parameters
         ----------
@@ -652,8 +651,7 @@ cdef class TradingStrategy:
     @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks) except *:
         """
-        System method. Handle the given list of ticks by handling each tick
-        individually.
+        Handle the given list of ticks by handling each tick individually.
 
         Parameters
         ----------
@@ -677,7 +675,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """"
-        System method. Handle the given bar type and bar.
+        Handle the given bar type and bar.
 
         Parameters
         ----------
@@ -714,8 +712,7 @@ cdef class TradingStrategy:
     @cython.wraparound(False)
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
-        System method. Handle the given bar type and bars by handling each bar
-        individually.
+        Handle the given bar type and bars by handling each bar individually.
 
         Parameters
         ----------
@@ -741,7 +738,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_data(self, object data) except *:
         """
-        System method. Handle the given data object.
+        Handle the given data object.
 
         Parameters
         ----------
@@ -761,7 +758,7 @@ cdef class TradingStrategy:
 
     cpdef void handle_event(self, Event event) except *:
         """
-        System method. Hand the given event.
+        Hand the given event.
 
         Parameters
         ----------
@@ -2056,7 +2053,7 @@ cdef class TradingStrategy:
 
     cpdef void account_inquiry(self) except *:
         """
-        Send an account inquiry command to the execution service.
+        Send an account inquiry command to the execution engine.
         """
         Condition.not_none(self._exec_engine, "execution_engine")
 
@@ -2071,8 +2068,8 @@ cdef class TradingStrategy:
 
     cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id) except *:
         """
-        Send a submit order command with the given order and position_id to the execution
-        service.
+        Send a submit order command with the given order and position_id to the
+        execution engine.
 
         Parameters
         ----------
@@ -2106,8 +2103,8 @@ cdef class TradingStrategy:
             ClientPositionId cl_pos_id,
             bint register=True) except *:
         """
-        Send a submit bracket order command with the given order and position_id to the
-        execution service.
+        Send a submit bracket order command with the given order and position_id
+        to the execution engine.
 
         Parameters
         ----------
@@ -2142,10 +2139,15 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
-    cpdef void modify_order(self, Order order, Quantity new_quantity=None, Price new_price=None) except *:
+    cpdef void modify_order(
+            self,
+            Order order,
+            Quantity new_quantity=None,
+            Price new_price=None,
+    ) except *:
         """
         Send a modify order command for the given order with the given new price
-        to the execution service.
+        to the execution engine.
 
         Parameters
         ----------
@@ -2187,7 +2189,7 @@ cdef class TradingStrategy:
     cpdef void cancel_order(self, Order order) except *:
         """
         Send a cancel order command for the given order and cancel_reason to the
-        execution service.
+        execution engine.
 
         Parameters
         ----------
@@ -2242,7 +2244,7 @@ cdef class TradingStrategy:
     cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *:
         """
         Flatten the position corresponding to the given identifier by generating
-        the required market order, and sending it to the execution service.
+        the required market order, and sending it to the execution engine.
         If the position is None or already FLAT will log a warning.
 
         Parameters
@@ -2286,7 +2288,7 @@ cdef class TradingStrategy:
     cpdef void flatten_all_positions(self) except *:
         """
         Flatten all positions by generating the required market orders and sending
-        them to the execution service. If no positions found or a position is None
+        them to the execution engine. If no positions found or a position is None
         then will log a warning.
         """
         Condition.not_none(self._exec_engine, "execution_engine")
