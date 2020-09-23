@@ -43,11 +43,13 @@ cdef class TickDataWrangler:
     of bid and ask data. Provided data can either be tick data or bar data.
     """
 
-    def __init__(self,
-                 Instrument instrument not None,
-                 data_ticks: pd.DataFrame=None,
-                 dict data_bars_bid=None,
-                 dict data_bars_ask=None):
+    def __init__(
+            self,
+            Instrument instrument not None,
+            data_ticks: pd.DataFrame=None,
+            dict data_bars_bid=None,
+            dict data_bars_ask=None,
+    ):
         """
         Initialize a new instance of the TickDataWrangler class.
 
@@ -233,10 +235,12 @@ cdef class BarDataWrangler:
     the correct specification.
     """
 
-    def __init__(self,
-                 int precision,
-                 int volume_multiple=1,
-                 data: pd.DataFrame=None):
+    def __init__(
+            self,
+            int precision,
+            int volume_multiple=1,
+            data: pd.DataFrame=None,
+    ):
         """
         Initialize a new instance of the BarDataWrangler class.
 
@@ -493,11 +497,13 @@ cdef class BarAggregator:
     Provides a means of aggregating specified bars and sending to the registered handler.
     """
 
-    def __init__(self,
-                 BarType bar_type not None,
-                 handler not None,
-                 Logger logger not None,
-                 bint use_previous_close):
+    def __init__(
+            self,
+            BarType bar_type not None,
+            handler not None,
+            Logger logger not None,
+            bint use_previous_close,
+    ):
         """
         Initialize a new instance of the BarAggregator class.
 
@@ -538,10 +544,12 @@ cdef class TickBarAggregator(BarAggregator):
     Provides a means of building tick bars from ticks.
     """
 
-    def __init__(self,
-                 BarType bar_type not None,
-                 handler not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            BarType bar_type not None,
+            handler not None,
+            Logger logger not None,
+    ):
         """
         Initialize a new instance of the TickBarBuilder class.
 
@@ -609,12 +617,14 @@ cdef class TimeBarAggregator(BarAggregator):
     """
     Provides a means of building time bars from ticks with an internal timer.
     """
-    def __init__(self,
-                 BarType bar_type not None,
-                 handler not None,
-                 bint use_previous_close,
-                 Clock clock not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            BarType bar_type not None,
+            handler not None,
+            bint use_previous_close,
+            Clock clock not None,
+            Logger logger not None,
+    ):
         """
         Initialize a new instance of the TimeBarAggregator class.
 
@@ -710,7 +720,8 @@ cdef class TimeBarAggregator(BarAggregator):
                 hour=now.hour,
                 minute=now.minute,
                 second=now.second,
-                tzinfo=now.tzinfo)
+                tzinfo=now.tzinfo,
+            )
         elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
             return datetime(
                 year=now.year,
@@ -718,19 +729,22 @@ cdef class TimeBarAggregator(BarAggregator):
                 day=now.day,
                 hour=now.hour,
                 minute=now.minute,
-                tzinfo=now.tzinfo)
+                tzinfo=now.tzinfo,
+            )
         elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
             return datetime(
                 year=now.year,
                 month=now.month,
                 day=now.day,
                 hour=now.hour,
-                tzinfo=now.tzinfo)
+                tzinfo=now.tzinfo,
+            )
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return datetime(
                 year=now.year,
                 month=now.month,
-                day=now.day)
+                day=now.day,
+            )
         else:
             # Design time error
             raise ValueError(f"Aggregation not a time, "
@@ -758,7 +772,8 @@ cdef class TimeBarAggregator(BarAggregator):
             interval=self._get_interval(),
             start_time=self.get_start_time(),
             stop_time=None,
-            handler=self._build_event)
+            handler=self._build_event,
+        )
 
         self._log.info(f"Started timer {timer_name}.")
 

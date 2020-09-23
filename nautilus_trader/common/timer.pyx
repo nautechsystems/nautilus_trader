@@ -32,10 +32,12 @@ cdef class TimeEvent(Event):
     Represents a time event occurring at the event timestamp.
     """
 
-    def __init__(self,
-                 str name not None,
-                 UUID event_id not None,
-                 datetime event_timestamp not None):
+    def __init__(
+            self,
+            str name not None,
+            UUID event_id not None,
+            datetime event_timestamp not None,
+    ):
         """
         Initialize a new instance of the TimeEvent class.
 
@@ -238,12 +240,14 @@ cdef class Timer:
     The base class for all timers.
     """
 
-    def __init__(self,
-                 str name not None,
-                 callback not None,
-                 timedelta interval not None,
-                 datetime start_time not None,
-                 datetime stop_time=None):
+    def __init__(
+            self,
+            str name not None,
+            callback not None,
+            timedelta interval not None,
+            datetime start_time not None,
+            datetime stop_time=None,
+    ):
         """
         Initialize a new instance of the Timer class.
 

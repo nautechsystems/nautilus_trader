@@ -33,10 +33,12 @@ cdef class Portfolio:
     Provides a trading portfolio of positions.
     """
 
-    def __init__(self,
-                 Clock clock not None,
-                 UUIDFactory uuid_factory not None,
-                 Logger logger=None):
+    def __init__(
+            self,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger=None,
+    ):
         """
         Initialize a new instance of the Portfolio class.
 

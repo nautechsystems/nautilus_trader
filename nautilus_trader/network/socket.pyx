@@ -177,7 +177,8 @@ cdef class ClientSocket(Socket):
             port,
             socket_type,
             encryption,
-            logger)
+            logger,
+        )
 
     cpdef void connect(self) except *:
         """

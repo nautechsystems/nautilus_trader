@@ -56,13 +56,15 @@ cdef class DataEngine:
     Provides a data engine for managing many data clients.
     """
 
-    def __init__(self,
-                 int tick_capacity,
-                 int bar_capacity,
-                 bint use_previous_close,
-                 Clock clock not None,
-                 UUIDFactory uuid_factory not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            int tick_capacity,
+            int bar_capacity,
+            bint use_previous_close,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger not None
+    ):
         """
         Initialize a new instance of the DataEngine class.
 
@@ -1004,10 +1006,11 @@ cdef class BulkTickBarBuilder:
     cdef object callback
     cdef list bars
 
-    def __init__(self,
-                 BarType bar_type not None,
-                 Logger logger not None,
-                 callback not None):
+    def __init__(
+            self,
+            BarType bar_type not None,
+            Logger logger not None,
+            callback not None):
         """
         Initialize a new instance of the BulkTickBarBuilder class.
 

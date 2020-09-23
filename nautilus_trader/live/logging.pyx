@@ -107,7 +107,8 @@ cdef class LiveLogger(Logger):
             console_prints,
             log_thread,
             log_to_file,
-            log_file_path)
+            log_file_path,
+        )
 
         self._store = store
         self._queue = queue.Queue()
