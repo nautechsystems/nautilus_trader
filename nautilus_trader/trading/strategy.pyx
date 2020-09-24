@@ -17,8 +17,6 @@ import cython
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport create_component_fsm
-from nautilus_trader.common.data_engine cimport DataEngine
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -29,6 +27,8 @@ from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
@@ -235,7 +235,6 @@ cdef class TradingStrategy:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
@@ -350,7 +349,6 @@ cdef class TradingStrategy:
         Cleanup any resources used by the strategy here.
         """
         pass  # Optionally override in subclass
-
 
 # -- REGISTRATION METHODS --------------------------------------------------------------------------
 
@@ -553,7 +551,6 @@ cdef class TradingStrategy:
 
         self._take_profit_ids.add(order.cl_ord_id)
         self.log.debug(f"Registered TP order {order}")
-
 
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
@@ -792,23 +789,9 @@ cdef class TradingStrategy:
                 if self.reraise_exceptions:
                     raise ex  # Re-raise
 
-
 # -- DATA METHODS ----------------------------------------------------------------------------------
 
-    cpdef list instrument_symbols(self):
-        """
-        Return a list of all instrument symbols held by the data engine.
-
-        Returns
-        -------
-        List[Instrument]
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        return self._data_engine.instrument_symbols()
-
-    cpdef void get_quote_ticks(self, Symbol symbol) except *:
+    cpdef void request_quote_ticks(self, Symbol symbol) except *:
         """
         Request the historical quote ticks for the given parameters from the data service.
 
@@ -828,7 +811,7 @@ cdef class TradingStrategy:
             limit=self._data_engine.tick_capacity,
             callback=self.handle_quote_ticks)
 
-    cpdef void get_trade_ticks(self, Symbol symbol) except *:
+    cpdef void request_trade_ticks(self, Symbol symbol) except *:
         """
         Request the historical trade ticks for the given parameters from the data service.
 
@@ -848,7 +831,7 @@ cdef class TradingStrategy:
             limit=self._data_engine.tick_capacity,
             callback=self.handle_trade_ticks)
 
-    cpdef void get_bars(self, BarType bar_type) except *:
+    cpdef void request_bars(self, BarType bar_type) except *:
         """
         Request the historical bars for the given parameters from the data service.
 
@@ -867,37 +850,6 @@ cdef class TradingStrategy:
             to_datetime=None,
             limit=self._data_engine.bar_capacity,
             callback=self.handle_bars)
-
-    cpdef Instrument get_instrument(self, Symbol symbol):
-        """
-        Return the instrument corresponding to the given symbol (if found).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol of the instrument to return.
-
-        Returns
-        -------
-        Instrument or None
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        return self._data_engine.get_instrument(symbol)
-
-    cpdef dict get_instruments(self):
-        """
-        Return a dictionary of all instruments for the given venue (if any).
-
-        Returns
-        -------
-        Dict[Symbol, Instrument]
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        return self._data_engine.get_instruments()
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -1027,119 +979,31 @@ cdef class TradingStrategy:
         self._data_engine.unsubscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
 
-    cpdef bint has_quote_ticks(self, Symbol symbol):
+    cpdef list symbols(self):
         """
-        Return a value indicating whether the strategy has quote ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
+        Return a list of all instrument symbols held by the data engine.
 
         Returns
         -------
-        bool
+        List[Instrument]
 
         """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        return self._data_engine.has_quote_ticks(symbol)
+        return self._data_engine.symbols()
 
-    cpdef bint has_trade_ticks(self, Symbol symbol):
+    cpdef list instruments(self):
         """
-        Return a value indicating whether the strategy has trade ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
+        Return a dictionary of all instruments for the given venue (if any).
 
         Returns
         -------
-        bool
+        Dict[Symbol, Instrument]
 
         """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
+        Condition.not_none(self._data_engine, "data_client")
 
-        return self._data_engine.has_trade_ticks(symbol)
-
-    cpdef bint has_bars(self, BarType bar_type):
-        """
-        Return a value indicating whether the strategy has bars for the given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the bars.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.has_bars(bar_type)
-
-    cpdef int quote_tick_count(self, Symbol symbol):
-        """
-        Return the count of quote ticks held by the strategy for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.quote_tick_count(symbol)
-
-    cpdef int trade_tick_count(self, Symbol symbol):
-        """
-        Return the count of trade ticks held by the strategy for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.trade_tick_count(symbol)
-
-    cpdef int bar_count(self, BarType bar_type):
-        """
-        Return the count of bars held by the strategy for the given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to count.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.bar_count(bar_type)
+        return self._data_engine.instruments()
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
@@ -1197,6 +1061,24 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data client")
 
         return self._data_engine.bars(bar_type)
+
+    cpdef Instrument instrument(self, Symbol symbol):
+        """
+        Return the instrument corresponding to the given symbol (if found).
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol of the instrument to return.
+
+        Returns
+        -------
+        Instrument or None
+
+        """
+        Condition.not_none(self._data_engine, "data_client")
+
+        return self._data_engine.instrument(symbol)
 
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
@@ -1276,6 +1158,119 @@ cdef class TradingStrategy:
 
         return self._data_engine.bar(bar_type, index)
 
+    cpdef int quote_tick_count(self, Symbol symbol):
+        """
+        Return the count of quote ticks held by the strategy for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data_engine, "data client")
+
+        return self._data_engine.quote_tick_count(symbol)
+
+    cpdef int trade_tick_count(self, Symbol symbol):
+        """
+        Return the count of trade ticks held by the strategy for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data_engine, "data client")
+
+        return self._data_engine.trade_tick_count(symbol)
+
+    cpdef int bar_count(self, BarType bar_type):
+        """
+        Return the count of bars held by the strategy for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to count.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(self._data_engine, "data client")
+
+        return self._data_engine.bar_count(bar_type)
+
+    cpdef bint has_quote_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the strategy has quote ticks for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data_engine, "data client")
+
+        return self._data_engine.has_quote_ticks(symbol)
+
+    cpdef bint has_trade_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the strategy has trade ticks for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data_engine, "data client")
+
+        return self._data_engine.has_trade_ticks(symbol)
+
+    cpdef bint has_bars(self, BarType bar_type):
+        """
+        Return a value indicating whether the strategy has bars for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the bars.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(self._data_engine, "data client")
+
+        return self._data_engine.has_bars(bar_type)
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 
@@ -1304,7 +1299,6 @@ cdef class TradingStrategy:
             if indicator.initialized is False:
                 return False
         return True
-
 
 # -- MANAGEMENT METHODS ----------------------------------------------------------------------------
 
@@ -1529,6 +1523,45 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.get_orders_completed(self.id)
 
+    cpdef int orders_working_count(self):
+        """
+        Return the count of working orders held by the execution database.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(self._exec_engine, "execution_engine")
+
+        return self._exec_engine.database.orders_working_count(self.id)
+
+    cpdef int orders_completed_count(self):
+        """
+        Return the count of completed orders held by the execution database.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(self._exec_engine, "execution_engine")
+
+        return self._exec_engine.database.orders_completed_count(self.id)
+
+    cpdef int orders_total_count(self):
+        """
+        Return the total count of orders held by the execution database.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(self._exec_engine, "execution_engine")
+
+        return self._exec_engine.database.orders_total_count(self.id)
+
     cpdef Position position(self, ClientPositionId cl_pos_id):
         """
         Return the position associated with the given identifier (if found).
@@ -1624,6 +1657,45 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "execution_engine")
 
         return self._exec_engine.database.position_exists(cl_pos_id)
+
+    cpdef int positions_open_count(self):
+        """
+        Return the count of open positions held by the execution database.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(self._exec_engine, "execution_engine")
+
+        return self._exec_engine.database.positions_open_count(self.id)
+
+    cpdef int positions_closed_count(self):
+        """
+        Return the count of closed positions held by the execution database.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(self._exec_engine, "execution_engine")
+
+        return self._exec_engine.database.positions_closed_count(self.id)
+
+    cpdef int positions_total_count(self):
+        """
+        Return the total count of positions held by the execution database.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(self._exec_engine, "execution_engine")
+
+        return self._exec_engine.database.positions_total_count(self.id)
 
     cpdef bint order_exists(self, ClientOrderId cl_ord_id):
         """
@@ -1771,85 +1843,6 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "execution_engine")
 
         return self._exec_engine.is_strategy_flat(self.id)
-
-    cpdef int count_orders_working(self):
-        """
-        Return the count of working orders held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.count_orders_working(self.id)
-
-    cpdef int count_orders_completed(self):
-        """
-        Return the count of completed orders held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.count_orders_completed(self.id)
-
-    cpdef int count_orders_total(self):
-        """
-        Return the total count of orders held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.count_orders_total(self.id)
-
-    cpdef int count_positions_open(self):
-        """
-        Return the count of open positions held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.count_positions_open(self.id)
-
-    cpdef int count_positions_closed(self):
-        """
-        Return the count of closed positions held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.count_positions_closed(self.id)
-
-    cpdef int count_positions_total(self):
-        """
-        Return the total count of positions held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.count_positions_total(self.id)
-
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

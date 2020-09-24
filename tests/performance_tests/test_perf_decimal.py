@@ -157,7 +157,7 @@ class DecimalPerformanceTests(unittest.TestCase):
     def test_builtin_decimal_comparisons(self):
         result = PerformanceHarness.profile_function(DecimalTesting.builtin_decimal_comparisons, 3, 1000000)
         # ~159ms (159896μs) minimum of 3 runs @ 1,000,000 iterations each run.
-        self.assertTrue(result < 0.2)
+        self.assertTrue(result < 0.3)
 
     def test_float_arithmetic(self):
         result = PerformanceHarness.profile_function(DecimalTesting.float_arithmetic, 3, 1000000)

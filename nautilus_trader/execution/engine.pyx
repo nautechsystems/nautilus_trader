@@ -191,7 +191,7 @@ cdef class ExecutionEngine:
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        return self.database.count_positions_open(strategy_id) == 0
+        return self.database.positions_open_count(strategy_id) == 0
 
     cpdef bint is_flat(self):
         """
@@ -199,7 +199,7 @@ cdef class ExecutionEngine:
 
         :return bool.
         """
-        return self.database.count_positions_open() == 0
+        return self.database.positions_open_count() == 0
 
 # --------------------------------------------------------------------------------------------------
 

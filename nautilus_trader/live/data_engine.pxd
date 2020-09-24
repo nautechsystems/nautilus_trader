@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.data_engine cimport DataEngine
+from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.core.uuid cimport UUID

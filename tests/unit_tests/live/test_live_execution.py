@@ -17,10 +17,10 @@ import time
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.core.message import MessageType
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.live.execution_client import LiveExecClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine

@@ -26,8 +26,8 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
@@ -505,7 +505,7 @@ cdef class SimulatedBroker:
 
             self.exec_engine.handle_event(account_event)
 
-    # -- COMMAND EXECUTION -----------------------------------------------------------------------------
+# -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
     cpdef void handle_account_inquiry(self, AccountInquiry command) except *:
         Condition.not_none(command, "command")
@@ -657,7 +657,7 @@ cdef class SimulatedBroker:
 
         self.exec_engine.handle_event(modified)
 
-    # -- EVENT HANDLING --------------------------------------------------------------------------------
+# -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
         return current_market.ask.eq(order_price) and self.fill_model.is_stop_filled()

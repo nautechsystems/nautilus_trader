@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
+from nautilus_trader.execution.engine cimport ExecutionEngine
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):

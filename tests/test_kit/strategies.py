@@ -241,7 +241,7 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        instrument = self.get_instrument(self.symbol)
+        instrument = self.instrument(self.symbol)
 
         self.precision = instrument.price_precision
         self.entry_buffer = instrument.tick_size.as_double() * 3.0
@@ -256,8 +256,8 @@ class EMACross(TradingStrategy):
         self.register_indicator_for_bars(self.bar_type, self.atr)
 
         # Get historical data
-        self.get_quote_ticks(self.symbol)
-        self.get_bars(self.bar_type)
+        self.request_quote_ticks(self.symbol)
+        self.request_bars(self.bar_type)
 
         # Subscribe to live data
         self.subscribe_instrument(self.symbol)
@@ -311,7 +311,7 @@ class EMACross(TradingStrategy):
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
     def _check_signal(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        if self.count_orders_working() == 0 and self.is_flat():  # No active or pending positions
+        if self.orders_working_count() == 0 and self.is_flat():  # No active or pending positions
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self._enter_long(bar, sl_buffer, spread_buffer)

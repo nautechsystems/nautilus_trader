@@ -16,9 +16,9 @@
 import redis
 
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.execution_database cimport ExecutionDatabase
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFillEvent
@@ -126,7 +126,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.warning(f"The load_caches flag was {load_caches} "
                               f"(this should only be done in a testing environment).")
 
-    # -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_accounts_cache(self) except *:
         """
@@ -517,7 +517,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef set _decode_set_to_strategy_ids(self, list original):
         return {StrategyId.from_string(element.decode(_UTF8).rsplit(':', 2)[1]) for element in original}
 
-    # -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account get_account(self, AccountId account_id):
         """
@@ -943,7 +943,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
 
-    cpdef int count_orders_total(self, StrategyId strategy_id=None):
+    cpdef int orders_total_count(self, StrategyId strategy_id=None):
         """
         Return the count of order_ids held by the execution database.
 
@@ -956,7 +956,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int count_orders_working(self, StrategyId strategy_id=None):
+    cpdef int orders_working_count(self, StrategyId strategy_id=None):
         """
         Return the count of working order_ids held by the execution database.
 
@@ -969,7 +969,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int count_orders_completed(self, StrategyId strategy_id=None):
+    cpdef int orders_completed_count(self, StrategyId strategy_id=None):
         """
         Return the count of completed order_ids held by the execution database.
 
@@ -982,7 +982,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int count_positions_total(self, StrategyId strategy_id=None):
+    cpdef int positions_total_count(self, StrategyId strategy_id=None):
         """
         Return the count of position_ids held by the execution database.
 
@@ -995,7 +995,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_positions, f"{self.key_index_strategy_positions}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int count_positions_open(self, StrategyId strategy_id=None):
+    cpdef int positions_open_count(self, StrategyId strategy_id=None):
         """
         Return the count of open position_ids held by the execution database.
 
@@ -1008,7 +1008,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int count_positions_closed(self, StrategyId strategy_id=None):
+    cpdef int positions_closed_count(self, StrategyId strategy_id=None):
         """
         Return the count of closed position_ids held by the execution database.
 
