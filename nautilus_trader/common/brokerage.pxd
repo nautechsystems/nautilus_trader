@@ -28,7 +28,7 @@ cdef class CommissionCalculator:
     cdef dict rates
     cdef double default_taker_rate_bp
     cdef double default_maker_rate_bp
-    cdef Money minimum
+    cdef Money minimum_taker
 
     cpdef Money calculate(
         self,

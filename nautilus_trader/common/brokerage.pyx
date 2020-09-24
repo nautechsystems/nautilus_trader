@@ -42,7 +42,7 @@ cdef class CommissionCalculator:
             dict rates=None,
             double default_taker_rate_bp=0.20,
             double default_maker_rate_bp=0.20,
-            Money minimum=None,
+            Money minimum_taker=None,
     ):
         """
         Initialize a new instance of the CommissionCalculator class.
@@ -57,22 +57,22 @@ cdef class CommissionCalculator:
             The default rate if not found in dictionary.
         default_maker_rate_bp : double
             The default rate if not found in dictionary.
-        minimum : Money
-            The minimum commission charge per transaction.
+        minimum_taker : Money
+            The minimum_taker commission charge per transaction.
 
         """
-        cdef double min_value = 0.
+        cdef double min_taker_value = 0.
         if rates is None:
             rates = {}
-        if minimum is None:
-            min_value = 0. if default_maker_rate_bp > 0. else -10 ** 7
-            minimum = Money(min_value, Currency.USD)
+        if minimum_taker is None:
+            min_taker_value = 0. if default_maker_rate_bp > 0. else -1e7
+            minimum_taker = Money(min_taker_value, Currency.USD)
         Condition.dict_types(rates, Symbol, Decimal64, "rates")
 
         self.rates = rates
         self.default_taker_rate_bp = default_taker_rate_bp
         self.default_maker_rate_bp = default_maker_rate_bp
-        self.minimum = minimum
+        self.minimum_taker = minimum_taker
 
     cpdef Money calculate(
             self,
@@ -113,7 +113,7 @@ cdef class CommissionCalculator:
 
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
-        cdef double final_commission = max(self.minimum.as_double(), commission)
+        cdef double final_commission = max(self.minimum_taker.as_double(), commission)
         return Money(final_commission, currency)
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value, LiquiditySide liquidity_side):
@@ -138,7 +138,7 @@ cdef class CommissionCalculator:
         Condition.not_none(notional_value, "notional_value")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
-        cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
+        cdef double value = max(self.minimum_taker.as_double(), notional_value.as_double() * commission_rate_percent)
         return Money(value, notional_value.currency)
 
     cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
