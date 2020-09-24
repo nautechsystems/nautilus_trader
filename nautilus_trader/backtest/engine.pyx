@@ -26,11 +26,13 @@ from nautilus_trader.backtest.data cimport BacktestDataEngine
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.simulated_broker cimport SimulatedBroker
+from nautilus_trader.backtest.simulated_market cimport SimulatedMarket
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
+from nautilus_trader.common.market cimport CommissionModel
+from nautilus_trader.common.market cimport GenericCommissionModel
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
@@ -64,21 +66,35 @@ cdef class BacktestEngine:
             list strategies not None: [TradingStrategy],
             BacktestConfig config=None,
             FillModel fill_model=None,
+            CommissionModel commission_model=None,
     ):
         """
         Initialize a new instance of the BacktestEngine class.
 
-        :param data: The data for the backtest engine.
-        :param strategies: The initial strategies for the backtest engine.
-        :param config: The optional configuration for the backtest engine (if None will be default).
-        :param fill_model: The optional initial fill model for the backtest engine
-        (if None then no probabilistic fills).
-        :raises TypeError: If strategies contains a type other than TradingStrategy.
+        Parameters
+        ----------
+        data : BacktestDataContainer
+            The data for the backtest engine.
+        strategies : List[TradingStrategy]
+            The initial strategies for the backtest engine.
+        config : BacktestConfig
+            The optional configuration for the backtest engine (if None will be default).
+        fill_model : FillModel
+            The optional initial fill model for the backtest engine,
+            (if None then no probabilistic fills).
+
+        Raises
+        ------
+        TypeError
+            If strategies contains a type other than TradingStrategy.
+
         """
         if config is None:
             config = BacktestConfig()
         if fill_model is None:
             fill_model = FillModel()
+        if commission_model is None:
+            commission_model = GenericCommissionModel()
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self.trader_id = TraderId("BACKTESTER", "000")
@@ -170,11 +186,12 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.broker = SimulatedBroker(
+        self.broker = SimulatedMarket(
             exec_engine=self.exec_engine,
             instruments=data.instruments,
             config=config,
             fill_model=fill_model,
+            commission_model=commission_model,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
             logger=self.test_logger,

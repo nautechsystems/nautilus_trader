@@ -24,6 +24,7 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
@@ -40,12 +41,14 @@ if __name__ == "__main__":
         USDJPY.symbol,
         BarAggregation.MINUTE,
         PriceType.BID,
-        TestDataProvider.usdjpy_1min_bid())
+        TestDataProvider.usdjpy_1min_bid(),
+    )
     data.add_bars(
         USDJPY.symbol,
         BarAggregation.MINUTE,
         PriceType.ASK,
-        TestDataProvider.usdjpy_1min_ask())
+        TestDataProvider.usdjpy_1min_ask(),
+    )
 
     strategies = [EMACrossFiltered(
         symbol=USDJPY.symbol,
@@ -56,7 +59,8 @@ if __name__ == "__main__":
         atr_period=20,
         sl_atr_multiple=2.0,
         news_currencies=['USD', 'JPY'],
-        news_impacts=['HIGH', 'MEDIUM'])]
+        news_impacts=['HIGH', 'MEDIUM'],
+    )]
 
     config = BacktestConfig(
         exec_db_type='in-memory',
@@ -65,25 +69,30 @@ if __name__ == "__main__":
         starting_capital=1000000,
         account_currency=Currency.USD,
         short_term_interest_csv_path='default',
-        commission_rate_bp=0.20,
         bypass_logging=False,
         level_console=LogLevel.INFO,
         level_file=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,
-        log_to_file=False)
+        log_to_file=False,
+    )
 
     fill_model = FillModel(
         prob_fill_at_limit=0.2,
         prob_fill_at_stop=0.95,
         prob_slippage=0.5,
-        random_seed=None)
+        random_seed=None,
+    )
+
+    commission_model = GenericCommissionModel()
 
     engine = BacktestEngine(
         data=data,
         strategies=strategies,
         config=config,
-        fill_model=fill_model)
+        fill_model=fill_model,
+        commission_model=commission_model,
+    )
 
     input("Press Enter to continue...")
 

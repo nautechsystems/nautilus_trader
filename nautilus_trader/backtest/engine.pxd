@@ -20,7 +20,7 @@ from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataEngine
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
-from nautilus_trader.backtest.simulated_broker cimport SimulatedBroker
+from nautilus_trader.backtest.simulated_market cimport SimulatedMarket
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -41,7 +41,7 @@ cdef class BacktestEngine:
     cdef readonly BacktestConfig config
     cdef readonly BacktestDataEngine data_engine
     cdef readonly BacktestExecClient exec_client
-    cdef readonly SimulatedBroker broker
+    cdef readonly SimulatedMarket broker
     cdef readonly ExecutionDatabase exec_db
     cdef readonly ExecutionEngine exec_engine
     cdef readonly LoggerAdapter log

@@ -33,7 +33,6 @@ cdef class BacktestConfig:
             int starting_capital=1000000,
             Currency account_currency=Currency.USD,
             str short_term_interest_csv_path not None="default",
-            double commission_rate_bp=0.20,
             bint bypass_logging=False,
             int level_console=LogLevel.INFO,
             int level_file=LogLevel.DEBUG,
@@ -54,7 +53,6 @@ cdef class BacktestConfig:
         :param starting_capital: The starting account capital (> 0).
         :param account_currency: The currency for the account.
         :param short_term_interest_csv_path: The path for the short term interest csv data (default='default').
-        :param commission_rate_bp: The commission rate in basis points per notional transaction size.
         :param bypass_logging: If logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -73,7 +71,6 @@ cdef class BacktestConfig:
         Condition.valid_string(exec_db_type, "exec_db_type")
         Condition.positive_int(starting_capital, "starting_capital")
         Condition.valid_string(short_term_interest_csv_path, "short_term_interest_csv_path")
-        Condition.not_negative(commission_rate_bp, "commission_rate_bp")
 
         self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
@@ -83,7 +80,6 @@ cdef class BacktestConfig:
         self.starting_capital = Money(starting_capital, account_currency)
         self.account_currency = account_currency
         self.short_term_interest_csv_path = short_term_interest_csv_path
-        self.commission_rate_bp = commission_rate_bp
         self.bypass_logging = bypass_logging
         self.level_console = level_console
         self.level_file = level_file
