@@ -26,8 +26,9 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.simulated_broker import SimulatedBroker
+from nautilus_trader.backtest.simulated_market import SimulatedMarket
 from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
@@ -98,11 +99,12 @@ class TradingStrategyTests(unittest.TestCase):
 
         usdjpy = TestStubs.instrument_usdjpy()
 
-        self.broker = SimulatedBroker(
+        self.broker = SimulatedMarket(
             exec_engine=self.exec_engine,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
+            commission_model=GenericCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger)

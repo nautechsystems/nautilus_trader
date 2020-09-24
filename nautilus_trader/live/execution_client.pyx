@@ -26,11 +26,11 @@ from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
+from nautilus_trader.network.node_clients cimport MessageClient
+from nautilus_trader.network.node_clients cimport MessageSubscriber
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.node.clients cimport MessageClient
-from nautilus_trader.node.clients cimport MessageSubscriber
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport RequestSerializer

@@ -34,8 +34,8 @@ from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.messages import DataRequest
 from nautilus_trader.network.messages import DataResponse
-from nautilus_trader.node.servers import MessagePublisher
-from nautilus_trader.node.servers import MessageServer
+from nautilus_trader.network.node_servers import MessagePublisher
+from nautilus_trader.network.node_servers import MessageServer
 from nautilus_trader.serialization.data import BsonDataSerializer
 from nautilus_trader.serialization.data import BsonInstrumentSerializer
 from nautilus_trader.serialization.data import DataMapper

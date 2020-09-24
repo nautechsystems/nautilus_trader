@@ -16,8 +16,9 @@
 import datetime
 import unittest
 
-from nautilus_trader.common.brokerage import CommissionCalculator
-from nautilus_trader.common.brokerage import RolloverInterestCalculator
+from nautilus_trader.common.market import GenericCommissionModel
+from nautilus_trader.common.market import MakerTakerCommissionModel
+from nautilus_trader.common.market import RolloverInterestCalculator
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.objects import Money
@@ -31,14 +32,14 @@ GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
-class CommissionCalculatorTests(unittest.TestCase):
+class GenericCommissionModelTests(unittest.TestCase):
 
     def test_calculate_returns_correct_commission(self):
         # Arrange
-        calculator = CommissionCalculator()
+        model = GenericCommissionModel()
 
         # Act
-        result = calculator.calculate(
+        result = model.calculate(
             GBPUSD_FXCM,
             Quantity(1000000),
             filled_price=Price(1.63000, 5),
@@ -51,27 +52,72 @@ class CommissionCalculatorTests(unittest.TestCase):
 
     def test_calculate_returns_correct_minimum_commission(self):
         # Arrange
-        calculator = CommissionCalculator(minimum_taker=Money(2.00, Currency.USD))
+        model = GenericCommissionModel(minimum=Money(2.00, Currency.USD))
 
         # Act
-        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD), LiquiditySide.TAKER)
+        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD), LiquiditySide.TAKER)
 
         # Assert
         self.assertEqual(Money(2.00, Currency.USD), result)
 
     def test_calculate_returns_correct_commission_for_notional(self):
         # Arrange
-        calculator = CommissionCalculator()
+        model = GenericCommissionModel()
 
         # Act
-        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD), LiquiditySide.TAKER)
+        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD), LiquiditySide.TAKER)
 
         # Assert
         self.assertEqual(Money(20.00, Currency.USD), result)
 
     def test_calculate_returns_correct_commission_with_exchange_rate(self):
         # Arrange
-        calculator = CommissionCalculator()
+        model = GenericCommissionModel()
+
+        # Act
+        result = model.calculate(
+            USDJPY_FXCM,
+            Quantity(1000000),
+            filled_price=Price(95.000, 3),
+            exchange_rate=0.01052632,
+            liquidity_side=LiquiditySide.TAKER,
+            currency=Currency.USD)
+
+        # Assert
+        self.assertEqual(Money(20.00, Currency.USD), result)
+
+
+class MakerTakerCommissionModelTests(unittest.TestCase):
+
+    def test_calculate_returns_correct_commission(self):
+        # Arrange
+        model = MakerTakerCommissionModel()
+
+        # Act
+        result = model.calculate(
+            GBPUSD_FXCM,
+            Quantity(1000000),
+            filled_price=Price(1.63000, 5),
+            exchange_rate=1.00,
+            liquidity_side=LiquiditySide.TAKER,
+            currency=Currency.USD)
+
+        # Assert
+        self.assertEqual(Money(1222.50, Currency.USD), result)
+
+    def test_calculate_returns_correct_commission_for_notional(self):
+        # Arrange
+        calculator = MakerTakerCommissionModel()
+
+        # Act
+        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD), LiquiditySide.TAKER)
+
+        # Assert
+        self.assertEqual(Money(750.00, Currency.USD), result)
+
+    def test_calculate_returns_correct_commission_with_exchange_rate(self):
+        # Arrange
+        calculator = MakerTakerCommissionModel()
 
         # Act
         result = calculator.calculate(
@@ -83,7 +129,7 @@ class CommissionCalculatorTests(unittest.TestCase):
             currency=Currency.USD)
 
         # Assert
-        self.assertEqual(Money(20.00, Currency.USD), result)
+        self.assertEqual(Money(750.00, Currency.USD), result)
 
 
 class RolloverInterestCalculatorTests(unittest.TestCase):

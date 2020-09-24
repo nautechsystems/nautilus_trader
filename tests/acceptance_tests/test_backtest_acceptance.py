@@ -49,8 +49,6 @@ class BacktestAcceptanceTests(unittest.TestCase):
             starting_capital=1000000,
             account_currency=Currency.USD,
             short_term_interest_csv_path='default',
-            commission_taker_bp=0.20,
-            commission_maker_bp=0.20,
             bypass_logging=False,
             level_console=LogLevel.DEBUG,
             level_file=LogLevel.DEBUG,

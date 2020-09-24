@@ -141,6 +141,8 @@ cpdef double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
 
+    1 basis point = 0.01%.
+
     Parameters
     ----------
     basis_points : double
