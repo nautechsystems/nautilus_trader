@@ -28,10 +28,10 @@ from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ClientId
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.identifiers import SessionId
-from nautilus_trader.network.node_clients import MessageClient
-from nautilus_trader.network.node_clients import MessageSubscriber
-from nautilus_trader.network.node_servers import MessagePublisher
-from nautilus_trader.network.node_servers import MessageServer
+from nautilus_trader.node.clients import MessageClient
+from nautilus_trader.node.clients import MessageSubscriber
+from nautilus_trader.node.servers import MessagePublisher
+from nautilus_trader.node.servers import MessageServer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackRequestSerializer
