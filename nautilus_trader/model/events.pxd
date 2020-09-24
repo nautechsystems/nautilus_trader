@@ -24,8 +24,8 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport AccountNumber
 from nautilus_trader.model.identifiers cimport Brokerage
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId

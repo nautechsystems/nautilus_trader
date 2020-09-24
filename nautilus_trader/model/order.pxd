@@ -17,8 +17,8 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -29,17 +29,17 @@ from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderModified
-from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport BracketOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol

@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class SpreadAnalyzer(Indicator):

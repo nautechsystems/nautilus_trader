@@ -30,8 +30,6 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.network.node_clients cimport MessageClient
-from nautilus_trader.network.node_clients cimport MessageSubscriber
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId
@@ -41,6 +39,8 @@ from nautilus_trader.network.messages cimport MessageReceived
 from nautilus_trader.network.messages cimport MessageRejected
 from nautilus_trader.network.messages cimport QueryFailure
 from nautilus_trader.network.messages cimport Response
+from nautilus_trader.network.node_clients cimport MessageClient
+from nautilus_trader.network.node_clients cimport MessageSubscriber
 from nautilus_trader.serialization.base cimport DataSerializer
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport InstrumentSerializer

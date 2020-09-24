@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
 from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
 from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
 from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class FuzzyCandle:

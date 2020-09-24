@@ -16,9 +16,12 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.market cimport ExchangeRateCalculator
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.data.aggregation cimport TickBarAggregator
+from nautilus_trader.data.aggregation cimport TimeBarAggregator
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.currency cimport Currency
@@ -29,9 +32,6 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.data.aggregation cimport TickBarAggregator
-from nautilus_trader.data.aggregation cimport TimeBarAggregator
 
 
 cdef class DataEngine:
