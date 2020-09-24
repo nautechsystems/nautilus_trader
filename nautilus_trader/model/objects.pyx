@@ -21,8 +21,8 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 
 
-cdef Quantity _QUANTITY_ZERO = Quantity()
-cdef Quantity _QUANTITY_ONE = Quantity(value=1, precision=0)
+cdef Quantity _ZERO_QUANTITY = Quantity()
+cdef Quantity _ONE_QUANTITY = Quantity(value=1, precision=0)
 
 
 cdef class Quantity(Decimal64):
@@ -84,7 +84,7 @@ cdef class Quantity(Decimal64):
         Money
 
         """
-        return _QUANTITY_ZERO
+        return _ZERO_QUANTITY
 
     @staticmethod
     cdef Quantity one():
@@ -96,7 +96,7 @@ cdef class Quantity(Decimal64):
         Quantity
 
         """
-        return _QUANTITY_ONE
+        return _ONE_QUANTITY
 
     @staticmethod
     cdef Quantity from_string(str value):
