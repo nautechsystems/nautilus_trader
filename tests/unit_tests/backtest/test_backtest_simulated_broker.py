@@ -480,7 +480,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
