@@ -17,8 +17,8 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.brokerage cimport CommissionCalculator
-from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
+from nautilus_trader.common.market cimport CommissionModel
+from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
@@ -46,7 +46,7 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 
 
-cdef class SimulatedBroker:
+cdef class SimulatedMarket:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
@@ -65,7 +65,7 @@ cdef class SimulatedBroker:
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
     cdef readonly ExchangeRateCalculator exchange_calculator
-    cdef readonly CommissionCalculator commission_calculator
+    cdef readonly CommissionModel commission_model
     cdef readonly RolloverInterestCalculator rollover_calculator
     cdef readonly double rollover_spread
     cdef readonly Money total_commissions
@@ -93,7 +93,7 @@ cdef class SimulatedBroker:
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
-    cdef Money _calculate_commission(self, Order order, Price fill_price)
+    cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side)
     cpdef void adjust_account(self, OrderFillEvent event, Position position) except *
     cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *

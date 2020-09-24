@@ -23,9 +23,9 @@ from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.brokerage cimport CommissionCalculator
-from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader.common.market cimport CommissionModel
+from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
@@ -74,7 +74,7 @@ from nautilus_trader.model.tick cimport QuoteTick
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 
-cdef class SimulatedBroker:
+cdef class SimulatedMarket:
     """
     Provides a simulated brokerage.
     """
@@ -84,6 +84,7 @@ cdef class SimulatedBroker:
             ExecutionEngine exec_engine not None,
             dict instruments not None: {Symbol, Instrument},
             BacktestConfig config not None,
+            CommissionModel commission_model not None,
             FillModel fill_model not None,
             TestClock clock not None,
             TestUUIDFactory uuid_factory not None,
@@ -100,6 +101,8 @@ cdef class SimulatedBroker:
             The instruments needed for the backtest.
         config : BacktestConfig
             The backtest configuration.
+        commission_model : CommissionModel
+            The commission model for the backtest.
         fill_model : FillModel
             The fill model for the backtest.
         clock : TestClock
@@ -111,7 +114,7 @@ cdef class SimulatedBroker:
 
         Raises
         ------
-        ValueError
+        TypeError
             If instruments contains a type other than Instrument.
 
         """
@@ -136,7 +139,7 @@ cdef class SimulatedBroker:
 
         self._account = Account(self.reset_account_event())
         self.exchange_calculator = ExchangeRateCalculator()
-        self.commission_calculator = CommissionCalculator(default_rate_bp=config.commission_rate_bp)
+        self.commission_model = commission_model
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0  # Bank + Broker spread markup
         self.total_commissions = Money(0, self.account_currency)
@@ -880,7 +883,7 @@ cdef class SimulatedBroker:
 
         self.exec_engine.handle_event(working)
 
-    cdef Money _calculate_commission(self, Order order, Price fill_price):
+    cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side):
         cdef Instrument instrument = self.instruments[order.symbol]
         cdef double exchange_rate = self.exchange_calculator.get_rate(
             from_currency=instrument.quote_currency,
@@ -890,12 +893,13 @@ cdef class SimulatedBroker:
             ask_rates=self._build_current_ask_rates(),
         )
 
-        cdef Money commission = self.commission_calculator.calculate(
+        cdef Money commission = self.commission_model.calculate(
             symbol=order.symbol,
             filled_quantity=order.quantity,
             filled_price=fill_price,
             exchange_rate=exchange_rate,
             currency=self.account_currency,
+            liquidity_side=liquidity_side
         )
 
         return commission
@@ -906,7 +910,7 @@ cdef class SimulatedBroker:
             Price fill_price,
             LiquiditySide liquidity_side) except *:
         # Generate event
-        cdef Money commission = self._calculate_commission(order, fill_price)
+        cdef Money commission = self._calculate_commission(order, fill_price, liquidity_side)
         cdef OrderFilled filled = OrderFilled(
             self._account.id,
             order.cl_ord_id,

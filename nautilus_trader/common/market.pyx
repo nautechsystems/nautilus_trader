@@ -22,8 +22,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -31,9 +32,40 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader import PACKAGE_ROOT
 
 
-cdef class CommissionCalculator:
+cdef class CommissionModel:
     """
-    Provides commission calculations.
+    The base class for all commission models.
+    """
+
+    cpdef Money calculate(
+            self,
+            Symbol symbol,
+            Quantity filled_quantity,
+            Price filled_price,
+            double exchange_rate,
+            Currency currency,
+            LiquiditySide liquidity_side,
+    ):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Money calculate_for_notional(
+            self,
+            Symbol symbol,
+            Money notional_value,
+            LiquiditySide liquidity_side,
+    ):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+
+cdef class GenericCommissionModel:
+    """
+    Provides a generic commission model.
     """
 
     def __init__(
@@ -50,22 +82,31 @@ cdef class CommissionCalculator:
         Parameters
         ----------
         rates : Dict[Symbol, double]
-            The dictionary of commission rates Dict[Symbol, double].
+            The commission rates Dict[Symbol, double].
         default_rate_bp : double
-            The default rate if not found in dictionary.
+            The default rate if symbol not found in the rates dictionary (>= 0).
         minimum : Money
-            The minimum commission charge per transaction.
+            The minimum commission fee per transaction.
+
+        Raises
+        ------
+        TypeError
+            If rates contains a key type not of Symbol, or value type not of float.
+        ValueError
+            If default_rate_bp is negative (< 0).
 
         """
         if rates is None:
             rates = {}
         if minimum is None:
             minimum = Money(0, Currency.USD)
-        Condition.dict_types(rates, Symbol, Decimal64, "rates")
+        Condition.dict_types(rates, Symbol, float, "rates")
+        Condition.not_negative(default_rate_bp, "default_rate_bp")
+        super().__init__()
 
         self.rates = rates
         self.default_rate_bp = default_rate_bp
-        self.minimum = minimum
+        self.minimum= minimum
 
     cpdef Money calculate(
             self,
@@ -74,6 +115,7 @@ cdef class CommissionCalculator:
             Price filled_price,
             double exchange_rate,
             Currency currency,
+            LiquiditySide liquidity_side,
     ):
         """
         Return the calculated commission for the given arguments.
@@ -90,6 +132,8 @@ cdef class CommissionCalculator:
             The exchange rate (symbol quote currency to account base currency).
         currency : Currency
             The currency for the calculation.
+        liquidity_side : LiquiditySide
+            The liquidity side of the trade.
 
         Returns
         -------
@@ -101,12 +145,17 @@ cdef class CommissionCalculator:
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
+        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
         cdef double final_commission = max(self.minimum.as_double(), commission)
         return Money(final_commission, currency)
 
-    cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
+    cpdef Money calculate_for_notional(
+            self,
+            Symbol symbol,
+            Money notional_value,
+            LiquiditySide liquidity_side,
+    ):
         """
         Return the calculated commission for the given arguments.
 
@@ -116,6 +165,8 @@ cdef class CommissionCalculator:
             The symbol for calculation.
         notional_value : Money
             The notional value for the transaction.
+        liquidity_side : LiquiditySide
+            The liquidity side of the trade.
 
         Returns
         -------
@@ -125,11 +176,11 @@ cdef class CommissionCalculator:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(notional_value, "notional_value")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
+        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
         cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
         return Money(value, notional_value.currency)
 
-    cdef double _get_commission_rate(self, Symbol symbol):
+    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
         cdef double rate = self.rates.get(symbol, -1.0)
         if rate != -1.0:
             return rate
@@ -137,10 +188,145 @@ cdef class CommissionCalculator:
             return self.default_rate_bp
 
 
+cdef class MakerTakerCommissionModel:
+    """
+    Provides a commission model with separate rates for liquidity takers or
+    makers.
+    """
+
+    def __init__(
+            self,
+            dict taker_rates=None,
+            dict maker_rates=None,
+            double taker_default_rate_bp=7.5,
+            double maker_default_rate_bp=-2.5,
+    ):
+        """
+        Initialize a new instance of the CommissionCalculator class.
+
+        Commission rates are expressed as basis points of notional transaction value.
+
+        Parameters
+        ----------
+        taker_rates : Dict[Symbol, double]
+            The taker commission rates in basis points.
+        taker_rates : Dict[Symbol, double]
+            The maker commission rates in basis points.
+        taker_default_rate_bp : double
+            The taker default rate if symbol not found in taker_rates dictionary.
+        maker_default_rate_bp : double
+            The maker default rate if symbol not found in maker_rates dictionary.
+
+        Raises
+        ------
+        TypeError
+            If taker_rates contains a key type not of Symbol, or value type not of float.
+        TypeError
+            If maker_rates contains a key type not of Symbol, or value type not of float.
+
+        """
+        if taker_rates is None:
+            taker_rates = {}
+        if maker_rates is None:
+            maker_rates = {}
+        Condition.dict_types(taker_rates, Symbol, float, "taker_rates")
+        Condition.dict_types(maker_rates, Symbol, float, "maker_rates")
+        super().__init__()
+
+        self.taker_rates = taker_rates
+        self.maker_rates = maker_rates
+        self.taker_default_rate_bp = taker_default_rate_bp
+        self.maker_default_rate_bp = maker_default_rate_bp
+
+    cpdef Money calculate(
+            self,
+            Symbol symbol,
+            Quantity filled_quantity,
+            Price filled_price,
+            double exchange_rate,
+            Currency currency,
+            LiquiditySide liquidity_side,
+    ):
+        """
+        Return the calculated commission for the given arguments.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for calculation.
+        filled_quantity : Quantity
+            The filled quantity.
+        filled_price : Price
+            The filled price.
+        exchange_rate : double
+            The exchange rate (symbol quote currency to account base currency).
+        currency : Currency
+            The currency for the calculation.
+        liquidity_side : LiquiditySide
+            The liquidity side of the trade.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(filled_quantity, "filled_quantity")
+        Condition.not_none(filled_price, "filled_price")
+        Condition.positive(exchange_rate, "exchange_rate")
+
+        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
+        return Money(commission, currency)
+
+    cpdef Money calculate_for_notional(
+            self,
+            Symbol symbol,
+            Money notional_value,
+            LiquiditySide liquidity_side,
+    ):
+        """
+        Return the calculated commission for the given arguments.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for calculation.
+        notional_value : Money
+            The notional value for the transaction.
+        liquidity_side : LiquiditySide
+            The liquidity side of the trade.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(notional_value, "notional_value")
+
+        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission = notional_value.as_double() * commission_rate_percent
+        return Money(notional_value.as_double() * commission_rate_percent, notional_value.currency)
+
+    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
+        if liquidity_side == LiquiditySide.TAKER:
+            rate = self.taker_rates.get(symbol, None)
+            return rate if rate is not None else self.taker_default_rate_bp
+        elif liquidity_side == LiquiditySide.MAKER:
+            rate = self.maker_rates.get(symbol, None)
+            return rate if rate is not None else self.maker_default_rate_bp
+        else:
+            liquidity_side_str = liquidity_side_to_string(liquidity_side)
+            raise ValueError(f"Cannot get commission rate (liquidity side was {liquidity_side_str})")
+
+
 cdef class RolloverInterestCalculator:
     """
-    Provides rollover interest rate calculations. If rate_data_csv_path is empty then
-    will default to the included short-term interest rate data csv (data since 1956).
+    Provides rollover interest rate calculations.
+
+    If rate_data_csv_path is empty then will default to the included short-term
+    interest rate data csv (data since 1956).
     """
 
     def __init__(self, str short_term_interest_csv_path not None="default"):

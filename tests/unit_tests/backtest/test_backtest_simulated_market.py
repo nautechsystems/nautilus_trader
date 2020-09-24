@@ -23,13 +23,15 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.simulated_broker import SimulatedBroker
+from nautilus_trader.backtest.simulated_market import SimulatedMarket
 from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.market import MakerTakerCommissionModel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
@@ -39,14 +41,16 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import TestStrategy1
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
-class SimulatedBrokerTests(unittest.TestCase):
+class SimulatedMarketTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -95,17 +99,18 @@ class SimulatedBrokerTests(unittest.TestCase):
             logger=self.logger)
 
         self.config = BacktestConfig()
-        self.broker = SimulatedBroker(
+        self.market = SimulatedMarket(
             exec_engine=self.exec_engine,
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,
             fill_model=FillModel(),
+            commission_model=MakerTakerCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger)
 
         self.exec_client = BacktestExecClient(
-            broker=self.broker,
+            broker=self.market,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
@@ -138,7 +143,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -164,7 +169,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.limit(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -191,7 +196,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
 
         entry_order = strategy.order_factory.market(
             USDJPY_FXCM,
@@ -222,7 +227,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
 
         entry_order = strategy.order_factory.stop(
             USDJPY_FXCM,
@@ -255,7 +260,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -284,7 +289,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
 
         entry_order = strategy.order_factory.market(
             USDJPY_FXCM,
@@ -381,7 +386,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.stop(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -407,7 +412,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -429,7 +434,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.submit_order(top_up_order, position_id)
         strategy.submit_order(reduce_order, position_id)
 
-        commission_percent = basis_points_as_percentage(self.config.commission_rate_bp)
+        commission_percent = basis_points_as_percentage(7.5)
         self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
                          order.filled_quantity.as_double() * commission_percent)
         self.assertEqual(strategy.object_storer.get_store()[7].commission.as_double(),
@@ -454,7 +459,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -469,3 +474,52 @@ class SimulatedBrokerTests(unittest.TestCase):
         commission = Money(-commission * filled_price, 392)
         position = strategy.positions_open()[position_id]
         self.assertEqual(position.realized_pnl, commission)
+
+    def test_commission_maker_taker_order(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        self.market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+
+        order_market = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        order_limit = strategy.order_factory.limit(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price(80.000, 3))
+
+        # Act
+        position_id = strategy.position_id_generator.generate()
+        strategy.submit_order(order_market, position_id)
+        strategy.submit_order(order_limit, position_id)
+
+        self.market.process_tick(QuoteTick(
+            self.usdjpy.symbol,
+            Price(80.00, 3),
+            Price(80.00, 3),
+            Quantity(100000),
+            Quantity(100000),
+            UNIX_EPOCH)
+        )  # Fill the limit order
+
+        # Assert
+        commission_percent_maker = basis_points_as_percentage(-2.5)
+        commission_percent_taker = basis_points_as_percentage(7.5)
+        self.assertEqual(strategy.object_storer.get_store()[3].liquidity_side, LiquiditySide.TAKER)
+        self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
+                         commission_percent_taker * order_market.quantity.as_double())
+        self.assertEqual(strategy.object_storer.get_store()[8].liquidity_side, LiquiditySide.MAKER)
+        self.assertEqual(strategy.object_storer.get_store()[8].commission.as_double(),
+                         commission_percent_maker * order_limit.quantity.as_double())
