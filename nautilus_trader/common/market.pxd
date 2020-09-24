@@ -17,6 +17,7 @@ from cpython.datetime cimport date
 
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -41,18 +42,14 @@ cdef class CommissionModel:
         LiquiditySide liquidity_side,
     )
 
-    cdef double _get_commission_rate(
-        self,
-        Symbol symbol,
-        LiquiditySide liquidity_side,
-    )
-
 
 cdef class GenericCommissionModel(CommissionModel):
 
     cdef dict rates
     cdef double default_rate_bp
     cdef Money minimum
+
+    cpdef double get_rate(self, Symbol symbol) except *
 
 
 cdef class MakerTakerCommissionModel(CommissionModel):
@@ -62,19 +59,17 @@ cdef class MakerTakerCommissionModel(CommissionModel):
     cdef double taker_default_rate_bp
     cdef double maker_default_rate_bp
 
-
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.price_type cimport PriceType
+    cpdef double get_rate(self, Symbol symbol, LiquiditySide liquidity_side) except *
 
 
 cdef class ExchangeRateCalculator:
     cpdef double get_rate(
-            self,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type,
-            dict bid_rates,
-            dict ask_rates
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type,
+        dict bid_rates,
+        dict ask_rates
     ) except *
 
 

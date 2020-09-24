@@ -61,10 +61,6 @@ cdef class CommissionModel:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
 
 cdef class GenericCommissionModel:
     """
@@ -148,7 +144,7 @@ cdef class GenericCommissionModel:
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
         cdef double final_commission = max(self.minimum.as_double(), commission)
         return Money(final_commission, currency)
@@ -179,16 +175,26 @@ cdef class GenericCommissionModel:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(notional_value, "notional_value")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
         cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
         return Money(value, notional_value.currency)
 
-    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
-        cdef double rate = self.rates.get(symbol, -1.0)
-        if rate != -1.0:
-            return rate
-        else:
-            return self.default_rate_bp
+    cpdef double get_rate(self, Symbol symbol) except *:
+        """
+        Return the commission rate for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the rate.
+
+        Returns
+        -------
+        double
+
+        """
+        rate = self.rates.get(symbol, None)
+        return rate if rate is not None else self.default_rate_bp
 
 
 cdef class MakerTakerCommissionModel:
@@ -278,7 +284,7 @@ cdef class MakerTakerCommissionModel:
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
         return Money(commission, currency)
 
@@ -308,11 +314,26 @@ cdef class MakerTakerCommissionModel:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(notional_value, "notional_value")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
         cdef double commission = notional_value.as_double() * commission_rate_percent
         return Money(notional_value.as_double() * commission_rate_percent, notional_value.currency)
 
-    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
+    cpdef double get_rate(self, Symbol symbol, LiquiditySide liquidity_side) except *:
+        """
+        Return the commission rate for the given symbol and liquidity side.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the rate.
+        liquidity_side : LiquiditySide
+            The liquidity side for the rate.
+
+        Returns
+        -------
+        double
+
+        """
         if liquidity_side == LiquiditySide.TAKER:
             rate = self.taker_rates.get(symbol, None)
             return rate if rate is not None else self.taker_default_rate_bp
