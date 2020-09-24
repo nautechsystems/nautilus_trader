@@ -30,7 +30,8 @@ cdef class TickDataWrangler:
     cdef readonly tick_data
     cdef readonly BarAggregation resolution
 
-    cpdef void build(self, int symbol_indexer) except *
+    cpdef void pre_process(self, int symbol_indexer) except *
+    cpdef list build_ticks(self)
     cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp)
     cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp)
 

@@ -147,7 +147,8 @@ class EMACross(TradingStrategy):
         if liquidity_ratio >= 2.0:
             self._check_signal(bar, sl_buffer, spread_buffer)
         else:
-            self.log.info(f"liquidity_ratio == {liquidity_ratio} (low liquidity).")
+            pass
+            # self.log.info(f"liquidity_ratio == {liquidity_ratio} (low liquidity).")
 
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 

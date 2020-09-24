@@ -83,11 +83,15 @@ cdef class TickDataWrangler:
         self.tick_data = []
         self.resolution = BarAggregation.UNDEFINED
 
-    cpdef void build(self, int symbol_indexer) except *:
+    cpdef void pre_process(self, int symbol_indexer) except *:
         """
-        Return the built ticks from the held data.
+        Pre-process the tick data in preparation for building ticks.
 
-        :return List[Tick].
+        Parameters
+        ----------
+        symbol_indexer : int
+            The symbol indexer for the built ticks.
+
         """
         if self._data_ticks is not None and len(self._data_ticks) > 0:
             # Build ticks from data
@@ -189,6 +193,19 @@ cdef class TickDataWrangler:
         # Build ticks from data
         self.tick_data = df_ticks_final
         self.tick_data["symbol"] = symbol_indexer
+
+    cpdef list build_ticks(self):
+        """
+        Return a list of bars from all data.
+
+        Returns
+        -------
+        List[Bar]
+
+        """
+        return list(map(self._build_tick_from_values_with_sizes,
+                        self.tick_data.values,
+                        pd.to_datetime(self.tick_data.index)))
 
     cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
         """

@@ -80,19 +80,3 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _set_build_timer(self) except *
     cpdef void _build_bar(self, datetime at_time) except *
     cpdef void _build_event(self, TimeEvent event) except *
-
-
-cdef class BulkTickBarBuilder:
-    cdef TickBarAggregator aggregator
-    cdef object callback
-    cdef list bars
-
-    cpdef void receive(self, list ticks) except *
-    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *
-
-
-cdef class BulkTimeBarUpdater:
-    cdef TimeBarAggregator aggregator
-    cdef datetime start_time
-
-    cpdef void receive(self, list ticks) except *

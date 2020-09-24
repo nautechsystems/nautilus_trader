@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -30,7 +28,6 @@ from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -506,110 +503,3 @@ cdef class TimeBarAggregator(BarAggregator):
             return
 
         self._handle_bar(bar)
-
-
-cdef class BulkTickBarBuilder:
-    """
-    Provides a temporary builder for tick bars from a bulk tick order.
-    """
-
-    def __init__(
-            self,
-            BarType bar_type not None,
-            Logger logger not None,
-            callback not None: callable,
-    ):
-        """
-        Initialize a new instance of the BulkTickBarBuilder class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar_type to build.
-        logger : Logger
-            The logger for the bar aggregator.
-        callback : Callable
-            The callback to send the built bars to.
-
-        Raises
-        ------
-        ValueError
-            If callback is not of type callable.
-
-        """
-        Condition.callable(callback, "callback")
-
-        self.bars = []
-        self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
-        self.callback = callback
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void receive(self, list ticks) except *:
-        """
-        Receives the bulk list of ticks and builds aggregated tick
-        bars. Then sends the bar type and bars list on to the registered callback.
-
-        Parameters
-        ----------
-        ticks : List[Tick]
-            The bulk ticks for aggregation into tick bars.
-
-        """
-        Condition.not_none(ticks, "ticks")
-
-        cdef int i
-        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
-            for i in range(len(ticks)):
-                self.aggregator.handle_trade_tick(ticks[i])
-        else:
-            for i in range(len(ticks)):
-                self.aggregator.handle_quote_tick(ticks[i])
-
-        self.callback(self.aggregator.bar_type, self.bars)
-
-    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *:
-        self.bars.append(bar)
-
-
-cdef class BulkTimeBarUpdater:
-    """
-    Provides a temporary updater for time bars from a bulk tick order.
-    """
-
-    def __init__(self, TimeBarAggregator aggregator not None):
-        """
-        Initialize a new instance of the BulkTimeBarUpdater class.
-
-        Parameters
-        ----------
-        aggregator : TimeBarAggregator
-            The time bar aggregator to update.
-
-        """
-        self.aggregator = aggregator
-        self.start_time = self.aggregator.next_close - self.aggregator.interval
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void receive(self, list ticks) except *:
-        """
-        Receives the bulk list of ticks and updates the aggregator.
-
-        Parameters
-        ----------
-        ticks : List[Tick]
-            The bulk ticks for updating the aggregator.
-
-        """
-        cdef int i
-        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
-            for i in range(len(ticks)):
-                if ticks[i].timestamp < self.start_time:
-                    continue  # Price not applicable to this bar
-                self.aggregator.handle_trade_tick(ticks[i])
-        else:
-            for i in range(len(ticks)):
-                if ticks[i].timestamp < self.start_time:
-                    continue  # Price not applicable to this bar
-                self.aggregator.handle_quote_tick(ticks[i])
