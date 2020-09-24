@@ -334,7 +334,8 @@ class EMACrossFiltered(TradingStrategy):
             entry=price_entry,
             stop_loss=price_stop_loss,
             exchange_rate=exchange_rate,
-            commission_rate_bp=0.15,
+            commission_taker_bp=0.15,
+            commission_maker_bp=0.15,
             hard_limit=20000000,
             units=1,
             unit_batch_size=10000)
@@ -383,7 +384,8 @@ class EMACrossFiltered(TradingStrategy):
             entry=price_entry,
             stop_loss=price_stop_loss,
             exchange_rate=exchange_rate,
-            commission_rate_bp=0.15,
+            commission_taker_bp=0.15,
+            commission_maker_bp=0.15,
             hard_limit=20000000,
             units=1,
             unit_batch_size=10000)

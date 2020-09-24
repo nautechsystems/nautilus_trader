@@ -31,6 +31,7 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
@@ -39,9 +40,10 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import TestStrategy1
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import TestStubs, UNIX_EPOCH
 
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
@@ -429,7 +431,7 @@ class SimulatedBrokerTests(unittest.TestCase):
         strategy.submit_order(top_up_order, position_id)
         strategy.submit_order(reduce_order, position_id)
 
-        commission_percent = basis_points_as_percentage(self.config.commission_rate_bp)
+        commission_percent = basis_points_as_percentage(self.config.commission_taker_bp)
         self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
                          order.filled_quantity.as_double() * commission_percent)
         self.assertEqual(strategy.object_storer.get_store()[7].commission.as_double(),
@@ -469,3 +471,52 @@ class SimulatedBrokerTests(unittest.TestCase):
         commission = Money(-commission * filled_price, 392)
         position = strategy.positions_open()[position_id]
         self.assertEqual(position.realized_pnl, commission)
+
+    def test_commission_maker_taker_order(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        self.broker.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+
+        order_market = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        order_limit = strategy.order_factory.limit(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price(80.000, 3))
+
+        # Act
+        position_id = strategy.position_id_generator.generate()
+        strategy.submit_order(order_market, position_id)
+        strategy.submit_order(order_limit, position_id)
+
+        self.broker.process_tick(QuoteTick(
+            self.usdjpy.symbol,
+            Price(80.00, 3),
+            Price(80.00, 3),
+            Quantity(100000),
+            Quantity(100000),
+            UNIX_EPOCH)
+        )  # Fill the limit order
+
+        # Assert
+        commission_percent_maker = basis_points_as_percentage(self.config.commission_maker_bp)
+        commission_percent_taker = basis_points_as_percentage(self.config.commission_taker_bp)
+        self.assertEqual(strategy.object_storer.get_store()[3].liquidity_side, LiquiditySide.TAKER)
+        self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
+                         commission_percent_taker * order_market.quantity.as_double())
+        self.assertEqual(strategy.object_storer.get_store()[8].liquidity_side, LiquiditySide.MAKER)
+        self.assertEqual(strategy.object_storer.get_store()[8].commission.as_double(),
+                         commission_percent_maker * order_limit.quantity.as_double())

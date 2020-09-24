@@ -19,6 +19,7 @@ import unittest
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.brokerage import RolloverInterestCalculator
 from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -42,6 +43,7 @@ class CommissionCalculatorTests(unittest.TestCase):
             Quantity(1000000),
             filled_price=Price(1.63000, 5),
             exchange_rate=1.00,
+            liquidity_side=LiquiditySide.TAKER,
             currency=Currency.USD)
 
         # Assert
@@ -49,10 +51,10 @@ class CommissionCalculatorTests(unittest.TestCase):
 
     def test_calculate_returns_correct_minimum_commission(self):
         # Arrange
-        calculator = CommissionCalculator(minimum=Money(2.00, Currency.USD))
+        calculator = CommissionCalculator(minimum_taker=Money(2.00, Currency.USD))
 
         # Act
-        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD))
+        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD), LiquiditySide.TAKER)
 
         # Assert
         self.assertEqual(Money(2.00, Currency.USD), result)
@@ -62,7 +64,7 @@ class CommissionCalculatorTests(unittest.TestCase):
         calculator = CommissionCalculator()
 
         # Act
-        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD))
+        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD), LiquiditySide.TAKER)
 
         # Assert
         self.assertEqual(Money(20.00, Currency.USD), result)
@@ -77,6 +79,7 @@ class CommissionCalculatorTests(unittest.TestCase):
             Quantity(1000000),
             filled_price=Price(95.000, 3),
             exchange_rate=0.01052632,
+            liquidity_side=LiquiditySide.TAKER,
             currency=Currency.USD)
 
         # Assert
