@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport IdTag
 
 
 cdef class IdentifierGenerator:

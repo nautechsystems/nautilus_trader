@@ -15,9 +15,8 @@
 
 from cpython.datetime cimport date
 
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -62,6 +61,21 @@ cdef class MakerTakerCommissionModel(CommissionModel):
     cdef dict maker_rates
     cdef double taker_default_rate_bp
     cdef double maker_default_rate_bp
+
+
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+
+
+cdef class ExchangeRateCalculator:
+    cpdef double get_rate(
+            self,
+            Currency from_currency,
+            Currency to_currency,
+            PriceType price_type,
+            dict bid_rates,
+            dict ask_rates
+    ) except *
 
 
 cdef class RolloverInterestCalculator:

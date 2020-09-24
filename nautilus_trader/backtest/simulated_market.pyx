@@ -23,7 +23,7 @@ from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader.common.market cimport ExchangeRateCalculator
 from nautilus_trader.common.market cimport CommissionModel
 from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.core.correctness cimport Condition
