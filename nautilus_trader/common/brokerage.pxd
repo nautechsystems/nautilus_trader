@@ -16,6 +16,7 @@
 from cpython.datetime cimport date
 
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
@@ -25,8 +26,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class CommissionCalculator:
     cdef dict rates
-    cdef double default_rate_bp
-    cdef Money minimum
+    cdef double default_taker_rate_bp
+    cdef double default_maker_rate_bp
+    cdef Money minimum_taker
 
     cpdef Money calculate(
         self,
@@ -34,11 +36,12 @@ cdef class CommissionCalculator:
         Quantity filled_quantity,
         Price filled_price,
         double exchange_rate,
-        Currency currency
+        Currency currency,
+        LiquiditySide liquidity_side,
     )
-    cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value)
+    cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value, LiquiditySide liquidity_side)
 
-    cdef double _get_commission_rate(self, Symbol symbol)
+    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side)
 
 
 cdef class RolloverInterestCalculator:

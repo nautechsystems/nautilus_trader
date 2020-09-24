@@ -22,6 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
@@ -39,8 +40,9 @@ cdef class CommissionCalculator:
     def __init__(
             self,
             dict rates=None,
-            double default_rate_bp=0.20,
-            Money minimum=None,
+            double default_taker_rate_bp=0.20,
+            double default_maker_rate_bp=0.20,
+            Money minimum_taker=None,
     ):
         """
         Initialize a new instance of the CommissionCalculator class.
@@ -51,21 +53,26 @@ cdef class CommissionCalculator:
         ----------
         rates : Dict[Symbol, double]
             The dictionary of commission rates Dict[Symbol, double].
-        default_rate_bp : double
+        default_taker_rate_bp : double
             The default rate if not found in dictionary.
-        minimum : Money
-            The minimum commission charge per transaction.
+        default_maker_rate_bp : double
+            The default rate if not found in dictionary.
+        minimum_taker : Money
+            The minimum_taker commission charge per transaction.
 
         """
+        cdef double min_taker_value = 0.
         if rates is None:
             rates = {}
-        if minimum is None:
-            minimum = Money(0, Currency.USD)
+        if minimum_taker is None:
+            min_taker_value = 0. if default_maker_rate_bp > 0. else -1e7
+            minimum_taker = Money(min_taker_value, Currency.USD)
         Condition.dict_types(rates, Symbol, Decimal64, "rates")
 
         self.rates = rates
-        self.default_rate_bp = default_rate_bp
-        self.minimum = minimum
+        self.default_taker_rate_bp = default_taker_rate_bp
+        self.default_maker_rate_bp = default_maker_rate_bp
+        self.minimum_taker = minimum_taker
 
     cpdef Money calculate(
             self,
@@ -74,6 +81,7 @@ cdef class CommissionCalculator:
             Price filled_price,
             double exchange_rate,
             Currency currency,
+            LiquiditySide liquidity_side
     ):
         """
         Return the calculated commission for the given arguments.
@@ -90,6 +98,8 @@ cdef class CommissionCalculator:
             The exchange rate (symbol quote currency to account base currency).
         currency : Currency
             The currency for the calculation.
+        liquidity_side : LiquiditySide
+            The liquidity side of the trade.
 
         Returns
         -------
@@ -101,12 +111,12 @@ cdef class CommissionCalculator:
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
+        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
-        cdef double final_commission = max(self.minimum.as_double(), commission)
+        cdef double final_commission = max(self.minimum_taker.as_double(), commission)
         return Money(final_commission, currency)
 
-    cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
+    cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value, LiquiditySide liquidity_side):
         """
         Return the calculated commission for the given arguments.
 
@@ -116,6 +126,8 @@ cdef class CommissionCalculator:
             The symbol for calculation.
         notional_value : Money
             The notional value for the transaction.
+        liquidity_side : LiquiditySide
+            The liquidity side of the trade.
 
         Returns
         -------
@@ -125,16 +137,18 @@ cdef class CommissionCalculator:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(notional_value, "notional_value")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol))
-        cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
+        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double value = max(self.minimum_taker.as_double(), notional_value.as_double() * commission_rate_percent)
         return Money(value, notional_value.currency)
 
-    cdef double _get_commission_rate(self, Symbol symbol):
+    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
         cdef double rate = self.rates.get(symbol, -1.0)
         if rate != -1.0:
             return rate
+        elif liquidity_side == LiquiditySide.MAKER:
+            return self.default_maker_rate_bp
         else:
-            return self.default_rate_bp
+            return self.default_taker_rate_bp
 
 
 cdef class RolloverInterestCalculator:
