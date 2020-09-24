@@ -114,7 +114,7 @@ cdef class SimulatedMarket:
 
         Raises
         ------
-        ValueError
+        TypeError
             If instruments contains a type other than Instrument.
 
         """

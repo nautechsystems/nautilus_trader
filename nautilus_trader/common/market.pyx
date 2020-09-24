@@ -65,7 +65,7 @@ cdef class CommissionModel:
 
 cdef class GenericCommissionModel:
     """
-    Provides commission calculations.
+    Provides a generic commission model.
     """
 
     def __init__(
@@ -90,7 +90,7 @@ cdef class GenericCommissionModel:
 
         Raises
         ------
-        ValueError
+        TypeError
             If rates contains a key type not of Symbol, or value type not of float.
         ValueError
             If default_rate_bp is negative (< 0).
@@ -219,9 +219,9 @@ cdef class MakerTakerCommissionModel:
 
         Raises
         ------
-        ValueError
+        TypeError
             If taker_rates contains a key type not of Symbol, or value type not of float.
-        ValueError
+        TypeError
             If maker_rates contains a key type not of Symbol, or value type not of float.
 
         """
@@ -323,8 +323,10 @@ cdef class MakerTakerCommissionModel:
 
 cdef class RolloverInterestCalculator:
     """
-    Provides rollover interest rate calculations. If rate_data_csv_path is empty then
-    will default to the included short-term interest rate data csv (data since 1956).
+    Provides rollover interest rate calculations.
+
+    If rate_data_csv_path is empty then will default to the included short-term
+    interest rate data csv (data since 1956).
     """
 
     def __init__(self, str short_term_interest_csv_path not None="default"):

@@ -73,12 +73,21 @@ cdef class BacktestEngine:
 
         Parameters
         ----------
-        :param data: The data for the backtest engine.
-        :param strategies: The initial strategies for the backtest engine.
-        :param config: The optional configuration for the backtest engine (if None will be default).
-        :param fill_model: The optional initial fill model for the backtest engine
-        (if None then no probabilistic fills).
-        :raises TypeError: If strategies contains a type other than TradingStrategy.
+        data : BacktestDataContainer
+            The data for the backtest engine.
+        strategies : List[TradingStrategy]
+            The initial strategies for the backtest engine.
+        config : BacktestConfig
+            The optional configuration for the backtest engine (if None will be default).
+        fill_model : FillModel
+            The optional initial fill model for the backtest engine,
+            (if None then no probabilistic fills).
+
+        Raises
+        ------
+        TypeError
+            If strategies contains a type other than TradingStrategy.
+
         """
         if config is None:
             config = BacktestConfig()
