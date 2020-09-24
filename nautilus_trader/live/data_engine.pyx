@@ -39,8 +39,8 @@ from nautilus_trader.network.messages cimport MessageReceived
 from nautilus_trader.network.messages cimport MessageRejected
 from nautilus_trader.network.messages cimport QueryFailure
 from nautilus_trader.network.messages cimport Response
-from nautilus_trader.network.node_clients cimport MessageClient
-from nautilus_trader.network.node_clients cimport MessageSubscriber
+from nautilus_trader.node.clients cimport MessageClient
+from nautilus_trader.node.clients cimport MessageSubscriber
 from nautilus_trader.serialization.base cimport DataSerializer
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport InstrumentSerializer

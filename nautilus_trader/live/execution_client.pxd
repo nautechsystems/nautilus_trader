@@ -16,8 +16,8 @@
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.network.node_clients cimport MessageClient
-from nautilus_trader.network.node_clients cimport MessageSubscriber
+from nautilus_trader.node.clients cimport MessageClient
+from nautilus_trader.node.clients cimport MessageSubscriber
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 
