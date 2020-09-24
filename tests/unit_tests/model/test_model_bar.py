@@ -51,7 +51,7 @@ class BarSpecificationTests(unittest.TestCase):
         self.assertEqual("1-MINUTE-BID", str(bar_spec))
         self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE-BID) object at"))
 
-    def test_can_parse_bar_spec_from_string(self):
+    def test_parse_bar_spec_from_string(self):
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
 
@@ -93,7 +93,7 @@ class BarTypeTests(unittest.TestCase):
 
 class BarTests(unittest.TestCase):
 
-    def test_can_parse_bar_from_string(self):
+    def test_parse_bar_from_string(self):
         # Arrange
         bar = TestStubs.bar_5decimal()
 

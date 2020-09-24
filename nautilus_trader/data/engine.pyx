@@ -88,15 +88,17 @@ cdef class DataEngine:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._use_previous_close = True
         self._exchange_calculator = ExchangeRateCalculator()
 
+        self._use_previous_close = True
         self.tick_capacity = tick_capacity  # Per symbol
         self.bar_capacity = bar_capacity    # Per symbol
 
         self._clients = {}              # type: {Venue, DataClient}
 
         # Cached data
+        self._instruments = {}          # type: {Symbol, Instrument}
+        self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
         self._quote_ticks = {}          # type: {Symbol, [QuoteTick]}
         self._trade_ticks = {}          # type: {Symbol, [TradeTick]}
         self._quote_tick_handlers = {}  # type: {Symbol, [QuoteTickHandler]}
@@ -104,8 +106,6 @@ cdef class DataEngine:
         self._bars = {}                 # type: {BarType, [Bar]}
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
-        self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
-        self._instruments = {}          # type: {Symbol, Instrument}
 
         self._log.info("Initialized.")
 

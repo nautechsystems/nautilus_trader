@@ -72,7 +72,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertTrue(result > timedelta(0))
         self.assertEqual(timedelta, type(result))
 
-    def test_can_set_time_alert(self):
+    def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
         interval = timedelta(milliseconds=100)
@@ -86,7 +86,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertEqual(1, len(self.handler))
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
-    def test_can_cancel_time_alert(self):
+    def test_cancel_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
         interval = timedelta(milliseconds=100)
@@ -101,7 +101,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(0, len(self.handler))
 
-    def test_can_set_multiple_time_alerts(self):
+    def test_set_multiple_time_alerts(self):
         # Arrange
         alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
         alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
@@ -117,7 +117,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
         self.assertTrue(isinstance(self.handler[1], TimeEvent))
 
-    def test_can_set_timer_with_immediate_start_time(self):
+    def test_set_timer_with_immediate_start_time(self):
         # Arrange
         name = "TEST_TIMER"
 
@@ -134,7 +134,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertEqual([name], self.clock.get_timer_names())
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
-    def test_can_set_timer(self):
+    def test_set_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -154,7 +154,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertEqual(4, len(self.handler))
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
-    def test_can_set_timer_with_stop_time(self):
+    def test_set_timer_with_stop_time(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)

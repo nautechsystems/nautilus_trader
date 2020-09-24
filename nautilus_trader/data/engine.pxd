@@ -36,10 +36,12 @@ cdef class DataEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef bint _use_previous_close
     cdef ExchangeRateCalculator _exchange_calculator
     cdef dict _clients
+    cdef bint _use_previous_close
 
+    cdef dict _instruments
+    cdef dict _instrument_handlers
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _quote_tick_handlers
@@ -47,8 +49,6 @@ cdef class DataEngine:
     cdef dict _bars
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
-    cdef dict _instrument_handlers
-    cdef dict _instruments
 
     cdef readonly int tick_capacity
     cdef readonly int bar_capacity
@@ -115,10 +115,10 @@ cdef class DataEngine:
 
 # -- QUERY METHODS ---------------------------------------------------------------------------------
 
+    cpdef list subscribed_instruments(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
-    cpdef list subscribed_instruments(self)
 
     cpdef list symbols(self)
     cpdef list instruments(self)

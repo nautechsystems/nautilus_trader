@@ -92,7 +92,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertTrue(strategy.id in self.exec_engine.registered_strategies())
 
-    def test_can_deregister_strategy(self):
+    def test_deregister_strategy(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -133,7 +133,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.exec_engine.is_flat())
 
-    def test_can_reset_execution_engine(self):
+    def test_reset_execution_engine(self):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -150,7 +150,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertTrue(strategy.id in self.exec_engine.registered_strategies())
 
-    def test_can_submit_order(self):
+    def test_submit_order(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -185,7 +185,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_db.order_exists(order.cl_ord_id))
         self.assertEqual(position_id, self.exec_db.get_client_position_id(order.cl_ord_id))
 
-    def test_can_handle_order_fill_event(self):
+    def test_handle_order_fill_event(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -237,7 +237,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_db.position_exists_for_order(order.cl_ord_id))
         self.assertEqual(Position, type(self.exec_db.get_position_for_order(order.cl_ord_id)))
 
-    def test_can_add_to_existing_position_on_order_fill(self):
+    def test_add_to_existing_position_on_order_fill(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -308,7 +308,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(1, self.exec_db.positions_open_count())
         self.assertEqual(0, self.exec_db.positions_closed_count())
 
-    def test_can_close_position_on_order_fill(self):
+    def test_close_position_on_order_fill(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
