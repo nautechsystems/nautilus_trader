@@ -17,11 +17,11 @@ import zmq
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.live.logging cimport LiveLogger
@@ -77,8 +77,8 @@ cdef class LiveDataEngine(DataEngine):
             int bar_capacity,
             LiveClock clock not None,
             LiveUUIDFactory uuid_factory not None,
-            LiveLogger logger not None,
-        ):
+            LiveLogger logger not None
+    ):
         """
         Initialize a new instance of the LiveDataEngine class.
 

@@ -43,7 +43,7 @@ cdef class ExecutionClient:
 
         self._log.info(f"Initialized.")
 
-    # -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void connect(self) except *:
         # Abstract method

@@ -25,9 +25,9 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
-from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
-from nautilus_trader.common.execution_engine import ExecutionEngine
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import PriceType

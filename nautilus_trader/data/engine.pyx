@@ -20,18 +20,20 @@ from cpython.datetime cimport datetime
 from collections import deque
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.data_client cimport DataClient
 from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.handlers cimport InstrumentHandler
 from nautilus_trader.common.handlers cimport QuoteTickHandler
 from nautilus_trader.common.handlers cimport TradeTickHandler
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.market cimport BarAggregator
-from nautilus_trader.common.market cimport TickBarAggregator
-from nautilus_trader.common.market cimport TimeBarAggregator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.data.aggregation cimport BarAggregator
+from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
+from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
+from nautilus_trader.data.aggregation cimport TickBarAggregator
+from nautilus_trader.data.aggregation cimport TimeBarAggregator
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -185,6 +187,60 @@ cdef class DataEngine:
         for instrument in instruments:
             self.handle_instrument(instrument)
 
+    cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
+        """
+        Request the latest instrument data for the given symbol.
+
+        The response will be sent to the given callback.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the request.
+        callback : Callable
+            The callback for the instrument.
+
+        Raises
+        ------
+        ValueError
+            If callback is not of type Callable.
+        ValueError
+            If a data client has not been registered for the symbol.venue.
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.callable(callback, "callback")
+        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+
+        self._clients[symbol.venue].request_instrument(symbol, callback)
+
+    cpdef void request_instruments(self, Venue venue, callback: callable) except *:
+        """
+        Request the latest instruments data for the given venue.
+
+        The response will be sent to the given callback.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the request.
+        callback : Callable
+            The callback for the instruments.
+
+        Raises
+        ------
+        ValueError
+            If callback is not of type Callable.
+        ValueError
+            If a data client has not been registered for the venue.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.callable(callback, "callback")
+        Condition.is_in(venue, self._clients, "venue", "_clients")
+
+        self._clients[venue].request_instruments(venue, callback)
+
     cpdef void request_quote_ticks(
             self,
             Symbol symbol,
@@ -332,59 +388,31 @@ cdef class DataEngine:
             callback,
         )
 
-    cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
-        Request the latest instrument data for the given symbol.
-
-        The response will be sent to the given callback.
+        Subscribe to instrument updates for the given symbol.
 
         Parameters
         ----------
         symbol : Symbol
-            The symbol for the request.
-        callback : Callable
-            The callback for the instrument.
+            The instrument symbol to subscribe to.
+        handler : Callable
+            The handler to receive the instruments.
 
         Raises
         ------
         ValueError
-            If callback is not of type Callable.
+            If handler is not of type Callable.
         ValueError
             If a data client has not been registered for the symbol.venue.
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.callable(callback, "callback")
-        Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
+        Condition.callable(handler, "handler")
+        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
 
-        self._clients[symbol.venue].request_instrument(symbol, callback)
-
-    cpdef void request_instruments(self, Venue venue, callback: callable) except *:
-        """
-        Request the latest instruments data for the given venue.
-
-        The response will be sent to the given callback.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the request.
-        callback : Callable
-            The callback for the instruments.
-
-        Raises
-        ------
-        ValueError
-            If callback is not of type Callable.
-        ValueError
-            If a data client has not been registered for the venue.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.callable(callback, "callback")
-        Condition.is_in(venue, self._clients, "venue", "_clients")
-
-        self._clients[venue].request_instruments(venue, callback)
+        self._add_instrument_handler(symbol, handler)
+        self._clients[symbol.venue].subscribe_instrument(symbol)
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
@@ -464,31 +492,31 @@ cdef class DataEngine:
         self._add_bar_handler(bar_type, handler)
         self._clients[bar_type.symbol.venue].subscribe_bars(bar_type)
 
-    cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
         """
-        Subscribe to instrument updates for the given symbol.
+        Unsubscribe from the stream of trade ticks for the given symbol.
 
         Parameters
         ----------
         symbol : Symbol
-            The instrument symbol to subscribe to.
+            The instrument symbol to unsubscribe from.
         handler : Callable
-            The handler to receive the instruments.
+            The handler which was receiving the instrument.
 
         Raises
         ------
         ValueError
             If handler is not of type Callable.
         ValueError
-            If a data client has not been registered for the symbol.venue.
+            If a data client has not been registered for the venue.
 
         """
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
         Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
 
-        self._add_instrument_handler(symbol, handler)
-        self._clients[symbol.venue].subscribe_instrument(symbol)
+        self._clients[symbol.venue].unsubscribe_instrument(symbol)
+        self._remove_instrument_handler(symbol, handler)
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """
@@ -568,33 +596,7 @@ cdef class DataEngine:
         self._clients[bar_type.symbol.venue].unsubscribe_bars(bar_type)
         self._remove_bar_handler(bar_type, handler)
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
-        """
-        Unsubscribe from the stream of trade ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The instrument symbol to unsubscribe from.
-        handler : Callable
-            The handler which was receiving the instrument.
-
-        Raises
-        ------
-        ValueError
-            If handler is not of type Callable.
-        ValueError
-            If a data client has not been registered for the venue.
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
-
-        self._clients[symbol.venue].unsubscribe_instrument(symbol)
-        self._remove_instrument_handler(symbol, handler)
-
-# --REGISTRATION METHODS ------------------------------------------------------------------------- #
+# --REGISTRATION METHODS ---------------------------------------------------------------------------
 
     cpdef void register_data_client(self, DataClient client) except *:
         """
@@ -634,7 +636,51 @@ cdef class DataEngine:
 
         self._log.info(f"Registered {strategy}.")
 
-# -- HANDLER METHODS ----------------------------------------------------------------------------- #
+    cpdef list registered_venues(self):
+        """
+        Return the venues registered with the data engine.
+
+        Returns
+        -------
+        List[Venue]
+
+        """
+        return list(self._clients.keys())
+
+# -- HANDLER METHODS -------------------------------------------------------------------------------
+
+    cpdef void handle_instrument(self, Instrument instrument) except *:
+        """
+        Handle the given instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The received instrument to handle.
+
+        """
+        self._instruments[instrument.symbol] = instrument
+        self._log.info(f"Updated instrument {instrument.symbol}")
+
+        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
+        cdef InstrumentHandler handler
+        if instrument_handlers is not None:
+            for handler in instrument_handlers:
+                handler.handle(instrument)
+
+    cpdef void handle_instruments(self, list instruments) except *:
+        """
+        Handle the given instruments by handling each instrument individually.
+
+        Parameters
+        ----------
+        instruments : Instrument
+            The received instruments to handle.
+
+        """
+        cdef Instrument instrument
+        for instrument in instruments:
+            self.handle_instrument(instrument)
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
         """
@@ -843,51 +889,7 @@ cdef class DataEngine:
         for i in range(length):
             self.handle_bar(bar_type, bars[i], send_to_handlers=False)
 
-    cpdef void handle_instrument(self, Instrument instrument) except *:
-        """
-        Handle the given instrument.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The received instrument to handle.
-
-        """
-        self._instruments[instrument.symbol] = instrument
-        self._log.info(f"Updated instrument {instrument.symbol}")
-
-        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
-        cdef InstrumentHandler handler
-        if instrument_handlers is not None:
-            for handler in instrument_handlers:
-                handler.handle(instrument)
-
-    cpdef void handle_instruments(self, list instruments) except *:
-        """
-        Handle the given instruments by handling each instrument individually.
-
-        Parameters
-        ----------
-        instruments : Instrument
-            The received instruments to handle.
-
-        """
-        cdef Instrument instrument
-        for instrument in instruments:
-            self.handle_instrument(instrument)
-
-# -- QUERY METHODS ------------------------------------------------------------------------------- #
-
-    cpdef list registered_venues(self):
-        """
-        Return the venues registered with the data engine.
-
-        Returns
-        -------
-        List[Venue]
-
-        """
-        return list(self._clients.keys())
+# -- QUERY METHODS ---------------------------------------------------------------------------------
 
     cpdef list subscribed_quote_ticks(self):
         """
@@ -933,7 +935,7 @@ cdef class DataEngine:
         """
         return list(self._instrument_handlers.keys())
 
-    cpdef list instrument_symbols(self):
+    cpdef list symbols(self):
         """
         Return all instrument symbols held by the data engine.
 
@@ -943,150 +945,16 @@ cdef class DataEngine:
         """
         return list(self._instruments.keys())
 
-    cpdef dict get_instruments(self):
+    cpdef list instruments(self):
         """
         Return all instruments for the given venue.
 
         Returns
         -------
-        Dict[Symbol, Instrument]
+        List[Instrument]
 
         """
-        return {instrument.symbol: instrument for instrument in self._instruments}
-
-    cpdef Instrument get_instrument(self, Symbol symbol):
-        """
-        Return the instrument corresponding to the given symbol (if found).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol of the instrument to return.
-
-        Returns
-        -------
-        Instrument
-
-        Raises
-        ------
-        ValueError
-            If instrument is not found.
-
-        """
-        Condition.is_in(symbol, self._instruments, "symbol", "instruments")
-
-        return self._instruments[symbol]
-
-    cpdef bint has_quote_ticks(self, Symbol symbol):
-        """
-        Return a value indicating whether the data engine has quote ticks for
-        the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return symbol in self._quote_ticks and len(self._quote_ticks[symbol]) > 0
-
-    cpdef bint has_trade_ticks(self, Symbol symbol):
-        """
-        Return a value indicating whether the data engine has trade ticks for
-        the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return symbol in self._trade_ticks and len(self._trade_ticks[symbol]) > 0
-
-    cpdef bint has_bars(self, BarType bar_type):
-        """
-        Return a value indicating whether the data engine has bars for the given
-        bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the bars.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-
-        return bar_type in self._bars and len(self._bars[bar_type]) > 0
-
-    cpdef int quote_tick_count(self, Symbol symbol):
-        """
-        Return the count of quote ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
-
-    cpdef int trade_tick_count(self, Symbol symbol):
-        """
-        Return the count of trade ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
-
-    cpdef int bar_count(self, BarType bar_type):
-        """
-        Return the count of bars for the given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to count.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-
-        return len(self._bars[bar_type]) if bar_type in self._bars else 0
+        return list(self._instruments)
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
@@ -1144,6 +1012,29 @@ cdef class DataEngine:
         Condition.is_in(bar_type, self._bars, "bar_type", "bars")
 
         return list(self._bars[bar_type])
+
+    cpdef Instrument instrument(self, Symbol symbol):
+        """
+        Return the instrument corresponding to the given symbol (if found).
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol of the instrument to return.
+
+        Returns
+        -------
+        Instrument
+
+        Raises
+        ------
+        ValueError
+            If instrument is not found.
+
+        """
+        Condition.is_in(symbol, self._instruments, "symbol", "instruments")
+
+        return self._instruments[symbol]
 
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
@@ -1229,6 +1120,117 @@ cdef class DataEngine:
 
         return self._bars[bar_type][index]
 
+    cpdef int quote_tick_count(self, Symbol symbol):
+        """
+        Return the count of quote ticks for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
+
+    cpdef int trade_tick_count(self, Symbol symbol):
+        """
+        Return the count of trade ticks for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
+
+    cpdef int bar_count(self, BarType bar_type):
+        """
+        Return the count of bars for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to count.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        return len(self._bars[bar_type]) if bar_type in self._bars else 0
+
+    cpdef bint has_quote_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the data engine has quote ticks for
+        the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        return symbol in self._quote_ticks and len(self._quote_ticks[symbol]) > 0
+
+    cpdef bint has_trade_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the data engine has trade ticks for
+        the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the ticks.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        return symbol in self._trade_ticks and len(self._trade_ticks[symbol]) > 0
+
+    cpdef bint has_bars(self, BarType bar_type):
+        """
+        Return a value indicating whether the data engine has bars for the given
+        bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the bars.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        return bar_type in self._bars and len(self._bars[bar_type]) > 0
+
     cpdef double get_exchange_rate(
             self,
             Currency from_currency,
@@ -1267,6 +1269,8 @@ cdef class DataEngine:
             bid_rates=bid_rates,
             ask_rates=ask_rates,
         )
+
+# ------------------------------------------------------------------------------------------------ #
 
     cdef void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:
@@ -1515,116 +1519,3 @@ cdef class DataEngine:
         self._instruments.clear()
 
         self._log.debug("Reset.")
-
-# ------------------------------------------------------------------------------------------------ #
-
-cdef class BulkTickBarBuilder:
-    """
-    Provides a temporary builder for tick bars from a bulk tick order.
-    """
-    cdef TickBarAggregator aggregator
-    cdef object callback
-    cdef list bars
-
-    def __init__(
-            self,
-            BarType bar_type not None,
-            Logger logger not None,
-            callback not None: callable,
-    ):
-        """
-        Initialize a new instance of the BulkTickBarBuilder class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar_type to build.
-        logger : Logger
-            The logger for the bar aggregator.
-        callback : Callable
-            The callback to send the built bars to.
-
-        Raises
-        ------
-        ValueError
-            If callback is not of type callable.
-
-        """
-        Condition.callable(callback, "callback")
-
-        self.bars = []
-        self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
-        self.callback = callback
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void receive(self, list ticks) except *:
-        """
-        Receives the bulk list of ticks and builds aggregated tick
-        bars. Then sends the bar type and bars list on to the registered callback.
-
-        Parameters
-        ----------
-        ticks : List[Tick]
-            The bulk ticks for aggregation into tick bars.
-
-        """
-        Condition.not_none(ticks, "ticks")
-
-        cdef int i
-        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
-            for i in range(len(ticks)):
-                self.aggregator.handle_trade_tick(ticks[i])
-        else:
-            for i in range(len(ticks)):
-                self.aggregator.handle_quote_tick(ticks[i])
-
-        self.callback(self.aggregator.bar_type, self.bars)
-
-    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *:
-        self.bars.append(bar)
-
-
-cdef class BulkTimeBarUpdater:
-    """
-    Provides a temporary updater for time bars from a bulk tick order.
-    """
-    cdef TimeBarAggregator aggregator
-    cdef datetime start_time
-
-    def __init__(self, TimeBarAggregator aggregator not None):
-        """
-        Initialize a new instance of the BulkTimeBarUpdater class.
-
-        Parameters
-        ----------
-        aggregator : TimeBarAggregator
-            The time bar aggregator to update.
-
-        """
-        self.aggregator = aggregator
-        self.start_time = self.aggregator.next_close - self.aggregator.interval
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void receive(self, list ticks) except *:
-        """
-        Receives the bulk list of ticks and updates the aggregator.
-
-        Parameters
-        ----------
-        ticks : List[Tick]
-            The bulk ticks for updating the aggregator.
-
-        """
-        cdef int i
-        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
-            for i in range(len(ticks)):
-                if ticks[i].timestamp < self.start_time:
-                    continue  # Price not applicable to this bar
-                self.aggregator.handle_trade_tick(ticks[i])
-        else:
-            for i in range(len(ticks)):
-                if ticks[i].timestamp < self.start_time:
-                    continue  # Price not applicable to this bar
-                self.aggregator.handle_quote_tick(ticks[i])

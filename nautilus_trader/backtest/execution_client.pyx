@@ -15,8 +15,8 @@
 
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.simulated_broker cimport SimulatedBroker
-from nautilus_trader.common.execution_client cimport ExecutionClient
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -75,7 +75,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         pass  # Nothing to dispose
 
-    # -- COMMAND EXECUTION -----------------------------------------------------------------------------
+# -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
     cpdef void account_inquiry(self, AccountInquiry command) except *:
         Condition.not_none(command, "command")

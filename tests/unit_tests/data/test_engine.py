@@ -21,7 +21,7 @@ import pytz
 from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.uuid import TestUUIDFactory
-from nautilus_trader.common.data_engine import DataEngine
+from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -32,7 +32,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
-class DataClientTests(unittest.TestCase):
+class DataEngineTests(unittest.TestCase):
 
     def setUp(self):
         clock = TestClock()

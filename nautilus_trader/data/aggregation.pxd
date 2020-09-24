@@ -23,37 +23,10 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-
-
-cdef class TickDataWrangler:
-    cdef object _data_ticks
-    cdef dict _data_bars_ask
-    cdef dict _data_bars_bid
-
-    cdef readonly Instrument instrument
-    cdef readonly tick_data
-    cdef readonly BarAggregation resolution
-
-    cpdef void build(self, int symbol_indexer) except *
-    cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp)
-    cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp)
-
-
-cdef class BarDataWrangler:
-    cdef int _precision
-    cdef int _volume_multiple
-    cdef object _data
-
-    cpdef list build_bars_all(self)
-    cpdef list build_bars_from(self, int index=*)
-    cpdef list build_bars_range(self, int start=*, int end=*)
-    cpdef Bar _build_bar(self, double[:] values, datetime timestamp)
 
 
 cdef class BarBuilder:
@@ -107,3 +80,19 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _set_build_timer(self) except *
     cpdef void _build_bar(self, datetime at_time) except *
     cpdef void _build_event(self, TimeEvent event) except *
+
+
+cdef class BulkTickBarBuilder:
+    cdef TickBarAggregator aggregator
+    cdef object callback
+    cdef list bars
+
+    cpdef void receive(self, list ticks) except *
+    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *
+
+
+cdef class BulkTimeBarUpdater:
+    cdef TimeBarAggregator aggregator
+    cdef datetime start_time
+
+    cpdef void receive(self, list ticks) except *

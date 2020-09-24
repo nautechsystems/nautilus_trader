@@ -24,14 +24,14 @@ from pandas import DatetimeIndex
 
 from nautilus_trader.backtest.clock cimport TestClock
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
-from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.market cimport TickDataWrangler
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
+from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.data.wrangling cimport TickDataWrangler
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
@@ -467,7 +467,7 @@ cdef class BacktestDataEngine(DataEngine):
 
         self._log.info(f"Requesting all instruments for the {venue} venue ...")
 
-        callback(self.get_instruments())
+        callback(self.instruments())
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """

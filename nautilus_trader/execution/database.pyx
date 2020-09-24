@@ -51,7 +51,7 @@ cdef class ExecutionDatabase:
         self._cached_orders = {}     # type: {ClientOrderId, Order}
         self._cached_positions = {}  # type: {ClientPositionId, Position}
 
-    # -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *:
         # Abstract method
@@ -126,7 +126,7 @@ cdef class ExecutionDatabase:
 
         self._log.info(f"Reset.")
 
-    # -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account get_account(self, AccountId account_id):
         # Abstract method
@@ -244,27 +244,27 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int count_orders_total(self, StrategyId strategy_id=None):
+    cpdef int orders_total_count(self, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int count_orders_working(self, StrategyId strategy_id=None):
+    cpdef int orders_working_count(self, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int count_orders_completed(self, StrategyId strategy_id=None):
+    cpdef int orders_completed_count(self, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int count_positions_total(self, StrategyId strategy_id=None):
+    cpdef int positions_total_count(self, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int count_positions_open(self, StrategyId strategy_id=None):
+    cpdef int positions_open_count(self, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int count_positions_closed(self, StrategyId strategy_id=None):
+    cpdef int positions_closed_count(self, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -299,7 +299,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_positions_open = set()    # type: {ClientPositionId}
         self._index_positions_closed = set()  # type: {ClientPositionId}
 
-    # -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *:
         """
@@ -531,7 +531,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         self._log.info("Flushing database (in-memory database does nothing).")
 
-    # -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account get_account(self, AccountId account_id):
         """
@@ -877,6 +877,33 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return cl_ord_id in self._index_orders_completed
 
+    cpdef int orders_total_count(self, StrategyId strategy_id=None):
+        """
+        Return the count of order held by the execution database.
+
+        :param strategy_id: The optional strategy_id query filter.
+        :return int.
+        """
+        return len(self.get_order_ids(strategy_id))
+
+    cpdef int orders_working_count(self, StrategyId strategy_id=None):
+        """
+        Return the count of working orders held by the execution database.
+
+        :param strategy_id: The optional strategy_id query filter.
+        :return int.
+        """
+        return len(self.get_order_working_ids(strategy_id))
+
+    cpdef int orders_completed_count(self, StrategyId strategy_id=None):
+        """
+        Return the count of completed orders held by the execution database.
+
+        :param strategy_id: The optional strategy_id query filter.
+        :return int.
+        """
+        return len(self.get_order_completed_ids(strategy_id))
+
     cpdef bint position_exists(self, ClientPositionId cl_pos_id):
         """
         Return a value indicating whether a position with the given identifier exists.
@@ -939,34 +966,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return cl_pos_id in self._index_positions_closed
 
-    cpdef int count_orders_total(self, StrategyId strategy_id=None):
-        """
-        Return the count of order held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        return len(self.get_order_ids(strategy_id))
-
-    cpdef int count_orders_working(self, StrategyId strategy_id=None):
-        """
-        Return the count of working orders held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        return len(self.get_order_working_ids(strategy_id))
-
-    cpdef int count_orders_completed(self, StrategyId strategy_id=None):
-        """
-        Return the count of completed orders held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        return len(self.get_order_completed_ids(strategy_id))
-
-    cpdef int count_positions_total(self, StrategyId strategy_id=None):
+    cpdef int positions_total_count(self, StrategyId strategy_id=None):
         """
         Return the count of positions held by the execution database.
 
@@ -975,7 +975,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         return len(self.get_position_ids(strategy_id))
 
-    cpdef int count_positions_open(self, StrategyId strategy_id=None):
+    cpdef int positions_open_count(self, StrategyId strategy_id=None):
         """
         Return the count of open positions held by the execution database.
 
@@ -984,7 +984,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         return len(self.get_position_open_ids(strategy_id))
 
-    cpdef int count_positions_closed(self, StrategyId strategy_id=None):
+    cpdef int positions_closed_count(self, StrategyId strategy_id=None):
         """
         Return the count of closed positions held by the execution database.
 
