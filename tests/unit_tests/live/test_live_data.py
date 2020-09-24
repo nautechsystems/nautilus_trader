@@ -355,7 +355,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(bar_type, response[0])
         self.assertEqual(bars, response[1])
 
-    def test_can_request_instrument_data(self):
+    def test_request_instrument_data(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -384,7 +384,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(instruments, response)
 
-    def test_can_request_instruments_data(self):
+    def test_request_instruments_data(self):
         # Arrange
         data_receiver = ObjectStorer()
 

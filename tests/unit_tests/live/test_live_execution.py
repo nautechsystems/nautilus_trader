@@ -154,7 +154,7 @@ class LiveExecutionTests(unittest.TestCase):
         command = self.command_serializer.deserialize(message)
         self.command_server_sink.append(command)
 
-    def test_can_send_submit_order_command(self):
+    def test_send_submit_order_command(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -171,7 +171,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
 
-    def test_can_send_submit_bracket_order(self):
+    def test_send_submit_bracket_order(self):
         # Arrange
         entry_order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -193,7 +193,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
 
-    def test_can_send_cancel_order_command(self):
+    def test_send_cancel_order_command(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -212,7 +212,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
         self.assertEqual(CancelOrder, type(self.command_server_sink[1]))
 
-    def test_can_send_modify_order_command(self):
+    def test_send_modify_order_command(self):
         # Arrange
         order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
@@ -232,7 +232,7 @@ class LiveExecutionTests(unittest.TestCase):
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
         self.assertEqual(ModifyOrder, type(self.command_server_sink[1]))
 
-    def test_can_send_account_inquiry_command(self):
+    def test_send_account_inquiry_command(self):
         # Arrange
         # Act
         self.strategy.account_inquiry()

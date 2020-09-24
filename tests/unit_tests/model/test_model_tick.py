@@ -70,7 +70,7 @@ class TickTests(unittest.TestCase):
         self.assertEqual(Quantity(1300000), result2)
         self.assertEqual(Quantity(500000), result3)
 
-    def test_can_parse_quote_tick_from_string(self):
+    def test_parse_quote_tick_from_string(self):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,
@@ -86,7 +86,7 @@ class TickTests(unittest.TestCase):
         # Assert
         self.assertEqual(tick, result)
 
-    def test_can_parse_trade_tick_from_string(self):
+    def test_parse_trade_tick_from_string(self):
         # Arrange
         tick = TradeTick(
             AUDUSD_FXCM,

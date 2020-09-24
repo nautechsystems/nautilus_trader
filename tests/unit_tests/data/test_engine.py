@@ -63,7 +63,7 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.009025266685348969, result)
 
-    def test_can_get_exchange_rate_with_no_conversion(self):
+    def test_get_exchange_rate_with_no_conversion(self):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,

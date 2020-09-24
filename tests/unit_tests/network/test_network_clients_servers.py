@@ -46,7 +46,7 @@ TEST_SEND_PORT = 55658
 
 class NetworkIdentifiersTests(unittest.TestCase):
 
-    def test_can_generate_new_session_id(self):
+    def test_generate_new_session_id(self):
         # Arrange
         client_id = ClientId("Trader-001")
 
@@ -116,7 +116,7 @@ class MessageClientTests(unittest.TestCase):
         command = self.command_serializer.deserialize(message)
         self.server_sink.append(command)
 
-    def test_can_connect_to_server_and_receive_response(self):
+    def test_connect_to_server_and_receive_response(self):
         # Arrange
         # Act
         self.client.connect()
@@ -126,7 +126,7 @@ class MessageClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.client.is_connected())
 
-    def test_can_send_one_string_message(self):
+    def test_send_one_string_message(self):
         # Arrange
         self.client.connect()
 
@@ -145,7 +145,7 @@ class MessageClientTests(unittest.TestCase):
         self.assertEqual("hello", self.server_sink[0])
         self.assertEqual("OK", self.client_sink[0])
 
-    def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
+    def test_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
         self.client.connect()
 
@@ -213,7 +213,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         # errors caused by the continuous disposal of sockets. Thus for testing
         # we're avoiding calling .dispose() on the sockets.
 
-    def test_can_subscribe_to_topic_with_no_registered_handler(self):
+    def test_subscribe_to_topic_with_no_registered_handler(self):
         # Arrange
         self.subscriber.connect()
         self.subscriber.subscribe("test_topic")
@@ -227,7 +227,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.assertEqual(1, self.publisher.sent_count)
         self.assertEqual(1, self.subscriber.recv_count)
 
-    def test_can_subscribe_to_topic_and_receive_one_published_message(self):
+    def test_subscribe_to_topic_and_receive_one_published_message(self):
         # Arrange
         self.subscriber.register_handler(self.response_handler.store_2)
         self.subscriber.connect()
@@ -243,7 +243,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         self.assertEqual(1, self.subscriber.recv_count)
         self.assertEqual(("test_topic", b"hello subscribers"), self.response_handler.get_store()[0])
 
-    def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
+    def test_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange
         self.subscriber.register_handler(self.response_handler.store_2)
         self.subscriber.connect()

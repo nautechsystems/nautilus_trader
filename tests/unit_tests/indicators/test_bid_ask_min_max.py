@@ -28,7 +28,7 @@ from nautilus_trader.model.tick import QuoteTick
 class BidAskMinMaxTests(unittest.TestCase):
     symbol = Symbol('SPY', Venue('TD Ameritrade'))
 
-    def test_can_instantiate(self):
+    def test_instantiate(self):
         # Arrange
         indicator = BidAskMinMax(self.symbol, timedelta(minutes=5))
 
@@ -75,7 +75,7 @@ class BidAskMinMaxTests(unittest.TestCase):
 
 
 class WindowedMinMaxPricesTests(unittest.TestCase):
-    def test_can_instantiate(self):
+    def test_instantiate(self):
         # Arrange
         instance = WindowedMinMaxPrices(timedelta(minutes=5))
 
@@ -84,7 +84,7 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         self.assertEqual(None, instance.min_price)
         self.assertEqual(None, instance.max_price)
 
-    def test_can_add_price(self):
+    def test_add_price(self):
         # Arrange
         instance = WindowedMinMaxPrices(timedelta(minutes=5))
 
@@ -97,7 +97,7 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         self.assertEqual(Price(1.0, 0), instance.min_price)
         self.assertEqual(Price(1.0, 0), instance.max_price)
 
-    def test_can_add_multiple_prices(self):
+    def test_add_multiple_prices(self):
         # Arrange
         instance = WindowedMinMaxPrices(timedelta(minutes=5))
 
@@ -116,7 +116,7 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         self.assertEqual(Price(0.9, 0), instance.min_price)
         self.assertEqual(Price(1.0, 0), instance.max_price)
 
-    def test_can_expire_items(self):
+    def test_expire_items(self):
         # Arrange
         instance = WindowedMinMaxPrices(timedelta(minutes=5))
 
