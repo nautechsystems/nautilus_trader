@@ -38,7 +38,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.network.compression import BypassCompressor
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ServerId
-from nautilus_trader.node.servers import MessageServer
+from nautilus_trader.network.node_servers import MessageServer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer

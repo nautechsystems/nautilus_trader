@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.logging cimport TestLogger
-from nautilus_trader.backtest.simulated_broker cimport SimulatedBroker
+from nautilus_trader.backtest.simulated_market cimport SimulatedMarket
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport AccountInquiry
@@ -29,13 +29,13 @@ cdef class BacktestExecClient(ExecutionClient):
     Provides an execution client for the BacktestEngine.
     """
 
-    def __init__(self, SimulatedBroker broker not None, TestLogger logger not None):
+    def __init__(self, SimulatedMarket broker not None, TestLogger logger not None):
         """
         Initialize a new instance of the BacktestExecClient class.
 
         Parameters
         ----------
-        broker : SimulatedBroker
+        broker : SimulatedMarket
             The simulated brokerage for the backtest.
         logger : TestLogger
             The logger for the component.
