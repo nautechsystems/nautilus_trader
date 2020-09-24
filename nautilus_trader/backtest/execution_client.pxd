@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.simulated_broker cimport SimulatedBroker
-from nautilus_trader.common.execution_client cimport ExecutionClient
+from nautilus_trader.execution.client cimport ExecutionClient
 
 
 cdef class BacktestExecClient(ExecutionClient):

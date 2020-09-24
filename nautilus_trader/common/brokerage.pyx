@@ -45,11 +45,17 @@ cdef class CommissionCalculator:
         """
         Initialize a new instance of the CommissionCalculator class.
 
-        Note: Commission rates are expressed as basis points of notional transaction value.
+        Commission rates are expressed as basis points of notional transaction value.
 
-        :param rates: The dictionary of commission rates Dict[Symbol, double].
-        :param default_rate_bp: The default rate if not found in dictionary.
-        :param minimum: The minimum commission charge per transaction.
+        Parameters
+        ----------
+        rates : Dict[Symbol, double]
+            The dictionary of commission rates Dict[Symbol, double].
+        default_rate_bp : double
+            The default rate if not found in dictionary.
+        minimum : Money
+            The minimum commission charge per transaction.
+
         """
         if rates is None:
             rates = {}
@@ -72,12 +78,23 @@ cdef class CommissionCalculator:
         """
         Return the calculated commission for the given arguments.
 
-        :param symbol: The symbol for calculation.
-        :param filled_quantity: The filled quantity.
-        :param filled_price: The filled price.
-        :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
-        :param currency: The currency for the calculation.
-        :return Money.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for calculation.
+        filled_quantity : Quantity
+            The filled quantity.
+        filled_price : Price
+            The filled price.
+        exchange_rate : double
+            The exchange rate (symbol quote currency to account base currency).
+        currency : Currency
+            The currency for the calculation.
+
+        Returns
+        -------
+        Money
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(filled_quantity, "filled_quantity")
@@ -93,9 +110,17 @@ cdef class CommissionCalculator:
         """
         Return the calculated commission for the given arguments.
 
-        :param symbol: The symbol for calculation.
-        :param notional_value: The notional value for the transaction.
-        :return Money.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for calculation.
+        notional_value : Money
+            The notional value for the transaction.
+
+        Returns
+        -------
+        Money
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(notional_value, "notional_value")
@@ -122,10 +147,14 @@ cdef class RolloverInterestCalculator:
         """
         Initialize a new instance of the RolloverInterestCalculator class.
 
-        :param short_term_interest_csv_path: The path to the short term interest rate data csv.
+        Parameters
+        ----------
+        short_term_interest_csv_path : str
+            The path to the short term interest rate data csv.
+
         """
         if short_term_interest_csv_path == "default":
-            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + "/_data/rates/", "short-term-interest.csv")
+            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + "/_internal/rates/", "short-term-interest.csv")
         self._exchange_calculator = ExchangeRateCalculator()
 
         csv_rate_data = pd.read_csv(short_term_interest_csv_path)
@@ -150,19 +179,34 @@ cdef class RolloverInterestCalculator:
         """
         Return the short-term interest rate dataframe.
 
-        :return: pd.DataFrame.
+        Returns
+        -------
+        pd.DataFrame
+
         """
         return self._rate_data
 
     cpdef double calc_overnight_rate(self, Symbol symbol, date date) except *:
         """
         Return the rollover interest rate between the given base currency and quote currency.
-        Note: 1% = 0.01
+        Note: 1% = 0.01 bp
 
-        :param symbol: The forex currency symbol for the calculation.
-        :param date: The date for the overnight rate.
-        :return: double.
-        :raises ValueError: If symbol.code length is not in range [6, 7].
+        Parameters
+        ----------
+        symbol : Symbol
+            The forex currency symbol for the calculation.
+        date : date
+            The date for the overnight rate.
+
+        Returns
+        -------
+        double
+
+        Raises
+        ------
+        ValueError
+            If symbol.code length is not in range [6, 7].
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(date, "timestamp")

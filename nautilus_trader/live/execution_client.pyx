@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.execution_client cimport ExecutionClient
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
@@ -29,8 +29,8 @@ from nautilus_trader.model.events cimport Event
 from nautilus_trader.network.compression cimport Compressor
 from nautilus_trader.network.encryption cimport EncryptionSettings
 from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.network.node_clients cimport MessageClient
-from nautilus_trader.network.node_clients cimport MessageSubscriber
+from nautilus_trader.node.clients cimport MessageClient
+from nautilus_trader.node.clients cimport MessageSubscriber
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport RequestSerializer
@@ -44,7 +44,7 @@ cdef str _EVENT = 'Event'
 cdef class LiveExecClient(ExecutionClient):
     """
     Provides an execution client for live trading utilizing a ZMQ transport
-    to the execution service.
+    to an execution service.
     """
 
     def __init__(

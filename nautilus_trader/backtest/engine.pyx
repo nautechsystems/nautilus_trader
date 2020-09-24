@@ -28,8 +28,6 @@ from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.simulated_broker cimport SimulatedBroker
 from nautilus_trader.backtest.uuid cimport TestUUIDFactory
-from nautilus_trader.common.execution_database cimport InMemoryExecutionDatabase
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
@@ -41,6 +39,8 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
+from nautilus_trader.execution.database cimport InMemoryExecutionDatabase
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.live.clock cimport LiveClock
 from nautilus_trader.live.execution_database cimport RedisExecutionDatabase
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
@@ -426,8 +426,8 @@ cdef class BacktestEngine:
             self.log.info(f"Execution resolution: {resolution}")
         self.log.info(f"Iterations: {self.iteration:,}")
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")
-        self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total():,}")
-        self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total():,}")
+        self.log.info(f"Total orders: {self.exec_engine.database.orders_total_count():,}")
+        self.log.info(f"Total positions: {self.exec_engine.database.positions_total_count():,}")
         if self.broker.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()

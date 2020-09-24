@@ -124,7 +124,7 @@ class ForexSessionFilterTests(unittest.TestCase):
 
 class EconomicNewsEventFilterTests(unittest.TestCase):
 
-    def test_can_initialize_filter(self):
+    def test_initialize_filter(self):
         # Arrange
         currencies = ["USD", "GBP"]
         impacts = ['HIGH', 'MEDIUM']

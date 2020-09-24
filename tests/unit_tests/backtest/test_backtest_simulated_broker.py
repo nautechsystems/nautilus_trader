@@ -25,11 +25,11 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
-from nautilus_trader.common.data_engine import DataEngine
-from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
-from nautilus_trader.common.execution_engine import ExecutionEngine
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.core.functions import basis_points_as_percentage
+from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
@@ -64,13 +64,13 @@ class SimulatedBrokerTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger(self.clock)
 
-        self.data_client = DataEngine(
+        self.data_engine = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
-            use_previous_close=False,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
+        self.data_engine.set_use_previous_close(False)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -134,7 +134,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -160,7 +160,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -187,7 +187,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -218,7 +218,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -251,7 +251,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -280,7 +280,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -352,7 +352,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -377,7 +377,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -403,7 +403,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -450,7 +450,7 @@ class SimulatedBrokerTests(unittest.TestCase):
             self.clock,
             self.uuid_factory,
             self.logger)
-        self.data_client.register_strategy(strategy)
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 

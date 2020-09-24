@@ -26,7 +26,7 @@ class TestLoggerTests(unittest.TestCase):
     def setUp(self):
         print("\n")
 
-    def test_can_log_verbose_messages_to_console(self):
+    def test_log_verbose_messages_to_console(self):
         # Arrange
         logger = TestLogger(clock=TestClock(), level_console=LogLevel.VERBOSE)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
@@ -37,7 +37,7 @@ class TestLoggerTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # Does not raise errors.
 
-    def test_can_log_debug_messages_to_console(self):
+    def test_log_debug_messages_to_console(self):
         # Arrange
         logger = TestLogger(clock=TestClock(), level_console=LogLevel.DEBUG)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)

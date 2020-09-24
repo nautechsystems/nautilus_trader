@@ -103,7 +103,7 @@ class OrderTests(unittest.TestCase):
             time_in_force=TimeInForce.GTD,
             expire_time=None)
 
-    def test_can_reset_order_factory(self):
+    def test_reset_order_factory(self):
         # Arrange
         self.order_factory.limit(
             AUDUSD_FXCM,
@@ -155,7 +155,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price(1.00000, 5), order3.price)
         self.assertEqual(Price(1.00001, 5), order4.price)
 
-    def test_can_initialize_buy_market_order(self):
+    def test_initialize_buy_market_order(self):
         # Arrange
         # Act
         order = self.order_factory.market(
@@ -175,7 +175,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, order.filled_timestamp)
         self.assertEqual(UNIX_EPOCH, order.last_event().timestamp)
 
-    def test_can_initialize_sell_market_order(self):
+    def test_initialize_sell_market_order(self):
         # Arrange
         # Act
         order = self.order_factory.market(
@@ -206,7 +206,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
         self.assertTrue(repr(order).startswith("<MarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at"))  # noqa
 
-    def test_can_initialize_limit_order(self):
+    def test_initialize_limit_order(self):
         # Arrange
         # Act
         order = self.order_factory.limit(
@@ -221,7 +221,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed())
 
-    def test_can_initialize_limit_order_with_expire_time(self):
+    def test_initialize_limit_order_with_expire_time(self):
         # Arrange
         # Act
         order = self.order_factory.limit(
@@ -241,7 +241,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, order.expire_time)
         self.assertFalse(order.is_completed())
 
-    def test_can_initialize_stop_order(self):
+    def test_initialize_stop_order(self):
         # Arrange
         # Act
         order = self.order_factory.stop(
@@ -256,7 +256,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed())
 
-    def test_can_initialize_bracket_order_market_with_no_take_profit(self):
+    def test_initialize_bracket_order_market_with_no_take_profit(self):
         # Arrange
         entry_order = self.order_factory.market(
             AUDUSD_FXCM,

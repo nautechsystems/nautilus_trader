@@ -23,9 +23,9 @@ import pymongo
 import redis
 import zmq
 
-from nautilus_trader.common.execution_database cimport ExecutionDatabase
-from nautilus_trader.common.execution_database cimport InMemoryExecutionDatabase
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.execution.database cimport InMemoryExecutionDatabase
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.identifiers cimport AccountId
@@ -257,7 +257,8 @@ cdef class TradingNode:
             exec_engine=self._exec_engine,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
-            logger=self._logger)
+            logger=self._logger,
+        )
 
         Condition.equal(self.trader_id, self.trader.id, "trader_id", "trader.id")
 

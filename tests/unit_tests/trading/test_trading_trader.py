@@ -25,9 +25,9 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.simulated_broker import SimulatedBroker
 from nautilus_trader.backtest.uuid import TestUUIDFactory
-from nautilus_trader.common.execution_database import InMemoryExecutionDatabase
-from nautilus_trader.common.execution_engine import ExecutionEngine
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import PriceType
@@ -112,7 +112,7 @@ class TraderTests(unittest.TestCase):
             uuid_factory=uuid_factory,
             logger=logger)
 
-    def test_can_initialize_trader(self):
+    def test_initialize_trader(self):
         # Arrange
         # Act
         trader_id = self.trader.id
@@ -123,7 +123,7 @@ class TraderTests(unittest.TestCase):
         self.assertEqual(ComponentState.INITIALIZED, self.trader.state())
         self.assertEqual(2, len(self.trader.strategy_states()))
 
-    def test_can_get_strategy_status(self):
+    def test_get_strategy_status(self):
         # Arrange
         # Act
         status = self.trader.strategy_states()
@@ -135,7 +135,7 @@ class TraderTests(unittest.TestCase):
         self.assertEqual('INITIALIZED', status[StrategyId("EmptyStrategy", "002")])
         self.assertEqual(2, len(status))
 
-    def test_can_change_strategies(self):
+    def test_change_strategies(self):
         # Arrange
         strategies = [EmptyStrategy("003"),
                       EmptyStrategy("004")]
@@ -156,7 +156,7 @@ class TraderTests(unittest.TestCase):
         # Act
         self.assertRaises(ValueError, self.trader.initialize_strategies, strategies)
 
-    def test_can_start_a_trader(self):
+    def test_start_a_trader(self):
         # Arrange
         # Act
         self.trader.start()
@@ -168,7 +168,7 @@ class TraderTests(unittest.TestCase):
         self.assertEqual('RUNNING', strategy_states[StrategyId("EmptyStrategy", "001")])
         self.assertEqual('RUNNING', strategy_states[StrategyId("EmptyStrategy", "002")])
 
-    def test_can_stop_a_running_trader(self):
+    def test_stop_a_running_trader(self):
         # Arrange
         self.trader.start()
 

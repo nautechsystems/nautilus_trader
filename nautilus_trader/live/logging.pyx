@@ -39,7 +39,7 @@ cdef class LogStore:
         """
         Initialize a new instance of the LogStore class.
 
-        :param trader_id: The trader_id.
+        :param trader_id: The trader identifier.
         :raises ValueError: If the redis_host is not a valid string.
         :raises ValueError: If the redis_port is not in range [0, 65535].
         """
@@ -107,7 +107,8 @@ cdef class LiveLogger(Logger):
             console_prints,
             log_thread,
             log_to_file,
-            log_file_path)
+            log_file_path,
+        )
 
         self._store = store
         self._queue = queue.Queue()

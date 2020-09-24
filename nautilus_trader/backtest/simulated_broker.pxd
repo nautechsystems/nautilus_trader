@@ -22,7 +22,7 @@ from nautilus_trader.common.brokerage cimport RolloverInterestCalculator
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -104,7 +104,8 @@ cdef class SimulatedBroker:
     cpdef void handle_modify_order(self, ModifyOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
-    # -- EVENT HANDLING --------------------------------------------------------------------------------
+# -- EVENT HANDLING --------------------------------------------------------------------------------
+
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)

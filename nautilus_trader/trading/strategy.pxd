@@ -15,8 +15,8 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.data_engine cimport DataEngine
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
+from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -82,7 +82,8 @@ cdef class TradingStrategy:
     cpdef bint equals(self, TradingStrategy other)
     cpdef ComponentState state(self)
 
-# -- ABSTRACT METHODS -----------------------------------------------------------------------------#
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
     cpdef void on_start(self) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
@@ -96,7 +97,8 @@ cdef class TradingStrategy:
     cpdef void on_load(self, dict state) except *
     cpdef void on_dispose(self) except *
 
-# -- REGISTRATION METHODS -------------------------------------------------------------------------#
+# -- REGISTRATION METHODS --------------------------------------------------------------------------
+
     cpdef void register_trader(
         self,
         TraderId trader_id,
@@ -112,7 +114,8 @@ cdef class TradingStrategy:
     cpdef void register_stop_loss(self, PassiveOrder order)
     cpdef void register_take_profit(self, PassiveOrder order)
 
-# -- HANDLER METHODS ------------------------------------------------------------------------------#
+# -- HANDLER METHODS -------------------------------------------------------------------------------
+
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
     cpdef void handle_quote_ticks(self, list ticks) except *
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
@@ -122,13 +125,12 @@ cdef class TradingStrategy:
     cpdef void handle_data(self, object data) except *
     cpdef void handle_event(self, Event event) except *
 
-# -- DATA METHODS ---------------------------------------------------------------------------------#
-    cpdef list instrument_symbols(self)
-    cpdef void get_quote_ticks(self, Symbol symbol) except *
-    cpdef void get_trade_ticks(self, Symbol symbol) except *
-    cpdef void get_bars(self, BarType bar_type) except *
-    cpdef Instrument get_instrument(self, Symbol symbol)
-    cpdef dict get_instruments(self)
+# -- DATA METHODS ----------------------------------------------------------------------------------
+
+    cpdef void request_quote_ticks(self, Symbol symbol) except *
+    cpdef void request_trade_ticks(self, Symbol symbol) except *
+    cpdef void request_bars(self, BarType bar_type) except *
+
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
@@ -137,24 +139,30 @@ cdef class TradingStrategy:
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
-    cpdef bint has_quote_ticks(self, Symbol symbol)
-    cpdef bint has_trade_ticks(self, Symbol symbol)
-    cpdef bint has_bars(self, BarType bar_type)
-    cpdef int quote_tick_count(self, Symbol symbol)
-    cpdef int trade_tick_count(self, Symbol symbol)
-    cpdef int bar_count(self, BarType bar_type)
+
+    cpdef list symbols(self)
+    cpdef list instruments(self)
     cpdef list quote_ticks(self, Symbol symbol)
     cpdef list trade_ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
+    cpdef Instrument instrument(self, Symbol symbol)
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
+    cpdef int quote_tick_count(self, Symbol symbol)
+    cpdef int trade_tick_count(self, Symbol symbol)
+    cpdef int bar_count(self, BarType bar_type)
+    cpdef bint has_quote_ticks(self, Symbol symbol)
+    cpdef bint has_trade_ticks(self, Symbol symbol)
+    cpdef bint has_bars(self, BarType bar_type)
 
-# -- INDICATOR METHODS ----------------------------------------------------------------------------#
+# -- INDICATOR METHODS -----------------------------------------------------------------------------
+
     cpdef readonly list registered_indicators(self)
     cpdef readonly bint indicators_initialized(self)
 
-# -- MANAGEMENT METHODS ---------------------------------------------------------------------------#
+# -- MANAGEMENT METHODS ----------------------------------------------------------------------------
+
     cpdef Account account(self)
     cpdef Portfolio portfolio(self)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
@@ -173,15 +181,21 @@ cdef class TradingStrategy:
     cpdef Order order(self, ClientOrderId cl_ord_id)
     cpdef dict orders(self)
     cpdef dict orders_working(self)
+    cpdef dict orders_completed(self)
+    cpdef int orders_working_count(self)
+    cpdef int orders_completed_count(self)
+    cpdef int orders_total_count(self)
     cpdef set stop_loss_ids(self)
     cpdef set take_profit_ids(self)
-    cpdef dict orders_completed(self)
     cpdef Position position(self, ClientPositionId cl_pos_id)
     cpdef Position position_for_order(self, ClientOrderId cl_ord_id)
     cpdef dict positions(self)
     cpdef dict positions_open(self)
     cpdef dict positions_closed(self)
     cpdef bint position_exists(self, ClientPositionId cl_pos_id)
+    cpdef int positions_open_count(self)
+    cpdef int positions_closed_count(self)
+    cpdef int positions_total_count(self)
     cpdef bint order_exists(self, ClientOrderId cl_ord_id)
     cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id)
     cpdef bint is_take_profit(self, ClientOrderId cl_ord_id)
@@ -190,14 +204,9 @@ cdef class TradingStrategy:
     cpdef bint is_position_open(self, ClientPositionId cl_pos_id)
     cpdef bint is_position_closed(self, ClientPositionId cl_pos_id)
     cpdef bint is_flat(self)
-    cpdef int count_orders_working(self)
-    cpdef int count_orders_completed(self)
-    cpdef int count_orders_total(self)
-    cpdef int count_positions_open(self)
-    cpdef int count_positions_closed(self)
-    cpdef int count_positions_total(self)
 
-# -- COMMANDS -------------------------------------------------------------------------------------#
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void start(self) except *
     cpdef void stop(self) except *
     cpdef void resume(self) except *

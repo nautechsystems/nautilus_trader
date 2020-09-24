@@ -29,7 +29,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Fixture Setup
         self.sizer = FixedRiskSizer(TestStubs.instrument_gbpusd())
 
-    def test_can_calculate_single_unit_size(self):
+    def test_calculate_single_unit_size(self):
         # Arrange
         equity = Money(1000000, Currency.USD)
 
@@ -45,7 +45,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(1000000), result)
 
-    def test_can_calculate_single_unit_with_exchange_rate(self):
+    def test_calculate_single_unit_with_exchange_rate(self):
         # Arrange
         equity = Money(1000000, Currency.USD)
 
@@ -60,7 +60,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(10000000), result)
 
-    def test_can_calculate_single_unit_size_when_risk_too_high(self):
+    def test_calculate_single_unit_size_when_risk_too_high(self):
         # Arrange
         equity = Money(100000, Currency.USD)
 
@@ -75,7 +75,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(), result)
 
-    def test_can_impose_hard_limit(self):
+    def test_impose_hard_limit(self):
         # Arrange
         equity = Money(1000000, Currency.USD)
 
@@ -92,7 +92,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(500000), result)
 
-    def test_can_calculate_multiple_unit_size(self):
+    def test_calculate_multiple_unit_size(self):
         # Arrange
         equity = Money(1000000, Currency.USD)
 
@@ -108,7 +108,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(3333000), result)
 
-    def test_can_calculate_multiple_unit_size_larger_batches(self):
+    def test_calculate_multiple_unit_size_larger_batches(self):
         # Arrange
         equity = Money(1000000, Currency.USD)
 
@@ -124,7 +124,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(275000), result)
 
-    def test_can_calculate_for_usdjpy(self):
+    def test_calculate_for_usdjpy(self):
         # Arrange
         sizer = FixedRiskSizer(TestStubs.instrument_usdjpy())
         equity = Money(1000000, Currency.USD)

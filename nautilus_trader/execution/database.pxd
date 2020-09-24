@@ -79,20 +79,19 @@ cdef class ExecutionDatabase:
     cpdef bint order_exists(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
+    cpdef int orders_total_count(self, StrategyId strategy_id=*)
+    cpdef int orders_working_count(self, StrategyId strategy_id=*)
+    cpdef int orders_completed_count(self, StrategyId strategy_id=*)
     cpdef bint position_exists(self, ClientPositionId cl_pos_id)
     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id)
     cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id)
     cpdef bint is_position_open(self, ClientPositionId cl_pos_id)
     cpdef bint is_position_closed(self, ClientPositionId cl_pos_id)
-    cpdef int count_orders_total(self, StrategyId strategy_id=*)
-    cpdef int count_orders_working(self, StrategyId strategy_id=*)
-    cpdef int count_orders_completed(self, StrategyId strategy_id=*)
-    cpdef int count_positions_total(self, StrategyId strategy_id=*)
-    cpdef int count_positions_open(self, StrategyId strategy_id=*)
-    cpdef int count_positions_closed(self, StrategyId strategy_id=*)
+    cpdef int positions_total_count(self, StrategyId strategy_id=*)
+    cpdef int positions_open_count(self, StrategyId strategy_id=*)
+    cpdef int positions_closed_count(self, StrategyId strategy_id=*)
 
 # -------------------------------------------------------------------------------------------------"
-
 
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     cdef set _strategies

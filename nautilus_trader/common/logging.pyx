@@ -58,11 +58,13 @@ cdef class LogMessage:
     """
     Represents a log message including timestamp and log level.
     """
-    def __init__(self,
-                 datetime timestamp not None,
-                 LogLevel level,
-                 str text not None,
-                 long thread_id=0):
+    def __init__(
+            self,
+            datetime timestamp not None,
+            LogLevel level,
+            str text not None,
+            long thread_id=0,
+    ):
         """
         Initialize a new instance of the LogMessage class.
 
@@ -98,17 +100,19 @@ cdef class Logger:
     The base class for all Loggers.
     """
 
-    def __init__(self,
-                 Clock clock not None,
-                 str name=None,
-                 bint bypass_logging=False,
-                 LogLevel level_console=LogLevel.INFO,
-                 LogLevel level_file=LogLevel.DEBUG,
-                 LogLevel level_store=LogLevel.WARNING,
-                 bint console_prints=True,
-                 bint log_thread=False,
-                 bint log_to_file=False,
-                 str log_file_path not None="log/"):
+    def __init__(
+            self,
+            Clock clock not None,
+            str name=None,
+            bint bypass_logging=False,
+            LogLevel level_console=LogLevel.INFO,
+            LogLevel level_file=LogLevel.DEBUG,
+            LogLevel level_store=LogLevel.WARNING,
+            bint console_prints=True,
+            bint log_thread=False,
+            bint log_to_file=False,
+            str log_file_path not None="log/",
+    ):
         """
         Initialize a new instance of the Logger class.
 
@@ -230,9 +234,11 @@ cdef class LoggerAdapter:
     Provides an adapter for a components logger.
     """
 
-    def __init__(self,
-                 str component_name not None,
-                 Logger logger not None):
+    def __init__(
+            self,
+            str component_name not None,
+            Logger logger not None,
+    ):
         """
         Initialize a new instance of the LoggerAdapter class.
 
@@ -248,7 +254,7 @@ cdef class LoggerAdapter:
 
     cpdef Logger get_logger(self):
         """
-        System method. Return the encapsulated logger
+        Return the encapsulated logger
 
         :return logging.logger.
         """

@@ -15,8 +15,8 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.execution_client cimport ExecutionClient
-from nautilus_trader.common.execution_database cimport ExecutionDatabase
+from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -55,7 +55,8 @@ cdef class ExecutionEngine:
     cdef readonly int command_count
     cdef readonly int event_count
 
-    # -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void register_client(self, ExecutionClient exec_client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
@@ -64,12 +65,14 @@ cdef class ExecutionEngine:
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
-    # -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
+
     cpdef list registered_strategies(self)
     cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)
 
-    # --------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------#
+
     cdef void _execute_command(self, Command command) except *
     cdef void _invalidate_order(self, Order order, str reason) except *
     cdef void _deny_order(self, Order order, str reason) except *
