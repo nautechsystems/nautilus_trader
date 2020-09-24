@@ -92,7 +92,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertEqual("Trader-TESTER-000:Index:Positions:Open", self.database.key_index_positions_open)
         self.assertEqual("Trader-TESTER-000:Index:Positions:Closed", self.database.key_index_positions_closed)
 
-    def test_can_add_account(self):
+    def test_add_account(self):
         # Arrange
         event = TestStubs.account_event()
         account = Account(event)
@@ -103,7 +103,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(account, self.database.get_account(account.id))
 
-    def test_can_add_order(self):
+    def test_add_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -118,7 +118,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.cl_ord_id in self.database.get_order_ids())
         self.assertEqual(order, self.database.get_orders()[order.cl_ord_id])
 
-    def test_can_add_position(self):
+    def test_add_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -143,7 +143,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.cl_pos_id not in self.database.get_positions_closed(self.strategy.id))
         self.assertTrue(position.cl_pos_id not in self.database.get_positions_closed())
 
-    def test_can_update_account(self):
+    def test_update_account(self):
         # Arrange
         event = TestStubs.account_event()
         account = Account(event)
@@ -155,7 +155,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(account, self.database.get_account(account.id))
 
-    def test_can_update_order_for_working_order(self):
+    def test_update_order_for_working_order(self):
         # Arrange
         order = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
@@ -185,7 +185,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.cl_ord_id not in self.database.get_orders_completed(self.strategy.id))
         self.assertTrue(order.cl_ord_id not in self.database.get_orders_completed())
 
-    def test_can_update_order_for_completed_order(self):
+    def test_update_order_for_completed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -214,7 +214,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.cl_ord_id not in self.database.get_orders_working(self.strategy.id))
         self.assertTrue(order.cl_ord_id not in self.database.get_orders_working())
 
-    def test_can_update_position_for_closed_position(self):
+    def test_update_position_for_closed_position(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -347,7 +347,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(position, result)
 
-    def test_can_load_accounts_cache_when_no_accounts(self):
+    def test_load_accounts_cache_when_no_accounts(self):
         # Arrange
         # Act
         self.database.load_accounts_cache()
@@ -357,7 +357,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertIsNone(self.database.get_account(account.id))
 
-    def test_can_load_accounts_cache_when_one_account_in_database(self):
+    def test_load_accounts_cache_when_one_account_in_database(self):
         # Arrange
         event = TestStubs.account_event()
         account = Account(event)
@@ -370,7 +370,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(account, self.database.get_account(account.id))
 
-    def test_can_load_orders_cache_when_no_orders(self):
+    def test_load_orders_cache_when_no_orders(self):
         # Arrange
         # Act
         self.database.load_orders_cache()
@@ -378,7 +378,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, self.database.get_orders())
 
-    def test_can_load_orders_cache_when_one_order_in_database(self):
+    def test_load_orders_cache_when_one_order_in_database(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -394,7 +394,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({order.cl_ord_id: order}, self.database.get_orders())
 
-    def test_can_load_positions_cache_when_no_positions(self):
+    def test_load_positions_cache_when_no_positions(self):
         # Arrange
         # Act
         self.database.load_positions_cache()
@@ -402,7 +402,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, self.database.get_positions())
 
-    def test_can_load_positions_cache_when_one_position_in_database(self):
+    def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
         order1 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,

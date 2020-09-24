@@ -25,7 +25,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.common.data_engine cimport DataEngine
+from nautilus_trader.data.engine cimport DataEngine
 
 
 cdef class DataClient:
@@ -36,7 +36,7 @@ cdef class DataClient:
 
     cdef readonly Venue venue
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
@@ -77,7 +77,7 @@ cdef class DataClient:
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
 
-# -- HANDLER METHODS ----------------------------------------------------------------------------- #
+# -- HANDLER METHODS -------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_quote_ticks(self, list ticks) except *

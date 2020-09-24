@@ -1026,7 +1026,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
     # TODO: Breaking changes to C# side (LiquiditySide)
-    # def test_can_deserialize_order_partially_filled_events_from_csharp(self):
+    # def test_deserialize_order_partially_filled_events_from_csharp(self):
     #     # Arrange
     #     # Base64 bytes string from C# MsgPack.Cli
     #     base64 = "jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQwOTk3Nzk1Ny0zMzE" \
@@ -1060,7 +1060,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
     # TODO: Breaking changes to C# side (LiquiditySide)
-    # def test_can_deserialize_order_filled_events_from_csharp(self):
+    # def test_deserialize_order_filled_events_from_csharp(self):
     #     # Arrange
     #     # Base64 bytes string from C# MsgPack.Cli
     #     base64 = "jaRUeXBlq09yZGVyRmlsbGVkoklk2SRjYTg4NWZhZi1hNjE3LTQ3ZjUtYTU" \
@@ -1141,7 +1141,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         print("instrument")
         print(b64encode(serialized))
 
-    def test_can_deserialize_from_csharp(self):
+    def test_deserialize_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
         base64 = "vgEAAAJTeW1ib2wADAAAAEFVRFVTRC5GWENNAAJCcm9rZXJTeW1ib2wACAA" \
@@ -1171,7 +1171,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackRequestSerializer()
 
-    def test_can_serialize_and_deserialize_connect_requests(self):
+    def test_serialize_and_deserialize_connect_requests(self):
         # Arrange
         client_id = ClientId("Trader-001")
         timestamp = UNIX_EPOCH
@@ -1192,7 +1192,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         self.assertEqual("Trader-001", deserialized.client_id.value)
         self.assertEqual("e5db3dad8222a27e5d2991d11ad65f0f74668a4cfb629e97aa6920a73a012f87", deserialized.authentication)
 
-    def test_can_serialize_and_deserialize_disconnect_requests(self):
+    def test_serialize_and_deserialize_disconnect_requests(self):
         # Arrange
         request = Disconnect(
             ClientId("Trader-001"),
@@ -1209,7 +1209,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         self.assertEqual("Trader-001", deserialized.client_id.value)
         self.assertEqual("Trader-001-1970-1-1-0", deserialized.session_id.value)
 
-    def test_can_serialize_and_deserialize_tick_data_requests(self):
+    def test_serialize_and_deserialize_tick_data_requests(self):
         # Arrange
         query = {
             "DataType": "Tick[]",
@@ -1232,7 +1232,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(deserialized, DataRequest))
         self.assertEqual("Tick[]", deserialized.query["DataType"])
 
-    def test_can_serialize_and_deserialize_bar_data_requests(self):
+    def test_serialize_and_deserialize_bar_data_requests(self):
         # Arrange
         query = {
             "DataType": "Bar[]",
@@ -1256,7 +1256,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(deserialized, DataRequest))
         self.assertEqual("Bar[]", deserialized.query["DataType"])
 
-    def test_can_serialize_and_deserialize_instrument_requests(self):
+    def test_serialize_and_deserialize_instrument_requests(self):
         # Arrange
         query = {
             "DataType": "Instrument",
@@ -1276,7 +1276,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(deserialized, DataRequest))
         self.assertEqual("Instrument", deserialized.query["DataType"])
 
-    def test_can_serialize_and_deserialize_instruments_requests(self):
+    def test_serialize_and_deserialize_instruments_requests(self):
         # Arrange
         query = {
             "DataType": "Instrument[]",
@@ -1303,7 +1303,7 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackResponseSerializer()
 
-    def test_can_serialize_and_deserialize_connected_responses(self):
+    def test_serialize_and_deserialize_connected_responses(self):
         # Arrange
         request = Connected(
             "Trader-001 connected to session",
@@ -1323,7 +1323,7 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         self.assertEqual("NautilusData.CommandServer", deserialized.server_id.value)
         self.assertEqual("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea", deserialized.session_id.value)
 
-    def test_can_serialize_and_deserialize_disconnected_responses(self):
+    def test_serialize_and_deserialize_disconnected_responses(self):
         # Arrange
         request = Disconnected(
             "Trader-001 disconnected from session",
@@ -1343,7 +1343,7 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         self.assertEqual("NautilusData.CommandServer", deserialized.server_id.value)
         self.assertEqual("3c95b0db407d8b28827d9f2a23cd54048956a35ab1441a54ebd43b2aedf282ea", deserialized.session_id.value)
 
-    def test_can_serialize_and_deserialize_data_responses(self):
+    def test_serialize_and_deserialize_data_responses(self):
         # Arrange
         data = b'\x01 \x00'
         data_type = "NothingUseful"
@@ -1376,7 +1376,7 @@ class MsgPackLogSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackLogSerializer()
 
-    def test_can_serialize_and_deserialize_log_messages(self):
+    def test_serialize_and_deserialize_log_messages(self):
         # Arrange
         message = LogMessage(
             timestamp=UNIX_EPOCH,

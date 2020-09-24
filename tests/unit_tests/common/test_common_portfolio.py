@@ -84,7 +84,7 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
         self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
 
-    def test_can_reset_portfolio(self):
+    def test_reset_portfolio(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,

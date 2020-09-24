@@ -16,10 +16,10 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.data_engine cimport DataEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
@@ -66,7 +66,7 @@ cdef class DataClient:
 
         self._log.info("Initialized.")
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void connect(self) except *:
         # Abstract method
@@ -157,7 +157,7 @@ cdef class DataClient:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- HANDLER METHODS ----------------------------------------------------------------------------- #
+# -- HANDLER METHODS -------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         self._engine.handle_quote_tick(tick)

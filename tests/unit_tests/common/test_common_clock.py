@@ -23,7 +23,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 class TimeEventTests(unittest.TestCase):
 
-    def test_can_hash_time_event(self):
+    def test_hash_time_event(self):
         # Arrange
         event = TimeEvent("123", uuid4(), UNIX_EPOCH)
 
@@ -33,7 +33,7 @@ class TimeEventTests(unittest.TestCase):
         # Assert
         self.assertEqual(int, type(result))  # No assertions raised
 
-    def test_can_sort_time_events(self):
+    def test_sort_time_events(self):
         # Arrange
         event1 = TimeEvent("123", uuid4(), UNIX_EPOCH)
         event2 = TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1))

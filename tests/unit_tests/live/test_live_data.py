@@ -34,8 +34,8 @@ from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ServerId
 from nautilus_trader.network.messages import DataRequest
 from nautilus_trader.network.messages import DataResponse
-from nautilus_trader.network.node_servers import MessagePublisher
-from nautilus_trader.network.node_servers import MessageServer
+from nautilus_trader.node.servers import MessagePublisher
+from nautilus_trader.node.servers import MessageServer
 from nautilus_trader.serialization.data import BsonDataSerializer
 from nautilus_trader.serialization.data import BsonInstrumentSerializer
 from nautilus_trader.serialization.data import DataMapper
@@ -83,7 +83,8 @@ class LiveDataClientTests(unittest.TestCase):
             encryption=self.encryption,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=LoggerAdapter('DataServer', self.logger))
+            logger=LoggerAdapter('DataServer', self.logger),
+        )
 
         self.data_server_sink = []
         self.data_server.register_request_handler(self.data_server_sink.append)
@@ -95,7 +96,8 @@ class LiveDataClientTests(unittest.TestCase):
             encryption=self.encryption,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=LoggerAdapter('DataPublisher', self.logger))
+            logger=LoggerAdapter('DataPublisher', self.logger),
+        )
 
         self.tick_publisher = MessagePublisher(
             server_id=ServerId('TickPublisher-001'),
@@ -104,7 +106,8 @@ class LiveDataClientTests(unittest.TestCase):
             encryption=self.encryption,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=LoggerAdapter('TickPublisher', self.logger))
+            logger=LoggerAdapter('TickPublisher', self.logger),
+        )
 
         self.data_server.start()
         self.data_publisher.start()
@@ -129,7 +132,9 @@ class LiveDataClientTests(unittest.TestCase):
             bar_capacity=1000,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
+        self.data_engine.set_use_previous_close(False)
 
         self.data_engine.connect()
         time.sleep(0.1)
@@ -350,7 +355,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(bar_type, response[0])
         self.assertEqual(bars, response[1])
 
-    def test_can_request_instrument_data(self):
+    def test_request_instrument_data(self):
         # Arrange
         data_receiver = ObjectStorer()
 
@@ -379,7 +384,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(instruments, response)
 
-    def test_can_request_instruments_data(self):
+    def test_request_instruments_data(self):
         # Arrange
         data_receiver = ObjectStorer()
 

@@ -17,14 +17,14 @@ import queue
 import threading
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.execution_database cimport ExecutionDatabase
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
@@ -49,7 +49,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Initialize a new instance of the LiveExecutionEngine class.
 
-        :param trader_id: The trader_id for the engine.
+        :param trader_id: The trader identifier for the engine.
         :param account_id: The account_id for the engine.
         :param database: The execution database for the engine.
         :param portfolio: The portfolio for the engine.

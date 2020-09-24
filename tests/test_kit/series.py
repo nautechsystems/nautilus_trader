@@ -22,7 +22,8 @@ class SeriesGenerator(object):
             initial: float=EPSILON,
             magnitude: float=1.0,
             count_pre: int=0,
-            count_post: int=0) -> np.array:
+            count_post: int=0,
+    ) -> np.array:
         """
         Generate a series with a heaviside step function.
 
@@ -34,14 +35,16 @@ class SeriesGenerator(object):
         """
         return np.append(
             np.full(max(count_pre, 1), initial, dtype=np.float64),
-            np.full(max(count_post, 1), magnitude, dtype=np.float64))
+            np.full(max(count_post, 1), magnitude, dtype=np.float64),
+        )
 
     @staticmethod
     def spike_function(
             initial: float=EPSILON,
             magnitude: float=1.0,
             count_pre: int=0,
-            count_post: int=0) -> np.array:
+            count_post: int=0,
+    ) -> np.array:
         """
         Generate a series with a spike function.
 
@@ -55,13 +58,15 @@ class SeriesGenerator(object):
             np.append(
                 np.full(max(count_pre, 1), initial, dtype=np.float64),
                 [magnitude]),
-            np.full(max(count_post, 1), initial, dtype=np.float64))
+            np.full(max(count_post, 1), initial, dtype=np.float64),
+        )
 
     @staticmethod
     def horizontal_asymptote(
             initial: float=0.00100,
             decay: float=0.98,
-            length: int=1000) -> np.array:
+            length: int=1000,
+    ) -> np.array:
         """
         Generate a horizontally asymptotic series.
 
@@ -79,7 +84,8 @@ class SeriesGenerator(object):
     def sine_wave(
             initial: float=1.00000,
             magnitude: float=0.00100,
-            length: int=1000) -> np.array:
+            length: int=1000,
+    ) -> np.array:
         """
         Generate a sine wave series.
 
@@ -93,7 +99,8 @@ class SeriesGenerator(object):
     @staticmethod
     def sawtooth(
             frequency: float=1.0,
-            length: int=1000) -> np.array:
+            length: int=1000,
+    ) -> np.array:
         """
         Generate a sawtooth signal series [-1.0, 1.0].
 
@@ -108,7 +115,8 @@ class SeriesGenerator(object):
     def white_noise(
             mu: float=0.0,
             sigma: float=1.0,
-            length: int =1000) -> np.array:
+            length: int =1000,
+    ) -> np.array:
         """
         Generate a white noise series.
 

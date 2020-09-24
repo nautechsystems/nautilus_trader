@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.execution_engine cimport ExecutionEngine
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
@@ -31,7 +31,8 @@ cdef class ExecutionClient:
     cdef readonly int command_count
     cdef readonly int event_count
 
-    # -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
@@ -41,5 +42,7 @@ cdef class ExecutionClient:
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
-    # --------------------------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------------------
+
     cdef void _reset(self) except *

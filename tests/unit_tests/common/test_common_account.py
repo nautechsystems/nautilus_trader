@@ -29,7 +29,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 class AccountTests(unittest.TestCase):
 
-    def test_can_initialize_account_with_event(self):
+    def test_initialize_account_with_event(self):
         # Arrange
         event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
@@ -59,7 +59,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual('N', account.margin_call_status)
         self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)
 
-    def test_can_calculate_free_equity_when_greater_than_zero(self):
+    def test_calculate_free_equity_when_greater_than_zero(self):
         # Arrange
         event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
@@ -91,7 +91,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual('N', account.margin_call_status)
         self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)
 
-    def test_can_calculate_free_equity_when_zero(self):
+    def test_calculate_free_equity_when_zero(self):
         # Arrange
         event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
@@ -123,7 +123,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual('N', account.margin_call_status)
         self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)
 
-    def test_can_calculate_free_equity_when_negative(self):
+    def test_calculate_free_equity_when_negative(self):
         # Arrange
         event = AccountState(
             AccountId.py_from_string("FXCM-123456-SIMULATED"),
