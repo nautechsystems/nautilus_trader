@@ -50,7 +50,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
-class SimulatedBrokerTests(unittest.TestCase):
+class SimulatedMarketTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
