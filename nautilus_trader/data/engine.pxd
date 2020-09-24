@@ -30,6 +30,8 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.data.aggregation cimport TickBarAggregator
+from nautilus_trader.data.aggregation cimport TimeBarAggregator
 
 
 cdef class DataEngine:
@@ -164,3 +166,19 @@ cdef class DataEngine:
         callback,
     ) except *
     cdef void _reset(self) except *
+
+
+cdef class BulkTickBarBuilder:
+    cdef TickBarAggregator aggregator
+    cdef object callback
+    cdef list bars
+
+    cpdef void receive(self, list ticks) except *
+    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *
+
+
+cdef class BulkTimeBarUpdater:
+    cdef TimeBarAggregator aggregator
+    cdef datetime start_time
+
+    cpdef void receive(self, list ticks) except *

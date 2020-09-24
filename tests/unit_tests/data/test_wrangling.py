@@ -52,7 +52,7 @@ class TickDataWranglerTests(unittest.TestCase):
             data_bars_ask={BarAggregation.MINUTE: ask_data})
 
         # Act
-        self.tick_builder.build(0)
+        self.tick_builder.pre_process(0)
         ticks = self.tick_builder.tick_data
 
         # Assert
@@ -71,7 +71,7 @@ class TickDataWranglerTests(unittest.TestCase):
             data_bars_ask={BarAggregation.MINUTE: ask_data})
 
         # Act
-        self.tick_builder.build(0)
+        self.tick_builder.pre_process(0)
         tick_data = self.tick_builder.tick_data
 
         # Assert

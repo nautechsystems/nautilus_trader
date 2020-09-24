@@ -227,7 +227,7 @@ cdef class BacktestDataEngine(DataEngine):
             )
 
             # Build data
-            wrangler.build(counter)
+            wrangler.pre_process(counter)
             tick_frames.append(wrangler.tick_data)
             counter += 1
 
