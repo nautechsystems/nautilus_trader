@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     node = TradingNode(
         config_path="config.json",
-        strategies=strategies
+        strategies=strategies,
     )
 
     node.connect()

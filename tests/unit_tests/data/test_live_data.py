@@ -266,7 +266,8 @@ class LiveDataClientTests(unittest.TestCase):
             limit=0,
             callback=data_receiver.store)
 
-        time.sleep(0.3)
+        time.sleep(0.5)
+
         # Assert
         self.assertEqual(1, len(self.data_server_sink))
         self.assertEqual(DataRequest, type(self.data_server_sink[0]))
