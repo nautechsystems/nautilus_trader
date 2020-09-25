@@ -19,7 +19,7 @@ import pandas as pd
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.execution_client import BacktestExecClient
+from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel

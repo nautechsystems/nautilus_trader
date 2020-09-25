@@ -23,7 +23,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import LiveUUIDFactory
 from nautilus_trader.core.message import MessageType
-from nautilus_trader.enterprise.execution_client import LiveExecClient
+from nautilus_trader.enterprise.execution import LiveExecClient
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import LiveExecutionEngine
 from nautilus_trader.model.commands import AccountInquiry
