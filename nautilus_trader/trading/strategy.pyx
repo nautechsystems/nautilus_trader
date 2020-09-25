@@ -2057,7 +2057,7 @@ cdef class TradingStrategy:
             self.clock.utc_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute_command(command)
+        self._exec_engine.execute(command)
 
     cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id) except *:
         """
@@ -2088,13 +2088,14 @@ cdef class TradingStrategy:
         )
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute_command(command)
+        self._exec_engine.execute(command)
 
     cpdef void submit_bracket_order(
             self,
             BracketOrder bracket_order,
             ClientPositionId cl_pos_id,
-            bint register=True) except *:
+            bint register=True,
+    ) except *:
         """
         Send a submit bracket order command with the given order and position_id
         to the execution engine.
@@ -2130,7 +2131,7 @@ cdef class TradingStrategy:
         )
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute_command(command)
+        self._exec_engine.execute(command)
 
     cpdef void modify_order(
             self,
@@ -2177,7 +2178,7 @@ cdef class TradingStrategy:
         )
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute_command(command)
+        self._exec_engine.execute(command)
 
     cpdef void cancel_order(self, Order order) except *:
         """
@@ -2203,7 +2204,7 @@ cdef class TradingStrategy:
         )
 
         self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute_command(command)
+        self._exec_engine.execute(command)
 
     cpdef void cancel_all_orders(self) except *:
         """
@@ -2232,7 +2233,7 @@ cdef class TradingStrategy:
             )
 
             self.log.info(f"{CMD}{SENT} {command}.")
-            self._exec_engine.execute_command(command)
+            self._exec_engine.execute(command)
 
     cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *:
         """

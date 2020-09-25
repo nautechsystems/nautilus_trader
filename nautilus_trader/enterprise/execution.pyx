@@ -177,4 +177,4 @@ cdef class LiveExecClient(ExecutionClient):
 
     cpdef void _recv_event(self, str topic, bytes event_bytes) except *:
         cdef Event event = self._event_serializer.deserialize(event_bytes)
-        self._engine.handle_event(event)
+        self._engine.process(event)
