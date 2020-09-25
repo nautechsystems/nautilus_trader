@@ -16,14 +16,13 @@
 import threading
 import unittest
 
-import redis
-
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogMessage
-from nautilus_trader.live.logging import LogStore
+from nautilus_trader.common.logging import LogStore
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+import redis
 from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = Symbol("AUD/USD", Venue('FXCM'))

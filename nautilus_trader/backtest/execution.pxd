@@ -13,22 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logging cimport LogMessage
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.serialization.base cimport LogSerializer
+from nautilus_trader.backtest.market cimport SimulatedMarket
+from nautilus_trader.execution.client cimport ExecutionClient
 
 
-cdef class LogStore:
-    cdef str _key
-    cdef LogSerializer _serializer
-
-    cpdef void store(self, LogMessage message)
-    cpdef void _consume_messages(self) except *
-
-
-cdef class LiveLogger(Logger):
-    cdef object _queue
-    cdef object _thread
-    cdef LogStore _store
-
-    cpdef void _consume_messages(self) except *
+cdef class BacktestExecClient(ExecutionClient):
+    cdef SimulatedMarket _broker

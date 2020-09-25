@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from threading import Timer as TimerThread
+
 import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.message cimport Event
@@ -335,3 +338,142 @@ cdef class Timer:
 
         """
         return f"<{self.__str__} object at {id(self)}>"
+
+
+cdef class TestTimer(Timer):
+    """
+    Provides a fake timer for backtesting and unit testing.
+    """
+    __test__ = False
+
+    def __init__(
+            self,
+            str name not None,
+            callback not None,
+            timedelta interval not None,
+            datetime start_time not None,
+            datetime stop_time=None
+    ):
+        """
+        Initialize a new instance of the TestTimer class.
+
+        :param name: The name for the timer.
+        :param interval: The time interval for the timer (not negative).
+        :param start_time: The stop datetime for the timer (UTC).
+        :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
+        """
+        Condition.valid_string(name, "name")
+        super().__init__(name, callback, interval, start_time, stop_time)
+
+        self._uuid_factory = TestUUIDFactory()
+
+    cpdef list advance(self, datetime to_time):
+        """
+        Return a list of time events by advancing the test timer forward to
+        the given time. A time event is appended for each time a next event is
+        <= the given to_time.
+
+        :param to_time: The time to advance the test timer to.
+        :return List[TimeEvent].
+        """
+        Condition.not_none(to_time, "to_time")
+
+        cdef list events = []  # type: [TimeEvent]
+        while not self.expired and to_time >= self.next_time:
+            events.append(self.pop_event(self._uuid_factory.generate()))
+            self.iterate_next_time(self.next_time)
+
+        return events
+
+    cpdef Event pop_next_event(self):
+        """
+        Return the next time event for this timer.
+
+        :return TimeEvent.
+        :raises ValueError: If the next event timestamp is not equal to the at_time.
+        """
+        cdef TimeEvent event = self.pop_event(self._uuid_factory.generate())
+        self.iterate_next_time(self.next_time)
+
+        return event
+
+    cpdef void cancel(self) except *:
+        """
+        Cancels the timer (the timer will not generate an event).
+        """
+        self.expired = True
+
+
+cdef class LiveTimer(Timer):
+    """
+    Provides a timer for live trading.
+    """
+
+    def __init__(
+            self,
+            str name not None,
+            callback not None,
+            timedelta interval not None,
+            datetime now not None,
+            datetime start_time not None,
+            datetime stop_time=None,
+    ):
+        """
+        Initialize a new instance of the LiveTimer class.
+
+        Parameters
+        ----------
+        name : str
+            The name for the timer.
+        callback : callable
+            The function to call at the next time.
+        interval : timedelta
+            The time interval for the timer.
+        now : datetime
+            The datetime now (UTC).
+        start_time : datetime
+            The start datetime for the timer (UTC).
+        stop_time : datetime, optional
+            The stop datetime for the timer (UTC) (if None then timer repeats).
+
+        Raises
+        ------
+        TypeError
+            If callback is not of type callable.
+
+        """
+        Condition.valid_string(name, "name")
+        super().__init__(name, callback, interval, start_time, stop_time)
+
+        self._internal = self._start_timer(now)
+
+    cpdef void repeat(self, datetime now) except *:
+        """
+        Continue the timer.
+
+        Parameters
+        ----------
+        now : datetime
+            The current time to base the repeat from.
+
+        """
+        Condition.not_none(now, "now")
+
+        self._internal = self._start_timer(now)
+
+    cpdef void cancel(self) except *:
+        """
+        Cancels the timer (the timer will not generate an event).
+        """
+        self._internal.cancel()
+
+    cdef object _start_timer(self, datetime now):
+        timer = TimerThread(
+            interval=(self.next_time - now).total_seconds(),
+            function=self.callback,
+            args=[self],
+        )
+        timer.daemon = True
+        timer.start()
+
+        return timer

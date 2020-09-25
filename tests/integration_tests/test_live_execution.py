@@ -15,13 +15,10 @@
 
 import unittest
 
-import redis
-
-from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.backtest.uuid import TestUUIDFactory
 from nautilus_trader.common.account import Account
-from nautilus_trader.live.execution_database import RedisExecutionDatabase
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ClientPositionId
@@ -29,8 +26,10 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+import redis
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 

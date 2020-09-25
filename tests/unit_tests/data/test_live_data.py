@@ -16,13 +16,13 @@
 import time
 import unittest
 
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.uuid import LiveUUIDFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.live.clock import LiveClock
-from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.factories import LiveUUIDFactory
-from nautilus_trader.live.logging import LiveLogger
+from nautilus_trader.data.engine import LiveDataEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
