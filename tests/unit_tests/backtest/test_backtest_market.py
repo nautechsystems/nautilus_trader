@@ -447,7 +447,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
                          strategy.account().cash_balance.as_double())
 
-    def test_realized_pnl(self):
+    def test_realized_pnl_contains_commission(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -523,3 +523,50 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(strategy.object_storer.get_store()[8].liquidity_side, LiquiditySide.MAKER)
         self.assertEqual(strategy.object_storer.get_store()[8].commission.as_double(),
                          commission_percent_maker * order_limit.quantity.as_double())
+
+    def test_unrealized_pnl(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        open_quote = TestStubs.quote_tick_3decimal(self.usdjpy.symbol)
+        self.market.process_tick(open_quote)  # Prepare market
+        order_open = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        # Act 1
+        position_id = strategy.position_id_generator.generate()
+        strategy.submit_order(order_open, position_id)
+
+        reduce_quote = QuoteTick(
+            self.usdjpy.symbol,
+            Price(100.003, 3),
+            Price(100.003, 3),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
+        self.market.process_tick(reduce_quote)
+
+        order_reduce = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.SELL,
+            Quantity(50000))
+
+        # Act 2
+        strategy.submit_order(order_reduce, position_id)
+
+        # Assert
+        position = strategy.positions_open()[position_id]
+        unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
+        order_quantity_diff = order_open.quantity.sub(order_reduce.quantity).as_double()
+        expected_unrealized_pnl = order_quantity_diff * (reduce_quote.bid.sub(open_quote.ask).as_double())
+        self.assertEqual(unrealized_pnl, expected_unrealized_pnl)
