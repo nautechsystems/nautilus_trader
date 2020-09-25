@@ -19,7 +19,7 @@ import unittest
 
 import pytz
 
-from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency

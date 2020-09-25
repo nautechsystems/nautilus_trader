@@ -18,3 +18,11 @@ from nautilus_trader.core.uuid cimport UUID
 
 cdef class UUIDFactory:
     cpdef UUID generate(self)
+
+
+cdef class TestUUIDFactory(UUIDFactory):
+    cdef UUID _uuid
+
+
+cdef class LiveUUIDFactory(UUIDFactory):
+    pass

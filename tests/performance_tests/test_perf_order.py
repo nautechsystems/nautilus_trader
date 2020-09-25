@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.live.clock import LiveClock
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.model.generators import OrderIdGenerator
 from nautilus_trader.model.identifiers import IdTag
 from tests.test_kit.performance import PerformanceHarness

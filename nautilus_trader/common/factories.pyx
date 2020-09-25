@@ -16,9 +16,9 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.uuid cimport LiveUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.factories cimport LiveUUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.generators cimport OrderIdGenerator

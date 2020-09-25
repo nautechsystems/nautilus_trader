@@ -19,15 +19,15 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.backtest.clock cimport TestClock
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataContainer
 from nautilus_trader.backtest.data cimport BacktestDataEngine
-from nautilus_trader.backtest.execution_client cimport BacktestExecClient
+from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
+from nautilus_trader.backtest.market cimport SimulatedMarket
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.simulated_market cimport SimulatedMarket
-from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
@@ -35,6 +35,7 @@ from nautilus_trader.common.market cimport CommissionModel
 from nautilus_trader.common.market cimport GenericCommissionModel
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.timer cimport TimeEventHandler
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -43,12 +44,11 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport InMemoryExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.live.clock cimport LiveClock
-from nautilus_trader.live.execution_database cimport RedisExecutionDatabase
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy

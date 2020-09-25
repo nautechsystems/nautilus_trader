@@ -12,12 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.execution.engine cimport ExecutionEngine
-
-
-cdef class LiveExecutionEngine(ExecutionEngine):
-    cdef object _queue
-    cdef object _thread
-
-    cpdef void _process(self) except *

@@ -17,7 +17,7 @@ import unittest
 
 from pandas import Timestamp
 
-from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.data.wrangling import TickDataWrangler
 from nautilus_trader.model.enums import BarAggregation

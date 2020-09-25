@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder

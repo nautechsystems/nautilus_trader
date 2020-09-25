@@ -18,15 +18,15 @@ import unittest
 import pandas as pd
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.simulated_market import SimulatedMarket
-from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.market import MakerTakerCommissionModel
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import InMemoryExecutionDatabase

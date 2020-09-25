@@ -15,8 +15,8 @@
 
 import unittest
 
-from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LoggerAdapter
 

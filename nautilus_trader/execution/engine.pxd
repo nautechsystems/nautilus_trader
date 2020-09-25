@@ -15,17 +15,17 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -93,3 +93,10 @@ cdef class ExecutionEngine:
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
     cdef void _reset(self) except *
+
+
+cdef class LiveExecutionEngine(ExecutionEngine):
+    cdef object _queue
+    cdef object _thread
+
+    cpdef void _process(self) except *

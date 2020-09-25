@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.efficiency_ratio cimport EfficiencyRatio
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class AdaptiveMovingAverage(MovingAverage):
