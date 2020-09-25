@@ -142,7 +142,7 @@ cdef class ExecutionEngine:
         del self._registered_strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")
 
-    cpdef void execute_command(self, Command command) except *:
+    cpdef void execute(self, Command command) except *:
         """
         Execute the given command.
 
@@ -152,9 +152,9 @@ cdef class ExecutionEngine:
 
         self._execute_command(command)
 
-    cpdef void handle_event(self, Event event) except *:
+    cpdef void process(self, Event event) except *:
         """
-        Handle the given command.
+        Process the given event.
 
         :param event: The event to handle.
         """
@@ -406,7 +406,7 @@ cdef class ExecutionEngine:
         )
 
         self._send_to_strategy(event, strategy_id)
-        self.handle_event(position_opened)
+        self.process(position_opened)
 
     cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef PositionModified position_modified = PositionModified(
@@ -418,7 +418,7 @@ cdef class ExecutionEngine:
         )
 
         self._send_to_strategy(event, strategy_id)
-        self.handle_event(position_modified)
+        self.process(position_modified)
 
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
         cdef datetime time_now = self._clock.utc_now()
@@ -431,7 +431,7 @@ cdef class ExecutionEngine:
         )
 
         self._send_to_strategy(event, strategy_id)
-        self.handle_event(position_closed)
+        self.process(position_closed)
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
@@ -496,7 +496,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._thread = threading.Thread(target=self._process, daemon=True)
         self._thread.start()
 
-    cpdef void execute_command(self, Command command) except *:
+    cpdef void execute(self, Command command) except *:
         """
         Execute the given command by inserting it into the message bus for processing.
 
@@ -506,7 +506,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._queue.put(command)
 
-    cpdef void handle_event(self, Event event) except *:
+    cpdef void process(self, Event event) except *:
         """
         Handle the given event by inserting it into the message bus for processing.
 

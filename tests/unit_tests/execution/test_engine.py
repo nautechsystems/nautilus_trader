@@ -71,7 +71,7 @@ class ExecutionEngineTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger)
 
-        self.exec_engine.handle_event(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.account_event())
 
         self.exec_client = MockExecutionClient(self.exec_engine, self.logger)
         self.exec_engine.register_client(self.exec_client)
@@ -178,7 +178,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now())
 
         # Act
-        self.exec_engine.execute_command(submit_order)
+        self.exec_engine.execute(submit_order)
 
         # Assert
         self.assertIn(submit_order, self.exec_client.received_commands)
@@ -212,12 +212,12 @@ class ExecutionEngineTests(unittest.TestCase):
             self.uuid_factory.generate(),
             self.clock.utc_now())
 
-        self.exec_engine.execute_command(submit_order)
+        self.exec_engine.execute(submit_order)
 
         # Act
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order))
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -282,16 +282,16 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
 
         # Act
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -356,16 +356,16 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
 
         # Act
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
 
         # # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -444,14 +444,14 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position1_id))
@@ -561,18 +561,18 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
-        self.exec_engine.execute_command(submit_order3)
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order3))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order3))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order3))
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
+        self.exec_engine.execute(submit_order3)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
+        self.exec_engine.process(TestStubs.event_order_submitted(order3))
+        self.exec_engine.process(TestStubs.event_order_accepted(order3))
+        self.exec_engine.process(TestStubs.event_order_filled(order3))
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above

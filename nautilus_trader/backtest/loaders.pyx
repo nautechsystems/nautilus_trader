@@ -20,14 +20,10 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal64
-
-from nautilus_trader.model.enums import Currency  # Do not remove
-
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instrument cimport ForexInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -42,16 +38,25 @@ cdef class CSVTickDataLoader:
         """
         Return the tick pandas.DataFrame loaded from the given csv file.
 
-        :param file_path: The absolute path to the CSV file.
-        :return: pd.DataFrame.
+        Parameters
+        ----------
+        file_path : str
+            The absolute path to the CSV file.
+
+        Returns
+        -------
+        pd.DataFrame
+
         """
         Condition.not_none(file_path, "file_path")
 
-        return pd.read_csv(file_path,
-                           usecols=[1, 2, 3],
-                           index_col=0,
-                           header=None,
-                           parse_dates=True)
+        return pd.read_csv(
+            file_path,
+            usecols=[1, 2, 3],
+            index_col=0,
+            header=None,
+            parse_dates=True,
+        )
 
 
 cdef class CSVBarDataLoader:
@@ -64,14 +69,23 @@ cdef class CSVBarDataLoader:
         """
         Return the bar pandas.DataFrame loaded from the given csv file.
 
-        :param file_path: The absolute path to the CSV file.
-        :return: pd.DataFrame.
+        Parameters
+        ----------
+        file_path : str
+            The absolute path to the CSV file.
+
+        Returns
+        -------
+        pd.DataFrame
+
         """
         Condition.not_none(file_path, "file_path")
 
-        return pd.read_csv(file_path,
-                           index_col="Time (UTC)",
-                           parse_dates=True)
+        return pd.read_csv(
+            file_path,
+            index_col="Time (UTC)",
+            parse_dates=True,
+        )
 
 
 cdef class InstrumentLoader:
@@ -79,12 +93,20 @@ cdef class InstrumentLoader:
     Provides instrument template methods for backtesting.
     """
 
-    cpdef Instrument default_fx_ccy(self, Symbol symbol):
+    cpdef ForexInstrument default_fx_ccy(self, Symbol symbol):
         """
         Return a default FX currency pair instrument from the given arguments.
 
-        :param symbol: The currency pair symbol.
-        :raises ValueError: If the symbol.code length is not in range [6, 7].
+        Parameters
+        ----------
+        symbol : Symbol
+            The currency pair symbol.
+
+        Raises
+        ------
+        ValueError
+            If the symbol.code length is not in range [6, 7].
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.in_range_int(len(symbol.code), 6, 7, "len(symbol)")
@@ -98,10 +120,8 @@ cdef class InstrumentLoader:
         else:
             price_precision = 5
 
-        return Instrument(
+        return ForexInstrument(
             symbol=symbol,
-            quote_currency=quote_currency,
-            security_type=SecurityType.FOREX,
             price_precision=price_precision,
             size_precision=0,
             min_stop_distance_entry=0,
@@ -109,10 +129,10 @@ cdef class InstrumentLoader:
             min_stop_distance=0,
             min_limit_distance=0,
             tick_size=Price(1 / (10 ** price_precision), price_precision),
-            round_lot_size=Quantity(1000),
+            lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal64(),
             rollover_interest_sell=Decimal64(),
-            timestamp=datetime.now(pytz.utc)
+            timestamp=datetime.now(pytz.utc),
         )

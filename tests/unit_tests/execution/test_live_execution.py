@@ -105,7 +105,7 @@ class LiveExecutionTests(unittest.TestCase):
             uuid_factory=uuid_factory,
             logger=logger)
 
-        self.exec_engine.handle_event(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.account_event())
 
         self.exec_client = LiveExecClient(
             exec_engine=self.exec_engine,

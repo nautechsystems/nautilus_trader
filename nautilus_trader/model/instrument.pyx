@@ -38,12 +38,8 @@ cdef class Instrument:
             SecurityType security_type,
             int price_precision,
             int size_precision,
-            int min_stop_distance_entry,
-            int min_stop_distance,
-            int min_limit_distance_entry,
-            int min_limit_distance,
             Decimal64 tick_size not None,
-            Quantity round_lot_size not None,
+            Quantity lot_size not None,
             Quantity min_trade_size not None,
             Quantity max_trade_size not None,
             Decimal64 rollover_interest_buy not None,
@@ -65,17 +61,9 @@ cdef class Instrument:
             The price decimal precision.
         size_precision : int
             The trading size decimal precision.
-        min_stop_distance_entry : int
-            The minimum distance for stop entry orders.
-        min_stop_distance : int
-            The minimum tick distance for stop orders.
-        min_limit_distance_entry : int
-            The minimum distance for limit entry orders.
-        min_limit_distance : int
-            The minimum tick distance for limit orders.
         tick_size : Decimal64
             The tick size.
-        round_lot_size : Quantity
+        lot_size : Quantity
             The rounded lot size.
         min_trade_size : Quantity
             The minimum possible trade size.
@@ -93,11 +81,7 @@ cdef class Instrument:
         Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
-        Condition.not_negative_int(min_stop_distance_entry, 'min_stop_distance_entry')
-        Condition.not_negative_int(min_stop_distance, 'min_stop_distance')
-        Condition.not_negative_int(min_limit_distance_entry, 'min_limit_distance_entry')
-        Condition.not_negative_int(min_limit_distance, 'min_limit_distance')
-        Condition.equal(size_precision, round_lot_size.precision, 'size_precision', 'round_lot_size.precision')
+        Condition.equal(size_precision, lot_size.precision, 'size_precision', 'round_lot_size.precision')
         Condition.equal(size_precision, min_trade_size.precision, 'size_precision', 'min_trade_size.precision')
         Condition.equal(size_precision, max_trade_size.precision, 'size_precision', 'max_trade_size.precision')
 
@@ -107,12 +91,8 @@ cdef class Instrument:
         self.security_type = security_type
         self.price_precision = price_precision
         self.size_precision = size_precision
-        self.min_stop_distance_entry = min_stop_distance_entry
-        self.min_stop_distance = min_stop_distance
-        self.min_limit_distance_entry = min_limit_distance_entry
-        self.min_limit_distance = min_limit_distance
         self.tick_size = tick_size
-        self.round_lot_size = round_lot_size
+        self.lot_size = lot_size
         self.min_trade_size = min_trade_size
         self.max_trade_size = max_trade_size
         self.rollover_interest_buy = rollover_interest_buy
@@ -201,7 +181,7 @@ cdef class ForexInstrument(Instrument):
             int min_limit_distance_entry,
             int min_limit_distance,
             Price tick_size not None,
-            Quantity round_lot_size not None,
+            Quantity lot_size not None,
             Quantity min_trade_size not None,
             Quantity max_trade_size not None,
             Decimal64 rollover_interest_buy not None,
@@ -229,7 +209,7 @@ cdef class ForexInstrument(Instrument):
             The minimum tick distance for limit orders.
         tick_size : Decimal64
             The tick size.
-        round_lot_size : Quantity
+        lot_size : Quantity
             The rounded lot size.
         min_trade_size : Quantity
             The minimum possible trade size.
@@ -249,12 +229,8 @@ cdef class ForexInstrument(Instrument):
             SecurityType.FOREX,
             price_precision,
             size_precision,
-            min_stop_distance_entry,
-            min_stop_distance,
-            min_limit_distance_entry,
-            min_limit_distance,
             tick_size,
-            round_lot_size,
+            lot_size,
             min_trade_size,
             max_trade_size,
             rollover_interest_buy,
@@ -263,3 +239,7 @@ cdef class ForexInstrument(Instrument):
         )
 
         self.base_currency = currency_from_string(symbol.code[:3])
+        self.min_stop_distance_entry = min_stop_distance_entry
+        self.min_stop_distance = min_stop_distance
+        self.min_limit_distance_entry = min_limit_distance_entry
+        self.min_limit_distance = min_limit_distance

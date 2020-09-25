@@ -310,7 +310,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(9, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 
-    # TODO: Fix failing test - market not updating inside BacktestExecution Client
+    # TODO: Fix failing test - market not updating inside SimulatedMarket
     # def test_submit_market_order_with_slippage_fill_model_slips_order(self):
     #     # Arrange
     #     fill_model = FillModel(
@@ -507,8 +507,8 @@ class SimulatedMarketTests(unittest.TestCase):
 
         self.market.process_tick(QuoteTick(
             self.usdjpy.symbol,
-            Price(80.00, 3),
-            Price(80.00, 3),
+            Price(80.000, 3),
+            Price(80.000, 3),
             Quantity(100000),
             Quantity(100000),
             UNIX_EPOCH)

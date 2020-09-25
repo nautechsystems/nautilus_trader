@@ -420,7 +420,7 @@ cdef class SimulatedMarket:
                 event_timestamp=self._clock.utc_now(),
             )
 
-            self.exec_engine.handle_event(account_event)
+            self.exec_engine.process(account_event)
 
     cpdef Money calculate_pnl(
             self,
@@ -506,7 +506,7 @@ cdef class SimulatedMarket:
                 event_timestamp=self._clock.utc_now(),
             )
 
-            self.exec_engine.handle_event(account_event)
+            self.exec_engine.process(account_event)
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
@@ -528,7 +528,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
@@ -589,7 +589,7 @@ cdef class SimulatedMarket:
         # Remove from working orders (checked it was in dictionary above)
         del self._working_orders[command.cl_ord_id]
 
-        self.exec_engine.handle_event(cancelled)
+        self.exec_engine.process(cancelled)
         self._check_oco_order(command.cl_ord_id)
 
     cpdef void handle_modify_order(self, ModifyOrder command) except *:
@@ -658,7 +658,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(modified)
+        self.exec_engine.process(modified)
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
@@ -684,7 +684,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(submitted)
+        self.exec_engine.process(submitted)
 
     cdef void _accept_order(self, Order order) except *:
         # Generate event
@@ -697,7 +697,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(accepted)
+        self.exec_engine.process(accepted)
 
     cdef void _reject_order(self, Order order, str reason) except *:
         if order.state() != OrderState.SUBMITTED:
@@ -714,7 +714,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(rejected)
+        self.exec_engine.process(rejected)
         self._check_oco_order(order.cl_ord_id)
         self._clean_up_child_orders(order.cl_ord_id)
 
@@ -734,7 +734,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(cancel_reject)
+        self.exec_engine.process(cancel_reject)
 
     cdef void _expire_order(self, PassiveOrder order) except *:
         # Generate event
@@ -747,7 +747,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(expired)
+        self.exec_engine.process(expired)
 
         cdef ClientOrderId first_child_order_id
         cdef ClientOrderId other_oco_order_id
@@ -881,7 +881,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(working)
+        self.exec_engine.process(working)
 
     cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side):
         cdef Instrument instrument = self.instruments[order.symbol]
@@ -932,7 +932,7 @@ cdef class SimulatedMarket:
         cdef Position position = self.exec_engine.database.get_position_for_order(order.cl_ord_id)
         self.adjust_account(filled, position)
 
-        self.exec_engine.handle_event(filled)
+        self.exec_engine.process(filled)
         self._check_oco_order(order.cl_ord_id)
 
         # Work any bracket child orders
@@ -996,7 +996,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)
 
     cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
@@ -1016,7 +1016,7 @@ cdef class SimulatedMarket:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} OCO order from {oco_order_id}.")
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         if order.state() != OrderState.WORKING:
@@ -1034,4 +1034,4 @@ cdef class SimulatedMarket:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} as linked position closed.")
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)

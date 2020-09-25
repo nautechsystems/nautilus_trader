@@ -60,8 +60,8 @@ cdef class ExecutionEngine:
     cpdef void register_client(self, ExecutionClient exec_client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
-    cpdef void execute_command(self, Command command) except *
-    cpdef void handle_event(self, Event event) except *
+    cpdef void execute(self, Command command) except *
+    cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
