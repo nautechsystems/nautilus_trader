@@ -42,9 +42,15 @@ cdef class Portfolio:
         """
         Initialize a new instance of the Portfolio class.
 
-        :param clock: The clock for the component.
-        :param uuid_factory: The uuid factory for the component.
-        :param logger: The logger for the component.
+        Parameters
+        ----------
+        clock : Clock
+            The clock for the component.
+        uuid_factory : UUIDFactory
+            The uuid factory for the component.
+        logger : Logger
+            The logger for the component.
+
         """
         self._clock = clock
         self._uuid_factory = uuid_factory
@@ -62,7 +68,11 @@ cdef class Portfolio:
         """
         Set the portfolios base currency.
 
-        :param currency: The base currency to set.
+        Parameters
+        ----------
+        currency : Currency
+            The base currency to set.
+
         """
         self.base_currency = currency
 
@@ -70,7 +80,11 @@ cdef class Portfolio:
         """
         Update the portfolio with the given event.
 
-        :param event: The event to update with.
+        Parameters
+        ----------
+        event : PositionEvent 
+            The event to update with.
+
         """
         Condition.not_none(event, "event")
 
@@ -87,7 +101,8 @@ cdef class Portfolio:
 
     cpdef void reset(self) except *:
         """
-        Reset the portfolio by returning all stateful values to their initial value.
+        Reset the portfolio by returning all stateful values to their initial 
+        value.
         """
         self._log.debug(f"Resetting...")
 
@@ -104,7 +119,10 @@ cdef class Portfolio:
         """
         Return the open symbols in the portfolio.
 
-        :return: Set[Symbol].
+        Returns
+        -------
+        Set[Symbol]
+
         """
         return set(self._positions_open.keys())
 
@@ -112,7 +130,10 @@ cdef class Portfolio:
         """
         Return the closed symbols in the portfolio.
 
-        :return: Set[Symbol].
+        Returns
+        -------
+        Set[Symbol]
+
         """
         return set(self._positions_closed.keys())
 
@@ -120,7 +141,10 @@ cdef class Portfolio:
         """
         Return the symbols in the portfolio.
 
-        :return: Set[Symbol].
+        Returns
+        -------
+        Set[Symbol]
+
         """
         return self.symbols_open().union(self.symbols_closed())
 
@@ -128,8 +152,15 @@ cdef class Portfolio:
         """
         Return the open positions in the portfolio.
 
-        :param symbol: The optional symbol query filter.
-        :return: Dict[PositionId, Position].
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol query filter
+        
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef dict positions_open
         if symbol is None:
@@ -147,8 +178,15 @@ cdef class Portfolio:
         """
         Return the closed positions in the portfolio.
 
-        :param symbol: The optional symbol query filter.
-        :return: Dict[PositionId, Position].
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol query filter
+        
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef dict positions_closed
         if symbol is None:
@@ -166,8 +204,15 @@ cdef class Portfolio:
         """
         Return all positions in the portfolio.
 
-        :param symbol: The optional symbol query filter.
-        :return: Dict[PositionId, Position].
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol query filter
+        
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         return {**self.positions_open(symbol), **self.positions_closed(symbol)}
 

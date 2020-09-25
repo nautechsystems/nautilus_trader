@@ -14,19 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-import time
 from datetime import timedelta
+import time
 import unittest
-
-
-from nautilus_trader.core.uuid import uuid4
-from tests.test_kit.stubs import UNIX_EPOCH
-
 
 import pytz
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.timer import TimeEvent
+from nautilus_trader.core.uuid import uuid4
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TimeEventTests(unittest.TestCase):
