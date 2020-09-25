@@ -364,7 +364,8 @@ cdef class ExchangeRateCalculator:
         given base currency for the given price type using the given dictionary of
         bid and ask rates.
 
-        
+        Parameters
+        ----------
         from_currency : Currency
             The currency to convert from.
         to_currency : Currency
@@ -379,7 +380,7 @@ cdef class ExchangeRateCalculator:
         Returns
         -------
         double
-        
+
         Raises
         ------
         ValueError
