@@ -402,7 +402,7 @@ cdef class TestClock(Clock):
 
         Parameters
         ----------
-        to_time : datetime 
+        to_time : datetime
             The time to set.
 
         """
@@ -416,7 +416,7 @@ cdef class TestClock(Clock):
 
         Parameters
         ----------
-        to_time : datetime 
+        to_time : datetime
             The datetime to iterate the test clock to.
 
         """

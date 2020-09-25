@@ -364,7 +364,7 @@ cdef class Timer:
 
         Parameters
         ----------
-        now : datetime 
+        now : datetime
             The datetime now (UTC).
 
         """
@@ -462,9 +462,9 @@ cdef class TestTimer(Timer):
 
         Parameters
         ----------
-        to_time : datetime 
+        to_time : datetime
             The time to advance the test timer to.
-        
+
         Returns
         -------
         List[TimeEvent]
@@ -486,7 +486,7 @@ cdef class TestTimer(Timer):
         Returns
         -------
         TimeEvent
-        
+
         Raises
         ------
         ValueError

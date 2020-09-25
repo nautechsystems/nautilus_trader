@@ -203,7 +203,7 @@ cdef class Logger:
 
         Parameters
         ----------
-        name : str 
+        name : str
             The new name of the log file.
 
         """
@@ -320,7 +320,7 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        message : str 
+        message : str
             The message to log.
 
         """
@@ -334,7 +334,7 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        message : str 
+        message : str
             The message to log.
 
         """
@@ -348,7 +348,7 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        message : str 
+        message : str
             The message to log.
 
         """
@@ -362,7 +362,7 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        message : str 
+        message : str
             The message to log.
 
         """
@@ -376,7 +376,7 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        message : str 
+        message : str
             The message to log.
 
         """
@@ -390,7 +390,7 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        message : str 
+        message : str
             The message to log.
 
         """
@@ -404,7 +404,7 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        ex : Exception 
+        ex : Exception
             The message to log.
 
         """
@@ -614,7 +614,7 @@ cdef class LiveLogger(Logger):
 
         Parameters
         ----------
-        message : LogMessage 
+        message : LogMessage
             The log message to log.
 
         """

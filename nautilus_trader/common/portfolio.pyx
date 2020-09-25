@@ -82,7 +82,7 @@ cdef class Portfolio:
 
         Parameters
         ----------
-        event : PositionEvent 
+        event : PositionEvent
             The event to update with.
 
         """
@@ -101,7 +101,7 @@ cdef class Portfolio:
 
     cpdef void reset(self) except *:
         """
-        Reset the portfolio by returning all stateful values to their initial 
+        Reset the portfolio by returning all stateful values to their initial
         value.
         """
         self._log.debug(f"Resetting...")
@@ -156,7 +156,7 @@ cdef class Portfolio:
         ----------
         symbol : Symbol, optional
             The symbol query filter
-        
+
         Returns
         -------
         Dict[PositionId, Position]
@@ -182,7 +182,7 @@ cdef class Portfolio:
         ----------
         symbol : Symbol, optional
             The symbol query filter
-        
+
         Returns
         -------
         Dict[PositionId, Position]
@@ -208,7 +208,7 @@ cdef class Portfolio:
         ----------
         symbol : Symbol, optional
             The symbol query filter
-        
+
         Returns
         -------
         Dict[PositionId, Position]
