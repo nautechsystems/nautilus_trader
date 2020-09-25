@@ -15,11 +15,11 @@
 
 import unittest
 
-from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientPositionId

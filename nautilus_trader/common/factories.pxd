@@ -23,10 +23,10 @@ from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport BracketOrder
-from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport LimitOrder
+from nautilus_trader.model.order cimport MarketOrder
+from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport StopOrder
 
 

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport uuid4
 
 
 cdef class UUIDFactory:
@@ -24,3 +25,49 @@ cdef class UUIDFactory:
     cpdef UUID generate(self):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
+
+
+cdef class TestUUIDFactory(UUIDFactory):
+    """
+    Provides a fake UUID factory for testing purposes.
+    """
+    __test__ = False
+
+    def __init__(self):
+        """
+        Initialize a new instance of the TestUUIDFactory class.
+        """
+        super().__init__()
+
+        self._uuid = uuid4()
+
+    cpdef UUID generate(self):
+        """
+        Return the single test uuid4 instance.
+
+        Returns
+        -------
+        UUID
+
+        """
+        return self._uuid
+
+
+cdef class LiveUUIDFactory(UUIDFactory):
+    """
+    Provides a UUID factory for live trading. Generates version 4 UUID's.
+    """
+
+    def __init__(self):
+        """
+        Initialize a new instance of the LiveUUIDFactory class.
+        """
+        super().__init__()
+
+    cpdef UUID generate(self):
+        """
+        Return a generated UUID version 4.
+
+        :return UUID.
+        """
+        return uuid4()

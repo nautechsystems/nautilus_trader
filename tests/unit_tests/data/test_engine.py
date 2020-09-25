@@ -18,9 +18,9 @@ import unittest
 
 import pytz
 
-from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.backtest.uuid import TestUUIDFactory
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.data.engine import BulkTickBarBuilder
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.wrangling import TickDataWrangler

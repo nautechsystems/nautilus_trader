@@ -17,33 +17,33 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.market cimport CommissionModel
-from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
-from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.common.market cimport CommissionModel
+from nautilus_trader.common.market cimport ExchangeRateCalculator
+from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order cimport LimitOrder
+from nautilus_trader.model.order cimport MarketOrder
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport MarketOrder
-from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.order cimport LimitOrder
-from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
 
 
 cdef class SimulatedMarket:

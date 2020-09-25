@@ -19,8 +19,8 @@ import unittest
 
 import pytz
 
-from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.aggregation import BarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator

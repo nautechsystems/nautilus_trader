@@ -21,6 +21,10 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 
+from nautilus_trader.common.timer cimport TestTimer
+from nautilus_trader.common.timer cimport TimeEventHandler
+from nautilus_trader.common.uuid cimport LiveUUIDFactory
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -358,3 +362,149 @@ cdef class Clock:
                 next_time = observed
 
         self.next_event_time = next_time
+
+
+cdef class TestClock(Clock):
+    """
+    Provides a clock for backtesting and unit testing.
+    """
+    __test__ = False
+
+    def __init__(self, datetime initial_time not None=_UNIX_EPOCH):
+        """
+        Initialize a new instance of the TestClock class.
+
+        :param initial_time: The initial time for the clock.
+        """
+        super().__init__(TestUUIDFactory())
+
+        self._time = initial_time
+        self.is_test_clock = True
+
+    cpdef datetime utc_now(self):
+        """
+        Return the current datetime of the clock (UTC).
+
+        :return datetime.
+        """
+        return self._time
+
+    cpdef void set_time(self, datetime to_time) except *:
+        """
+        Set the clocks datetime to the given time (UTC).
+
+        :param to_time: The time to set to.
+        """
+        Condition.not_none(to_time, "to_time")
+
+        self._time = to_time
+
+    cpdef list advance_time(self, datetime to_time):
+        """
+        Iterates the clocks time to the given datetime.
+
+        :param to_time: The datetime to iterate the test clock to.
+        """
+        Condition.not_none(to_time, "to_time")
+
+        cdef list events = []
+
+        if self.timer_count == 0 or to_time < self.next_event_time:
+            self._time = to_time
+            return events  # No timer events to iterate
+
+        # Iterate timer events
+        cdef TestTimer timer
+        cdef TimeEvent event
+        for timer in self._stack:
+            for event in timer.advance(to_time):
+                events.append(TimeEventHandler(event, timer.callback))
+
+        # Remove expired timers
+        for timer in self._stack:
+            if timer.expired:
+                self._remove_timer(timer)
+
+        self._update_timing()
+        self._time = to_time
+        return events
+
+    cdef Timer _get_timer(
+            self,
+            str name,
+            callback,
+            timedelta interval,
+            datetime now,
+            datetime start_time,
+            datetime stop_time,
+    ):
+        return TestTimer(
+            name=name,
+            callback=callback,
+            interval=interval,
+            start_time=start_time,
+            stop_time=stop_time,
+        )
+
+
+cdef class LiveClock(Clock):
+    """
+    Provides a clock for live trading. All times are timezone aware UTC.
+    """
+
+    def __init__(self):
+        """
+        Initialize a new instance of the LiveClock class.
+        """
+        super().__init__(LiveUUIDFactory())
+
+    cpdef datetime utc_now(self):
+        """
+        Return the current datetime of the clock (UTC).
+
+        :return datetime.
+        """
+        # From the pytz docs https://pythonhosted.org/pytz/
+        # -------------------------------------------------
+        # Unfortunately using the tzinfo argument of the standard datetime
+        # constructors ‘’does not work’’ with pytz for many timezones.
+        # It is safe for timezones without daylight saving transitions though,
+        # such as UTC. The preferred way of dealing with times is to always work
+        # in UTC, converting to localtime only when generating output to be read
+        # by humans.
+        return datetime.now(tz=pytz.utc)
+
+    cdef Timer _get_timer(
+            self,
+            str name,
+            callback,
+            timedelta interval,
+            datetime now,
+            datetime start_time,
+            datetime stop_time,
+    ):
+        return LiveTimer(
+            name=name,
+            callback=self._raise_time_event,
+            interval=interval,
+            now=now,
+            start_time=start_time,
+            stop_time=stop_time,
+        )
+
+    cpdef void _raise_time_event(self, LiveTimer timer) except *:
+        cdef datetime now = self.utc_now()
+        cdef TimeEvent event = timer.pop_event(self._uuid_factory.generate())
+        timer.iterate_next_time(now)
+        self._handle_time_event(event)
+
+        if timer.expired:
+            self._remove_timer(timer)
+        else:  # Continue timing
+            timer.repeat(now)
+            self._update_timing()
+
+    cdef void _handle_time_event(self, TimeEvent event) except *:
+        handler = self._handlers.get(event.name)
+        if handler:
+            handler(event)

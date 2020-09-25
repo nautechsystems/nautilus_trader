@@ -12,24 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.core.message cimport Command
-from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.network.node_clients cimport MessageClient
-from nautilus_trader.network.node_clients cimport MessageSubscriber
-from nautilus_trader.serialization.base cimport CommandSerializer
-from nautilus_trader.serialization.base cimport EventSerializer
-
-
-cdef class LiveExecClient(ExecutionClient):
-    cdef MessageClient _command_client
-    cdef MessageSubscriber _event_subscriber
-
-    cdef CommandSerializer _command_serializer
-    cdef EventSerializer _event_serializer
-
-    cdef readonly ClientId client_id
-
-    cpdef void _send_command(self, Command command) except *
-    cpdef void _recv_event(self, str topic, bytes event_bytes) except *

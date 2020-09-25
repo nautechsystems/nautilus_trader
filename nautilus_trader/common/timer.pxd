@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 
@@ -43,3 +44,17 @@ cdef class Timer:
     cpdef TimeEvent pop_event(self, UUID event_id)
     cpdef void iterate_next_time(self, datetime now) except *
     cpdef void cancel(self) except *
+
+
+cdef class TestTimer(Timer):
+    cdef TestUUIDFactory _uuid_factory
+
+    cpdef list advance(self, datetime to_time)
+    cpdef Event pop_next_event(self)
+
+
+cdef class LiveTimer(Timer):
+    cdef object _internal
+
+    cpdef void repeat(self, datetime now) except *
+    cdef object _start_timer(self, datetime now)

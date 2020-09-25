@@ -22,10 +22,10 @@ from cpython.datetime cimport datetime
 
 from pandas import DatetimeIndex
 
-from nautilus_trader.backtest.clock cimport TestClock
-from nautilus_trader.backtest.uuid cimport TestUUIDFactory
+from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEventHandler
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of

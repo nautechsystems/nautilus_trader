@@ -16,7 +16,7 @@
 from datetime import timedelta
 import unittest
 
-from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 

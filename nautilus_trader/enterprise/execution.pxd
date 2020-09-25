@@ -13,22 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logging cimport LogMessage
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.serialization.base cimport LogSerializer
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.network.identifiers cimport ClientId
+from nautilus_trader.network.node_clients cimport MessageClient
+from nautilus_trader.network.node_clients cimport MessageSubscriber
+from nautilus_trader.serialization.base cimport CommandSerializer
+from nautilus_trader.serialization.base cimport EventSerializer
 
 
-cdef class LogStore:
-    cdef str _key
-    cdef LogSerializer _serializer
+cdef class LiveExecClient(ExecutionClient):
+    cdef MessageClient _command_client
+    cdef MessageSubscriber _event_subscriber
 
-    cpdef void store(self, LogMessage message)
-    cpdef void _consume_messages(self) except *
+    cdef CommandSerializer _command_serializer
+    cdef EventSerializer _event_serializer
 
+    cdef readonly ClientId client_id
 
-cdef class LiveLogger(Logger):
-    cdef object _queue
-    cdef object _thread
-    cdef LogStore _store
-
-    cpdef void _consume_messages(self) except *
+    cpdef void _send_command(self, Command command) except *
+    cpdef void _recv_event(self, str topic, bytes event_bytes) except *

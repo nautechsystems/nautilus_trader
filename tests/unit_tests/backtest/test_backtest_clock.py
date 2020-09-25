@@ -19,7 +19,7 @@ import unittest
 
 import pytz
 
-from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEventHandler
 from tests.test_kit.stubs import UNIX_EPOCH
 

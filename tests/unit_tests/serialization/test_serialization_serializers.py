@@ -17,7 +17,7 @@ from base64 import b64decode
 from base64 import b64encode
 import unittest
 
-from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogMessage

@@ -17,10 +17,10 @@ import unittest
 
 from pandas import Timestamp
 
-from nautilus_trader.backtest.clock import TestClock
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.data import BacktestDataEngine
 from nautilus_trader.backtest.logging import TestLogger
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.data import TestDataProvider

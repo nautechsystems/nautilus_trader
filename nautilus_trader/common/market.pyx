@@ -13,23 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from itertools import permutations
 import os
 
 import pandas as pd
 
-from nautilus_trader.common.exchange cimport ExchangeRateCalculator
+from nautilus_trader import PACKAGE_ROOT
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader import PACKAGE_ROOT
 
 
 cdef class CommissionModel:
@@ -55,10 +58,6 @@ cdef class CommissionModel:
             Money notional_value,
             LiquiditySide liquidity_side,
     ):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -145,7 +144,7 @@ cdef class GenericCommissionModel:
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
         cdef double final_commission = max(self.minimum.as_double(), commission)
         return Money(final_commission, currency)
@@ -176,16 +175,26 @@ cdef class GenericCommissionModel:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(notional_value, "notional_value")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
         cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
         return Money(value, notional_value.currency)
 
-    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
-        cdef double rate = self.rates.get(symbol, -1.0)
-        if rate != -1.0:
-            return rate
-        else:
-            return self.default_rate_bp
+    cpdef double get_rate(self, Symbol symbol) except *:
+        """
+        Return the commission rate for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the rate.
+
+        Returns
+        -------
+        double
+
+        """
+        rate = self.rates.get(symbol, None)
+        return rate if rate is not None else self.default_rate_bp
 
 
 cdef class MakerTakerCommissionModel:
@@ -275,7 +284,7 @@ cdef class MakerTakerCommissionModel:
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
         cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
         return Money(commission, currency)
 
@@ -305,11 +314,26 @@ cdef class MakerTakerCommissionModel:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(notional_value, "notional_value")
 
-        cdef double commission_rate_percent = basis_points_as_percentage(self._get_commission_rate(symbol, liquidity_side))
+        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
         cdef double commission = notional_value.as_double() * commission_rate_percent
         return Money(notional_value.as_double() * commission_rate_percent, notional_value.currency)
 
-    cdef double _get_commission_rate(self, Symbol symbol, LiquiditySide liquidity_side):
+    cpdef double get_rate(self, Symbol symbol, LiquiditySide liquidity_side) except *:
+        """
+        Return the commission rate for the given symbol and liquidity side.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the rate.
+        liquidity_side : LiquiditySide
+            The liquidity side for the rate.
+
+        Returns
+        -------
+        double
+
+        """
         if liquidity_side == LiquiditySide.TAKER:
             rate = self.taker_rates.get(symbol, None)
             return rate if rate is not None else self.taker_default_rate_bp
@@ -319,6 +343,124 @@ cdef class MakerTakerCommissionModel:
         else:
             liquidity_side_str = liquidity_side_to_string(liquidity_side)
             raise ValueError(f"Cannot get commission rate (liquidity side was {liquidity_side_str})")
+
+
+cdef class ExchangeRateCalculator:
+    """
+    Provides exchange rate calculations between currencies. An exchange rate is
+    the value of one nation or economic zones currency versus that of another.
+    """
+
+    cpdef double get_rate(
+            self,
+            Currency from_currency,
+            Currency to_currency,
+            PriceType price_type,
+            dict bid_rates,
+            dict ask_rates
+    ) except *:
+        """
+        Return the calculated exchange rate for the given quote currency to the
+        given base currency for the given price type using the given dictionary of
+        bid and ask rates.
+
+        :param from_currency: The currency to convert from.
+        :param to_currency: The currency to convert to.
+        :param price_type: The price type for conversion.
+        :param bid_rates: The dictionary of currency pair bid rates Dict[str, double].
+        :param ask_rates: The dictionary of currency pair ask rates Dict[str, double].
+        :raises ValueError: If bid_rates length is not equal to ask_rates length.
+        :raises ValueError: If price_type is UNDEFINED or LAST.
+        :return double.
+        """
+        Condition.not_none(bid_rates, "bid_rates")
+        Condition.not_none(ask_rates, "ask_rates")
+        Condition.equal(len(bid_rates), len(ask_rates), "len(bid_rates)", "len(ask_rates)")
+
+        if from_currency == to_currency:
+            return 1.0  # No exchange necessary
+
+        if price_type == PriceType.BID:
+            calculation_rates = bid_rates
+        elif price_type == PriceType.ASK:
+            calculation_rates = ask_rates
+        elif price_type == PriceType.MID:
+            calculation_rates = {}  # type: {str, float}
+            for ccy_pair in bid_rates.keys():
+                calculation_rates[ccy_pair] = (bid_rates[ccy_pair] + ask_rates[ccy_pair]) / 2.0
+        else:
+            raise ValueError(f"Cannot calculate exchange rate for price type {price_type_to_string(price_type)}")
+
+        cdef dict exchange_rates = {}
+        cdef set symbols = set()
+        cdef str symbol_lhs
+        cdef str symbol_rhs
+
+        # Add given currency rates
+        for ccy_pair, rate in calculation_rates.items():
+            # Get currency pair symbols
+            symbol_lhs = ccy_pair[:3]
+            symbol_rhs = ccy_pair[-3:]
+            symbols.add(symbol_lhs)
+            symbols.add(symbol_rhs)
+            # Add currency dictionaries if they do not already exist
+            if symbol_lhs not in exchange_rates:
+                exchange_rates[symbol_lhs] = {}
+            if symbol_rhs not in exchange_rates:
+                exchange_rates[symbol_rhs] = {}
+            # Add currency rates
+            exchange_rates[symbol_lhs][symbol_lhs] = 1.0
+            exchange_rates[symbol_rhs][symbol_rhs] = 1.0
+            exchange_rates[symbol_lhs][symbol_rhs] = rate
+
+        # Generate possible currency pairs from all symbols
+        cdef list possible_pairs = list(permutations(symbols, 2))
+
+        # Calculate currency inverses
+        for ccy_pair in possible_pairs:
+            if ccy_pair[0] not in exchange_rates[ccy_pair[1]]:
+                # Search for inverse
+                if ccy_pair[1] in exchange_rates[ccy_pair[0]]:
+                    exchange_rates[ccy_pair[1]][ccy_pair[0]] = 1.0 / exchange_rates[ccy_pair[0]][ccy_pair[1]]
+            if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
+                # Search for inverse
+                if ccy_pair[0] in exchange_rates[ccy_pair[1]]:
+                    exchange_rates[ccy_pair[0]][ccy_pair[1]] = 1.0 / exchange_rates[ccy_pair[1]][ccy_pair[0]]
+
+        cdef str lhs_str = currency_to_string(from_currency)
+        cdef str rhs_str = currency_to_string(to_currency)
+        cdef double exchange_rate
+        try:
+            return exchange_rates[lhs_str][rhs_str]
+        except KeyError:
+            pass  # Exchange rate not yet calculated
+
+        # Continue to calculate remaining currency rates
+        cdef double common_ccy1
+        cdef double common_ccy2
+        for ccy_pair in possible_pairs:
+            if ccy_pair[0] not in exchange_rates[ccy_pair[1]]:
+                # Search for common currency
+                for symbol in symbols:
+                    if symbol in exchange_rates[ccy_pair[0]] and symbol in exchange_rates[ccy_pair[1]]:
+                        common_ccy1 = exchange_rates[ccy_pair[0]][symbol]
+                        common_ccy2 = exchange_rates[ccy_pair[1]][symbol]
+                        exchange_rates[ccy_pair[1]][ccy_pair[0]] = common_ccy2 / common_ccy1
+                        # Check inverse and calculate if not found
+                        if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
+                            exchange_rates[ccy_pair[0]][ccy_pair[1]] = common_ccy1 / common_ccy2
+                    elif ccy_pair[0] in exchange_rates[symbol] and ccy_pair[1] in exchange_rates[symbol]:
+                        common_ccy1 = exchange_rates[symbol][ccy_pair[0]]
+                        common_ccy2 = exchange_rates[symbol][ccy_pair[1]]
+                        exchange_rates[ccy_pair[1]][ccy_pair[0]] = common_ccy2 / common_ccy1
+                        # Check inverse and calculate if not found
+                        if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
+                            exchange_rates[ccy_pair[0]][ccy_pair[1]] = common_ccy1 / common_ccy2
+        try:
+            return exchange_rates[lhs_str][rhs_str]
+        except KeyError:
+            raise ValueError(f"Cannot calculate exchange rate for {lhs_str}{rhs_str} or {rhs_str}{lhs_str} "
+                             f"(not enough data)")
 
 
 cdef class RolloverInterestCalculator:
