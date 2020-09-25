@@ -44,7 +44,7 @@ from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport LiveUUIDFactory
 from nautilus_trader.data.engine cimport LiveDataEngine
-from nautilus_trader.enterprise.execution_client cimport LiveExecClient
+from nautilus_trader.enterprise.execution cimport LiveExecClient
 from nautilus_trader.execution.engine cimport LiveExecutionEngine
 from nautilus_trader.network.compression cimport BypassCompressor
 from nautilus_trader.network.compression cimport LZ4Compressor
@@ -192,6 +192,8 @@ cdef class TradingNode:
             response_serializer=response_serializer,
             data_serializer=data_serializer,
             instrument_serializer=instrument_serializer,
+            tick_capacity=config_data["tick_capacity"],
+            bar_capacity=config_data["bar_capacity"],
             clock=self._clock,
             uuid_factory=self._uuid_factory,
             logger=self._logger,
