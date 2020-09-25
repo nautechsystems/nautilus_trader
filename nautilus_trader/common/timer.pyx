@@ -44,9 +44,15 @@ cdef class TimeEvent(Event):
         """
         Initialize a new instance of the TimeEvent class.
 
-        :param event_id: The event label.
-        :param event_id: The event identifier.
-        :param event_timestamp: The event timestamp.
+        Parameters
+        ----------
+        name : str
+            The event label.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
         """
         # Precondition: name checked in Timer
         super().__init__(event_id, event_timestamp)
@@ -89,8 +95,15 @@ cdef class TimeEvent(Event):
         """
         Return a value indicating whether this object is less than (<) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp < other.timestamp
 
@@ -98,8 +111,15 @@ cdef class TimeEvent(Event):
         """
         Return a value indicating whether this object is less than or equal to (<=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp <= other.timestamp
 
@@ -107,8 +127,15 @@ cdef class TimeEvent(Event):
         """
         Return a value indicating whether this object is greater than (>) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp > other.timestamp
 
@@ -116,8 +143,15 @@ cdef class TimeEvent(Event):
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.timestamp >= other.timestamp
 
@@ -206,8 +240,15 @@ cdef class TimeEventHandler:
         """
         Return a value indicating whether this object is less than (<) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.event.timestamp < other.event.timestamp
 
@@ -215,8 +256,15 @@ cdef class TimeEventHandler:
         """
         Return a value indicating whether this object is less than or equal to (<=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.event.timestamp <= other.event.timestamp
 
@@ -224,8 +272,15 @@ cdef class TimeEventHandler:
         """
         Return a value indicating whether this object is greater than (>) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
         return self.event.timestamp > other.event.timestamp
 
@@ -233,8 +288,15 @@ cdef class TimeEventHandler:
         """
         Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
-        :param other: The other object.
-        :return bool.
+        Parameters
+        ----------
+        other : TimeEvent
+            The other object.
+
+        Returns
+        -------
+        bool
+
         """
 
 
@@ -254,11 +316,19 @@ cdef class Timer:
         """
         Initialize a new instance of the Timer class.
 
-        :param name: The name for the timer.
-        :param callback: The function to call at the next time.
-        :param interval: The time interval for the timer (not negative).
-        :param start_time: The start datetime for the timer (UTC).
-        :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
+        Parameters
+        ----------
+        name : str
+            The name for the timer.
+        callback : Callable
+            The function to call at the next time.
+        interval : timedelta
+            The time interval for the timer (not negative).
+        start_time : datetime
+            The start datetime for the timer (UTC).
+        stop_time : datetime, optional
+            The stop datetime for the timer (UTC) (if None then timer repeats).
+
         """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
@@ -278,7 +348,11 @@ cdef class Timer:
         """
         Returns a generated time event with the given identifier.
 
-        :param event_id: The identifier for the time event.
+        Parameters
+        ----------
+        event_id : UUID
+            The identifier for the time event.
+
         """
         Condition.not_none(event_id, "event_id")
 
@@ -288,7 +362,11 @@ cdef class Timer:
         """
         Iterates the timers next time and checks if the timer is now expired.
 
-        :param now: The datetime now (UTC).
+        Parameters
+        ----------
+        now : datetime 
+            The datetime now (UTC).
+
         """
         Condition.not_none(now, "now")
 
@@ -357,10 +435,19 @@ cdef class TestTimer(Timer):
         """
         Initialize a new instance of the TestTimer class.
 
-        :param name: The name for the timer.
-        :param interval: The time interval for the timer (not negative).
-        :param start_time: The stop datetime for the timer (UTC).
-        :param stop_time: The optional stop datetime for the timer (UTC) (if None then timer repeats).
+        Parameters
+        ----------
+        name : str
+            The name for the timer.
+        callback : Callable
+            The function to call at the next time.
+        interval : timedelta
+            The time interval for the timer (not negative).
+        start_time : datetime
+            The stop datetime for the timer (UTC).
+        stop_time : datetime, optional
+            The stop datetime for the timer (UTC) (if None then timer repeats).
+
         """
         Condition.valid_string(name, "name")
         super().__init__(name, callback, interval, start_time, stop_time)
@@ -373,8 +460,15 @@ cdef class TestTimer(Timer):
         the given time. A time event is appended for each time a next event is
         <= the given to_time.
 
-        :param to_time: The time to advance the test timer to.
-        :return List[TimeEvent].
+        Parameters
+        ----------
+        to_time : datetime 
+            The time to advance the test timer to.
+        
+        Returns
+        -------
+        List[TimeEvent]
+
         """
         Condition.not_none(to_time, "to_time")
 
@@ -389,8 +483,15 @@ cdef class TestTimer(Timer):
         """
         Return the next time event for this timer.
 
-        :return TimeEvent.
-        :raises ValueError: If the next event timestamp is not equal to the at_time.
+        Returns
+        -------
+        TimeEvent
+        
+        Raises
+        ------
+        ValueError
+            If the next event timestamp is not equal to the at_time.
+
         """
         cdef TimeEvent event = self.pop_event(self._uuid_factory.generate())
         self.iterate_next_time(self.next_time)

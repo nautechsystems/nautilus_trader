@@ -364,14 +364,29 @@ cdef class ExchangeRateCalculator:
         given base currency for the given price type using the given dictionary of
         bid and ask rates.
 
-        :param from_currency: The currency to convert from.
-        :param to_currency: The currency to convert to.
-        :param price_type: The price type for conversion.
-        :param bid_rates: The dictionary of currency pair bid rates Dict[str, double].
-        :param ask_rates: The dictionary of currency pair ask rates Dict[str, double].
-        :raises ValueError: If bid_rates length is not equal to ask_rates length.
-        :raises ValueError: If price_type is UNDEFINED or LAST.
-        :return double.
+        
+        from_currency : Currency
+            The currency to convert from.
+        to_currency : Currency
+            The currency to convert to.
+        price_type : PriceType
+            The price type for conversion.
+        bid_rates : dict
+            The dictionary of currency pair bid rates Dict[str, double].
+        ask_rates : dict
+            The dictionary of currency pair ask rates Dict[str, double].
+
+        Returns
+        -------
+        double
+        
+        Raises
+        ------
+        ValueError
+            If bid_rates length is not equal to ask_rates length.
+        ValueError
+            If price_type is UNDEFINED or LAST.
+
         """
         Condition.not_none(bid_rates, "bid_rates")
         Condition.not_none(ask_rates, "ask_rates")
