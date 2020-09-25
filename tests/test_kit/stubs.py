@@ -18,10 +18,10 @@ from datetime import timedelta
 
 import pytz
 
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.live.clock import LiveClock
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType

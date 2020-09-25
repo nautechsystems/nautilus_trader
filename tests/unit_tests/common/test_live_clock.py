@@ -20,8 +20,8 @@ import unittest
 
 import pytz
 
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.timer import TimeEvent
-from nautilus_trader.live.clock import LiveClock
 
 
 class LiveClockTests(unittest.TestCase):

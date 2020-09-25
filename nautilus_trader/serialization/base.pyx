@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import re
-
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.message cimport Request
@@ -27,17 +25,10 @@ cdef class Serializer:
     """
     The base class for all serializers.
     """
+    cdef inline str convert_camel_to_snake(self, str value):
+        return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
 
-    def __init__(self):
-        """
-        Initialize a new instance of the Serializer class.
-        """
-        self._re_camel_to_snake = re.compile(r'(?<!^)(?=[A-Z])')
-
-    cdef str convert_camel_to_snake(self, str value):
-        return self._re_camel_to_snake.sub('_', value).upper()
-
-    cdef str convert_snake_to_camel(self, str value):
+    cdef inline str convert_snake_to_camel(self, str value):
         cdef list components = value.split('_')
         cdef str x
         return ''.join(x.title() for x in components)

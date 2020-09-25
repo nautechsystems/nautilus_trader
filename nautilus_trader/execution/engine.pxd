@@ -93,3 +93,10 @@ cdef class ExecutionEngine:
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
     cdef void _reset(self) except *
+
+
+cdef class LiveExecutionEngine(ExecutionEngine):
+    cdef object _queue
+    cdef object _thread
+
+    cpdef void _process(self) except *

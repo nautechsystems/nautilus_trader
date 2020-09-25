@@ -17,15 +17,15 @@ import pytz
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.backtest.clock cimport TestClock
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.uuid cimport TestUUIDFactory
 from nautilus_trader.common.account cimport Account
+from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.market cimport CommissionModel
 from nautilus_trader.common.market cimport ExchangeRateCalculator
 from nautilus_trader.common.market cimport RolloverInterestCalculator
+from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency

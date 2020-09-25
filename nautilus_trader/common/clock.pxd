@@ -18,6 +18,8 @@ from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.timer cimport LiveTimer
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.common.uuid cimport UUIDFactory
 
@@ -67,3 +69,17 @@ cdef class Clock:
     cdef void _remove_timer(self, Timer timer) except *
     cdef void _update_stack(self) except *
     cdef void _update_timing(self) except *
+
+
+cdef class TestClock(Clock):
+    cdef datetime _time
+    cdef dict _pending_events
+
+    cpdef void set_time(self, datetime to_time) except *
+    cpdef list advance_time(self, datetime to_time)
+
+
+cdef class LiveClock(Clock):
+    cpdef void _raise_time_event(self, LiveTimer timer) except *
+
+    cdef void _handle_time_event(self, TimeEvent event) except *

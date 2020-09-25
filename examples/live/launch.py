@@ -15,7 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from examples.strategies.ema_cross_filtered import EMACrossFiltered
-from nautilus_trader.live.node import TradingNode
+from nautilus_trader.enterprise.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType

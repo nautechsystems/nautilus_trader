@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.backtest.clock import TestClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.generators import OrderIdGenerator
 from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.identifiers import ClientOrderId

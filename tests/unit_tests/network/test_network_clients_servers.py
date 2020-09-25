@@ -18,11 +18,11 @@ import unittest
 
 import zmq
 
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.uuid import LiveUUIDFactory
 from nautilus_trader.core.message import MessageType
-from nautilus_trader.live.clock import LiveClock
-from nautilus_trader.live.factories import LiveUUIDFactory
-from nautilus_trader.live.logging import LiveLogger
 from nautilus_trader.network.compression import BypassCompressor
 from nautilus_trader.network.encryption import EncryptionSettings
 from nautilus_trader.network.identifiers import ClientId
