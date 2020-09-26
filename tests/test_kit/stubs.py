@@ -91,12 +91,13 @@ class TestStubs:
             min_stop_distance=0,
             min_limit_distance=0,
             tick_size=Price(0.00001, 5),
-            round_lot_size=Quantity(1000),
+            lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal64(0),
             rollover_interest_sell=Decimal64(0),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
     @staticmethod
     def instrument_usdjpy() -> ForexInstrument:
@@ -109,12 +110,13 @@ class TestStubs:
             min_stop_distance=0,
             min_limit_distance=0,
             tick_size=Price(0.001, 3),
-            round_lot_size=Quantity(1000),
+            lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal64(0),
             rollover_interest_sell=Decimal64(0),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
@@ -168,7 +170,8 @@ class TestStubs:
             Price(1.00001, 5),
             Price(1.00003, 5),
             Quantity(100000),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def bar_3decimal() -> Bar:
@@ -178,7 +181,8 @@ class TestStubs:
             Price(90.001, 3),
             Price(90.003, 3),
             Quantity(100000),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def quote_tick_3decimal(symbol) -> QuoteTick:
@@ -188,7 +192,8 @@ class TestStubs:
             Price(90.003, 3),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def quote_tick_5decimal(symbol) -> QuoteTick:
@@ -198,7 +203,8 @@ class TestStubs:
             Price(1.00003, 5),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def trade_tick_5decimal(symbol) -> TradeTick:
@@ -208,7 +214,8 @@ class TestStubs:
             Quantity(100000, 0),
             Maker.BUYER,
             MatchId("123456"),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def trader_id() -> TraderId:
@@ -234,7 +241,8 @@ class TestStubs:
             Decimal64(0),
             'N',
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_order_submitted(order) -> OrderSubmitted:
@@ -243,7 +251,8 @@ class TestStubs:
             order.cl_ord_id,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_order_accepted(order) -> OrderAccepted:
@@ -253,7 +262,8 @@ class TestStubs:
             OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_order_rejected(order) -> OrderRejected:
@@ -263,7 +273,8 @@ class TestStubs:
             UNIX_EPOCH,
             "ORDER_REJECTED",
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_order_filled(order, fill_price=None, commission=0.) -> OrderFilled:
@@ -285,7 +296,8 @@ class TestStubs:
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_order_working(order, working_price=None) -> OrderWorking:
@@ -305,7 +317,8 @@ class TestStubs:
             order.expire_time,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_order_cancelled(order) -> OrderCancelled:
@@ -315,7 +328,8 @@ class TestStubs:
             OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_order_expired(order) -> OrderExpired:
@@ -325,7 +339,8 @@ class TestStubs:
             OrderId('1'),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
@@ -334,7 +349,8 @@ class TestStubs:
             StrategyId("SCALPER", "001"),
             position.last_event(),
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_position_modified(position) -> PositionModified:
@@ -343,7 +359,8 @@ class TestStubs:
             StrategyId("SCALPER", "001"),
             position.last_event(),
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
@@ -352,7 +369,8 @@ class TestStubs:
             StrategyId("SCALPER", "001"),
             position.last_event(),
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
     @staticmethod
     def position(number=1, entry_price=None) -> Position:
@@ -362,7 +380,8 @@ class TestStubs:
         generator = PositionIdGenerator(
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
-            clock=LiveClock())
+            clock=LiveClock(),
+        )
 
         for _i in range(number - 1):
             generator.generate()
@@ -370,12 +389,14 @@ class TestStubs:
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
-            clock=LiveClock())
+            clock=LiveClock(),
+        )
 
         order = order_factory.market(
             TestStubs.symbol_audusd_fxcm(),
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         order_filled = TestStubs.event_order_filled(order, entry_price)
 
@@ -393,12 +414,14 @@ class TestStubs:
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"))
+            id_tag_strategy=IdTag("001"),
+        )
 
         order = order_factory.market(
             TestStubs.symbol_audusd_fxcm(),
             OrderSide.SELL,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         order_filled = OrderFilled(
             TestStubs.account_id(),
@@ -415,7 +438,8 @@ class TestStubs:
             Currency.USD,
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
-            UNIX_EPOCH + timedelta(minutes=5))
+            UNIX_EPOCH + timedelta(minutes=5),
+        )
 
         position.apply(order_filled)
 

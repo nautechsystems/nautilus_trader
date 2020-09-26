@@ -374,7 +374,11 @@ cdef class TestClock(Clock):
         """
         Initialize a new instance of the TestClock class.
 
-        :param initial_time: The initial time for the clock.
+        Parameters
+        ----------
+        initial_time : datetime
+            The initial time for the clock.
+
         """
         super().__init__(TestUUIDFactory())
 
@@ -385,7 +389,10 @@ cdef class TestClock(Clock):
         """
         Return the current datetime of the clock (UTC).
 
-        :return datetime.
+        Returns
+        -------
+        datetime
+
         """
         return self._time
 
@@ -393,7 +400,11 @@ cdef class TestClock(Clock):
         """
         Set the clocks datetime to the given time (UTC).
 
-        :param to_time: The time to set to.
+        Parameters
+        ----------
+        to_time : datetime
+            The time to set.
+
         """
         Condition.not_none(to_time, "to_time")
 
@@ -403,7 +414,11 @@ cdef class TestClock(Clock):
         """
         Iterates the clocks time to the given datetime.
 
-        :param to_time: The datetime to iterate the test clock to.
+        Parameters
+        ----------
+        to_time : datetime
+            The datetime to iterate the test clock to.
+
         """
         Condition.not_none(to_time, "to_time")
 
@@ -462,7 +477,10 @@ cdef class LiveClock(Clock):
         """
         Return the current datetime of the clock (UTC).
 
-        :return datetime.
+        Returns
+        -------
+        datetime
+
         """
         # From the pytz docs https://pythonhosted.org/pytz/
         # -------------------------------------------------

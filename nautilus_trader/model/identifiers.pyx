@@ -20,6 +20,9 @@ from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
 
 
+cdef str _NONE_ID = 'NoneId'
+
+
 cdef class Symbol(Identifier):
     """
     Represents the symbol for a financial market tradeable instrument.
@@ -564,8 +567,32 @@ cdef class ClientPositionId(Identifier):
             If value is not a valid string, or does not start with 'P-'.
 
         """
-        Condition.true(value.startswith("P-"), f" value must begin with \"P-\", was {value}.")
+        if value != _NONE_ID:
+            Condition.true(value.startswith("P-"), f" value must begin with \"P-\", was {value}.")
         super().__init__(value)
+
+    @staticmethod
+    cdef ClientPositionId none():
+        """
+        Returns a client position identifier with a `None` value.
+
+        Returns
+        -------
+        ClientPositionId
+
+        """
+        return ClientPositionId(_NONE_ID)
+
+    cdef bint is_none_value(self):
+        """
+        Return a value indicating whether the identifier value is 'None'.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.value == _NONE_ID
 
 
 cdef class PositionId(Identifier):
@@ -589,6 +616,29 @@ cdef class PositionId(Identifier):
 
         """
         super().__init__(value)
+
+    @staticmethod
+    cdef PositionId none():
+        """
+        Returns a position identifier with a `None` value.
+
+        Returns
+        -------
+        PositionId
+
+        """
+        return PositionId(_NONE_ID)
+
+    cdef bint is_none_value(self):
+        """
+        Return a value indicating whether the identifier value is 'None'.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.value == _NONE_ID
 
 
 cdef class ExecutionId(Identifier):

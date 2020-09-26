@@ -44,6 +44,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.identifiers cimport Symbol, PositionId, OrderId, ExecutionId
 
 
 cdef class SimulatedMarket:
@@ -71,6 +72,7 @@ cdef class SimulatedMarket:
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover
     cdef readonly FillModel fill_model
+    cdef readonly bint generate_position_ids
 
     cdef dict _market
     cdef dict _slippages
@@ -78,9 +80,13 @@ cdef class SimulatedMarket:
     cdef dict _min_limits
 
     cdef dict _working_orders
+    cdef dict _position_index
     cdef dict _child_orders
     cdef dict _oco_orders
     cdef dict _position_oco_orders
+    cdef dict _symbol_pos_count
+    cdef dict _symbol_ord_count
+    cdef int _executions_count
 
     cdef void _set_slippages(self) except *
     cdef void _set_min_distances(self) except *
@@ -106,6 +112,9 @@ cdef class SimulatedMarket:
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
+    cdef PositionId _generate_position_id(self, Symbol symbol)
+    cdef OrderId _generate_order_id(self, Symbol symbol)
+    cdef ExecutionId _generate_execution_id(self)
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)

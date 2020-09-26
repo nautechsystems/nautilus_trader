@@ -293,7 +293,7 @@ cdef class Trader:
             command_timestamp=self._clock.utc_now(),
         )
 
-        self._exec_engine.execute_command(command)
+        self._exec_engine.execute(command)
 
     cpdef ComponentState state(self):
         """

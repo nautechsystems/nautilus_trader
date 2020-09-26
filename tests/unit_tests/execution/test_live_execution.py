@@ -23,10 +23,14 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import LiveUUIDFactory
 from nautilus_trader.core.message import MessageType
-from nautilus_trader.enterprise.execution_client import LiveExecClient
+from nautilus_trader.enterprise.execution import LiveExecClient
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import LiveExecutionEngine
 from nautilus_trader.model.commands import AccountInquiry
+from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import ModifyOrder
+from nautilus_trader.model.commands import SubmitBracketOrder
+from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
@@ -75,7 +79,8 @@ class LiveExecutionTests(unittest.TestCase):
             encryption=EncryptionSettings(),
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=LoggerAdapter("CommandServer", logger))
+            logger=LoggerAdapter("CommandServer", logger),
+        )
 
         self.command_serializer = MsgPackCommandSerializer()
 
@@ -83,18 +88,20 @@ class LiveExecutionTests(unittest.TestCase):
         self.command_server.register_handler(MessageType.COMMAND, self.command_handler)
         self.command_server.start()
 
-        time.sleep(1.0)
+        time.sleep(0.5)
 
         self.portfolio = Portfolio(
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_db = InMemoryExecutionDatabase(
             trader_id=trader_id,
-            logger=logger)
+            logger=logger,
+        )
 
         self.exec_engine = LiveExecutionEngine(
             trader_id=trader_id,
@@ -103,9 +110,10 @@ class LiveExecutionTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
-        self.exec_engine.handle_event(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.account_event())
 
         self.exec_client = LiveExecClient(
             exec_engine=self.exec_engine,
@@ -122,12 +130,13 @@ class LiveExecutionTests(unittest.TestCase):
             event_serializer=MsgPackEventSerializer(),
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
         self.exec_engine.register_client(self.exec_client)
         self.exec_client.connect()
 
-        time.sleep(1.0)
+        time.sleep(0.5)
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
         self.strategy = TestStrategy1(self.bar_type, id_tag_strategy="001")
@@ -135,16 +144,21 @@ class LiveExecutionTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock,
             uuid_factory,
-            logger)
+            logger,
+        )
         self.exec_engine.register_strategy(self.strategy)
 
     def tearDown(self):
         # Tear Down
         self.exec_client.disconnect()
         self.command_server.stop()
+
+        time.sleep(1.5)  # Must be longer than 1 second linger
+        self.exec_client.dispose()
+        self.command_server.dispose()
         # Allowing the garbage collector to clean up resources avoids threading
-        # errors caused by the continuous disposal of sockets. Thus for testing
-        # we're avoiding calling .dispose() on the sockets.
+        # errors caused by the continuous disposal of sockets.
+        time.sleep(0.5)
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)
@@ -155,63 +169,64 @@ class LiveExecutionTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         # Act
-        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        self.strategy.submit_order(order)
 
         time.sleep(0.5)
 
         # # Assert
-        # TODO: Intermittent
-        # self.assertEqual(order, self.strategy.order(order.cl_ord_id))
-        # self.assertEqual(2, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(2, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
 
     def test_send_submit_bracket_order(self):
         # Arrange
         entry_order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         bracket_order = self.strategy.order_factory.bracket(
             entry_order,
-            stop_loss=Price(0.99900, 5))
+            stop_loss=Price(0.99900, 5),
+        )
 
         # Act
-        self.strategy.submit_bracket_order(bracket_order, self.strategy.position_id_generator.generate())
+        self.strategy.submit_bracket_order(bracket_order)
 
         time.sleep(0.5)
         # Assert
-        # TODO: Intermittent
-        # self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.cl_ord_id))
-        # self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.cl_ord_id))
-        # self.assertEqual(2, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
+        self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.cl_ord_id))
+        self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.cl_ord_id))
+        self.assertEqual(2, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
 
     def test_send_cancel_order_command(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         # Act
-        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        self.strategy.submit_order(order)
         self.strategy.cancel_order(order)
 
         time.sleep(0.5)
 
         # Assert
-        # TODO: Intermittent
-        # self.assertEqual(order, self.strategy.order(order.cl_ord_id))
-        # self.assertEqual(3, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
-        # self.assertEqual(CancelOrder, type(self.command_server_sink[1]))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(3, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(CancelOrder, type(self.command_server_sink[1]))
 
     def test_send_modify_order_command(self):
         # Arrange
@@ -219,28 +234,28 @@ class LiveExecutionTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5))
+            Price(1.00000, 5),
+        )
 
         # Act
-        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        self.strategy.submit_order(order)
         self.strategy.modify_order(order, Quantity(110000), Price(1.00001, 5))
 
         time.sleep(0.5)
 
         # Assert
-        # TODO: Intermittent
-        # self.assertEqual(order, self.strategy.order(order.cl_ord_id))
-        # self.assertEqual(3, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
-        # self.assertEqual(ModifyOrder, type(self.command_server_sink[1]))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(3, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(ModifyOrder, type(self.command_server_sink[1]))
 
     def test_send_account_inquiry_command(self):
         # Arrange
         # Act
         self.strategy.account_inquiry()
 
-        time.sleep(2)
+        time.sleep(0.5)
 
         # Assert
         self.assertEqual(2, self.command_server.recv_count)

@@ -67,7 +67,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
 
         # Act
         self.database.add_order(order, self.strategy.id, position_id)
@@ -82,7 +82,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order, self.strategy.id, position_id)
 
         order_filled = TestStubs.event_order_filled(order, fill_price=Price(1.00000, 5))
@@ -109,7 +109,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order, self.strategy.id, position_id)
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -138,7 +138,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order, self.strategy.id, position_id)
         order.apply(TestStubs.event_order_submitted(order))
         self.database.update_order(order)
@@ -166,7 +166,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position_id)
         order1.apply(TestStubs.event_order_submitted(order1))
         self.database.update_order(order1)
@@ -266,7 +266,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position1_id = self.strategy.position_id_generator.generate()
+        position1_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -285,7 +285,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             Price(1.0000, 5))
-        position2_id = self.strategy.position_id_generator.generate()
+        position2_id = ClientPositionId('P-2')
         self.database.add_order(order2, self.strategy.id, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -308,7 +308,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position1_id = self.strategy.position_id_generator.generate()
+        position1_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -328,7 +328,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position2_id = self.strategy.position_id_generator.generate()
+        position2_id = ClientPositionId('P-2')
         self.database.add_order(order2, self.strategy.id, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -356,7 +356,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position1_id = self.strategy.position_id_generator.generate()
+        position1_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -376,7 +376,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position2_id = self.strategy.position_id_generator.generate()
+        position2_id = ClientPositionId('P-2')
         self.database.add_order(order2, self.strategy.id, position2_id)
         order2.apply(TestStubs.event_order_submitted(order2))
         self.database.update_order(order2)

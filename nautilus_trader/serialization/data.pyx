@@ -334,12 +334,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             SECURITY_TYPE: security_type_to_string(instrument.security_type),
             PRICE_PRECISION: instrument.price_precision,
             SIZE_PRECISION: instrument.size_precision,
-            MIN_STOP_DISTANCE_ENTRY: instrument.min_stop_distance_entry,
-            MIN_STOP_DISTANCE: instrument.min_stop_distance,
-            MIN_LIMIT_DISTANCE_ENTRY: instrument.min_limit_distance_entry,
-            MIN_LIMIT_DISTANCE: instrument.min_limit_distance,
             TICK_SIZE: instrument.tick_size.to_string(),
-            ROUND_LOT_SIZE: instrument.round_lot_size.to_string(),
+            LOT_SIZE: instrument.lot_size.to_string(),
             MIN_TRADE_SIZE: instrument.min_trade_size.to_string(),
             MAX_TRADE_SIZE: instrument.max_trade_size.to_string(),
             ROLL_OVER_INTEREST_BUY: instrument.rollover_interest_buy.to_string(),
@@ -349,6 +345,10 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
 
         if isinstance(instrument, ForexInstrument):
             bson_map[BASE_CURRENCY] = currency_to_string(instrument.base_currency)
+            bson_map[MIN_STOP_DISTANCE_ENTRY] = instrument.min_stop_distance_entry
+            bson_map[MIN_STOP_DISTANCE] = instrument.min_stop_distance
+            bson_map[MIN_LIMIT_DISTANCE_ENTRY] = instrument.min_limit_distance_entry
+            bson_map[MIN_LIMIT_DISTANCE] = instrument.min_limit_distance
 
         return BsonSerializer.serialize(bson_map)
 
@@ -374,7 +374,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
                 min_limit_distance_entry=deserialized[MIN_LIMIT_DISTANCE_ENTRY],
                 min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
                 tick_size=Price.from_string(deserialized[TICK_SIZE]),
-                round_lot_size=Quantity.from_string(deserialized[ROUND_LOT_SIZE]),
+                lot_size=Quantity.from_string(deserialized[LOT_SIZE]),
                 min_trade_size=Quantity.from_string(deserialized[MIN_TRADE_SIZE]),
                 max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
                 rollover_interest_buy=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
@@ -388,12 +388,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             security_type=security_type,
             price_precision=deserialized[PRICE_PRECISION],
             size_precision=deserialized[SIZE_PRECISION],
-            min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
-            min_stop_distance=deserialized[MIN_STOP_DISTANCE],
-            min_limit_distance_entry=deserialized[MIN_LIMIT_DISTANCE_ENTRY],
-            min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
             tick_size=Price.from_string(deserialized[TICK_SIZE]),
-            round_lot_size=Quantity.from_string(deserialized[ROUND_LOT_SIZE]),
+            lot_size=Quantity.from_string(deserialized[LOT_SIZE]),
             min_trade_size=Quantity.from_string(deserialized[MIN_TRADE_SIZE]),
             max_trade_size=Quantity.from_string(deserialized[MAX_TRADE_SIZE]),
             rollover_interest_buy=Decimal64.from_string_to_decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
@@ -431,7 +427,7 @@ cdef class DataMapper:
             DATA: Utf8TradeTickSerializer.serialize_ticks_list(ticks),
             DATA_TYPE: TRADE_TICK_ARRAY,
             METADATA: {
-                SYMBOL: ticks[0].symbol.value
+                SYMBOL: ticks[0].symbol.value,
             },
         }
 
@@ -445,7 +441,7 @@ cdef class DataMapper:
             DATA_TYPE: BAR_ARRAY,
             METADATA: {
                 SYMBOL: bar_type.symbol.value,
-                SPECIFICATION: bar_type.spec.to_string()
+                SPECIFICATION: bar_type.spec.to_string(),
             },
         }
 

@@ -31,12 +31,8 @@ cdef class Instrument:
     cdef readonly SecurityType security_type
     cdef readonly int price_precision
     cdef readonly int size_precision
-    cdef readonly int min_stop_distance_entry
-    cdef readonly int min_stop_distance
-    cdef readonly int min_limit_distance_entry
-    cdef readonly int min_limit_distance
     cdef readonly Price tick_size
-    cdef readonly Quantity round_lot_size
+    cdef readonly Quantity lot_size
     cdef readonly Quantity min_trade_size
     cdef readonly Quantity max_trade_size
     cdef readonly Decimal64 rollover_interest_buy
@@ -46,3 +42,7 @@ cdef class Instrument:
 
 cdef class ForexInstrument(Instrument):
     cdef readonly Currency base_currency
+    cdef readonly int min_stop_distance_entry
+    cdef readonly int min_stop_distance
+    cdef readonly int min_limit_distance_entry
+    cdef readonly int min_limit_distance

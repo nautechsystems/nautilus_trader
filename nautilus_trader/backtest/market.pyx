@@ -145,12 +145,17 @@ cdef class SimulatedMarket:
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
+        self.generate_position_ids = config.generate_position_ids
 
         self._market = {}               # type: {Symbol, QuoteTick}
         self._working_orders = {}       # type: {ClientOrderId, Order}
+        self._position_index = {}       # type: {ClientOrderId, PositionId}
         self._child_orders = {}         # type: {ClientOrderId, [Order]}
         self._oco_orders = {}           # type: {ClientOrderId, ClientOrderId}
         self._position_oco_orders = {}  # type: {ClientPositionId, [ClientOrderId]}
+        self._symbol_pos_count = {}     # type: {Symbol, int}
+        self._symbol_ord_count = {}     # type: {Symbol, int}
+        self._executions_count = 0
 
         self._set_slippages()
         self._set_min_distances()
@@ -202,7 +207,7 @@ cdef class SimulatedMarket:
 
     cpdef void reset(self) except *:
         """
-        Return the client to its initial state preserving tick data.
+        Return the market to its initial state.
         """
         self._log.debug(f"Resetting...")
 
@@ -213,11 +218,15 @@ cdef class SimulatedMarket:
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
 
-        self._market = {}               # type: {Symbol, QuoteTick}
-        self._working_orders = {}       # type: {ClientOrderId, PassiveOrder}
-        self._child_orders = {}         # type: {ClientOrderId, [PassiveOrder]}
-        self._oco_orders = {}           # type: {ClientOrderId, ClientOrderId}
-        self._position_oco_orders = {}  # type: {ClientPositionId, [ClientOrderId]}
+        self._market.clear()
+        self._working_orders.clear()
+        self._position_index.clear()
+        self._child_orders.clear()
+        self._oco_orders.clear()
+        self._position_oco_orders.clear()
+        self._symbol_pos_count.clear()
+        self._symbol_ord_count.clear()
+        self._executions_count = 0
 
         self._log.info("Reset.")
 
@@ -420,7 +429,7 @@ cdef class SimulatedMarket:
                 event_timestamp=self._clock.utc_now(),
             )
 
-            self.exec_engine.handle_event(account_event)
+            self.exec_engine.process(account_event)
 
     cpdef Money calculate_pnl(
             self,
@@ -506,7 +515,7 @@ cdef class SimulatedMarket:
                 event_timestamp=self._clock.utc_now(),
             )
 
-            self.exec_engine.handle_event(account_event)
+            self.exec_engine.process(account_event)
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
@@ -528,7 +537,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
@@ -539,26 +548,18 @@ cdef class SimulatedMarket:
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         Condition.not_none(command, "command")
 
+        cdef PositionId position_id = self._generate_position_id(command.bracket_order.entry.symbol)
+
         cdef list bracket_orders = [command.bracket_order.stop_loss]
-        self._position_oco_orders[command.cl_pos_id] = []
+        self._position_oco_orders[position_id] = []
         if command.bracket_order.has_take_profit:
             bracket_orders.append(command.bracket_order.take_profit)
             self._oco_orders[command.bracket_order.take_profit.cl_ord_id] = command.bracket_order.stop_loss.cl_ord_id
             self._oco_orders[command.bracket_order.stop_loss.cl_ord_id] = command.bracket_order.take_profit.cl_ord_id
-            self._position_oco_orders[command.cl_pos_id].append(command.bracket_order.take_profit)
+            self._position_oco_orders[position_id].append(command.bracket_order.take_profit)
 
         self._child_orders[command.bracket_order.entry.cl_ord_id] = bracket_orders
-        self._position_oco_orders[command.cl_pos_id].append(command.bracket_order.stop_loss)
-
-        # Generate command
-        cdef SubmitOrder submit_order = SubmitOrder(
-            command.trader_id,
-            command.account_id,
-            command.strategy_id,
-            command.cl_pos_id,
-            command.bracket_order.entry,
-            self._uuid_factory.generate(),
-            self._clock.utc_now())
+        self._position_oco_orders[position_id].append(command.bracket_order.stop_loss)
 
         self._submit_order(command.bracket_order.entry)
         self._submit_order(command.bracket_order.stop_loss)
@@ -589,7 +590,7 @@ cdef class SimulatedMarket:
         # Remove from working orders (checked it was in dictionary above)
         del self._working_orders[command.cl_ord_id]
 
-        self.exec_engine.handle_event(cancelled)
+        self.exec_engine.process(cancelled)
         self._check_oco_order(command.cl_ord_id)
 
     cpdef void handle_modify_order(self, ModifyOrder command) except *:
@@ -658,9 +659,25 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(modified)
+        self.exec_engine.process(modified)
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
+
+    cdef PositionId _generate_position_id(self, Symbol symbol):
+        cdef int pos_count = self._symbol_pos_count.get(symbol, 0)
+        pos_count += 1
+        self._symbol_pos_count[symbol] = pos_count
+        return PositionId(f"B-{symbol.code}-{pos_count}")
+
+    cdef OrderId _generate_order_id(self, Symbol symbol):
+        cdef int ord_count = self._symbol_ord_count.get(symbol, 0)
+        ord_count += 1
+        self._symbol_ord_count[symbol] = ord_count
+        return OrderId(f"B-{symbol.code}-{ord_count}")
+
+    cdef ExecutionId _generate_execution_id(self):
+        self._executions_count += 1
+        return ExecutionId(f"E-{self._executions_count}")
 
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
         return current_market.ask.eq(order_price) and self.fill_model.is_stop_filled()
@@ -684,20 +701,21 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(submitted)
+        self.exec_engine.process(submitted)
 
     cdef void _accept_order(self, Order order) except *:
         # Generate event
+
         cdef OrderAccepted accepted = OrderAccepted(
             self._account.id,
             order.cl_ord_id,
-            OrderId(order.cl_ord_id.value.replace('O', 'B')),
+            self._generate_order_id(order.symbol),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(accepted)
+        self.exec_engine.process(accepted)
 
     cdef void _reject_order(self, Order order, str reason) except *:
         if order.state() != OrderState.SUBMITTED:
@@ -714,7 +732,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(rejected)
+        self.exec_engine.process(rejected)
         self._check_oco_order(order.cl_ord_id)
         self._clean_up_child_orders(order.cl_ord_id)
 
@@ -734,7 +752,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(cancel_reject)
+        self.exec_engine.process(cancel_reject)
 
     cdef void _expire_order(self, PassiveOrder order) except *:
         # Generate event
@@ -747,7 +765,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(expired)
+        self.exec_engine.process(expired)
 
         cdef ClientOrderId first_child_order_id
         cdef ClientOrderId other_oco_order_id
@@ -868,7 +886,7 @@ cdef class SimulatedMarket:
         cdef OrderWorking working = OrderWorking(
             self._account.id,
             order.cl_ord_id,
-            OrderId(order.cl_ord_id.value.replace('O', 'B')),
+            order.id,
             order.symbol,
             order.side,
             order.type,
@@ -881,7 +899,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(working)
+        self.exec_engine.process(working)
 
     cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side):
         cdef Instrument instrument = self.instruments[order.symbol]
@@ -909,14 +927,30 @@ cdef class SimulatedMarket:
             Order order,
             Price fill_price,
             LiquiditySide liquidity_side) except *:
-        # Generate event
+        # Query if there is an existing position for this order
+        cdef Position position = self.exec_engine.database.get_position_for_order(order.cl_ord_id)
+        # position could be None here
+
+        cdef PositionId position_id
+        if position is None:
+            # Try position index
+            position_id = self._position_index.get(order.cl_ord_id)
+
+        if position is None and position_id is None:
+            position_id = self._generate_position_id(order.symbol)
+        else:
+            position_id = position.id
+
+        # Calculate commission
         cdef Money commission = self._calculate_commission(order, fill_price, liquidity_side)
+
+        # Generate event
         cdef OrderFilled filled = OrderFilled(
             self._account.id,
             order.cl_ord_id,
-            OrderId(order.cl_ord_id.value.replace('O', 'B')),
-            ExecutionId("E-" + order.cl_ord_id.value),
-            PositionId("ET-" + order.cl_ord_id.value),
+            order.id,
+            self._generate_execution_id(),
+            position_id,
             order.symbol,
             order.side,
             order.quantity,
@@ -929,10 +963,9 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        cdef Position position = self.exec_engine.database.get_position_for_order(order.cl_ord_id)
         self.adjust_account(filled, position)
 
-        self.exec_engine.handle_event(filled)
+        self.exec_engine.process(filled)
         self._check_oco_order(order.cl_ord_id)
 
         # Work any bracket child orders
@@ -996,7 +1029,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)
 
     cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
@@ -1016,7 +1049,7 @@ cdef class SimulatedMarket:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} OCO order from {oco_order_id}.")
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         if order.state() != OrderState.WORKING:
@@ -1034,4 +1067,4 @@ cdef class SimulatedMarket:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} as linked position closed.")
-        self.exec_engine.handle_event(event)
+        self.exec_engine.process(event)
