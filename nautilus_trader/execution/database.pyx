@@ -371,7 +371,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added Order(cl_ord_id={order.cl_ord_id.value}).")
 
-        if cl_pos_id == ClientPositionId.none() or cl_pos_id is None:  # Do not index 'NoneId'
+        if cl_pos_id is None or cl_pos_id == ClientPositionId.none():  # Do not index 'NoneId'
             return  # Do not index 'NoneId'
 
         self.set_cl_pos_id(cl_pos_id, order.cl_ord_id, strategy_id)
