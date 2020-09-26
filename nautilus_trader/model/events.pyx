@@ -1296,6 +1296,7 @@ cdef class PositionOpened(PositionEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"cl_pos_id={self.position.cl_pos_id}, "
+                f"position_id={self.position.id}, "
                 f"entry={order_side_to_string(self.position.entry_direction)}, "
                 f"avg_open={round(self.position.average_open_price, 5)}, "
                 f"{self.position.status_string()})")
@@ -1358,7 +1359,8 @@ cdef class PositionModified(PositionEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"cl_pos_id={self.position.cl_pos_id}, "
-                f"position_id={order_side_to_string(self.position.entry_direction)}, "
+                f"position_id={self.position.id}, "
+                f"entry={order_side_to_string(self.position.entry_direction)}, "
                 f"avg_open={self.position.average_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "

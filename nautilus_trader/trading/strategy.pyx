@@ -51,7 +51,6 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport PositionClosed
-from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -130,7 +129,6 @@ cdef class TradingStrategy:
 
         # Order / Position components
         self.order_factory = None          # Initialized when registered with a trader
-        self.position_id_generator = None  # Initialized when registered with a trader
         self._flattening_ids = set()       # type: {ClientPositionId}
         self._stop_loss_ids = set()        # type: {ClientOrderId}
         self._take_profit_ids = set()      # type: {ClientOrderId}
@@ -390,12 +388,6 @@ cdef class TradingStrategy:
             id_tag_strategy=self.id.order_id_tag,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-        )
-
-        self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.trader_id.order_id_tag,
-            id_tag_strategy=self.id.order_id_tag,
-            clock=self.clock,
         )
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
@@ -1959,8 +1951,6 @@ cdef class TradingStrategy:
 
         if self.order_factory is not None:
             self.order_factory.reset()
-        if self.position_id_generator is not None:
-            self.position_id_generator.reset()
 
         self._flattening_ids = set()   # type: {ClientPositionId}
         self._stop_loss_ids = set()    # type: {ClientOrderId}
@@ -2003,10 +1993,7 @@ cdef class TradingStrategy:
         """
         Return the strategy state dictionary to be saved.
         """
-        cpdef dict state = {
-            "OrderIdCount": self.order_factory.count(),
-            "PositionIdCount": self.position_id_generator.count,
-        }
+        cpdef dict state = {"OrderIdCount": self.order_factory.count()}
 
         try:
             user_state = self.on_save()
@@ -2033,12 +2020,6 @@ cdef class TradingStrategy:
             self.order_factory.set_count(order_id_count)
             self.log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
 
-        position_id_count = state.get(b'PositionIdCount')
-        if position_id_count:
-            position_id_count = int(position_id_count.decode("utf8"))
-            self.position_id_generator.set_count(position_id_count)
-            self.log.info(f"Setting PositionIdGenerator count to {position_id_count}.")
-
         try:
             self.on_load(state)
         except Exception as ex:
@@ -2059,23 +2040,24 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id) except *:
+    cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id=None) except *:
         """
-        Send a submit order command with the given order and position_id to the
-        execution engine.
+        Send a submit order command with the given order to the execution engine.
 
         Parameters
         ----------
         order : Order
             The order to submit.
-        cl_pos_id : ClientPositionId
-            The client position identifier to associate with the order.
+        cl_pos_id : ClientPositionId, optional
+            The client position identifier to submit the order against.
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(cl_pos_id, "cl_pos_id")
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "execution_engine")
+
+        if cl_pos_id is None:
+            cl_pos_id = ClientPositionId.none()
 
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
@@ -2090,28 +2072,20 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void submit_bracket_order(
-            self,
-            BracketOrder bracket_order,
-            ClientPositionId cl_pos_id,
-            bint register=True,
-    ) except *:
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=True) except *:
         """
-        Send a submit bracket order command with the given order and position_id
-        to the execution engine.
+        Send a submit bracket order command with the given order to the
+        execution engine.
 
         Parameters
         ----------
         bracket_order : BracketOrder
             The bracket order to submit.
-        cl_pos_id : ClientPositionId
-            The client position identifier to associate with this order.
         register : bool, optional
             If the stop-loss and take-profit orders should be registered as such.
 
         """
         Condition.not_none(bracket_order, "bracket_order")
-        Condition.not_none(cl_pos_id, "cl_pos_id")
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "execution_engine")
 
@@ -2124,7 +2098,6 @@ cdef class TradingStrategy:
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
-            cl_pos_id,
             bracket_order,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -2237,9 +2210,11 @@ cdef class TradingStrategy:
 
     cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *:
         """
-        Flatten the position corresponding to the given identifier by generating
-        the required market order, and sending it to the execution engine.
-        If the position is None or already FLAT will log a warning.
+        Flatten the position.
+
+        Generate and submit the required market order to the execution engine
+        to flatten the position corresponding to the given client position
+        identifier. If the position is None or already FLAT will log a warning.
 
         Parameters
         ----------
@@ -2281,8 +2256,10 @@ cdef class TradingStrategy:
 
     cpdef void flatten_all_positions(self) except *:
         """
-        Flatten all positions by generating the required market orders and sending
-        them to the execution engine. If no positions found or a position is None
+        Flatten all positions.
+
+        Generate and submit the required market to the execution engine to
+        flatten open positions. If no positions found or a position is None
         then will log a warning.
         """
         Condition.not_none(self._exec_engine, "execution_engine")
@@ -2316,7 +2293,7 @@ cdef class TradingStrategy:
             return  # Not a registered stop-loss
 
         # Find position_id for order
-        cdef ClientPositionId position_id = self._exec_engine.database.get_client_position_id(event.cl_ord_id)
+        cdef ClientPositionId position_id = self._exec_engine.database.get_cl_pos_id(event.cl_ord_id)
         if position_id is None:
             self.log.error(f"Cannot find PositionId for {event.cl_ord_id}.")
             return

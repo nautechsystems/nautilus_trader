@@ -29,6 +29,7 @@ from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
@@ -199,6 +200,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             if position:
                 self._cached_positions[position.cl_pos_id] = position
 
+        # Setup symbol position counts
+        cdef dict position_counts = {}  # type: {Symbol, int}
+        for position in self._cached_positions.values():
+            if position.symbol not in position_counts:
+                position_counts[position.symbol] = 0
+            position_counts[position.symbol] += 1
+
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
 
     cpdef void add_account(self, Account account) except *:
@@ -224,19 +232,19 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added Account(id={account.id.value}).")
 
-    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId position_id) except *:
+    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId cl_pos_id=None) except *:
         """
         Add the given order to the execution database indexed with the given strategy and position
         identifiers.
 
         :param order: The order to add.
-        :param strategy_id: The strategy_id to index for the order.
-        :param position_id: The position_id to index for the order.
+        :param strategy_id: The strategy identifier to index for the order.
+        :param cl_pos_id: The client position identifier to index for the order.
         :raises ValueError: If the order.cl_ord_id is already contained in the cached_orders.
         """
         Condition.not_none(order, "order")
         Condition.not_none(strategy_id, "strategy_id")
-        Condition.not_none(position_id, "position_id")
+        Condition.not_none(cl_pos_id, "position_id")
         Condition.not_in(order.cl_ord_id, self._cached_orders, "order.id", "cached_orders")
 
         self._cached_orders[order.cl_ord_id] = order
@@ -244,13 +252,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))  # 0
-        pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=position_id.value)          # 1
+        pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=cl_pos_id.value)            # 1
         pipe.hset(name=self.key_index_order_strategy, key=order.cl_ord_id.value, value=strategy_id.value)          # 2
-        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)    # 3
+        pipe.hset(name=self.key_index_position_strategy, key=cl_pos_id.value, value=strategy_id.value)             # 3
         pipe.sadd(self.key_index_orders, order.cl_ord_id.value)                                                    # 4
-        pipe.sadd(self.key_index_position_orders + position_id.value, order.cl_ord_id.value)                       # 5
+        pipe.sadd(self.key_index_position_orders + cl_pos_id.value, order.cl_ord_id.value)                         # 5
         pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 6
-        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)                 # 7
+        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, cl_pos_id.value)                          # 7
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -270,6 +278,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
 
         self._log.debug(f"Added Order(id={order.cl_ord_id.value}).")
+
+    cdef void set_cl_pos_id(self, ClientPositionId cl_pos_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        """
+        *** WIP ***
+        """
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.hset(name=self.key_index_order_position, key=cl_ord_id.value, value=cl_pos_id.value)
+        pipe.hset(name=self.key_index_position_strategy, key=cl_pos_id.value, value=strategy_id.value)
+        pipe.sadd(self.key_index_position_orders + cl_pos_id.value, cl_ord_id.value)
+        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, cl_pos_id.value)
+        pipe.execute()
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -736,7 +756,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(cl_ord_id, "order_id")
 
-        cdef ClientPositionId position_id = self.get_client_position_id(cl_ord_id)
+        cdef ClientPositionId position_id = self.get_cl_pos_id(cl_ord_id)
         if position_id is None:
             self._log.warning(f"Cannot get Position for {cl_ord_id.to_string(with_class=True)} "
                               f"(no matching PositionId found in database).")
@@ -744,7 +764,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._cached_positions.get(position_id)
 
-    cpdef ClientPositionId get_client_position_id(self, ClientOrderId order_id):
+    cpdef ClientPositionId get_cl_pos_id(self, ClientOrderId order_id):
         """
         Return the position associated with the given order_id (if found, else None).
 
@@ -761,7 +781,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return ClientPositionId(position_id_bytes.decode(_UTF8))
 
-    cpdef ClientPositionId get_client_position_id_for_id(self, PositionId position_id):
+    cpdef ClientPositionId get_cl_pos_id_for_position_id(self, PositionId position_id):
         """
         Return the position associated with the given order_id (if found, else None).
 

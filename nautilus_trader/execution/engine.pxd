@@ -38,6 +38,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.model.identifiers cimport ClientPositionId
 
 
 cdef class ExecutionEngine:
@@ -46,6 +47,8 @@ cdef class ExecutionEngine:
     cdef LoggerAdapter _log
     cdef ExecutionClient _exec_client
     cdef dict _registered_strategies
+    cdef dict _symbol_cl_pos_id_counts
+    cdef dict _symbol_cl_pos_ids
 
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
@@ -81,16 +84,18 @@ cdef class ExecutionEngine:
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-
     cdef void _handle_event(self, Event event) except *
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFillEvent event) except *
+    cdef inline ClientPositionId _find_cl_pos_id(self, OrderFillEvent event)
+    cdef inline ClientPositionId _make_cl_pos_id(self, OrderFillEvent event)
+    cdef inline Position _find_position(self, ClientPositionId cl_pos_id, OrderFillEvent event)
     cdef void _handle_position_event(self, PositionEvent event) except *
     cdef void _handle_account_event(self, AccountState event) except *
-    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event) except *
-    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event) except *
-    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event) except *
+    cdef void _generate_position_opened_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *
+    cdef void _generate_position_modified_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *
+    cdef void _generate_position_closed_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
     cdef void _reset(self) except *
 
@@ -99,4 +104,4 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _queue
     cdef object _thread
 
-    cpdef void _process(self) except *
+    cpdef void _loop(self) except *

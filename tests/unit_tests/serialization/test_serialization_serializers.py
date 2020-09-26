@@ -341,7 +341,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
-            ClientPositionId("P-123456"),
             bracket_order,
             uuid4(),
             UNIX_EPOCH)
@@ -402,7 +401,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
-            ClientPositionId("P-123456"),
             bracket_order,
             uuid4(),
             UNIX_EPOCH)
