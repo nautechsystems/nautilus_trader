@@ -59,7 +59,7 @@ cdef class Position:
         self.from_order = event.cl_ord_id
         self.symbol = event.symbol
         self.quote_currency = event.quote_currency
-        self.entry_direction = event.order_side
+        self.entry = event.order_side
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
         self.closed_time = None    # Can be none
@@ -162,7 +162,7 @@ cdef class Position:
         str
 
         """
-        return f"Position(id={self.cl_pos_id.value}) {self.status_string()}"
+        return f"Position(cl_pos_id={self.cl_pos_id.value}, id={self.id}) {self.status_string()}"
 
     cpdef str market_position_as_string(self):
         """

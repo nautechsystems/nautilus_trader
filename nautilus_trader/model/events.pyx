@@ -1297,7 +1297,7 @@ cdef class PositionOpened(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"cl_pos_id={self.position.cl_pos_id}, "
                 f"position_id={self.position.id}, "
-                f"entry={order_side_to_string(self.position.entry_direction)}, "
+                f"entry={order_side_to_string(self.position.entry)}, "
                 f"avg_open={round(self.position.average_open_price, 5)}, "
                 f"{self.position.status_string()})")
 
@@ -1360,7 +1360,7 @@ cdef class PositionModified(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"cl_pos_id={self.position.cl_pos_id}, "
                 f"position_id={self.position.id}, "
-                f"entry={order_side_to_string(self.position.entry_direction)}, "
+                f"entry={order_side_to_string(self.position.entry)}, "
                 f"avg_open={self.position.average_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
@@ -1427,7 +1427,7 @@ cdef class PositionClosed(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"cl_pos_id={self.position.cl_pos_id}, "
                 f"position_id={self.position.id}, "
-                f"entry={order_side_to_string(self.position.entry_direction)}, "
+                f"entry={order_side_to_string(self.position.entry)}, "
                 f"duration={duration}, "
                 f"avg_open={self.position.average_open_price}, "
                 f"avg_close={self.position.average_close_price}, "

@@ -243,7 +243,7 @@ cdef class Portfolio:
         cdef Position position = event.position
         cdef OrderFillEvent fill_event = position.last_event()
 
-        if position.entry_direction != fill_event.order_side:
+        if position.entry != fill_event.order_side:
             # Increment PNL
             pass
             # TODO: Handle multiple currencies

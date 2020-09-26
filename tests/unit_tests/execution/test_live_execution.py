@@ -51,7 +51,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 UTF8 = "utf8"
-LOCALHOST = '127.0.0.1'
+LOCALHOST = "127.0.0.1"
 TEST_COMMANDS_REQ_PORT = 57555
 TEST_COMMANDS_REP_PORT = 57556
 TEST_EVENTS_PUB_PORT = 57557
@@ -153,12 +153,12 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_client.disconnect()
         self.command_server.stop()
 
-        time.sleep(1.5)  # Must be longer than 1 second linger
+        time.sleep(0.5)  # Must be longer than 1 second linger
         self.exec_client.dispose()
         self.command_server.dispose()
         # Allowing the garbage collector to clean up resources avoids threading
         # errors caused by the continuous disposal of sockets.
-        time.sleep(0.5)
+        time.sleep(2.0)
 
     def command_handler(self, message):
         command = self.command_serializer.deserialize(message)

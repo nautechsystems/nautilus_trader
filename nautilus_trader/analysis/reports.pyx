@@ -164,7 +164,7 @@ cdef class ReportProvider:
             "cl_pos_id": position.cl_pos_id.value,
             "position_id": position.id.value,
             "symbol": position.symbol.code,
-            "direction": order_side_to_string(position.entry_direction),
+            "entry": order_side_to_string(position.entry),
             "peak_quantity": position.peak_quantity,
             "opened_time": position.opened_time,
             "closed_time": position.closed_time,

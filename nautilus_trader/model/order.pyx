@@ -682,6 +682,9 @@ cdef class MarketOrder(Order):
         self.average_price = event.average_price
 
 
+cdef str _POST_ONLY = 'PostOnly'
+cdef str _HIDDEN = 'Hidden'
+
 cdef class LimitOrder(PassiveOrder):
     """
     Limit orders are used to specify a maximum or minimum price the trader is
@@ -701,8 +704,8 @@ cdef class LimitOrder(PassiveOrder):
             datetime expire_time,  # Can be None
             UUID init_id not None,
             datetime timestamp not None,
-            bint is_post_only=True,
-            bint is_hidden=False,
+            bint post_only=True,
+            bint hidden=False,
     ):
         """
         Initialize a new instance of the LimitOrder class.
@@ -727,9 +730,9 @@ cdef class LimitOrder(PassiveOrder):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
-        is_post_only : bool, optional;
+        post_only : bool, optional;
             If the order will only make a market (default=True).
-        is_hidden : bool, optional
+        hidden : bool, optional
             If the order should be hidden from the public book (default=False).
 
         Raises
@@ -744,12 +747,12 @@ cdef class LimitOrder(PassiveOrder):
             If time_in_force is GTD and expire_time is None.
 
         """
-        self.is_post_only = is_post_only
-        self.is_hidden = is_hidden
+        self.is_post_only = post_only
+        self.is_hidden = hidden
 
         cdef dict options = {
-            'IsPostOnly': str(is_post_only),
-            'IsHidden': str(is_hidden),
+            _POST_ONLY: str(post_only),
+            _HIDDEN: str(hidden),
         }
 
         super().__init__(
@@ -788,8 +791,8 @@ cdef class LimitOrder(PassiveOrder):
 
         cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
         cdef Price price = Price.from_string(price_string)
-        cdef is_post_only = event.options['IsPostOnly'] == str(True)
-        cdef is_hidden = event.options['IsHidden'] == str(True)
+        cdef post_only = event.options[_POST_ONLY] == str(True)
+        cdef hidden = event.options[_HIDDEN] == str(True)
 
         return LimitOrder(
             cl_ord_id=event.cl_ord_id,
@@ -801,8 +804,8 @@ cdef class LimitOrder(PassiveOrder):
             expire_time=expire_time,
             init_id=event.id,
             timestamp=event.timestamp,
-            is_post_only=is_post_only,
-            is_hidden=is_hidden,
+            post_only=post_only,
+            hidden=hidden,
         )
 
 

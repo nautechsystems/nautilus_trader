@@ -209,8 +209,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             package[EXPIRE_TIME] = convert_datetime_to_string(order.expire_time)
 
         if isinstance(order, LimitOrder):
-            package[IS_POST_ONLY] = str(order.is_post_only)
-            package[IS_HIDDEN] = str(order.is_hidden)
+            package[POST_ONLY] = str(order.is_post_only)
+            package[HIDDEN] = str(order.is_hidden)
 
         return MsgPackSerializer.serialize(package)
 
@@ -260,8 +260,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
                 init_id=init_id,
                 timestamp=timestamp,
-                is_post_only=unpacked[IS_POST_ONLY].decode(UTF8) == str(True),
-                is_hidden=unpacked[IS_HIDDEN].decode(UTF8) == str(True),
+                post_only=unpacked[POST_ONLY].decode(UTF8) == str(True),
+                hidden=unpacked[HIDDEN].decode(UTF8) == str(True),
             )
 
         if order_type == OrderType.STOP:

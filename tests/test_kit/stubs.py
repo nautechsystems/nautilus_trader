@@ -223,7 +223,7 @@ class TestStubs:
 
     @staticmethod
     def account_id() -> AccountId:
-        return AccountId("NAUTILUS", "000", AccountType.SIMULATED)
+        return AccountId("0", "0", AccountType.SIMULATED)
 
     @staticmethod
     def account_event(account_id=None) -> AccountState:
