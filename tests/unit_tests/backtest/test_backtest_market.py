@@ -33,6 +33,7 @@ from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import MarketPosition
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
@@ -105,7 +106,9 @@ class SimulatedMarketTests(unittest.TestCase):
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,
             fill_model=FillModel(),
-            commission_model=MakerTakerCommissionModel(),
+            commission_model=MakerTakerCommissionModel(
+                taker_default_rate_bp=0.,
+            ),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger)
@@ -578,6 +581,53 @@ class SimulatedMarketTests(unittest.TestCase):
         # Assert
         position = strategy.positions_open()[position_id]
         unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
-        order_quantity_diff = order_open.quantity.sub(order_reduce.quantity).as_double()
-        expected_unrealized_pnl = order_quantity_diff * (reduce_quote.bid.sub(open_quote.ask).as_double())
+        expected_unrealized_pnl = \
+            order_reduce.quantity.as_double() * (reduce_quote.bid.sub(open_quote.ask).as_double())
         self.assertEqual(unrealized_pnl, expected_unrealized_pnl)
+
+    def test_position_dir_change(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        open_quote = TestStubs.quote_tick_3decimal(self.usdjpy.symbol)
+        self.market.process_tick(open_quote)  # Prepare market
+        order_open = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        # Act 1
+        position_id = ClientPositionId('P-1')
+        strategy.submit_order(order_open, position_id)
+
+        reduce_quote = QuoteTick(
+            self.usdjpy.symbol,
+            Price(100.003, 3),
+            Price(100.003, 3),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
+        self.market.process_tick(reduce_quote)
+
+        order_reduce = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.SELL,
+            Quantity(150000))
+
+        # Act 2
+        strategy.submit_order(order_reduce, position_id)
+
+        # Assert
+        position = strategy.positions_open()[position_id]
+        self.assertEqual(position.market_position, MarketPosition.SHORT)
+        self.assertEqual(position.quantity.as_double(), order_reduce.quantity.sub(order_open.quantity).as_double())
+        self.assertEqual(position.unrealized_points(reduce_quote).as_double(), 0.)  # Not passing
+        self.assertEqual(position.unrealized_pnl(reduce_quote).as_double(), 0.)  # Not passing
