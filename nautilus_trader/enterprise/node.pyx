@@ -256,7 +256,7 @@ cdef class TradingNode:
             trader_id=self.trader_id,
             account_id=self.account_id,
             strategies=strategies,
-            data_client=self._data_engine,
+            data_engine=self._data_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
