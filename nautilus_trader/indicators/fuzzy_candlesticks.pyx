@@ -129,7 +129,7 @@ cdef class FuzzyCandlesticks(Indicator):
         The last fuzzy candle to close.
     vector : list of int
         A list representing the fuzzified features of the last fuzzy candle.
-        [0] direction: int (-1, 0, 1)
+        [0] entry: int (-1, 0, 1)
         [1] size: int (0 to 6)
         [2] body size: int (0 to 4)
         [3] upper wick size: int (0 to 3)
@@ -305,11 +305,11 @@ cdef class FuzzyCandlesticks(Indicator):
 
     cdef CandleDirection _fuzzify_direction(self, double open_price, double close_price):
         """
-        Fuzzify the candle direction from the given inputs.
+        Fuzzify the candle entry from the given inputs.
 
         :param open_price: The open price of the bar (> 0).
         :param close_price: The close price of the bar (> 0).
-        :return: The fuzzified direction of the bar.
+        :return: The fuzzified entry of the bar.
         """
         if close_price > open_price:
             return CandleDirection.BULL

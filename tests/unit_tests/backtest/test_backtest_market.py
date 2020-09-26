@@ -32,8 +32,8 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import MarketPosition
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
@@ -106,9 +106,7 @@ class SimulatedMarketTests(unittest.TestCase):
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,
             fill_model=FillModel(),
-            commission_model=MakerTakerCommissionModel(
-                taker_default_rate_bp=0.,
-            ),
+            commission_model=MakerTakerCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger)
@@ -512,7 +510,7 @@ class SimulatedMarketTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(80.000, 3))
+            Price(80.001, 3))
 
         # Act
         position_id = ClientPositionId('P-1')
@@ -529,14 +527,10 @@ class SimulatedMarketTests(unittest.TestCase):
         )  # Fill the limit order
 
         # Assert
-        commission_percent_maker = basis_points_as_percentage(-2.5)
-        commission_percent_taker = basis_points_as_percentage(7.5)
-        self.assertEqual(strategy.object_storer.get_store()[3].liquidity_side, LiquiditySide.TAKER)
-        self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
-                         commission_percent_taker * order_market.quantity.as_double())
-        self.assertEqual(strategy.object_storer.get_store()[8].liquidity_side, LiquiditySide.MAKER)
-        self.assertEqual(strategy.object_storer.get_store()[8].commission.as_double(),
-                         commission_percent_maker * order_limit.quantity.as_double())
+        self.assertEqual(LiquiditySide.TAKER, strategy.object_storer.get_store()[3].liquidity_side)
+        self.assertEqual(LiquiditySide.MAKER, strategy.object_storer.get_store()[8].liquidity_side)
+        self.assertEqual(75, strategy.object_storer.get_store()[3].commission.as_double())
+        self.assertEqual(-25, strategy.object_storer.get_store()[8].commission.as_double())
 
     def test_unrealized_pnl(self):
         # Arrange
@@ -597,7 +591,15 @@ class SimulatedMarketTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        open_quote = TestStubs.quote_tick_3decimal(self.usdjpy.symbol)
+        open_quote = QuoteTick(
+            self.usdjpy.symbol,
+            Price(90.002, 3),
+            Price(90.003, 3),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
         self.market.process_tick(open_quote)  # Prepare market
         order_open = strategy.order_factory.market(
             USDJPY_FXCM,
@@ -605,8 +607,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Quantity(100000))
 
         # Act 1
-        position_id = ClientPositionId('P-1')
-        strategy.submit_order(order_open, position_id)
+        strategy.submit_order(order_open)
 
         reduce_quote = QuoteTick(
             self.usdjpy.symbol,
@@ -623,11 +624,11 @@ class SimulatedMarketTests(unittest.TestCase):
             Quantity(150000))
 
         # Act 2
-        strategy.submit_order(order_reduce, position_id)
+        strategy.submit_order(order_reduce)
 
         # Assert
-        position = strategy.positions_open()[position_id]
+        position = [p for p in strategy.positions_open().values()][0]
         self.assertEqual(position.market_position, MarketPosition.SHORT)
-        self.assertEqual(position.quantity.as_double(), order_reduce.quantity.sub(order_open.quantity).as_double())
-        self.assertEqual(position.unrealized_points(reduce_quote).as_double(), 0.)  # Not passing
-        self.assertEqual(position.unrealized_pnl(reduce_quote).as_double(), 0.)  # Not passing
+        self.assertEqual(position.quantity, order_reduce.quantity.sub(order_open.quantity))
+        self.assertEqual(position.unrealized_points(reduce_quote), -10.0)
+        self.assertEqual(position.unrealized_pnl(reduce_quote).as_double(), -500000.0)

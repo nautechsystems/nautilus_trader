@@ -51,7 +51,7 @@ cdef class Position:
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
     cdef readonly Currency quote_currency
-    cdef readonly OrderSide entry_direction
+    cdef readonly OrderSide entry
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time
     cdef readonly timedelta open_duration

@@ -98,7 +98,7 @@ cdef class Socket:
         self._socket.close()
 
         # Wait for resources to be released
-        timeout = datetime.now() + timedelta(seconds=2)
+        timeout = datetime.now() + timedelta(seconds=0.5)
         while not self._socket.closed and datetime.now() < timeout:
             continue
 

@@ -391,10 +391,10 @@ cdef class SimulatedMarket:
 
         cdef MarketPosition direction
         cdef Money pnl = Money(0, self.account_currency)
-        if position is not None and position.entry_direction != event.order_side:
-            if position.entry_direction == OrderSide.BUY:
+        if position is not None and position.entry != event.order_side:
+            if position.entry == OrderSide.BUY:
                 direction = MarketPosition.LONG
-            elif position.entry_direction == OrderSide.SELL:
+            elif position.entry == OrderSide.SELL:
                 direction = MarketPosition.SHORT
             else:
                 raise RuntimeError(f"Invalid entry direction")

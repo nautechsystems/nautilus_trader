@@ -48,8 +48,8 @@ cdef str EXECUTION_ID
 cdef str POSITION_ID
 cdef str ORDER_SIDE
 cdef str ORDER_TYPE
-cdef str IS_POST_ONLY
-cdef str IS_HIDDEN
+cdef str POST_ONLY
+cdef str HIDDEN
 cdef str ENTRY
 cdef str STOP_LOSS
 cdef str TAKE_PROFIT

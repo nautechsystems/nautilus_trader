@@ -191,7 +191,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(position1.cl_pos_id.value, report.index[0])
         # self.assertEqual("1", report.iloc[0]["position_id"])
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
-        self.assertEqual("BUY", report.iloc[0]["direction"])
+        self.assertEqual("BUY", report.iloc[0]["entry"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])
         self.assertEqual(1.00000, report.iloc[0]["avg_open_price"])
         self.assertEqual(1.0001, report.iloc[0]["avg_close_price"])
