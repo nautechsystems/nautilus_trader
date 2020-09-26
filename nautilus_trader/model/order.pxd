@@ -57,6 +57,7 @@ cdef class Order:
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
     cdef readonly PositionId position_id
+
     cdef readonly Symbol symbol
     cdef readonly OrderSide side
     cdef readonly OrderType type

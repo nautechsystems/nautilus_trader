@@ -68,6 +68,9 @@ cdef class LiveUUIDFactory(UUIDFactory):
         """
         Return a generated UUID version 4.
 
-        :return UUID.
+        Returns
+        -------
+        UUID
+
         """
         return uuid4()

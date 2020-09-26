@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instrument cimport ForexInstrument
 
 
 cdef class CSVTickDataLoader:
@@ -26,4 +26,4 @@ cdef class CSVBarDataLoader:
 
 
 cdef class InstrumentLoader:
-    cpdef Instrument default_fx_ccy(self, Symbol symbol)
+    cpdef ForexInstrument default_fx_ccy(self, Symbol symbol)

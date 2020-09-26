@@ -26,8 +26,16 @@ cdef class Handler:
         """
         Initialize a new instance of the Handler class.
 
-        :param handler: The callable handler.
-        :raises TypeError: If handler is not of type Callable.
+        Parameters
+        ----------
+        handler : Callable
+            The callable handler.
+
+        Raises
+        ------
+        TypeError
+            If handler is not of type Callable.
+
         """
         Condition.callable(handler, "handler")
 
@@ -86,7 +94,11 @@ cdef class QuoteTickHandler(Handler):
         """
         Initialize a new instance of the QuoteTickHandler class.
 
-        :param handler: The callable handler.
+        Parameters
+        ----------
+        handler : Callable
+            The callable handler.
+
         """
         super().__init__(handler)
 
@@ -100,7 +112,11 @@ cdef class TradeTickHandler(Handler):
         """
         Initialize a new instance of the TradeTickHandler class.
 
-        :param handler: The callable handler.
+        Parameters
+        ----------
+        handler : Callable
+            The callable handler.
+
         """
         super().__init__(handler)
 
@@ -114,7 +130,11 @@ cdef class BarHandler(Handler):
         """
         Initialize a new instance of the BarHandler class.
 
-        :param handler: The callable handler.
+        Parameters
+        ----------
+        handler : Callable
+            The callable handler.
+
         """
         super().__init__(handler)
 
@@ -128,7 +148,11 @@ cdef class InstrumentHandler(Handler):
         """
         Initialize a new instance of the InstrumentHandler class.
 
-        :param handler: The callable handler.
+        Parameters
+        ----------
+        handler : Callable
+            The callable handler.
+
         """
         super().__init__(handler)
 
@@ -142,6 +166,10 @@ cdef class EventHandler(Handler):
         """
         Initialize a new instance of the EventHandler class.
 
-        :param handler: The callable handler.
+        Parameters
+        ----------
+        handler : Callable
+            The callable handler.
+
         """
         super().__init__(handler)

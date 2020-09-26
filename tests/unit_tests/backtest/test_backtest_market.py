@@ -19,7 +19,7 @@ import pandas as pd
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.execution_client import BacktestExecClient
+from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
@@ -37,6 +37,7 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -150,7 +151,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        strategy.submit_order(order, strategy.position_id_generator.generate())
+        strategy.submit_order(order)
 
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
@@ -177,7 +178,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Price(80.000, 3))
 
         # Act
-        strategy.submit_order(order, strategy.position_id_generator.generate())
+        strategy.submit_order(order)
 
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
@@ -208,7 +209,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Price(80.000, 3))
 
         # Act
-        strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
+        strategy.submit_bracket_order(bracket_order)
 
         # Assert
         self.assertEqual(8, strategy.object_storer.count)
@@ -241,7 +242,7 @@ class SimulatedMarketTests(unittest.TestCase):
             take_profit=Price(97.000, 3))
 
         # Act
-        strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
+        strategy.submit_bracket_order(bracket_order)
 
         # Assert
         self.assertEqual(6, strategy.object_storer.count)
@@ -267,7 +268,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Quantity(100000),
             Price(96.711, 3))
 
-        strategy.submit_order(order, strategy.position_id_generator.generate())
+        strategy.submit_order(order)
 
         # Act
         strategy.modify_order(order, order.quantity, Price(96.714, 3))
@@ -300,7 +301,7 @@ class SimulatedMarketTests(unittest.TestCase):
             entry_order,
             stop_loss=Price(85.000, 3))
 
-        strategy.submit_bracket_order(bracket_order, strategy.position_id_generator.generate())
+        strategy.submit_bracket_order(bracket_order)
 
         # Act
         strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price(85.100, 3))
@@ -310,7 +311,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(9, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 
-    # TODO: Fix failing test - market not updating inside BacktestExecution Client
+    # TODO: Fix failing test - market not updating inside SimulatedMarket
     # def test_submit_market_order_with_slippage_fill_model_slips_order(self):
     #     # Arrange
     #     fill_model = FillModel(
@@ -319,30 +320,40 @@ class SimulatedMarketTests(unittest.TestCase):
     #         prob_slippage=1.0,
     #         random_seed=None)
     #
-    #     exec_client = BacktestExecClient(
+    #     market = SimulatedMarket(
     #         exec_engine=self.exec_engine,
     #         instruments={self.usdjpy.symbol: self.usdjpy},
-    #         config=BacktestConfig(),
+    #         config=self.config,
     #         fill_model=fill_model,
-    #         clock=TestClock(),
+    #         commission_model=MakerTakerCommissionModel(),
+    #         clock=self.clock,
     #         uuid_factory=TestUUIDFactory(),
-    #         logger=TestLogger())
+    #         logger=self.logger)
+    #
+    #     exec_client = BacktestExecClient(
+    #         broker=self.market,
+    #         logger=self.logger)
     #
     #     self.exec_engine.register_client(exec_client)
     #     strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-    #     strategy.register_trader(TraderId("TESTER", "000"))
-    #     self.data_client.register_strategy(strategy)
+    #     strategy.register_trader(
+    #         self.trader_id,
+    #         self.clock,
+    #         self.uuid_factory,
+    #         self.logger)
+    #     self.data_engine.register_strategy(strategy)
     #     self.exec_engine.register_strategy(strategy)
     #     strategy.start()
     #
-    #     self.exec_client.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+    #     market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
+    #     market.process_tick(TestStubs.quote_tick_3decimal(self.usdjpy.symbol))  # Prepare market
     #     order = strategy.order_factory.market(
     #         USDJPY_FXCM,
     #         OrderSide.BUY,
     #         Quantity(100000))
     #
     #     # Act
-    #     strategy.submit_order(order, strategy.position_id_generator.generate())
+    #     strategy.submit_order(order)
     #
     #     # Assert
     #     self.assertEqual(5, strategy.object_storer.count)
@@ -368,7 +379,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Price(80.000, 3))
 
         # Act
-        strategy.submit_order(order, strategy.position_id_generator.generate())
+        strategy.submit_order(order, ClientPositionId('P-1'))
 
         # Assert
         self.assertEqual(3, strategy.object_storer.count)
@@ -394,7 +405,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Price(80.000, 3))
 
         # Act
-        strategy.submit_order(order, strategy.position_id_generator.generate())
+        strategy.submit_order(order)
 
         # Assert
         self.assertEqual(3, strategy.object_storer.count)
@@ -429,7 +440,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Quantity(50000))
 
         # Act
-        position_id = strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         strategy.submit_order(order, position_id)
         strategy.submit_order(top_up_order, position_id)
         strategy.submit_order(reduce_order, position_id)
@@ -447,7 +458,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
                          strategy.account().cash_balance.as_double())
 
-    def test_realized_pnl(self):
+    def test_realized_pnl_contains_commission(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         strategy.register_trader(
@@ -466,7 +477,7 @@ class SimulatedMarketTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        position_id = strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         strategy.submit_order(order, position_id)
 
         filled_price = strategy.object_storer.get_store()[3].average_price.as_double()
@@ -501,14 +512,14 @@ class SimulatedMarketTests(unittest.TestCase):
             Price(80.000, 3))
 
         # Act
-        position_id = strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         strategy.submit_order(order_market, position_id)
         strategy.submit_order(order_limit, position_id)
 
         self.market.process_tick(QuoteTick(
             self.usdjpy.symbol,
-            Price(80.00, 3),
-            Price(80.00, 3),
+            Price(80.000, 3),
+            Price(80.000, 3),
             Quantity(100000),
             Quantity(100000),
             UNIX_EPOCH)
@@ -523,3 +534,50 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(strategy.object_storer.get_store()[8].liquidity_side, LiquiditySide.MAKER)
         self.assertEqual(strategy.object_storer.get_store()[8].commission.as_double(),
                          commission_percent_maker * order_limit.quantity.as_double())
+
+    def test_unrealized_pnl(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        open_quote = TestStubs.quote_tick_3decimal(self.usdjpy.symbol)
+        self.market.process_tick(open_quote)  # Prepare market
+        order_open = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        # Act 1
+        position_id = ClientPositionId('P-1')
+        strategy.submit_order(order_open, position_id)
+
+        reduce_quote = QuoteTick(
+            self.usdjpy.symbol,
+            Price(100.003, 3),
+            Price(100.003, 3),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH)
+        self.market.process_tick(reduce_quote)
+
+        order_reduce = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.SELL,
+            Quantity(50000))
+
+        # Act 2
+        strategy.submit_order(order_reduce, position_id)
+
+        # Assert
+        position = strategy.positions_open()[position_id]
+        unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
+        order_quantity_diff = order_open.quantity.sub(order_reduce.quantity).as_double()
+        expected_unrealized_pnl = order_quantity_diff * (reduce_quote.bid.sub(open_quote.ask).as_double())
+        self.assertEqual(unrealized_pnl, expected_unrealized_pnl)

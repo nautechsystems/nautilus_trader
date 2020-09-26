@@ -25,6 +25,7 @@ from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
@@ -71,7 +72,7 @@ class ExecutionEngineTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger)
 
-        self.exec_engine.handle_event(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.account_event())
 
         self.exec_client = MockExecutionClient(self.exec_engine, self.logger)
         self.exec_engine.register_client(self.exec_client)
@@ -162,7 +163,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.register_strategy(strategy)
 
-        position_id = strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -178,12 +179,12 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now())
 
         # Act
-        self.exec_engine.execute_command(submit_order)
+        self.exec_engine.execute(submit_order)
 
         # Assert
         self.assertIn(submit_order, self.exec_client.received_commands)
         self.assertTrue(self.exec_db.order_exists(order.cl_ord_id))
-        self.assertEqual(position_id, self.exec_db.get_client_position_id(order.cl_ord_id))
+        self.assertEqual(position_id, self.exec_db.get_cl_pos_id(order.cl_ord_id))
 
     def test_handle_order_fill_event(self):
         # Arrange
@@ -197,7 +198,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.register_strategy(strategy)
 
-        position_id = strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -212,12 +213,12 @@ class ExecutionEngineTests(unittest.TestCase):
             self.uuid_factory.generate(),
             self.clock.utc_now())
 
-        self.exec_engine.execute_command(submit_order)
+        self.exec_engine.execute(submit_order)
 
         # Act
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order))
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -237,6 +238,130 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_db.position_exists_for_order(order.cl_ord_id))
         self.assertEqual(Position, type(self.exec_db.get_position_for_order(order.cl_ord_id)))
 
+    def test_handle_position_opening_with_cl_pos_id_none(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        submit_order = SubmitOrder(
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            ClientPositionId('NoneId'),  # The return value from ClientPositionId.none()
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now())
+
+        self.exec_engine.execute(submit_order)
+
+        # Act
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order))
+
+        expected_id = ClientPositionId('P-AUD/USD.FXCM-1')  # Auto-generated id
+
+        # Assert
+        self.assertTrue(self.exec_db.position_exists(expected_id))
+        self.assertTrue(self.exec_db.is_position_open(expected_id))
+        self.assertFalse(self.exec_db.is_position_closed(expected_id))
+        self.assertFalse(self.exec_engine.is_strategy_flat(strategy.id))
+        self.assertFalse(self.exec_engine.is_flat())
+        self.assertEqual(Position, type(self.exec_db.get_position(expected_id)))
+        self.assertTrue(expected_id in self.exec_db.get_positions())
+        self.assertTrue(expected_id not in self.exec_db.get_positions_closed(strategy.id))
+        self.assertTrue(expected_id not in self.exec_db.get_positions_closed())
+        self.assertTrue(expected_id in self.exec_db.get_positions_open(strategy.id))
+        self.assertTrue(expected_id in self.exec_db.get_positions_open())
+        self.assertEqual(1, self.exec_db.positions_total_count())
+        self.assertEqual(1, self.exec_db.positions_open_count())
+        self.assertEqual(0, self.exec_db.positions_closed_count())
+        self.assertTrue(self.exec_db.position_exists_for_order(order.cl_ord_id))
+        self.assertEqual(Position, type(self.exec_db.get_position_for_order(order.cl_ord_id)))
+
+    def test_handle_position_closing_with_cl_pos_id_none(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=TestUUIDFactory(),
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        submit_order1 = SubmitOrder(
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            ClientPositionId('NoneId'),  # The return value from ClientPositionId.none()
+            order1,
+            self.uuid_factory.generate(),
+            self.clock.utc_now())
+
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(100000))
+
+        submit_order2 = SubmitOrder(
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            ClientPositionId('NoneId'),  # The return value from ClientPositionId.none()
+            order2,
+            self.uuid_factory.generate(),
+            self.clock.utc_now())
+
+        # Act
+        self.exec_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
+
+        expected_id = ClientPositionId('P-AUD/USD.FXCM-1')  # Auto-generated id
+
+        # Assert
+        self.assertTrue(self.exec_db.position_exists(expected_id))
+        self.assertFalse(self.exec_db.is_position_open(expected_id))
+        self.assertTrue(self.exec_db.is_position_closed(expected_id))
+        self.assertTrue(self.exec_engine.is_strategy_flat(strategy.id))
+        self.assertTrue(self.exec_engine.is_flat())
+        self.assertEqual(Position, type(self.exec_db.get_position(expected_id)))
+        self.assertTrue(expected_id in self.exec_db.get_positions())
+        self.assertTrue(expected_id in self.exec_db.get_positions_closed(strategy.id))
+        self.assertTrue(expected_id in self.exec_db.get_positions_closed())
+        self.assertTrue(expected_id not in self.exec_db.get_positions_open(strategy.id))
+        self.assertTrue(expected_id not in self.exec_db.get_positions_open())
+        self.assertEqual(1, self.exec_db.positions_total_count())
+        self.assertEqual(0, self.exec_db.positions_open_count())
+        self.assertEqual(1, self.exec_db.positions_closed_count())
+        self.assertTrue(self.exec_db.position_exists_for_order(order1.cl_ord_id))
+        self.assertEqual(Position, type(self.exec_db.get_position_for_order(order1.cl_ord_id)))
+
     def test_add_to_existing_position_on_order_fill(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
@@ -249,7 +374,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.register_strategy(strategy)
 
-        position_id = strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
+
         order1 = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -282,16 +408,16 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
 
         # Act
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -320,7 +446,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.register_strategy(strategy)
 
-        position_id = strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
 
         order1 = strategy.order_factory.stop(
             AUDUSD_FXCM,
@@ -356,16 +482,16 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
 
         # Act
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
 
         # # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -406,8 +532,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
-        position1_id = strategy1.position_id_generator.generate()
-        position2_id = strategy2.position_id_generator.generate()
+        position1_id = ClientPositionId('P-1')
+        position2_id = ClientPositionId('P-2')
 
         order1 = strategy1.order_factory.stop(
             AUDUSD_FXCM,
@@ -444,14 +570,14 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position1_id))
@@ -506,8 +632,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
-        position_id1 = strategy1.position_id_generator.generate()
-        position_id2 = strategy2.position_id_generator.generate()
+        position_id1 = ClientPositionId('P-1')
+        position_id2 = ClientPositionId('P-2')
 
         order1 = strategy1.order_factory.stop(
             AUDUSD_FXCM,
@@ -561,18 +687,18 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute_command(submit_order1)
-        self.exec_engine.execute_command(submit_order2)
-        self.exec_engine.execute_command(submit_order3)
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order1))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order2))
-        self.exec_engine.handle_event(TestStubs.event_order_submitted(order3))
-        self.exec_engine.handle_event(TestStubs.event_order_accepted(order3))
-        self.exec_engine.handle_event(TestStubs.event_order_filled(order3))
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
+        self.exec_engine.execute(submit_order3)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2))
+        self.exec_engine.process(TestStubs.event_order_submitted(order3))
+        self.exec_engine.process(TestStubs.event_order_accepted(order3))
+        self.exec_engine.process(TestStubs.event_order_filled(order3))
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above

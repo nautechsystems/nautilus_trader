@@ -371,7 +371,7 @@ class EMACross(TradingStrategy):
             take_profit=price_take_profit,
         )
 
-        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
+        self.submit_bracket_order(bracket_order)
 
     def _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         price_entry = Price(bar.low.as_double() - self.entry_buffer, self.precision)
@@ -424,7 +424,7 @@ class EMACross(TradingStrategy):
             take_profit=price_take_profit,
         )
 
-        self.submit_bracket_order(bracket_order, self.position_id_generator.generate())
+        self.submit_bracket_order(bracket_order)
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         for order in self.orders_working().values():

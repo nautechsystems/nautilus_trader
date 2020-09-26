@@ -108,7 +108,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+
+        position_id = ClientPositionId('NoneId')
 
         # Act
         self.database.add_order(order, self.strategy.id, position_id)
@@ -123,7 +124,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = position_id = ClientPositionId('NoneId')
         self.database.add_order(order, self.strategy.id, position_id)
 
         order_filled = TestStubs.event_order_filled(order, fill_price=Price(1.00000, 5))
@@ -162,7 +163,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('NoneId')
         self.database.add_order(order, self.strategy.id, position_id)
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -190,7 +191,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('NoneId')
         self.database.add_order(order, self.strategy.id, position_id)
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -219,7 +220,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -308,7 +309,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order, self.strategy.id, position_id)
 
         # Act
@@ -319,7 +320,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
 
         # Act
         result = self.database.load_position(position_id)
@@ -333,7 +334,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order, self.strategy.id, position_id)
 
         order_filled = TestStubs.event_order_filled(order, fill_price=Price(1.00000, 5))
@@ -384,7 +385,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order, self.strategy.id, position_id)
 
         # Act
@@ -409,7 +410,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position_id = self.strategy.position_id_generator.generate()
+        position_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -442,7 +443,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position1_id = self.strategy.position_id_generator.generate()
+        position1_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -463,7 +464,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position2_id = self.strategy.position_id_generator.generate()
+        position2_id = ClientPositionId('P-2')
         self.database.add_order(order2, self.strategy.id, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -483,7 +484,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position1_id = self.strategy.position_id_generator.generate()
+        position1_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -506,7 +507,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position2_id = self.strategy.position_id_generator.generate()
+        position2_id = ClientPositionId('P-2')
         self.database.add_order(order2, self.strategy.id, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -533,7 +534,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        position1_id = self.strategy.position_id_generator.generate()
+        position1_id = ClientPositionId('P-1')
         self.database.add_order(order1, self.strategy.id, position1_id)
 
         order1_filled = TestStubs.event_order_filled(order1, fill_price=Price(1.00000, 5))
@@ -547,7 +548,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        position2_id = self.strategy.position_id_generator.generate()
+        position2_id = ClientPositionId('P-2')
         self.database.add_order(order2, self.strategy.id, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))

@@ -75,10 +75,17 @@ cdef class LogMessage:
         """
         Initialize a new instance of the LogMessage class.
 
-        :param timestamp: The log message timestamp.
-        :param level: The log message level.
-        :param text: The log message text.
-        :param thread_id: The thread the log message was created on (default=0).
+        Parameters
+        ----------
+        timestamp : datetime
+            The log message timestamp.
+        level :  LogLevel
+            The log message level.
+        text : str
+            The log message text.
+        thread_id : long, optional
+            The thread the log message was created on (default=0).
+
         """
         self.timestamp = timestamp
         self.level = level
@@ -89,7 +96,10 @@ cdef class LogMessage:
         """
         Return the string representation of the log level.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return log_level_to_string(self.level)
 
@@ -97,7 +107,10 @@ cdef class LogMessage:
         """
         Return the string representation of the log message.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{log_level_to_string(self.level)}] {self.text}"
 
@@ -123,17 +136,36 @@ cdef class Logger:
         """
         Initialize a new instance of the Logger class.
 
-        :param clock: The clock for the logger.
-        :param name: The name of the logger.
-        :param level_console: The minimum log level for logging messages to the console.
-        :param level_file: The minimum log level for logging messages to the log file.
-        :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: If log messages should print to the console.
-        :param log_thread: If log messages should include the thread.
-        :param log_to_file: If log messages should be written to the log file.
-        :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :raises ValueError: If name is not a valid string.
-        :raises ValueError: If log_file_path is not a valid string.
+        Parameters
+        ----------
+        clock : Clock
+            The clock for the logger.
+        name : str
+            The name of the logger.
+        bypass_logging : bool
+            If the logger should be completely bypassed.
+        level_console : LogLevel
+            The minimum log level for logging messages to the console.
+        level_file : LogLevel
+            The minimum log level for logging messages to the log file.
+        level_store : LogLevel
+            The minimum log level for storing log messages in memory.
+        console_prints : bool
+            If log messages should print to the console.
+        log_thread : bool
+            If log messages should include the thread.
+        log_to_file : bool
+            If log messages should be written to the log file.
+        log_file_path : str
+            The name of the log file (cannot be None if log_to_file is True).
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        ValueError
+            If log_file_path is not a valid string.
+
         """
         if name is not None:
             Condition.valid_string(name, "name")
@@ -169,7 +201,11 @@ cdef class Logger:
         """
         Change the log file name.
 
-        :param name: The new name of the log file.
+        Parameters
+        ----------
+        name : str
+            The new name of the log file.
+
         """
         Condition.valid_string(name, "name")
 
@@ -186,7 +222,10 @@ cdef class Logger:
         """
         Return the log store of message strings.
 
-        :return List[str].
+        Returns
+        -------
+        List[str]
+
         """
         return self._log_store
 
@@ -249,8 +288,13 @@ cdef class LoggerAdapter:
         """
         Initialize a new instance of the LoggerAdapter class.
 
-        :param logger: The logger for the component.
-        :param component_name: The name of the component.
+        Parameters
+        ----------
+        component_name : str
+            The name of the component.
+        logger : Logger
+            The logger for the component.
+
         """
         Condition.valid_string(component_name, "component_name")
 
@@ -263,7 +307,10 @@ cdef class LoggerAdapter:
         """
         Return the encapsulated logger
 
-        :return logging.logger.
+        Returns
+        -------
+        Logger
+
         """
         return self._logger
 
@@ -271,7 +318,11 @@ cdef class LoggerAdapter:
         """
         Log the given verbose message with the logger.
 
-        :param message: The message to log.
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
         """
         Condition.not_none(message, "message")
 
@@ -281,7 +332,11 @@ cdef class LoggerAdapter:
         """
         Log the given debug message with the logger.
 
-        :param message: The message to log.
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
         """
         Condition.not_none(message, "message")
 
@@ -291,7 +346,11 @@ cdef class LoggerAdapter:
         """
         Log the given information message with the logger.
 
-        :param message: The message to log.
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
         """
         Condition.not_none(message, "message")
 
@@ -301,7 +360,11 @@ cdef class LoggerAdapter:
         """
         Log the given warning message with the logger.
 
-        :param message: The message to log.
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
         """
         Condition.not_none(message, "message")
 
@@ -311,7 +374,11 @@ cdef class LoggerAdapter:
         """
         Log the given error message with the logger.
 
-        :param message: The message to log.
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
         """
         Condition.not_none(message, "message")
 
@@ -321,7 +388,11 @@ cdef class LoggerAdapter:
         """
         Log the given critical message with the logger.
 
-        :param message: The message to log.
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
         """
         Condition.not_none(message, "message")
 
@@ -331,7 +402,11 @@ cdef class LoggerAdapter:
         """
         Log the given exception including stack trace information.
 
-        :param ex: The exception to log.
+        Parameters
+        ----------
+        ex : Exception
+            The message to log.
+
         """
         Condition.not_none(ex, "ex")
 
@@ -423,9 +498,20 @@ cdef class LogStore:
         """
         Initialize a new instance of the LogStore class.
 
-        :param trader_id: The trader identifier.
-        :raises ValueError: If the redis_host is not a valid string.
-        :raises ValueError: If the redis_port is not in range [0, 65535].
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        serializer : LogSerializer
+            The log serializer.
+
+        Raises
+        ------
+        ValueError
+            If the redis_host is not a valid string.
+        ValueError
+            If the redis_port is not in range [0, 65535].
+
         """
         self._key = f"Trader-{trader_id.value}:LogStore"
         self._serializer = serializer
@@ -434,7 +520,11 @@ cdef class LogStore:
         """
         Store the given log message.
 
-        :param message: The log message to store.
+        Parameters
+        ----------
+        message : LogMessage
+            The log message to store.
+
         """
         Condition.not_none(message, "message")
 
@@ -469,17 +559,36 @@ cdef class LiveLogger(Logger):
         """
         Initialize a new instance of the LiveLogger class.
 
-        :param clock: The clock for the logger.
-        :param name: The name of the logger.
-        :param level_console: The minimum log level for logging messages to the console.
-        :param level_file: The minimum log level for logging messages to the log file.
-        :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: If log messages should print to the console.
-        :param log_thread: If log messages should include the thread.
-        :param log_to_file: If log messages should write to the log file.
-        :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the log_file_path is not a valid string.
+        Parameters
+        ----------
+        clock :
+            LiveClockThe clock for the logger.
+        name : str
+            The name of the logger.
+        level_console : LogLevel
+            The minimum log level for logging messages to the console.
+        level_file : LogLevel
+            The minimum log level for logging messages to the log file.
+        level_store : LogLevel
+            The minimum log level for storing log messages in memory.
+        console_prints : bool
+            If log messages should print to the console.
+        log_thread : bool
+            If log messages should include the thread.
+        log_to_file : bool
+            If log messages should write to the log file.
+        log_file_path : str
+            The name of the log file (cannot be None if log_to_file is True).
+        store : LogStore
+            The log store.
+
+        Raises
+        ------
+        ValueError
+            If the name is not a valid string.
+        ValueError
+            If the log_file_path is not a valid string.
+
         """
         super().__init__(
             clock,
@@ -503,7 +612,11 @@ cdef class LiveLogger(Logger):
         """
         Log the given message.
 
-        :param message: The log message to log.
+        Parameters
+        ----------
+        message : LogMessage
+            The log message to log.
+
         """
         Condition.not_none(message, "message")
 

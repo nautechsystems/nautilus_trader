@@ -33,7 +33,6 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -64,7 +63,6 @@ cdef class TradingStrategy:
     cdef readonly bint reraise_exceptions
 
     cdef readonly OrderFactory order_factory
-    cdef readonly PositionIdGenerator position_id_generator
     cdef set _flattening_ids
     cdef set _stop_loss_ids
     cdef set _take_profit_ids
@@ -215,17 +213,11 @@ cdef class TradingStrategy:
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
     cpdef void account_inquiry(self) except *
-    cpdef void submit_order(self, Order order, ClientPositionId position_id) except *
-    cpdef void submit_bracket_order(
-        self,
-        BracketOrder bracket_order,
-        ClientPositionId cl_pos_id,
-        bint register=*,
-    ) except *
+    cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id=*) except *
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self) except *
     cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *
     cpdef void flatten_all_positions(self) except *
-
     cdef void _flatten_on_reject(self, OrderRejected event) except *
