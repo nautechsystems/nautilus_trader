@@ -37,8 +37,9 @@ cdef class ExecutionDatabase:
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void add_account(self, Account account) except *
-    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId position_id) except *
+    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId cl_pos_id=*) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
+    cdef void set_cl_pos_id(self, ClientPositionId cl_pos_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
     cpdef void update_account(self, Account account) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
     cpdef void update_order(self, Order order) except *
@@ -46,7 +47,7 @@ cdef class ExecutionDatabase:
     cpdef void load_strategy(self, TradingStrategy strategy) except *
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
-    cpdef Position load_position(self, ClientPositionId position_id)
+    cpdef Position load_position(self, ClientPositionId cl_pos_id)
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
@@ -55,6 +56,7 @@ cdef class ExecutionDatabase:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
+    cpdef dict get_symbol_position_counts(self)
     cpdef Account get_account(self, AccountId account_id)
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
@@ -71,8 +73,8 @@ cdef class ExecutionDatabase:
     cpdef dict get_orders_completed(self, StrategyId strategy_id=*)
     cpdef Position get_position(self, ClientPositionId cl_pos_id)
     cpdef Position get_position_for_order(self, ClientOrderId cl_ord_id)
-    cpdef ClientPositionId get_client_position_id(self, ClientOrderId cl_ord_id)
-    cpdef ClientPositionId get_client_position_id_for_id(self, PositionId position_id)
+    cpdef ClientPositionId get_cl_pos_id(self, ClientOrderId cl_ord_id)
+    cpdef ClientPositionId get_cl_pos_id_for_position_id(self, PositionId position_id)
     cpdef dict get_positions(self, StrategyId strategy_id=*)
     cpdef dict get_positions_open(self, StrategyId strategy_id=*)
     cpdef dict get_positions_closed(self, StrategyId strategy_id=*)

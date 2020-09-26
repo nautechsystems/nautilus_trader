@@ -42,7 +42,6 @@ cdef class SubmitBracketOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly StrategyId strategy_id
-    cdef readonly ClientPositionId cl_pos_id
     cdef readonly BracketOrder bracket_order
 
 

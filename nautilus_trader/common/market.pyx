@@ -193,7 +193,7 @@ cdef class GenericCommissionModel:
         double
 
         """
-        rate = self.rates.get(symbol, None)
+        rate = self.rates.get(symbol)
         return rate if rate is not None else self.default_rate_bp
 
 
@@ -335,10 +335,10 @@ cdef class MakerTakerCommissionModel:
 
         """
         if liquidity_side == LiquiditySide.TAKER:
-            rate = self.taker_rates.get(symbol, None)
+            rate = self.taker_rates.get(symbol)
             return rate if rate is not None else self.taker_default_rate_bp
         elif liquidity_side == LiquiditySide.MAKER:
-            rate = self.maker_rates.get(symbol, None)
+            rate = self.maker_rates.get(symbol)
             return rate if rate is not None else self.maker_default_rate_bp
         else:
             liquidity_side_str = liquidity_side_to_string(liquidity_side)

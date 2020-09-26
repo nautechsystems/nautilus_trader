@@ -83,11 +83,15 @@ cdef class OrderId(Identifier):
 
 
 cdef class ClientPositionId(Identifier):
-    pass
+    @staticmethod
+    cdef ClientPositionId none()
+    cdef bint is_none_value(self)
 
 
 cdef class PositionId(Identifier):
-    pass
+    @staticmethod
+    cdef PositionId none()
+    cdef bint is_none_value(self)
 
 
 cdef class ExecutionId(Identifier):

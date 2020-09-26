@@ -116,9 +116,9 @@ cdef class Order:
         )
 
         self.cl_ord_id = event.cl_ord_id
-        self.id = None                    # Can be None
-        self.account_id = None            # Can be None
+        self.id = None                    # Can be None (OrderId)
         self.position_id = None           # Can be None
+        self.account_id = None            # Can be None
         self.execution_id = None          # Can be None
         self.symbol = event.symbol
         self.side = event.order_side
@@ -301,8 +301,10 @@ cdef class Order:
         str
 
         """
+        cdef str id_string = f"id={self.id.value}, " if self.id is not None else ""
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
+                f"{id_string}"
                 f"state={self._fsm.state_as_string()}, "
                 f"{self.status_string()})")
 
@@ -407,10 +409,10 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _accepted(self, OrderAccepted event) except *:
-        pass  # Do nothing else
+        self.id = event.order_id
 
     cdef void _working(self, OrderWorking event) except *:
-        self.id = event.order_id
+        pass  # Do nothing else
 
     cdef void _cancelled(self, OrderCancelled event) except *:
         pass  # Do nothing else
@@ -537,6 +539,7 @@ cdef class PassiveOrder(Order):
         self.price = event.modified_price
 
     cdef void _filled(self, OrderFillEvent event) except *:
+        self.id = event.order_id
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
@@ -670,6 +673,7 @@ cdef class MarketOrder(Order):
         raise NotImplemented("Cannot modify a market order")
 
     cdef void _filled(self, OrderFillEvent event) except *:
+        self.id = event.order_id
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id

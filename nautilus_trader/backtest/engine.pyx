@@ -98,7 +98,7 @@ cdef class BacktestEngine:
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self.trader_id = TraderId("BACKTESTER", "000")
-        self.account_id = AccountId.from_string("NAUTILUS-001-SIMULATED")
+        self.account_id = AccountId.from_string("0-1-SIMULATED")
         self.config = config
         self.clock = LiveClock()
         self.created_time = self.clock.utc_now()

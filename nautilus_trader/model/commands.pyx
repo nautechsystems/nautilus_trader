@@ -142,7 +142,6 @@ cdef class SubmitBracketOrder(Command):
             TraderId trader_id not None,
             AccountId account_id not None,
             StrategyId strategy_id not None,
-            ClientPositionId cl_pos_id not None,
             BracketOrder bracket_order not None,
             UUID command_id not None,
             datetime command_timestamp not None,
@@ -158,8 +157,6 @@ cdef class SubmitBracketOrder(Command):
             The account identifier for the inquiry.
         strategy_id : StrategyId
             The strategy identifier to associate with the order.
-        cl_pos_id : ClientPositionId
-            The client position identifier to associate with the order.
         bracket_order : BracketOrder
             The bracket order to submit.
         command_id : UUID
@@ -173,7 +170,6 @@ cdef class SubmitBracketOrder(Command):
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
-        self.cl_pos_id = cl_pos_id
         self.bracket_order = bracket_order
 
     def __str__(self) -> str:
@@ -189,7 +185,6 @@ cdef class SubmitBracketOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
-                f"position_id={self.cl_pos_id.value}, "
                 f"id={self.bracket_order.id.value})")
 
 
