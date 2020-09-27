@@ -30,15 +30,15 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
-from nautilus_trader.model.identifiers cimport ClientPositionId
 
 
 cdef class ExecutionEngine:
@@ -87,10 +87,10 @@ cdef class ExecutionEngine:
     cdef void _handle_event(self, Event event) except *
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
-    cdef void _handle_order_fill(self, OrderFillEvent event) except *
-    cdef inline ClientPositionId _find_cl_pos_id(self, OrderFillEvent event)
-    cdef inline ClientPositionId _make_cl_pos_id(self, OrderFillEvent event)
-    cdef inline Position _find_position(self, ClientPositionId cl_pos_id, OrderFillEvent event)
+    cdef void _handle_order_fill(self, OrderFilled event) except *
+    cdef inline ClientPositionId _find_cl_pos_id(self, OrderFilled event)
+    cdef inline ClientPositionId _make_cl_pos_id(self, OrderFilled event)
+    cdef inline Position _find_position(self, ClientPositionId cl_pos_id, OrderFilled event)
     cdef void _handle_position_event(self, PositionEvent event) except *
     cdef void _handle_account_event(self, AccountState event) except *
     cdef void _generate_position_opened_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *

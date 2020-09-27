@@ -162,8 +162,8 @@ cdef class OrderFactory:
             Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None,
-            bint is_post_only=True,
-            bint is_hidden=False,
+            bint post_only=True,
+            bint hidden=False,
     ):
         """
         Create a new limit order.
@@ -184,9 +184,9 @@ cdef class OrderFactory:
             The orders time in force (default=DAY).
         expire_time : datetime, optional
             The order expire time (for GTD orders, default=None).
-        is_post_only : bool, optional
+        post_only : bool, optional
             If the order will only make a market (default=True).
-        is_hidden : bool, optional
+        hidden : bool, optional
             If the order should be hidden from the public book (default=False).
 
         Returns
@@ -213,8 +213,8 @@ cdef class OrderFactory:
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.utc_now(),
-            is_post_only=is_post_only,
-            is_hidden=is_hidden)
+            post_only=post_only,
+            hidden=hidden)
 
     cpdef StopOrder stop(
             self,

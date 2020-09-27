@@ -24,10 +24,9 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import MarketPosition
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.events import OrderPartiallyFilled
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -64,22 +63,7 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_filled = OrderFilled(
-            self.account_id,
-            order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("E123456"),
-            PositionId("T123456"),
-            order.symbol,
-            order.side,
-            order.quantity,
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill = TestStubs.event_order_filled(order, Price(1.00001, 5))
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -90,22 +74,22 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position = Position(ClientPositionId("P-123456"), order_filled)
+        position = Position(ClientPositionId("P-123456"), fill)
 
         # Assert
         self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), position.from_order)
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_quantity)
-        self.assertEqual(OrderSide.BUY, position.entry_direction)
-        self.assertEqual(MarketPosition.LONG, position.market_position)
+        self.assertEqual(OrderSide.BUY, position.entry)
+        self.assertEqual(PositionSide.LONG, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertIsNone(position.open_duration)
-        self.assertEqual(1.00001, position.average_open_price)
+        self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(1, position.event_count())
         self.assertEqual([order.cl_ord_id], position.get_order_ids())
-        self.assertEqual([ExecutionId("E123456")], position.get_execution_ids())
-        self.assertEqual(ExecutionId("E123456"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
+        self.assertEqual([ExecutionId("E-19700101-000000-001-001-1")], position.get_execution_ids())
+        self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
+        self.assertEqual(PositionId("O-19700101-000000-001-001-1"), position.id)
         self.assertTrue(position.is_long())
         self.assertFalse(position.is_short())
         self.assertFalse(position.is_closed())
@@ -126,22 +110,7 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        order_filled = OrderFilled(
-            self.account_id,
-            order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("E123456"),
-            PositionId("T123456"),
-            order.symbol,
-            order.side,
-            order.quantity,
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill = TestStubs.event_order_filled(order, Price(1.00001, 5))
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -152,17 +121,18 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position = Position(ClientPositionId("P-123456"), order_filled)
+        position = Position(ClientPositionId("P-123456"), fill)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_quantity)
-        self.assertEqual(MarketPosition.SHORT, position.market_position)
+        self.assertEqual(PositionSide.SHORT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(1.00001, position.average_open_price)
+        self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(1, position.event_count())
-        self.assertEqual(ExecutionId("E123456"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
+        self.assertEqual([ExecutionId("E-19700101-000000-001-001-1")], position.get_execution_ids())
+        self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
+        self.assertEqual(PositionId("O-19700101-000000-001-001-1"), position.id)
         self.assertFalse(position.is_long())
         self.assertTrue(position.is_short())
         self.assertFalse(position.is_closed())
@@ -183,23 +153,12 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_partially_filled = OrderPartiallyFilled(
-            self.account_id,
-            order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("E123456"),
-            PositionId("T123456"),
-            order.symbol,
-            order.side,
-            Quantity(50000),
-            Quantity(50000),
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill = TestStubs.event_order_filled(
+            order,
+            fill_price=Price(1.00001, 5),
+            filled_qty=Quantity(50000),
+            leaves_qty=Quantity(50000),
+        )
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -209,18 +168,16 @@ class PositionTests(unittest.TestCase):
             Quantity(1),
             UNIX_EPOCH)
 
-        position = Position(ClientPositionId("P-123456"), order_partially_filled)
+        position = Position(ClientPositionId("P-123456"), fill)
 
         # Act
         # Assert
         self.assertEqual(Quantity(50000), position.quantity)
         self.assertEqual(Quantity(50000), position.peak_quantity)
-        self.assertEqual(MarketPosition.LONG, position.market_position)
+        self.assertEqual(PositionSide.LONG, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(1.00001, position.average_open_price)
+        self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(1, position.event_count())
-        self.assertEqual(ExecutionId("E123456"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
         self.assertTrue(position.is_long())
         self.assertFalse(position.is_short())
         self.assertFalse(position.is_closed())
@@ -241,43 +198,21 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        order_partially_filled1 = OrderPartiallyFilled(
-            self.account_id,
-            order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("E1"),
-            PositionId("T123456"),
-            order.symbol,
-            order.side,
-            Quantity(50000),
-            Quantity(50000),
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill1 = TestStubs.event_order_filled(
+            order,
+            fill_price=Price(1.00001, 5),
+            filled_qty=Quantity(50000),
+            leaves_qty=Quantity(50000),
+        )
 
-        order_partially_filled2 = OrderPartiallyFilled(
-            self.account_id,
-            order.cl_ord_id,
-            OrderId('2'),
-            ExecutionId("E2"),
-            PositionId("T123456"),
-            order.symbol,
-            order.side,
-            Quantity(100000),
-            Quantity(),
-            Price(1.00002, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill2 = TestStubs.event_order_filled(
+            order,
+            fill_price=Price(1.00002, 5),
+            filled_qty=Quantity(100000),
+            leaves_qty=Quantity(0),
+        )
 
-        position = Position(ClientPositionId("P-123456"), order_partially_filled1)
+        position = Position(ClientPositionId("P-123456"), fill1)
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -288,16 +223,14 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order_partially_filled2)
+        position.apply(fill2)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
-        self.assertEqual(MarketPosition.SHORT, position.market_position)
+        self.assertEqual(PositionSide.SHORT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(1.00002, position.average_open_price)
+        self.assertEqual(1.00002, position.avg_open_price)
         self.assertEqual(2, position.event_count())
-        self.assertEqual(ExecutionId("E2"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
         self.assertFalse(position.is_long())
         self.assertTrue(position.is_short())
         self.assertFalse(position.is_closed())
@@ -318,26 +251,11 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_filled1 = OrderFilled(
-            self.account_id,
-            order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("E1"),
-            PositionId("T123456"),
-            order.symbol,
-            OrderSide.BUY,
-            order.quantity,
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill1 = TestStubs.event_order_filled(order, fill_price=Price(1.00001, 5))
 
-        position = Position(ClientPositionId("P-123456"), order_filled1)
+        position = Position(ClientPositionId("P-123456"), fill1)
 
-        order_filled2 = OrderFilled(
+        fill2 = OrderFilled(
             self.account_id,
             order.cl_ord_id,
             OrderId('2'),
@@ -346,9 +264,11 @@ class PositionTests(unittest.TestCase):
             order.symbol,
             OrderSide.SELL,
             order.quantity,
+            Quantity(0),
             Price(1.00001, 5),
             Money(0., Currency.USD),
             LiquiditySide.TAKER,
+            Currency.AUD,
             Currency.USD,
             UNIX_EPOCH + timedelta(minutes=1),
             uuid4(),
@@ -363,19 +283,17 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order_filled2)
+        position.apply(fill2)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
-        self.assertEqual(MarketPosition.FLAT, position.market_position)
+        self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(timedelta(minutes=1), position.open_duration)
-        self.assertEqual(1.00001, position.average_open_price)
+        self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(2, position.event_count())
-        self.assertEqual(ExecutionId("E2"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), position.closed_time)
-        self.assertEqual(1.00001, position.average_close_price)
+        self.assertEqual(1.00001, position.avg_close_price)
         self.assertFalse(position.is_long())
         self.assertFalse(position.is_short())
         self.assertTrue(position.is_closed())
@@ -401,60 +319,23 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_filled1 = OrderFilled(
-            self.account_id,
-            order1.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("E123456"),
-            PositionId("T123456"),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            Price(1.00000, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill1 = TestStubs.event_order_filled(order1)
 
-        position = Position(ClientPositionId("P-123456"), order_filled1)
+        position = Position(ClientPositionId("P-123456"), fill1)
 
-        order_filled2 = OrderPartiallyFilled(
-            self.account_id,
-            order2.cl_ord_id,
-            OrderId('2'),
-            ExecutionId("E1234561"),
-            PositionId("T123456"),
-            order2.symbol,
-            order2.side,
-            Quantity(50000),
-            Quantity(50000),
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            fill_price=Price(1.00001, 5),
+            filled_qty=Quantity(50000),
+            leaves_qty=Quantity(50000),
+        )
 
-        order_filled3 = OrderPartiallyFilled(
-            self.account_id,
-            order2.cl_ord_id,
-            OrderId('2'),
-            ExecutionId("E1234562"),
-            PositionId("T123456"),
-            order2.symbol,
-            order2.side,
-            Quantity(100000),
-            Quantity(),
-            Price(1.00003, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill3 = TestStubs.event_order_filled(
+            order2,
+            fill_price=Price(1.00003, 5),
+            filled_qty=Quantity(100000),
+            leaves_qty=Quantity(50000),
+        )
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -465,20 +346,18 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order_filled2)
-        position.apply(order_filled3)
+        position.apply(fill2)
+        position.apply(fill3)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
-        self.assertEqual(MarketPosition.FLAT, position.market_position)
+        self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(1.0, position.average_open_price)
+        self.assertEqual(1.0, position.avg_open_price)
         self.assertEqual(3, position.event_count())
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.get_order_ids())
-        self.assertEqual(ExecutionId("E1234562"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(1.00003, position.average_close_price)
+        self.assertEqual(1.00003, position.avg_close_price)
         self.assertFalse(position.is_long())
         self.assertFalse(position.is_short())
         self.assertTrue(position.is_closed())
@@ -504,41 +383,11 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        order1_filled = OrderFilled(
-            self.account_id,
-            order1.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("E1"),
-            PositionId("T123456"),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            Price(1.00000, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill1 = TestStubs.event_order_filled(order1)
 
-        position = Position(ClientPositionId("P-123456"), order1_filled)
+        position = Position(ClientPositionId("P-123456"), fill1)
 
-        order2_filled = OrderFilled(
-            self.account_id,
-            order2.cl_ord_id,
-            OrderId('2'),
-            ExecutionId("E2"),
-            PositionId("T123456"),
-            order2.symbol,
-            order2.side,
-            order2.quantity,
-            Price(1.00000, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill2 = TestStubs.event_order_filled(order2, fill_price=Price(1.00000, 5))
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -549,20 +398,23 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order2_filled)
+        position.apply(fill2)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
-        self.assertEqual(MarketPosition.FLAT, position.market_position)
+        self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(1.0, position.average_open_price)
+        self.assertEqual(1.0, position.avg_open_price)
         self.assertEqual(2, position.event_count())
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.get_order_ids())
-        self.assertEqual([ExecutionId("E1"), ExecutionId("E2")], position.get_execution_ids()),
-        self.assertEqual(ExecutionId("E2"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
+        self.assertEqual([
+            ExecutionId("E-19700101-000000-001-001-1"),
+            ExecutionId("E-19700101-000000-001-001-2")
+        ],
+            position.get_execution_ids(),
+        ),
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(1.0, position.average_close_price)
+        self.assertEqual(1.0, position.avg_close_price)
         self.assertFalse(position.is_long())
         self.assertFalse(position.is_short())
         self.assertTrue(position.is_closed())
@@ -593,56 +445,9 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(200000))
 
-        order1_filled = OrderFilled(
-            self.account_id,
-            order1.cl_ord_id,
-            OrderId("1"),
-            ExecutionId("E1"),
-            PositionId("T123456"),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            Price(1.00000, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
-
-        order2_filled = OrderFilled(
-            self.account_id,
-            order2.cl_ord_id,
-            OrderId("2"),
-            ExecutionId("E2"),
-            PositionId("T123456"),
-            order2.symbol,
-            order2.side,
-            order2.quantity,
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
-
-        order3_filled = OrderFilled(
-            self.account_id,
-            order3.cl_ord_id,
-            OrderId("3"),
-            ExecutionId("E3"),
-            PositionId("T123456"),
-            order3.symbol,
-            order3.side,
-            order3.quantity,
-            Price(1.00010, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        fill1 = TestStubs.event_order_filled(order1)
+        fill2 = TestStubs.event_order_filled(order2, fill_price=Price(1.00001, 5))
+        fill3 = TestStubs.event_order_filled(order3, fill_price=Price(1.00010, 5))
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -653,21 +458,19 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position = Position(ClientPositionId("P-123456"), order1_filled)
-        position.apply(order2_filled)
-        position.apply(order3_filled)
+        position = Position(ClientPositionId("P-123456"), fill1)
+        position.apply(fill2)
+        position.apply(fill3)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
-        self.assertEqual(MarketPosition.FLAT, position.market_position)
+        self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(1.000005, position.average_open_price)
+        self.assertEqual(1.000005, position.avg_open_price)
         self.assertEqual(3, position.event_count())
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.get_order_ids())
-        self.assertEqual(ExecutionId("E3"), position.last_execution_id())
-        self.assertEqual(PositionId("T123456"), position.id)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(1.0001, position.average_close_price)
+        self.assertEqual(1.0001, position.avg_close_price)
         self.assertFalse(position.is_long())
         self.assertFalse(position.is_short())
         self.assertTrue(position.is_closed())

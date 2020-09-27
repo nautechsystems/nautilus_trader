@@ -19,18 +19,10 @@ import unittest
 from nautilus_trader.analysis.reports import ReportProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
-from nautilus_trader.model.identifiers import OrderId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
@@ -73,22 +65,7 @@ class ReportProviderTests(unittest.TestCase):
         order2.apply(TestStubs.event_order_accepted(order2))
         order2.apply(TestStubs.event_order_working(order2))
 
-        event = OrderFilled(
-            self.account_id,
-            order1.cl_ord_id,
-            OrderId("1"),
-            ExecutionId("SOME_EXEC_ID_1"),
-            PositionId("SOME_EXEC_TICKET_1"),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            Price(0.80011, 5),
-            Money(0., Currency.AUD),
-            LiquiditySide.MAKER,
-            Currency.AUD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        event = TestStubs.event_order_filled(order1, Price(0.80011, 5))
 
         order1.apply(event)
 
@@ -137,22 +114,7 @@ class ReportProviderTests(unittest.TestCase):
         order2.apply(accepted2)
         order2.apply(working2)
 
-        filled = OrderFilled(
-            self.account_id,
-            order1.cl_ord_id,
-            OrderId("1"),
-            ExecutionId("SOME_EXEC_ID_1"),
-            PositionId("SOME_EXEC_TICKET_1"),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            Price(0.80011, 5),
-            Money(0., Currency.AUD),
-            LiquiditySide.MAKER,
-            Currency.AUD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        filled = TestStubs.event_order_filled(order1, Price(0.80011, 5))
 
         order1.apply(filled)
 
@@ -189,9 +151,9 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(2, len(report))
         self.assertEqual("cl_pos_id", report.index.name)
         self.assertEqual(position1.cl_pos_id.value, report.index[0])
-        # self.assertEqual("1", report.iloc[0]["position_id"])
+        self.assertEqual(str, type(report.iloc[0]["position_id"]))
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
-        self.assertEqual("BUY", report.iloc[0]["direction"])
+        self.assertEqual("BUY", report.iloc[0]["entry"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])
         self.assertEqual(1.00000, report.iloc[0]["avg_open_price"])
         self.assertEqual(1.0001, report.iloc[0]["avg_close_price"])

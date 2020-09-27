@@ -36,9 +36,9 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import Maker
-from nautilus_trader.model.enums import MarketPosition
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import MatchId
@@ -570,7 +570,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(OrderSide.SELL, result1)
         self.assertEqual(OrderSide.BUY, result2)
 
-    def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
+    def test_get_flatten_side_with_long_or_short_position_side_returns_expected_sides(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -580,8 +580,8 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger)
 
         # Act
-        result1 = strategy.get_flatten_side(MarketPosition.LONG)
-        result2 = strategy.get_flatten_side(MarketPosition.SHORT)
+        result1 = strategy.get_flatten_side(PositionSide.LONG)
+        result2 = strategy.get_flatten_side(PositionSide.SHORT)
 
         # Assert
         self.assertEqual(OrderSide.SELL, result1)
@@ -801,7 +801,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, strategy.orders()[order.cl_ord_id])
         self.assertEqual(OrderState.FILLED, strategy.orders()[order.cl_ord_id].state())
-        self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id].market_position)
+        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id].side)
         self.assertTrue(strategy.positions()[position_id].is_closed())
         self.assertTrue(position_id in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
@@ -840,8 +840,8 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(order2, strategy.orders()[order2.cl_ord_id])
         self.assertEqual(OrderState.FILLED, strategy.orders()[order1.cl_ord_id].state())
         self.assertEqual(OrderState.FILLED, strategy.orders()[order2.cl_ord_id].state())
-        self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id1].market_position)
-        self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id2].market_position)
+        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id1].side)
+        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id2].side)
         self.assertTrue(strategy.positions()[position_id1].is_closed())
         self.assertTrue(strategy.positions()[position_id2].is_closed())
         self.assertTrue(position_id1 in strategy.positions_closed())

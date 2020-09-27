@@ -41,7 +41,7 @@ from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -357,13 +357,13 @@ cdef class ExecutionEngine:
 
         self.database.update_order(order)
 
-        if isinstance(event, OrderFillEvent):
+        if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
             return  # _handle_order_fill(event) will send to strategy (refactor)
 
         self._send_to_strategy(event, self.database.get_strategy_for_order(event.cl_ord_id))
 
-    cdef void _handle_order_fill(self, OrderFillEvent event) except *:
+    cdef void _handle_order_fill(self, OrderFilled event) except *:
         cdef ClientPositionId cl_pos_id = self._find_cl_pos_id(event)
 
         cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.cl_ord_id)
@@ -397,7 +397,7 @@ cdef class ExecutionEngine:
             else:
                 self._generate_position_modified_event(position, strategy_id, event)
 
-    cdef inline ClientPositionId _find_cl_pos_id(self, OrderFillEvent event):
+    cdef inline ClientPositionId _find_cl_pos_id(self, OrderFilled event):
         cdef ClientPositionId cl_pos_id = self.database.get_cl_pos_id(event.cl_ord_id)
 
         if cl_pos_id is None:
@@ -410,7 +410,7 @@ cdef class ExecutionEngine:
 
         return cl_pos_id
 
-    cdef inline ClientPositionId _make_cl_pos_id(self, OrderFillEvent event):
+    cdef inline ClientPositionId _make_cl_pos_id(self, OrderFilled event):
         if event.symbol not in self._symbol_cl_pos_id_counts:
             self._symbol_cl_pos_id_counts[event.symbol] = 0
 
@@ -420,7 +420,7 @@ cdef class ExecutionEngine:
 
         return ClientPositionId(f'P-{event.symbol}-{position_count}')
 
-    cdef inline Position _find_position(self, ClientPositionId cl_pos_id, OrderFillEvent event):
+    cdef inline Position _find_position(self, ClientPositionId cl_pos_id, OrderFilled event):
         cdef Position position = self.database.get_position_for_order(event.cl_ord_id)
 
         if position is None and cl_pos_id is not None:
