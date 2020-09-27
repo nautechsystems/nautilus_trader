@@ -545,7 +545,7 @@ cdef class PassiveOrder(Order):
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
-        self.liquidity_side = event.liq_side
+        self.liquidity_side = event.liquidity_side
         self.filled_qty = event.filled_qty
         self.filled_timestamp = event.timestamp
         self.avg_price = event.avg_price

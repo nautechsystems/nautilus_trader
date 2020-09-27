@@ -33,12 +33,12 @@ from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
-from nautilus_trader.model.identifiers cimport ClientPositionId
 
 
 cdef class ExecutionEngine:

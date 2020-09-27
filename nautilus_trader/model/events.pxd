@@ -140,7 +140,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Quantity leaves_qty
     cdef readonly Price avg_price
     cdef readonly Money commission
-    cdef readonly LiquiditySide liq_side
+    cdef readonly LiquiditySide liquidity_side
     cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly datetime execution_time

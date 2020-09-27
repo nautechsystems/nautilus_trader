@@ -17,6 +17,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal64
+from nautilus_trader.core.functions cimport precision_from_string
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 
@@ -43,9 +44,10 @@ cdef class Quantity(Decimal64):
         Parameters
         ----------
         value : double
-            The value of the quantity (>= 0).
-        precision : int
-            The decimal precision of the quantity (>= 0).
+            The value of the quantity.
+        precision : int, optional.
+            The decimal precision of the quantity.
+            Only used if value is not a string.
 
         Raises
         ------
@@ -57,6 +59,27 @@ cdef class Quantity(Decimal64):
         """
         Condition.not_negative(value, "value")
         super().__init__(value, precision)
+
+    @staticmethod
+    cdef Quantity from_string(str value):
+        """
+        Return a quantity from the given string.
+
+        Precision will be inferred from the number of digits after the decimal place.
+
+        Parameters
+        ----------
+        value : str
+            The string value to parse.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        Condition.valid_string(value, "value")
+
+        return Quantity(float(value), precision=precision_from_string(value))
 
     cpdef bint equals(self, Quantity other):
         """
@@ -97,26 +120,6 @@ cdef class Quantity(Decimal64):
 
         """
         return _ONE_QUANTITY
-
-    @staticmethod
-    cdef Quantity from_string(str value):
-        """
-        Return a quantity from the given string. Precision will be inferred from the
-        number of digits after the decimal place.
-
-        Parameters
-        ----------
-        value : str
-            The string value to parse.
-
-        Returns
-        -------
-        Quantity
-
-        """
-        Condition.valid_string(value, "value")
-
-        return Quantity(float(value), precision=Decimal64.precision_from_string(value))
 
     cpdef Quantity add(self, Quantity other):
         """
@@ -199,6 +202,25 @@ cdef class Price(Decimal64):
         Condition.not_negative(value, "value")
         super().__init__(value, precision)
 
+    @staticmethod
+    cdef Price from_string(str value):
+        """
+        Return a price from the given string.
+
+        Precision will be inferred from the number of digits after the decimal place.
+
+        Parameters
+        ----------
+        value : str
+            The string value to parse.
+        Returns
+        -------
+        Price
+        """
+        Condition.valid_string(value, "value")
+
+        return Price(float(value), precision=precision_from_string(value))
+
     cpdef bint equals(self, Price other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -214,26 +236,6 @@ cdef class Price(Decimal64):
 
         """
         return self.eq(other)
-
-    @staticmethod
-    cdef Price from_string(str value):
-        """
-        Return a price from the given string. Precision will be inferred from the
-        number of digits after the decimal place.
-
-        Parameters
-        ----------
-        value : str
-            The string value to parse.
-
-        Returns
-        -------
-        Price
-
-        """
-        Condition.valid_string(value, "value")
-
-        return Price(float(value), precision=Decimal64.precision_from_string(value))
 
     cpdef Price add(self, Decimal64 other):
         """
@@ -289,28 +291,54 @@ cdef class Money(Decimal64):
     Represents the 'concept' of money including currency type.
     """
 
-    def __init__(self, double value, Currency currency):
+    def __init__(self, value, Currency currency, int precision=2):
         """
         Initialize a new instance of the Money class.
-        Note: The value is rounded to 2 decimal places of precision.
 
         Parameters
         ----------
-        value : double
+        value : integer, string, tuple, float, or decimal.Decimal.
             The value of the money.
         currency : Currency
             The currency of the money.
+        precision : int, optional
+            The denomination precision for the currency.
 
         Raises
         ------
         ValueError
             If currency is UNDEFINED.
+        ValueError
+            If precision is negative (< 0).
 
         """
         Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
-        super().__init__(value, precision=2)
+        Condition.not_negative_int(precision, "precision")
+        super().__init__(value, precision)
 
         self.currency = currency
+
+    @staticmethod
+    cdef Money from_string(str value, Currency currency):
+        """
+        Return money parsed from the given string value.
+        Precision will be inferred from the number of digits after the decimal place.
+
+        Parameters
+        ----------
+        value : str
+            The string value to parse.
+        currency : Currency
+            The currency for the money.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.valid_string(value, "value")
+
+        return Money(float(value), currency, precision=precision_from_string(value))
 
     cpdef bint equals(self, Money other):
         """
@@ -332,27 +360,6 @@ cdef class Money(Decimal64):
 
         """
         return self.eq(other) and self.currency == other.currency
-
-    @staticmethod
-    cdef Money from_string(str value, Currency currency):
-        """
-        Return money parsed from the given string value.
-
-        Parameters
-        ----------
-        value : str
-            The string value to parse.
-        currency : Currency
-            The currency for the money.
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.valid_string(value, "value")
-
-        return Money(float(value), currency)
 
     cpdef Money add(self, Money other):
         """

@@ -14,71 +14,61 @@
 # -------------------------------------------------------------------------------------------------
 
 import decimal
-
-from libc.math cimport fabs
-from libc.math cimport isfinite
-from libc.math cimport isnan
-from libc.math cimport round
+import numbers
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport precision_from_string
 
 
-cdef dict _EPSILON_MAP = {
-    1: 1e-1,
-    2: 1e-2,
-    3: 1e-3,
-    4: 1e-4,
-    5: 1e-5,
-    6: 1e-6,
-    7: 1e-7,
-    8: 1e-8,
-    9: 1e-9,
-    10: 1e-10,
+cdef dict _QUANTIZE_MAP = {
+    0: decimal.Decimal('0'),
+    1: decimal.Decimal('0.1'),
+    2: decimal.Decimal('0.' + '0' * 1 + '1'),
+    3: decimal.Decimal('0.' + '0' * 2 + '1'),
+    4: decimal.Decimal('0.' + '0' * 3 + '1'),
+    5: decimal.Decimal('0.' + '0' * 4 + '1'),
+    6: decimal.Decimal('0.' + '0' * 5 + '1'),
+    7: decimal.Decimal('0.' + '0' * 6 + '1'),
+    8: decimal.Decimal('0.' + '0' * 7 + '1'),
+    9: decimal.Decimal('0.' + '0' * 8 + '1'),
+    10: decimal.Decimal('0.' + '0' * 9 + '1'),
+    11: decimal.Decimal('0.' + '0' * 10 + '1'),
+    12: decimal.Decimal('0.' + '0' * 11 + '1'),
+    13: decimal.Decimal('0.' + '0' * 12 + '1'),
+    14: decimal.Decimal('0.' + '0' * 13 + '1'),
+    15: decimal.Decimal('0.' + '0' * 14 + '1'),
+    16: decimal.Decimal('0.' + '0' * 15 + '1'),
 }
 
 cdef class Decimal64:
     """
-    Represents a decimal64 floating point value.
+    Represents a decimal64 floating point value with a fixed precision context.
 
-    The data type allows up to 16 digits of significand with up to 9 decimal
-    places of precision. The input double values are rounded to nearest with the
-    specified precision.
+    Rounding behaviour is as per the built-in decimal.Decimal type.
     """
 
-    def __init__(self, double value=0.0, int precision=0):
+    def __init__(self, value=0, int precision=0):
         """
         Initialize a new instance of the Decimal64 class.
 
         Parameters
         ----------
-        value : double
-            The IEEE-754 double value for the decimal
-            (must have no greater than 16 significands).
-        precision : int
-            The precision for the decimal [0, 9].
+        value : integer, string, tuple, float, or decimal.Decimal.
+            The value for the decimal.
+        precision : int, optional
+            The precision for the decimal.
 
         Raises
         ------
         ValueError
-            If value is 'nan', 'inf, '-inf', or not in range [0, 9].
+            If precision is negative (< 0).
 
         """
-        Condition.true(not isnan(value), "value is not nan")
-        Condition.true(isfinite(value), "value is finite")
-        Condition.in_range_int(precision, 0, 9, "precision")
+        Condition.not_negative(precision, "precision")
 
-        cdef int power = 10 ** precision             # When precision = 0 then zero power rule 10^0 = 1
-        self._value = round(value * power) / power   # Rounding to nearest (bankers rounding)
-        self._epsilon = _EPSILON_MAP[precision + 1]  # Choose epsilon for one digit more than precision
+        # https://docs.python.org/3.9/library/decimal.html?highlight=quantize#decimal.Decimal.quantize
+        self._value = decimal.Decimal(value).quantize(_QUANTIZE_MAP.get(precision))
         self.precision = precision
-
-    cdef bint _eq_eps_delta(self, double value1, double value2):
-        # The values are considered equal if their absolute difference is < epsilon
-        return fabs(value1 - value2) < self._epsilon
-
-    cdef bint _ne_eps_delta(self, double value1, double value2):
-        # The values are considered NOT equal if their absolute difference is >= epsilon
-        return fabs(value1 - value2) >= self._epsilon
 
     @staticmethod
     cdef Decimal64 from_string_to_decimal(str value):
@@ -86,7 +76,6 @@ cdef class Decimal64:
         Return a decimal from the given string.
 
         Precision will be inferred from the number of digits after the decimal place.
-
         Note: If no decimal place then precision will be zero.
 
         Parameters
@@ -101,29 +90,7 @@ cdef class Decimal64:
         """
         Condition.valid_string(value, "value")
 
-        return Decimal64(float(value), precision=Decimal64.precision_from_string(value))
-
-    @staticmethod
-    cdef int precision_from_string(str value):
-        """
-        Return the decimal precision inferred from the number of digits after
-        the '.' decimal place.
-
-        Note: If no decimal place then precision will be zero.
-
-        Parameters
-        ----------
-        value : str
-            The string value to parse.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.valid_string(value, "value")
-
-        return len(value.partition('.')[2])  # If does not contain "." then partition[2] will be ""
+        return Decimal64(value, precision=precision_from_string(value))
 
     cpdef str to_string(self, bint format_commas=False):
         """
@@ -140,15 +107,9 @@ cdef class Decimal64:
 
         """
         if format_commas:
-            if self.precision == 0:
-                return f"{int(self._value):,}"
-            else:
-                return f"{self._value:,.{self.precision}f}"
+            return f"{self._value:,}"
         else:
-            if self.precision == 0:
-                return f"{int(self._value)}"
-            else:
-                return f"{self._value:.{self.precision}f}"
+            return str(self._value)
 
     cpdef int as_int(self):
         """
@@ -170,7 +131,7 @@ cdef class Decimal64:
         double
 
         """
-        return self._value
+        return float(self._value)
 
     cpdef object as_decimal(self):
         """
@@ -181,7 +142,7 @@ cdef class Decimal64:
         decimal.Decimal
 
         """
-        return decimal.Decimal(f"{self._value:.{self.precision}f}")
+        return self._value
 
     cpdef bint is_zero(self):
         """
@@ -192,7 +153,7 @@ cdef class Decimal64:
         bool
 
         """
-        return self._eq_eps_delta(self._value, 0.0)
+        return self._value == _QUANTIZE_MAP[0]
 
     cpdef bint eq(self, Decimal64 other):
         """
@@ -210,7 +171,7 @@ cdef class Decimal64:
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
-        return self._eq_eps_delta(self._value, other._value)
+        return self._value == other._value
 
     cpdef bint ne(self, Decimal64 other):
         """
@@ -229,7 +190,7 @@ cdef class Decimal64:
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
-        return self._ne_eps_delta(self._value, other._value)
+        return self._value != other._value
 
     cpdef bint lt(self, Decimal64 other):
         """
@@ -248,7 +209,7 @@ cdef class Decimal64:
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
-        return self._ne_eps_delta(self._value, other._value) and self._value < other._value
+        return self._value < other._value
 
     cpdef bint le(self, Decimal64 other):
         """
@@ -267,7 +228,7 @@ cdef class Decimal64:
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
-        return self._eq_eps_delta(self._value, other._value) or self._value < other._value
+        return self._value <= other._value
 
     cpdef bint gt(self, Decimal64 other):
         """
@@ -286,7 +247,7 @@ cdef class Decimal64:
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
-        return self._ne_eps_delta(self._value, other._value) and self._value > other._value
+        return self._value > other._value
 
     cpdef bint ge(self, Decimal64 other):
         """
@@ -305,57 +266,7 @@ cdef class Decimal64:
         """
         # noinspection PyProtectedMember
         # direct access to protected member ok here
-        return self._eq_eps_delta(self._value, other._value) or self._value > other._value
-
-    cpdef Decimal64 add_as_decimal(self, Decimal64 other, bint keep_precision=False):
-        """
-        Return a new decimal by adding the given decimal to this decimal.
-
-        Parameters
-        ----------
-        other : Decimal64
-            The other decimal to add.
-        keep_precision : bool
-            If the original precision should be maintained.
-
-        Returns
-        -------
-        Decimal64
-
-        """
-        if keep_precision:
-            # noinspection PyProtectedMember
-            # direct access to protected member ok here
-            return Decimal64(self._value + other._value, self.precision)
-        else:
-            # noinspection PyProtectedMember
-            # direct access to protected member ok here
-            return Decimal64(self._value + other._value, max(self.precision, other.precision))
-
-    cpdef Decimal64 sub_as_decimal(self, Decimal64 other, bint keep_precision=False):
-        """
-        Return a new decimal by subtracting the given decimal from this decimal.
-
-        Parameters
-        ----------
-        other : Decimal64
-            The other decimal to subtract.
-        keep_precision : bool
-            If the original precision should be maintained.
-
-        Returns
-        -------
-        Decimal64
-
-        """
-        if keep_precision:
-            # noinspection PyProtectedMember
-            # direct access to protected member ok here
-            return Decimal64(self._value - other._value, self.precision)
-        else:
-            # noinspection PyProtectedMember
-            # direct access to protected member ok here
-            return Decimal64(self._value - other._value, max(self.precision, other.precision))
+        return self._value >= other._value
 
     def __eq__(self, other) -> bool:
         """
@@ -371,11 +282,10 @@ cdef class Decimal64:
         bool
 
         """
-        try:
-            return self._eq_eps_delta(self.as_double(), <double?>other)
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self._eq_eps_delta(self.as_double(), other.as_double())
+        if isinstance(other, Decimal64):
+            return self.eq(other)
+
+        return self._value == other
 
     def __ne__(self, other) -> bool:
         """
@@ -391,11 +301,10 @@ cdef class Decimal64:
         bool
 
         """
-        try:
-            self._ne_eps_delta(self.as_double(), <double?>other)
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self._ne_eps_delta(self.as_double(), other.as_double())
+        if isinstance(other, Decimal64):
+            return self.ne(other)
+
+        return self._value != other
 
     def __lt__(self, other) -> bool:
         """
@@ -411,11 +320,10 @@ cdef class Decimal64:
         bool
 
         """
-        try:
-            return self._ne_eps_delta(self.as_double(), other) and self.as_double() < <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self._ne_eps_delta(self.as_double(), other.as_double()) and self.as_double() < other.as_double()
+        if isinstance(other, Decimal64):
+            return self.lt(other)
+
+        return self._value < other
 
     def __le__(self, other) -> bool:
         """
@@ -432,11 +340,10 @@ cdef class Decimal64:
         bool
 
         """
-        try:
-            return self._eq_eps_delta(self.as_double(), other) or self.as_double() < <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self._eq_eps_delta(self.as_double(), other.as_double()) or self.as_double() < other.as_double()
+        if isinstance(other, Decimal64):
+            return self.le(other)
+
+        return self._value <= other
 
     def __gt__(self, other) -> bool:
         """
@@ -452,11 +359,10 @@ cdef class Decimal64:
         bool
 
         """
-        try:
-            return self._ne_eps_delta(self.as_double(), other) and self.as_double() > <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self._ne_eps_delta(self.as_double(), other.as_double()) and self.as_double() > other.as_double()
+        if isinstance(other, Decimal64):
+            return self.gt(other)
+
+        return self._value > other
 
     def __ge__(self, other) -> bool:
         """
@@ -473,11 +379,10 @@ cdef class Decimal64:
         bool
 
         """
-        try:
-            return self._eq_eps_delta(self.as_double(), other) or self.as_double() > <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self._eq_eps_delta(self.as_double(), other.as_double()) or self.as_double() > other.as_double()
+        if isinstance(other, Decimal64):
+            return self.ge(other)
+
+        return self._value >= other
 
     def __add__(self, other) -> float:
         """
@@ -493,11 +398,12 @@ cdef class Decimal64:
         float
 
         """
-        try:
-            return self.as_double() + <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self.as_double() + other.as_double()
+        if isinstance(other, numbers.Number):
+            return self.as_double() + other
+        if isinstance(other, Decimal64):
+            return Decimal64(self.as_double() + other.as_double(), max(self.precision, other.precision))
+
+        return self._value + other
 
     def __sub__(self, other) -> float:
         """
@@ -513,11 +419,12 @@ cdef class Decimal64:
         float
 
         """
-        try:
-            return self.as_double() - <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self.as_double() - other.as_double()
+        if isinstance(other, numbers.Number):
+            return self.as_double() - other
+        if isinstance(other, Decimal64):
+            return Decimal64(self.as_double() - other.as_double(), max(self.precision, other.precision))
+
+        return self._value - other
 
     def __truediv__(self, other) -> float:
         """
@@ -530,14 +437,15 @@ cdef class Decimal64:
 
         Returns
         -------
-        float
+        decimal.Decimal
 
         """
-        try:
-            return self.as_double() / <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self.as_double() / other.as_double()
+        if isinstance(other, numbers.Number):
+            return self.as_double() / other
+        if isinstance(other, Decimal64):
+            return Decimal64(self.as_double() / other.as_double(), max(self.precision, other.precision))
+
+        return self._value / other
 
     def __mul__(self, other) -> float:
         """
@@ -550,14 +458,15 @@ cdef class Decimal64:
 
         Returns
         -------
-        float
+        decimal.Decimal
 
         """
-        try:
-            return self.as_double() * <double?>other
-        except TypeError:
-            # User passed a Decimal64 rather than double
-            return self.as_double() * other.as_double()
+        if isinstance(other, numbers.Number):
+            return self.as_double() * other
+        if isinstance(other, Decimal64):
+            return Decimal64(self.as_double() * other.as_double(), max(self.precision, other.precision))
+
+        return self._value * other
 
     def __hash__(self) -> int:
         """"
@@ -591,5 +500,5 @@ cdef class Decimal64:
         str
 
         """
-        return (f"<{self.__class__.__name__}({self.to_string()}, "
+        return (f"<{self.__class__.__name__}({self._value}, "
                 f"precision={self.precision}) object at {id(self)}>")

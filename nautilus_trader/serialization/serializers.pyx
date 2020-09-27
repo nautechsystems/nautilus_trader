@@ -522,7 +522,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[AVERAGE_PRICE] = event.avg_price.to_string()
             package[COMMISSION] = event.commission.to_string()
             package[COMMISSION_CURRENCY] = currency_to_string(event.commission.currency)
-            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liq_side)
+            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
             package[BASE_CURRENCY] = currency_to_string(event.quote_currency)
             package[QUOTE_CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)

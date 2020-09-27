@@ -924,7 +924,7 @@ cdef class OrderFilled(OrderEvent):
             Quantity leaves_qty not None,
             Price avg_price not None,
             Money commission not None,
-            LiquiditySide liq_side,
+            LiquiditySide liquidity_side,
             Currency base_currency,
             Currency quote_currency,
             datetime execution_time not None,
@@ -956,7 +956,7 @@ cdef class OrderFilled(OrderEvent):
             The execution leaves quantity.
         avg_price : Price
             The execution average price.
-        liq_side : LiquiditySide
+        liquidity_side : LiquiditySide
             The execution liquidity side.
         base_currency : Currency
             The order securities base currency.
@@ -971,7 +971,7 @@ cdef class OrderFilled(OrderEvent):
 
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.not_equal(liq_side, LiquiditySide.NONE, "liq_side", "NONE")
+        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
         super().__init__(
             cl_ord_id,
@@ -989,7 +989,7 @@ cdef class OrderFilled(OrderEvent):
         self.leaves_qty = leaves_qty
         self.avg_price = avg_price
         self.commission = commission
-        self.liq_side = liq_side
+        self.liquidity_side = liquidity_side
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.execution_time = execution_time
@@ -1010,7 +1010,7 @@ cdef class OrderFilled(OrderEvent):
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
-                f"-{liquidity_side_to_string(self.liq_side)}, "
+                f"-{liquidity_side_to_string(self.liquidity_side)}, "
                 f"filled_qty={self.filled_qty.to_string_formatted()}, "
                 f"leaves_qty={self.leaves_qty.to_string_formatted()}, "
                 f"avg_price={self.avg_price}, "

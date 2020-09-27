@@ -16,8 +16,6 @@
 import decimal
 import unittest
 
-from quicktions import Fraction
-
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.model.objects import Price
 from tests.test_kit.performance import PerformanceHarness
@@ -39,10 +37,6 @@ class DecimalTesting:
     @staticmethod
     def make_decimal():
         Decimal64(1.23456, 5)
-
-    @staticmethod
-    def make_fraction():
-        Fraction("1.23456")
 
     @staticmethod
     def float_comparisons():
@@ -75,13 +69,6 @@ class DecimalTesting:
         x3 = _DECIMAL1 / 1.0  # noqa
 
     @staticmethod
-    def decimal_arithmetic_with_decimals():
-        x0 = _DECIMAL1.add_as_decimal(_DECIMAL1)  # noqa
-        x1 = _DECIMAL1.sub_as_decimal(_DECIMAL1)  # noqa
-        x0 = _DECIMAL1.add_as_decimal(_DECIMAL1)  # noqa
-        x1 = _DECIMAL1.sub_as_decimal(_DECIMAL1)  # noqa
-
-    @staticmethod
     def builtin_decimal_arithmetic():
         x0 = _BUILTIN_DECIMAL1 + _BUILTIN_DECIMAL1  # noqa
         x1 = _BUILTIN_DECIMAL1 - _BUILTIN_DECIMAL1  # noqa
@@ -110,14 +97,10 @@ class DecimalPerformanceTests(unittest.TestCase):
         # Object size test: <class 'nautilus_trader.base.decimal.Decimal'> is 104 bytes
         self.assertTrue(result == 104)
 
-    def test_fraction_size(self):
-        result = PerformanceHarness.object_size(Fraction(900.12))
-        self.assertTrue(result == 144)
-
     def test_decimal_size(self):
         result = PerformanceHarness.object_size(_DECIMAL1)
         # Object size test: <class 'nautilus_trader.core.decimal.Decimal64'> is 48 bytes
-        self.assertTrue(result <= 104)
+        self.assertTrue(result <= 176)
 
     def test_decimal_to_string(self):
         result = PerformanceHarness.profile_function(_DECIMAL1.to_string, 3, 1000000)
@@ -131,18 +114,13 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     def test_make_decimal(self):
         result = PerformanceHarness.profile_function(DecimalTesting.make_decimal, 3, 1000000)
-        # ~154ms (154975μs) minimum of 3 runs @ 1,000,000 iterations each run.
-        self.assertTrue(result < 0.3)
-
-    def test_make_fraction(self):
-        result = PerformanceHarness.profile_function(DecimalTesting.make_fraction, 3, 1000000)
-        # ~246ms (246327μs) minimum of 3 runs @ 1,000,000 iterations each run.
-        self.assertTrue(result < 0.3)
+        # ~900ms (900694μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        self.assertTrue(result < 1.2)
 
     def test_make_price(self):
         result = PerformanceHarness.profile_function(DecimalTesting.make_price, 3, 1000000)
-        # ~370ms (370540μs) minimum of 3 runs @ 1,000,000 iterations each run.
-        self.assertTrue(result < 0.5)
+        # ~1145ms (1145130μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        self.assertTrue(result < 1.5)
 
     def test_float_comparisons(self):
         result = PerformanceHarness.profile_function(DecimalTesting.float_comparisons, 3, 1000000)
@@ -171,10 +149,5 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     def test_decimal_arithmetic_with_floats(self):
         result = PerformanceHarness.profile_function(DecimalTesting.decimal_arithmetic_with_floats, 3, 1000000)
-        # ~342ms (342368μs) minimum of 3 runs @ 1,000,000 iterations each run.
-        self.assertTrue(result < 0.5)
-
-    def test_decimal_arithmetic_with_decimals(self):
-        result = PerformanceHarness.profile_function(DecimalTesting.decimal_arithmetic_with_decimals, 3, 1000000)
-        # ~720ms (720759μs) minimum of 3 runs @ 1,000,000 iterations each run.
-        self.assertTrue(result < 1.2)
+        # ~1872ms (1872823μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        self.assertTrue(result < 2.0)

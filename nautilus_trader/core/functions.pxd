@@ -16,6 +16,7 @@
 import pandas as pd
 
 
+cdef int precision_from_string(str value)
 cpdef double fast_mean(list values)
 cpdef double fast_mean_iterated(
     list values,

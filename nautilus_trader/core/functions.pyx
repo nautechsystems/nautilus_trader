@@ -26,7 +26,38 @@ from nautilus_trader.core.correctness cimport Condition
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef double fast_mean(list values):
+cdef inline int precision_from_string(str value):
+    """
+    Return the decimal precision inferred from the number of digits after
+    the '.' decimal place.
+
+    Parameters
+    ----------
+    value : str
+        The string value to parse.
+
+    Returns
+    -------
+    int
+
+    Raises
+    ------
+    ValueError
+        If value is not a valid string.
+
+    Notes
+    -----
+    If no decimal place then precision will be zero.
+
+    """
+    Condition.valid_string(value, "value")
+
+    return len(value.partition('.')[2])  # If does not contain "." then partition[2] will be ""
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef inline double fast_mean(list values):
     """
     Return the average value of the iterable.
 
@@ -54,7 +85,7 @@ cpdef double fast_mean(list values):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef double fast_mean_iterated(
+cpdef inline double fast_mean_iterated(
         list values,
         double next_value,
         double current_value,
@@ -92,7 +123,7 @@ cpdef double fast_mean_iterated(
     return current_value + ((next_value - value_to_drop) / length)
 
 
-cpdef double fast_std(list values):
+cpdef inline double fast_std(list values):
     """
     Return the standard deviation from the given values.
 
@@ -111,7 +142,7 @@ cpdef double fast_std(list values):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef double fast_std_with_mean(list values, double mean):
+cpdef inline double fast_std_with_mean(list values, double mean):
     """
     Return the standard deviation from the given values and mean.
     Note - garbage in garbage out for given mean.
@@ -137,7 +168,7 @@ cpdef double fast_std_with_mean(list values, double mean):
     return sqrt(std_dev / length)
 
 
-cpdef double basis_points_as_percentage(double basis_points):
+cpdef inline double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
 
@@ -194,7 +225,7 @@ cdef dict POWER_LABELS = {
     4: "TB"
 }
 
-cpdef str format_bytes(double size):
+cpdef inline str format_bytes(double size):
     """
     Return the formatted bytes size.
 
@@ -219,7 +250,7 @@ cpdef str format_bytes(double size):
     return f"{round(size, 2):,} {POWER_LABELS[n]}"
 
 
-cpdef str pad_string(str string, int length, str pad=" "):
+cpdef inline str pad_string(str string, int length, str pad=" "):
     """
     Return the given string front padded.
 
