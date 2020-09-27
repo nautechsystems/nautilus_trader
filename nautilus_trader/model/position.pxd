@@ -19,7 +19,7 @@ from cpython.datetime cimport timedelta
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ClientPositionId
@@ -50,6 +50,7 @@ cdef class Position:
     cdef readonly ClientOrderId from_order
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
+    cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly OrderSide entry
     cdef readonly datetime opened_time
@@ -70,7 +71,7 @@ cdef class Position:
     cpdef str to_string(self)
     cpdef str market_position_as_string(self)
     cpdef str status_string(self)
-    cpdef OrderFillEvent last_event(self)
+    cpdef OrderFilled last_event(self)
     cpdef ExecutionId last_execution_id(self)
     cpdef list get_order_ids(self)
     cpdef list get_execution_ids(self)
@@ -80,7 +81,7 @@ cdef class Position:
     cpdef bint is_closed(self)
     cpdef bint is_long(self)
     cpdef bint is_short(self)
-    cpdef void apply(self, OrderFillEvent event) except *
+    cpdef void apply(self, OrderFilled event) except *
     cpdef double relative_quantity(self)
     cpdef double unrealized_points(self, QuoteTick last)
     cpdef double total_points(self, QuoteTick last)
@@ -89,9 +90,9 @@ cdef class Position:
     cpdef Money unrealized_pnl(self, QuoteTick last)
     cpdef Money total_pnl(self, QuoteTick last)
 
-    cdef void _update(self, OrderFillEvent event) except *
-    cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *
-    cdef void _handle_sell_order_fill(self, OrderFillEvent event) except *
+    cdef void _update(self, OrderFilled event) except *
+    cdef void _handle_buy_order_fill(self, OrderFilled event) except *
+    cdef void _handle_sell_order_fill(self, OrderFilled event) except *
     cdef double _calculate_average_price(self, dict fills, Quantity total_quantity)
     cdef double _calculate_points(self, double open_price, double close_price)
     cdef double _calculate_return(self, double open_price, double close_price)

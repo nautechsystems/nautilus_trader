@@ -56,7 +56,6 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderModified
-from nautilus_trader.model.events cimport OrderPartiallyFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -439,7 +438,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
-            package[CURRENCY] = currency_to_string(event.currency)
+            package[QUOTE_CURRENCY] = currency_to_string(event.currency)
             package[CASH_BALANCE] = event.cash_balance.to_string()
             package[CASH_START_DAY] = event.cash_start_day.to_string()
             package[CASH_ACTIVITY_DAY] = event.cash_activity_day.to_string()
@@ -510,7 +509,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[EXPIRED_TIME] = convert_datetime_to_string(event.expired_time)
-        elif isinstance(event, OrderPartiallyFilled):
+        elif isinstance(event, OrderFilled):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
@@ -522,22 +521,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LEAVES_QUANTITY] = event.leaves_quantity.to_string()
             package[AVERAGE_PRICE] = event.average_price.to_string()
             package[COMMISSION] = event.commission.to_string()
+            package[COMMISSION_CURRENCY] = currency_to_string(event.commission.currency)
             package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
-            package[CURRENCY] = currency_to_string(event.quote_currency)
-            package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
-        elif isinstance(event, OrderFilled):
-            package[ACCOUNT_ID] = event.account_id.value
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
-            package[ORDER_ID] = event.order_id.value
-            package[EXECUTION_ID] = event.execution_id.value
-            package[POSITION_ID] = event.position_id.value
-            package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
-            package[FILLED_QUANTITY] = event.filled_quantity.to_string()
-            package[AVERAGE_PRICE] = event.average_price.to_string()
-            package[COMMISSION] = event.commission.to_string()
-            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
-            package[CURRENCY] = currency_to_string(event.quote_currency)
+            package[BASE_CURRENCY] = currency_to_string(event.quote_currency)
+            package[QUOTE_CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
@@ -563,7 +550,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef Currency currency
         if event_type == AccountState.__name__:
-            currency = currency_from_string(unpacked[CURRENCY].decode(UTF8))
+            currency = currency_from_string(unpacked[QUOTE_CURRENCY].decode(UTF8))
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 currency,
@@ -684,9 +671,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 event_timestamp,
             )
-        elif event_type == OrderPartiallyFilled.__name__:
-            currency = currency_from_string(unpacked[CURRENCY].decode(UTF8))
-            return OrderPartiallyFilled(
+        elif event_type == OrderFilled.__name__:
+            commission_currency = currency_from_string(unpacked[COMMISSION_CURRENCY].decode(UTF8))
+            return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
@@ -697,34 +684,16 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
                 Quantity.from_string(unpacked[LEAVES_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
-                Money.from_string(unpacked[COMMISSION].decode(UTF8), currency),
+                Money.from_string(unpacked[COMMISSION].decode(UTF8), commission_currency),
                 liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
-                currency,
-                convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
-                event_id,
-                event_timestamp,
-            )
-        elif event_type == OrderFilled.__name__:
-            currency = currency_from_string(unpacked[CURRENCY].decode(UTF8))
-            return OrderFilled(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
-                PositionId(unpacked[POSITION_ID].decode(UTF8)),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
-                convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
-                Money.from_string(unpacked[COMMISSION].decode(UTF8), currency),
-                liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
-                currency,
+                currency_from_string(unpacked[BASE_CURRENCY].decode(UTF8)),
+                currency_from_string(unpacked[QUOTE_CURRENCY].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp,
             )
         else:
-            raise RuntimeError("Cannot deserialize event (unrecognized event).")
+            raise RuntimeError(f"Cannot deserialize event (unrecognized event {event_type}).")
 
 
 cdef class MsgPackRequestSerializer(RequestSerializer):

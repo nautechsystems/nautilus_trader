@@ -17,7 +17,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.objects cimport Price
@@ -33,7 +33,7 @@ cdef class Position:
     def __init__(
             self,
             ClientPositionId cl_pos_id not None,
-            OrderFillEvent event not None,
+            OrderFilled event not None,
     ):
         """
         Initialize a new instance of the Position class.
@@ -48,7 +48,7 @@ cdef class Position:
         """
         self._order_ids = {event.cl_ord_id}         # type: {ClientOrderId}
         self._execution_ids = [event.execution_id]  # type: [ExecutionId]
-        self._events = [event]                      # type: [OrderFillEvent]
+        self._events = [event]                      # type: [OrderFilled]
         self._fill_prices = {}                      # type: {ClientOrderId, Price}
         self._buy_quantities = {}                   # type: {ClientOrderId, Quantity}
         self._sell_quantities = {}                  # type: {ClientOrderId, Quantity}
@@ -58,6 +58,7 @@ cdef class Position:
         self.account_id = event.account_id
         self.from_order = event.cl_ord_id
         self.symbol = event.symbol
+        self.base_currency = event.base_currency
         self.quote_currency = event.quote_currency
         self.entry = event.order_side
         self.timestamp = event.execution_time
@@ -220,13 +221,13 @@ cdef class Position:
         """
         return self._events.copy()
 
-    cpdef OrderFillEvent last_event(self):
+    cpdef OrderFilled last_event(self):
         """
-        Return the count of events.
+        Return the last fill event.
 
         Returns
         -------
-        int
+        OrderFilled
 
         """
         return self._events[-1]
@@ -297,7 +298,7 @@ cdef class Position:
         """
         return self.market_position == MarketPosition.SHORT
 
-    cpdef void apply(self, OrderFillEvent event) except *:
+    cpdef void apply(self, OrderFilled event) except *:
         """
         Applies the given order fill event to the position.
 
@@ -461,7 +462,7 @@ cdef class Position:
 
         return self.realized_pnl.add(self.unrealized_pnl(last))
 
-    cdef void _update(self, OrderFillEvent event) except *:
+    cdef void _update(self, OrderFilled event) except *:
         self._fill_prices[event.cl_ord_id] = event.average_price
         self._precision = max(self._precision, event.filled_quantity.precision)
 
@@ -493,7 +494,7 @@ cdef class Position:
             self.closed_time = event.execution_time
             self.open_duration = self.closed_time - self.opened_time
 
-    cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *:
+    cdef void _handle_buy_order_fill(self, OrderFilled event) except *:
         self._buy_quantities[event.cl_ord_id] = event.filled_quantity
         cdef double total_buy_qty = 0.0
         cdef Quantity quantity
@@ -514,7 +515,7 @@ cdef class Position:
         else:
             self.realized_pnl = self.realized_pnl.sub(self.commission)
 
-    cdef void _handle_sell_order_fill(self, OrderFillEvent event) except *:
+    cdef void _handle_sell_order_fill(self, OrderFilled event) except *:
         self._sell_quantities[event.cl_ord_id] = event.filled_quantity
         cdef double total_sell_qty = 0.0
         cdef Quantity quantity

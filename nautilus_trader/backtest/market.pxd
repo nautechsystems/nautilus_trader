@@ -33,7 +33,7 @@ from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -100,7 +100,7 @@ cdef class SimulatedMarket:
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
     cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side)
-    cpdef void adjust_account(self, OrderFillEvent event, Position position) except *
+    cpdef void adjust_account(self, OrderFilled event, Position position) except *
     cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 

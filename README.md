@@ -16,6 +16,8 @@
 - **The API is still in a state of flux with potential breaking changes**
 - **There is currently a large effort to develop improved documentation**
 
+![WIP](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/under-construction.png?raw=true)
+
 ## Introduction
 
 NautilusTrader is an algorithmic trading platform allowing quantitative traders

@@ -906,99 +906,9 @@ cdef class OrderExpired(OrderEvent):
                 f"order_id={self.order_id})")
 
 
-cdef class OrderFillEvent(OrderEvent):
+cdef class OrderFilled(OrderEvent):
     """
-    The base class for all order fill events.
-    """
-
-    def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            ExecutionId execution_id not None,
-            PositionId position_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            Quantity filled_quantity not None,
-            Price average_price not None,
-            Money commission not None,
-            LiquiditySide liquidity_side,
-            Currency quote_currency,
-            datetime execution_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
-    ):
-        """
-        Initialize a new instance of the OrderFillEvent class.
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account identifier.
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-        order_id : OrderId
-            The broker/exchange order identifier.
-        execution_id : ExecutionId
-            The execution identifier.
-        position_id : PositionId
-            The broker/exchange position identifier.
-        symbol : Symbol
-            The order symbol.
-        order_side : OrderSide
-            The execution order side.
-        filled_quantity : Quantity
-            The execution filled quantity.
-        average_price : Price
-            The execution average price.
-        liquidity_side : LiquiditySide
-            The execution liquidity side.
-        quote_currency : Currency
-            The order quote currency.
-        execution_time : datetime
-            The execution time.
-        event_id : UUID
-            The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
-
-        Raises
-        ------
-        ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If liquidity_side is UNDEFINED.
-        ValueError
-            If quote_currency is UNDEFINED.
-
-        """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.not_equal(liquidity_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
-        super().__init__(
-            cl_ord_id,
-            event_id,
-            event_timestamp,
-        )
-
-        self.account_id = account_id
-        self.order_id = order_id
-        self.execution_id = execution_id
-        self.position_id = position_id
-        self.symbol = symbol
-        self.order_side = order_side
-        self.filled_quantity = filled_quantity
-        self.average_price = average_price
-        self.commission = commission
-        self.liquidity_side = liquidity_side
-        self.quote_currency = quote_currency
-        self.execution_time = execution_time
-
-
-cdef class OrderPartiallyFilled(OrderFillEvent):
-    """
-    Represents an event where an order has been partially filled with the broker.
+    Represents an event where an order has been filled at the exchange.
     """
 
     def __init__(
@@ -1015,109 +925,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
             Price average_price not None,
             Money commission not None,
             LiquiditySide liquidity_side,
-            Currency quote_currency,
-            datetime execution_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
-    ):
-        """
-        Initialize a new instance of the OrderPartiallyFilled class.
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account identifier.
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-        order_id : OrderId
-            The broker/exchange order identifier.
-        execution_id : ExecutionId
-            The execution identifier.
-        position_id : PositionId
-            The broker/exchange position identifier.
-        symbol : Symbol
-            The order symbol.
-        order_side : OrderSide
-            The execution order side.
-        filled_quantity : Quantity
-            The execution filled quantity.
-        leaves_quantity : Quantity
-            The leaves quantity.
-        average_price : Price
-            The execution average price.
-        liquidity_side : LiquiditySide
-            The execution liquidity side.
-        quote_currency : Currency
-            The order quote currency.
-        execution_time : datetime
-            The execution time.
-        event_id : UUID
-            The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
-
-        """
-        # Enums checked in base class
-        super().__init__(
-            account_id,
-            cl_ord_id,
-            order_id,
-            execution_id,
-            position_id,
-            symbol,
-            order_side,
-            filled_quantity,
-            average_price,
-            commission,
-            liquidity_side,
-            quote_currency,
-            execution_time,
-            event_id,
-            event_timestamp,
-        )
-
-        self.leaves_quantity = leaves_quantity
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return (f"{self.__class__.__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
-                f"symbol={self.symbol}, "
-                f"side={order_side_to_string(self.order_side)}"
-                f"-{liquidity_side_to_string(self.liquidity_side)}, "
-                f"quantity={self.filled_quantity.to_string_formatted()}, "
-                f"leaves_quantity={self.leaves_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price}, "
-                f"commission={self.commission})")
-
-
-cdef class OrderFilled(OrderFillEvent):
-    """
-    Represents an event where an order has been completely filled with the broker.
-    """
-
-    def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            ExecutionId execution_id not None,
-            PositionId position_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            Quantity filled_quantity not None,
-            Price average_price not None,
-            Money commission not None,
-            LiquiditySide liquidity_side,
+            Currency base_currency,
             Currency quote_currency,
             datetime execution_time not None,
             UUID event_id not None,
@@ -1144,12 +952,16 @@ cdef class OrderFilled(OrderFillEvent):
             The execution order side.
         filled_quantity : Quantity
             The execution filled quantity.
+        leaves_quantity : Quantity
+            The execution leaves quantity.
         average_price : Price
             The execution average price.
         liquidity_side : LiquiditySide
             The execution liquidity side.
+        base_currency : Currency
+            The order securities base currency.
         quote_currency : Currency
-            The order quote currency.
+            The order securities quote currency.
         execution_time : datetime
             The execution time.
         event_id : UUID
@@ -1158,24 +970,30 @@ cdef class OrderFilled(OrderFillEvent):
             The event timestamp.
 
         """
-        # Enums checked in base class
+        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(liquidity_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
         super().__init__(
-            account_id,
             cl_ord_id,
-            order_id,
-            execution_id,
-            position_id,
-            symbol,
-            order_side,
-            filled_quantity,
-            average_price,
-            commission,
-            liquidity_side,
-            quote_currency,
-            execution_time,
             event_id,
             event_timestamp,
         )
+
+        self.account_id = account_id
+        self.order_id = order_id
+        self.execution_id = execution_id
+        self.position_id = position_id
+        self.symbol = symbol
+        self.order_side = order_side
+        self.filled_quantity = filled_quantity
+        self.leaves_quantity = leaves_quantity
+        self.average_price = average_price
+        self.commission = commission
+        self.liquidity_side = liquidity_side
+        self.base_currency = base_currency
+        self.quote_currency = quote_currency
+        self.execution_time = execution_time
+        self.is_partial_fill = not self.leaves_quantity.is_zero()
 
     def __str__(self) -> str:
         """
@@ -1193,7 +1011,8 @@ cdef class OrderFilled(OrderFillEvent):
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
-                f"quantity={self.filled_quantity.to_string_formatted()}, "
+                f"filled_qty={self.filled_quantity.to_string_formatted()}, "
+                f"leaves_qty={self.leaves_quantity.to_string_formatted()}, "
                 f"avg_price={self.average_price}, "
                 f"commission={self.commission})")
 

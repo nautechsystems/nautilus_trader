@@ -29,7 +29,7 @@ from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderModified
@@ -92,7 +92,7 @@ cdef class Order:
     cdef void _cancelled(self, OrderCancelled event) except *
     cdef void _expired(self, OrderExpired event) except *
     cdef void _modified(self, OrderModified event) except *
-    cdef void _filled(self, OrderFillEvent event) except *
+    cdef void _filled(self, OrderFilled event) except *
 
 
 cdef class PassiveOrder(Order):

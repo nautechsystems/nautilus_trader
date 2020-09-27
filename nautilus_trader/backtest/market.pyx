@@ -48,7 +48,6 @@ from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderModified
 from nautilus_trader.model.events cimport OrderRejected
@@ -377,7 +376,7 @@ cdef class SimulatedMarket:
                     del self._working_orders[order.cl_ord_id]
                     self._expire_order(order)
 
-    cpdef void adjust_account(self, OrderFillEvent event, Position position) except *:
+    cpdef void adjust_account(self, OrderFilled event, Position position) except *:
         Condition.not_none(event, "event")
 
         cdef Instrument instrument = self.instruments[event.symbol]
@@ -954,9 +953,11 @@ cdef class SimulatedMarket:
             order.symbol,
             order.side,
             order.quantity,
+            Quantity(0),  # Not modeling partial fills just yet
             fill_price,
             commission,
             liquidity_side,
+            self.instruments[order.symbol].base_currency,
             self.instruments[order.symbol].quote_currency,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
