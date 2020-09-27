@@ -17,9 +17,9 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ClientPositionId
@@ -41,7 +41,7 @@ cdef class Position:
     cdef Quantity _buy_quantity
     cdef Quantity _sell_quantity
     cdef double _relative_quantity
-    cdef int _precision
+    cdef int _qty_precision
 
     cdef readonly ClientPositionId cl_pos_id
     cdef readonly PositionId id
@@ -50,27 +50,28 @@ cdef class Position:
     cdef readonly ClientOrderId from_order
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
+    cdef readonly OrderSide entry
+    cdef readonly PositionSide side
+    cdef readonly Quantity quantity
+    cdef readonly Quantity peak_quantity
+    cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
-    cdef readonly OrderSide entry_direction
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time
     cdef readonly timedelta open_duration
-    cdef readonly double average_open_price
-    cdef readonly double average_close_price
+    cdef readonly double avg_open_price
+    cdef readonly double avg_close_price
     cdef readonly double realized_points
     cdef readonly double realized_return
     cdef readonly Money realized_pnl
     cdef readonly Money realized_pnl_last
     cdef readonly Money commission
-    cdef readonly Quantity quantity
-    cdef readonly Quantity peak_quantity
-    cdef readonly MarketPosition market_position
 
     cpdef bint equals(self, Position other)
     cpdef str to_string(self)
-    cpdef str market_position_as_string(self)
+    cpdef str position_side_as_string(self)
     cpdef str status_string(self)
-    cpdef OrderFillEvent last_event(self)
+    cpdef OrderFilled last_event(self)
     cpdef ExecutionId last_execution_id(self)
     cpdef list get_order_ids(self)
     cpdef list get_execution_ids(self)
@@ -80,7 +81,7 @@ cdef class Position:
     cpdef bint is_closed(self)
     cpdef bint is_long(self)
     cpdef bint is_short(self)
-    cpdef void apply(self, OrderFillEvent event) except *
+    cpdef void apply(self, OrderFilled event) except *
     cpdef double relative_quantity(self)
     cpdef double unrealized_points(self, QuoteTick last)
     cpdef double total_points(self, QuoteTick last)
@@ -89,10 +90,10 @@ cdef class Position:
     cpdef Money unrealized_pnl(self, QuoteTick last)
     cpdef Money total_pnl(self, QuoteTick last)
 
-    cdef void _update(self, OrderFillEvent event) except *
-    cdef void _handle_buy_order_fill(self, OrderFillEvent event) except *
-    cdef void _handle_sell_order_fill(self, OrderFillEvent event) except *
-    cdef double _calculate_average_price(self, dict fills, Quantity total_quantity)
+    cdef void _update(self, OrderFilled event) except *
+    cdef void _handle_buy_order_fill(self, OrderFilled event) except *
+    cdef void _handle_sell_order_fill(self, OrderFilled event) except *
+    cdef double _calculate_avg_price(self, dict fills, Quantity total_qty)
     cdef double _calculate_points(self, double open_price, double close_price)
     cdef double _calculate_return(self, double open_price, double close_price)
-    cdef Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_quantity)
+    cdef Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_qty)

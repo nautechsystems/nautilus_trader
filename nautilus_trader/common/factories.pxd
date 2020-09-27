@@ -55,8 +55,8 @@ cdef class OrderFactory:
         Price price,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        bint is_post_only=*,
-        bint is_hidden=*,
+        bint post_only=*,
+        bint hidden=*,
     )
 
     cpdef StopOrder stop(

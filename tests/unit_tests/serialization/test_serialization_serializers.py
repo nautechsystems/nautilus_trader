@@ -43,7 +43,6 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderModified
-from nautilus_trader.model.events import OrderPartiallyFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
@@ -685,7 +684,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_order_partially_filled_events(self):
         # Arrange
-        event = OrderPartiallyFilled(
+        event = OrderFilled(
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),
@@ -698,6 +697,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Price(1.00000, 5),
             Money(0., Currency.USD),
             LiquiditySide.MAKER,
+            Currency.AUD,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
@@ -721,9 +721,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
+            Quantity(0),
             Price(1.00000, 5),
             Money(0., Currency.USD),
             LiquiditySide.TAKER,
+            Currency.AUD,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
@@ -1025,40 +1027,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 
     # TODO: Breaking changes to C# side (LiquiditySide)
-    # def test_deserialize_order_partially_filled_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = "jqRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQwOTk3Nzk1Ny0zMzE" \
-    #              "3LTQ3ODgtOGYxOC1lMmEyY2I0ZDljYmSpVGltZXN0YW1wuDE5NzAtMDEtMD" \
-    #              "FUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSyRlhDTS0wMjg1MTkwOC1ERU1Pp" \
-    #              "09yZGVySWSoTy0xMjM0NTarRXhlY3V0aW9uSWSnRTEyMzQ1NrBQb3NpdGlv" \
-    #              "bklkQnJva2Vyp1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2l" \
-    #              "kZaNCdXmuRmlsbGVkUXVhbnRpdHmlNTAwMDCuTGVhdmVzUXVhbnRpdHmlNT" \
-    #              "AwMDCsQXZlcmFnZVByaWNlozIuMKhDdXJyZW5jeaNVU0StRXhlY3V0aW9uV" \
-    #              "GltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo="
-    #
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderPartiallyFilled))
-    #     self.assertEqual(OrderId("O-123456"), result.order_id)
-    #     self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
-    #     self.assertEqual(ExecutionId("E123456"), result.execution_id)
-    #     self.assertEqual(PositionIdBroker("P123456"), result.position_id_broker)
-    #     self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
-    #     self.assertEqual(840, result.quote_currency)
-    #     self.assertEqual(OrderSide.BUY, result.order_side)
-    #     self.assertEqual(Quantity(50000), result.filled_quantity)
-    #     self.assertEqual(Quantity(50000), result.leaves_quantity)
-    #     self.assertEqual(Price(2, 1), result.average_price)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.execution_time)
-    #     self.assertTrue(isinstance(result.id, UUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
-
-    # TODO: Breaking changes to C# side (LiquiditySide)
     # def test_deserialize_order_filled_events_from_csharp(self):
     #     # Arrange
     #     # Base64 bytes string from C# MsgPack.Cli
@@ -1084,8 +1052,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     #     self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
     #     self.assertEqual(840, result.quote_currency)
     #     self.assertEqual(OrderSide.BUY, result.order_side)
-    #     self.assertEqual(Quantity(100000), result.filled_quantity)
-    #     self.assertEqual(Price(2, 1), result.average_price)
+    #     self.assertEqual(Quantity(100000), result.filled_qty)
+    #     self.assertEqual(Price(2, 1), result.avg_price)
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.execution_time)
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 

@@ -32,22 +32,11 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(decimal.Decimal("0"), result.as_decimal())
         self.assertEqual(0, result.as_double())
 
-    def test_instantiate_with_degenerate_inputs_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(ValueError, Decimal64, float('nan'))
-        self.assertRaises(ValueError, Decimal64, float('inf'))
-        self.assertRaises(ValueError, Decimal64, float('-inf'))
-        self.assertRaises(ValueError, Decimal64, 1E400)
-        self.assertRaises(ValueError, Decimal64, -1E400)
-
-    def test_instantiate_with_out_of_range_precisions_raises_exception(self):
+    def test_instantiate_with_negative_precisions_raises_exception(self):
         # Arrange
         # Act
         # Assert
         self.assertRaises(ValueError, Decimal64, 1.0, -1)
-        self.assertRaises(ValueError, Decimal64, 1.0, 10)
 
     def test_instantiate_with_valid_inputs_returns_expected_values(self):
         # Arrange
@@ -64,23 +53,23 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(decimal.Decimal("1"), result0.as_decimal())
         self.assertEqual(decimal.Decimal("1.00"), result1.as_decimal())
         self.assertEqual(decimal.Decimal("-1.001"), result2.as_decimal())
-        self.assertEqual(decimal.Decimal("1.001"), result3.as_decimal())  # Rounds up
+        self.assertEqual(decimal.Decimal("1.000"), result3.as_decimal())  # Rounds down
         self.assertEqual(decimal.Decimal("100.0"), result4.as_decimal())
         self.assertEqual(decimal.Decimal("10000000000001.01"), result5.as_decimal())
         self.assertEqual(decimal.Decimal("1999999.000001015"), result6.as_decimal())
 
         self.assertEqual(1, result0)
         self.assertEqual(1, result0)
-        self.assertEqual(-1.001, result2)
-        self.assertEqual(1.001, result3)
+        self.assertEqual(Decimal64(-1.001, precision=3), result2)
+        self.assertEqual(Decimal64(1.000, precision=3), result3)
         self.assertEqual(100, result4)
-        self.assertEqual(10000000000001.01, result5)
-        self.assertEqual(1999999.000001015, result6)
+        self.assertEqual(10000000000001.01, result5.as_double())
+        self.assertEqual(1999999.000001015, result6.as_double())
 
         self.assertEqual("1.0", result0.to_string())
         self.assertEqual("1.00", result1.to_string())
         self.assertEqual("-1.001", result2.to_string())
-        self.assertEqual("1.001", result3.to_string())
+        self.assertEqual("1.000", result3.to_string())
         self.assertEqual("10000000000001.01", result5.to_string())
         self.assertEqual("1999999.000001015", result6.to_string())
 
@@ -143,37 +132,25 @@ class DecimalTests(unittest.TestCase):
         # Act
         result0 = Decimal64(1.00001, 5) + 0.00001
         result1 = Decimal64(1.00001, 5) + Decimal64(0.00001, 5)
-        result3 = Decimal64(1.00001, 5).add_as_decimal(Decimal64(0.00001, 5))
-        result4 = Decimal64(1.00001, 5).add_as_decimal(Decimal64(0.5, 1))
 
         # Assert
         self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
-        self.assertEqual(Decimal64, type(result3))
-        self.assertEqual(Decimal64, type(result4))
+        self.assertEqual(Decimal64, type(result1))
         self.assertEqual(1.0000200000000001, result0)
-        self.assertEqual(1.0000200000000001, result1)
-        self.assertEqual(Decimal64(1.00002, 5), result3)
-        self.assertEqual(Decimal64(1.50001, 5), result4)
+        self.assertEqual(Decimal64(1.00002, 5), result1)
 
     def test_decimal_subtraction(self):
         # Arrange
         # Act
         result0 = Decimal64(1.00001, 5) - 0.00001
         result1 = Decimal64(1.00001, 5) - Decimal64(0.00001, 5)
-        result3 = Decimal64(1.00001, 5).sub_as_decimal(Decimal64(0.00001, 5))
-        result4 = Decimal64(1.00001, 5).sub_as_decimal(Decimal64(0.5, 1))
 
         # Assert
         self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
-        self.assertEqual(Decimal64, type(result3))
-        self.assertEqual(Decimal64, type(result4))
+        self.assertEqual(Decimal64, type(result1))
         self.assertEqual(1.0, result0)
         self.assertEqual(1.0, result1)
         self.assertEqual(result0, result1)
-        self.assertEqual(Decimal64(1.00000, 5), result3)
-        self.assertEqual(Decimal64(0.50001, 5), result4)
 
     def test_decimal_division(self):
         # Arrange
@@ -183,10 +160,9 @@ class DecimalTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
+        self.assertEqual(Decimal64, type(result1))
         self.assertEqual(0.500005, result0)
-        self.assertEqual(2.00002, result1)
-        self.assertEqual(result0, Decimal64(1.00001, 5) / Decimal64(2.0, 1))
+        self.assertEqual(Decimal64(2.00002, precision=5), result1)
 
     def test_decimal_multiplication(self):
         # Arrange
@@ -196,9 +172,9 @@ class DecimalTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(float, type(result0))
-        self.assertEqual(float, type(result1))
+        self.assertEqual(Decimal64, type(result1))
         self.assertEqual(2.00002, result0)
-        self.assertEqual(1.500015, result1)
+        self.assertEqual(Decimal64(1.50002, 5), result1)
 
     def test_is_zero_with_various_values_returns_expected_result(self):
         # Arrange

@@ -21,7 +21,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -492,7 +492,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error(f"Cannot load Position(id={position_id.value}) from database (not found).")
             return None
 
-        cdef OrderFillEvent initial = self._event_serializer.deserialize(events.pop(0))
+        cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
         cdef Position position = Position(cl_pos_id=position_id, event=initial)
 
         cdef bytes event_bytes
@@ -837,7 +837,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 positions[position.cl_pos_id] = position
             else:
                 self._log.error(f"Position indexed as open found not open, "
-                                f"state={position.market_position_as_string()}.")
+                                f"state={position.position_side_as_string()}.")
 
         return positions
 
@@ -863,7 +863,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 positions[position.cl_pos_id] = position
             else:
                 self._log.error(f"Position indexed as closed found not closed, "
-                                f"state={position.market_position_as_string()}.")
+                                f"state={position.position_side_as_string()}.")
 
         return positions
 

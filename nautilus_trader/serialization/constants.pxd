@@ -48,8 +48,8 @@ cdef str EXECUTION_ID
 cdef str POSITION_ID
 cdef str ORDER_SIDE
 cdef str ORDER_TYPE
-cdef str IS_POST_ONLY
-cdef str IS_HIDDEN
+cdef str POST_ONLY
+cdef str HIDDEN
 cdef str ENTRY
 cdef str STOP_LOSS
 cdef str TAKE_PROFIT
@@ -72,9 +72,9 @@ cdef str MARGIN_USED_MAINTENANCE
 cdef str MARGIN_RATIO
 cdef str MARGIN_CALL_STATUS
 
-cdef str CURRENCY
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
+cdef str COMMISSION_CURRENCY
 cdef str BROKER_SYMBOL
 cdef str SECURITY_TYPE
 cdef str PRICE_PRECISION

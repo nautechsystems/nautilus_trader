@@ -129,27 +129,22 @@ cdef class OrderModified(OrderEvent):
     cdef readonly datetime modified_time
 
 
-cdef class OrderFillEvent(OrderEvent):
+cdef class OrderFilled(OrderEvent):
     cdef readonly AccountId account_id
     cdef readonly OrderId order_id
     cdef readonly ExecutionId execution_id
     cdef readonly PositionId position_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
-    cdef readonly Quantity filled_quantity
-    cdef readonly Price average_price
+    cdef readonly Quantity filled_qty
+    cdef readonly Quantity leaves_qty
+    cdef readonly Price avg_price
     cdef readonly Money commission
     cdef readonly LiquiditySide liquidity_side
+    cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly datetime execution_time
-
-
-cdef class OrderFilled(OrderFillEvent):
-    pass
-
-
-cdef class OrderPartiallyFilled(OrderFillEvent):
-    cdef readonly Quantity leaves_quantity
+    cdef readonly bint is_partial_fill
 
 
 cdef class PositionEvent(Event):

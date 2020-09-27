@@ -40,12 +40,10 @@ from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderModified
-from nautilus_trader.model.events cimport OrderPartiallyFilled
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -67,6 +65,8 @@ cdef set _COMPLETED_STATES = {
 }
 
 
+cdef str OrderPartiallyFilled = "OrderPartiallyFilled"
+
 cdef dict _ORDER_STATE_TABLE = {
     (OrderState.INITIALIZED, OrderCancelled.__name__): OrderState.CANCELLED,
     (OrderState.INITIALIZED, OrderInvalid.__name__): OrderState.INVALID,
@@ -79,15 +79,15 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.REJECTED, OrderRejected.__name__): OrderState.REJECTED,
     (OrderState.ACCEPTED, OrderCancelled.__name__): OrderState.CANCELLED,
     (OrderState.ACCEPTED, OrderWorking.__name__): OrderState.WORKING,
-    (OrderState.ACCEPTED, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.ACCEPTED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderFilled.__name__): OrderState.FILLED,
     (OrderState.WORKING, OrderCancelled.__name__): OrderState.CANCELLED,
     (OrderState.WORKING, OrderModified.__name__): OrderState.WORKING,
     (OrderState.WORKING, OrderExpired.__name__): OrderState.EXPIRED,
-    (OrderState.WORKING, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.WORKING, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
     (OrderState.WORKING, OrderFilled.__name__): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderCancelled.__name__): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderFilled.__name__): OrderState.FILLED,
 }
 
@@ -126,9 +126,9 @@ cdef class Order:
         self.quantity = event.quantity
         self.timestamp = event.timestamp
         self.time_in_force = event.time_in_force
-        self.filled_quantity = Quantity.zero()
+        self.filled_qty = Quantity.zero()
         self.filled_timestamp = None      # Can be None
-        self.average_price = None         # Can be None
+        self.avg_price = None         # Can be None
         self.slippage = Decimal64()
         self.init_id = event.id
 
@@ -369,8 +369,7 @@ cdef class Order:
         # Update events
         self._events.append(event)
 
-        # Update FSM (raises InvalidStateTrigger if trigger invalid)
-        self._fsm.trigger(event.__class__.__name__)
+        cdef str state_trigger = event.__class__.__name__
 
         # Handle event
         if isinstance(event, OrderInvalid):
@@ -391,10 +390,13 @@ cdef class Order:
             self._expired(event)
         elif isinstance(event, OrderModified):
             self._modified(event)
-        elif isinstance(event, OrderPartiallyFilled):
-            self._filled(event)
         elif isinstance(event, OrderFilled):
             self._filled(event)
+            if event.is_partial_fill:
+                state_trigger = OrderPartiallyFilled
+
+        # Update FSM (raises InvalidStateTrigger if trigger invalid)
+        self._fsm.trigger(state_trigger)
 
     cdef void _invalid(self, OrderInvalid event) except *:
         pass  # Do nothing else
@@ -424,7 +426,7 @@ cdef class Order:
         # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
-    cdef void _filled(self, OrderFillEvent event) except *:
+    cdef void _filled(self, OrderFilled event) except *:
         # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
@@ -538,23 +540,23 @@ cdef class PassiveOrder(Order):
         self.quantity = event.modified_quantity
         self.price = event.modified_price
 
-    cdef void _filled(self, OrderFillEvent event) except *:
+    cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.liquidity_side = event.liquidity_side
-        self.filled_quantity = event.filled_quantity
+        self.filled_qty = event.filled_qty
         self.filled_timestamp = event.timestamp
-        self.average_price = event.average_price
+        self.avg_price = event.avg_price
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal64(self.average_price.as_double() - self.price.as_double(), self.average_price.precision)
+            self.slippage = Decimal64(self.avg_price.as_double() - self.price.as_double(), self.avg_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal64(self.price.as_double() - self.average_price.as_double(), self.average_price.precision)
+            self.slippage = Decimal64(self.price.as_double() - self.avg_price.as_double(), self.avg_price.precision)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -672,15 +674,18 @@ cdef class MarketOrder(Order):
     cdef void _modified(self, OrderModified event) except *:
         raise NotImplemented("Cannot modify a market order")
 
-    cdef void _filled(self, OrderFillEvent event) except *:
+    cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
-        self.filled_quantity = event.filled_quantity
+        self.filled_qty = event.filled_qty
         self.filled_timestamp = event.timestamp
-        self.average_price = event.average_price
+        self.avg_price = event.avg_price
 
+
+cdef str _POST_ONLY = 'PostOnly'
+cdef str _HIDDEN = 'Hidden'
 
 cdef class LimitOrder(PassiveOrder):
     """
@@ -701,8 +706,8 @@ cdef class LimitOrder(PassiveOrder):
             datetime expire_time,  # Can be None
             UUID init_id not None,
             datetime timestamp not None,
-            bint is_post_only=True,
-            bint is_hidden=False,
+            bint post_only=True,
+            bint hidden=False,
     ):
         """
         Initialize a new instance of the LimitOrder class.
@@ -727,9 +732,9 @@ cdef class LimitOrder(PassiveOrder):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
-        is_post_only : bool, optional;
+        post_only : bool, optional;
             If the order will only make a market (default=True).
-        is_hidden : bool, optional
+        hidden : bool, optional
             If the order should be hidden from the public book (default=False).
 
         Raises
@@ -744,12 +749,12 @@ cdef class LimitOrder(PassiveOrder):
             If time_in_force is GTD and expire_time is None.
 
         """
-        self.is_post_only = is_post_only
-        self.is_hidden = is_hidden
+        self.is_post_only = post_only
+        self.is_hidden = hidden
 
         cdef dict options = {
-            'IsPostOnly': str(is_post_only),
-            'IsHidden': str(is_hidden),
+            _POST_ONLY: str(post_only),
+            _HIDDEN: str(hidden),
         }
 
         super().__init__(
@@ -788,8 +793,8 @@ cdef class LimitOrder(PassiveOrder):
 
         cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
         cdef Price price = Price.from_string(price_string)
-        cdef is_post_only = event.options['IsPostOnly'] == str(True)
-        cdef is_hidden = event.options['IsHidden'] == str(True)
+        cdef post_only = event.options[_POST_ONLY] == str(True)
+        cdef hidden = event.options[_HIDDEN] == str(True)
 
         return LimitOrder(
             cl_ord_id=event.cl_ord_id,
@@ -801,8 +806,8 @@ cdef class LimitOrder(PassiveOrder):
             expire_time=expire_time,
             init_id=event.id,
             timestamp=event.timestamp,
-            is_post_only=is_post_only,
-            is_hidden=is_hidden,
+            post_only=post_only,
+            hidden=hidden,
         )
 
 

@@ -15,6 +15,7 @@
 
 import unittest
 
+from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -111,22 +112,22 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual(float, type(result1))
         self.assertEqual(2, result1)
-        self.assertEqual(float, type(result2))
+        self.assertEqual(Decimal64, type(result2))
         self.assertEqual(2, result2)
 
         self.assertEqual(float, type(result3))
         self.assertEqual(1, result3)
-        self.assertEqual(float, type(result4))
+        self.assertEqual(Decimal64, type(result4))
         self.assertEqual(1, result4)
 
         self.assertEqual(float, type(result5))
         self.assertEqual(2, result5)
-        self.assertEqual(float, type(result6))
+        self.assertEqual(Decimal64, type(result6))
         self.assertEqual(2, result6)
 
         self.assertEqual(float, type(result7))
         self.assertEqual(4, result7)
-        self.assertEqual(float, type(result8))
+        self.assertEqual(Decimal64, type(result8))
         self.assertEqual(4, result8)
 
     def test_price_initialized_with_negative_value_raises_exception(self):
@@ -216,7 +217,7 @@ class ObjectTests(unittest.TestCase):
         price2 = Price(1.00010, 5)
 
         # Act
-        result = price1.add_as_decimal(price2)
+        result = price1.add(price2)
 
         # Assert
         self.assertEqual(Price(2.00010, 5), result)
@@ -227,7 +228,7 @@ class ObjectTests(unittest.TestCase):
         price2 = Price(1.00010, 5)
 
         # Act
-        result = price1.sub_as_decimal(price2)
+        result = price1.sub(price2)
 
         # Assert
         self.assertEqual(Price(0.99990, 5), result)

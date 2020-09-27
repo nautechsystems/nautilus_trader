@@ -15,19 +15,13 @@
 
 
 cdef class Decimal64:
-    cdef double _epsilon
-    cdef double _value
+
+    cdef object _value
 
     cdef readonly int precision
 
-    cdef bint _eq_eps_delta(self, double value1, double value2)
-    cdef bint _ne_eps_delta(self, double value1, double value2)
-
     @staticmethod
     cdef Decimal64 from_string_to_decimal(str value)
-
-    @staticmethod
-    cdef int precision_from_string(str value)
 
     cpdef str to_string(self, bint format_commas=*)
     cpdef int as_int(self)
@@ -40,5 +34,3 @@ cdef class Decimal64:
     cpdef bint le(self, Decimal64 other)
     cpdef bint gt(self, Decimal64 other)
     cpdef bint ge(self, Decimal64 other)
-    cpdef Decimal64 add_as_decimal(self, Decimal64 other, bint keep_precision=*)
-    cpdef Decimal64 sub_as_decimal(self, Decimal64 other, bint keep_precision=*)
