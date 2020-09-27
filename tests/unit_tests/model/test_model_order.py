@@ -29,7 +29,6 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderModified
-from nautilus_trader.model.events import OrderPartiallyFilled
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -505,7 +504,7 @@ class OrderTests(unittest.TestCase):
         modified = OrderModified(
             self.account_id,
             order.cl_ord_id,
-            OrderId('1'),
+            OrderId("1"),
             Quantity(120000),
             Price(1.00001, 5),
             UNIX_EPOCH,
@@ -538,22 +537,7 @@ class OrderTests(unittest.TestCase):
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
 
-        filled = OrderFilled(
-            self.account_id,
-            order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("SOME_EXEC_ID_1"),
-            PositionId("SOME_EXEC_TICKET_1"),
-            order.symbol,
-            order.side,
-            order.quantity,
-            Price(1.00001, 5),
-            Money(0., Currency.USD),
-            LiquiditySide.TAKER,
-            Currency.USD,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH)
+        filled = TestStubs.event_order_filled(order, Price(1.00001, 5))
 
         order.apply(submitted)
         order.apply(accepted)
@@ -583,15 +567,17 @@ class OrderTests(unittest.TestCase):
         filled = OrderFilled(
             self.account_id,
             order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("SOME_EXEC_ID_1"),
-            PositionId("SOME_EXEC_TICKET_1"),
+            OrderId("1"),
+            ExecutionId("E-1"),
+            PositionId("P-1"),
             order.symbol,
             order.side,
             order.quantity,
+            Quantity(0),
             Price(1.00001, 5),
             Money(0., Currency.USD),
             LiquiditySide.MAKER,
+            Currency.USD,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
@@ -625,12 +611,12 @@ class OrderTests(unittest.TestCase):
         accepted = TestStubs.event_order_accepted(order)
         working = TestStubs.event_order_working(order)
 
-        partially = OrderPartiallyFilled(
+        partially = OrderFilled(
             self.account_id,
             order.cl_ord_id,
-            OrderId('1'),
-            ExecutionId("SOME_EXEC_ID_1"),
-            PositionId("SOME_EXEC_TICKET_1"),
+            OrderId("1"),
+            ExecutionId("E-1"),
+            PositionId("P-1"),
             order.symbol,
             order.side,
             Quantity(50000),
@@ -638,6 +624,7 @@ class OrderTests(unittest.TestCase):
             Price(0.999999, 6),
             Money(0., Currency.USD),
             LiquiditySide.MAKER,
+            Currency.USD,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),

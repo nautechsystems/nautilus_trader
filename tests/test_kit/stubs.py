@@ -277,23 +277,35 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_filled(order, fill_price=None, commission=0.) -> OrderFilled:
+    def event_order_filled(
+            order,
+            fill_price=None,
+            filled_qty=None,
+            leaves_qty=None,
+            commission=0.,
+    ) -> OrderFilled:
         if fill_price is None:
             fill_price = Price(1.00000, 5)
+        if filled_qty is None:
+            filled_qty = order.quantity
+        if leaves_qty is None:
+            leaves_qty = Quantity(0)
 
         return OrderFilled(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId('1'),
+            OrderId("1"),
             ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
             PositionId(order.cl_ord_id.value.replace('P', 'T')),
             order.symbol,
             order.side,
-            order.quantity,
+            filled_qty,
+            leaves_qty,
             order.price if fill_price is None else fill_price,
             Money(commission, Currency.USD),
             LiquiditySide.TAKER,
-            Currency.USD,
+            Currency.USD,  # Stub event
+            Currency.USD,  # Stub event
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -432,10 +444,12 @@ class TestStubs:
             order.symbol,
             order.side,
             order.quantity,
+            Quantity(0),
             close_price,
             Money(0, Currency.USD),
             LiquiditySide.TAKER,
-            Currency.USD,
+            Currency.USD,  # Stub event
+            Currency.USD,  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),

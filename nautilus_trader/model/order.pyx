@@ -40,12 +40,10 @@ from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderModified
-from nautilus_trader.model.events cimport OrderPartiallyFilled
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -67,6 +65,8 @@ cdef set _COMPLETED_STATES = {
 }
 
 
+cdef str OrderPartiallyFilled = "OrderPartiallyFilled"
+
 cdef dict _ORDER_STATE_TABLE = {
     (OrderState.INITIALIZED, OrderCancelled.__name__): OrderState.CANCELLED,
     (OrderState.INITIALIZED, OrderInvalid.__name__): OrderState.INVALID,
@@ -79,15 +79,15 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.REJECTED, OrderRejected.__name__): OrderState.REJECTED,
     (OrderState.ACCEPTED, OrderCancelled.__name__): OrderState.CANCELLED,
     (OrderState.ACCEPTED, OrderWorking.__name__): OrderState.WORKING,
-    (OrderState.ACCEPTED, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.ACCEPTED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderFilled.__name__): OrderState.FILLED,
     (OrderState.WORKING, OrderCancelled.__name__): OrderState.CANCELLED,
     (OrderState.WORKING, OrderModified.__name__): OrderState.WORKING,
     (OrderState.WORKING, OrderExpired.__name__): OrderState.EXPIRED,
-    (OrderState.WORKING, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.WORKING, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
     (OrderState.WORKING, OrderFilled.__name__): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderCancelled.__name__): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled.__name__): OrderState.PARTIALLY_FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderFilled.__name__): OrderState.FILLED,
 }
 
@@ -369,8 +369,7 @@ cdef class Order:
         # Update events
         self._events.append(event)
 
-        # Update FSM (raises InvalidStateTrigger if trigger invalid)
-        self._fsm.trigger(event.__class__.__name__)
+        cdef str state_trigger = event.__class__.__name__
 
         # Handle event
         if isinstance(event, OrderInvalid):
@@ -391,10 +390,13 @@ cdef class Order:
             self._expired(event)
         elif isinstance(event, OrderModified):
             self._modified(event)
-        elif isinstance(event, OrderPartiallyFilled):
-            self._filled(event)
         elif isinstance(event, OrderFilled):
             self._filled(event)
+            if event.is_partial_fill:
+                state_trigger = OrderPartiallyFilled
+
+        # Update FSM (raises InvalidStateTrigger if trigger invalid)
+        self._fsm.trigger(state_trigger)
 
     cdef void _invalid(self, OrderInvalid event) except *:
         pass  # Do nothing else
@@ -424,7 +426,7 @@ cdef class Order:
         # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
-    cdef void _filled(self, OrderFillEvent event) except *:
+    cdef void _filled(self, OrderFilled event) except *:
         # Abstract method
         raise NotImplemented("method must be implemented in subclass")
 
@@ -538,7 +540,7 @@ cdef class PassiveOrder(Order):
         self.quantity = event.modified_quantity
         self.price = event.modified_price
 
-    cdef void _filled(self, OrderFillEvent event) except *:
+    cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
@@ -672,7 +674,7 @@ cdef class MarketOrder(Order):
     cdef void _modified(self, OrderModified event) except *:
         raise NotImplemented("Cannot modify a market order")
 
-    cdef void _filled(self, OrderFillEvent event) except *:
+    cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
