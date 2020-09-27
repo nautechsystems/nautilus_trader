@@ -34,7 +34,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
@@ -1338,14 +1338,14 @@ cdef class TradingStrategy:
 
         return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
 
-    cpdef OrderSide get_flatten_side(self, MarketPosition market_position):
+    cpdef OrderSide get_flatten_side(self, PositionSide side):
         """
-        Return the order side needed to flatten a position from the given market position.
+        Return the order side needed to flatten a position from the given side.
 
         Parameters
         ----------
-        market_position : MarketPosition
-            The market position to flatten.
+        side : PositionSide
+            The position side to flatten.
 
         Returns
         -------
@@ -1354,13 +1354,13 @@ cdef class TradingStrategy:
         Raises
         ------
         ValueError
-            If market_position is UNDEFINED or FLAT.
+            If side is UNDEFINED or FLAT.
 
         """
-        Condition.not_equal(market_position, MarketPosition.UNDEFINED, "market_position", "MarketPosition.UNDEFINED")
-        Condition.not_equal(market_position, MarketPosition.FLAT, "market_position", "MarketPosition.FLAT")
+        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
+        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
 
-        return OrderSide.BUY if market_position == MarketPosition.SHORT else OrderSide.SELL
+        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
 
     cpdef double get_exchange_rate(
             self,
@@ -1824,8 +1824,8 @@ cdef class TradingStrategy:
 
     cpdef bint is_flat(self):
         """
-        Return a value indicating whether the strategy is completely flat (i.e no market positions
-        other than FLAT across all instruments).
+        Return a value indicating whether the strategy is completely flat
+        (i.e no positions which are not FLAT across all instruments).
 
         Returns
         -------
@@ -2245,7 +2245,7 @@ cdef class TradingStrategy:
 
         cdef Order order = self.order_factory.market(
             position.symbol,
-            self.get_flatten_side(position.market_position),
+            self.get_flatten_side(position.side),
             position.quantity,
         )
 
@@ -2282,7 +2282,7 @@ cdef class TradingStrategy:
 
             order = self.order_factory.market(
                 position.symbol,
-                self.get_flatten_side(position.market_position),
+                self.get_flatten_side(position.side),
                 position.quantity)
 
             self.log.info(f"Flattening {position}...")

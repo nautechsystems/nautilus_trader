@@ -517,12 +517,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[POSITION_ID] = event.position_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
-            package[FILLED_QUANTITY] = event.filled_quantity.to_string()
-            package[LEAVES_QUANTITY] = event.leaves_quantity.to_string()
-            package[AVERAGE_PRICE] = event.average_price.to_string()
+            package[FILLED_QUANTITY] = event.filled_qty.to_string()
+            package[LEAVES_QUANTITY] = event.leaves_qty.to_string()
+            package[AVERAGE_PRICE] = event.avg_price.to_string()
             package[COMMISSION] = event.commission.to_string()
             package[COMMISSION_CURRENCY] = currency_to_string(event.commission.currency)
-            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
+            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liq_side)
             package[BASE_CURRENCY] = currency_to_string(event.quote_currency)
             package[QUOTE_CURRENCY] = currency_to_string(event.quote_currency)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)

@@ -837,7 +837,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 positions[position.cl_pos_id] = position
             else:
                 self._log.error(f"Position indexed as open found not open, "
-                                f"state={position.market_position_as_string()}.")
+                                f"state={position.position_side_as_string()}.")
 
         return positions
 
@@ -863,7 +863,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 positions[position.cl_pos_id] = position
             else:
                 self._log.error(f"Position indexed as closed found not closed, "
-                                f"state={position.market_position_as_string()}.")
+                                f"state={position.position_side_as_string()}.")
 
         return positions
 

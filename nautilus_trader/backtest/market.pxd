@@ -26,7 +26,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -101,7 +101,7 @@ cdef class SimulatedMarket:
     cpdef void process_tick(self, QuoteTick tick) except *
     cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side)
     cpdef void adjust_account(self, OrderFilled event, Position position) except *
-    cpdef Money calculate_pnl(self, MarketPosition direction, double open_price, double close_price, Quantity quantity, double exchange_rate)
+    cpdef Money calculate_pnl(self, PositionSide side, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 
     cpdef void handle_account_inquiry(self, AccountInquiry command) except *

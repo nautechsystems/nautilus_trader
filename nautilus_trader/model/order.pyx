@@ -126,9 +126,9 @@ cdef class Order:
         self.quantity = event.quantity
         self.timestamp = event.timestamp
         self.time_in_force = event.time_in_force
-        self.filled_quantity = Quantity.zero()
+        self.filled_qty = Quantity.zero()
         self.filled_timestamp = None      # Can be None
-        self.average_price = None         # Can be None
+        self.avg_price = None         # Can be None
         self.slippage = Decimal64()
         self.init_id = event.id
 
@@ -545,18 +545,18 @@ cdef class PassiveOrder(Order):
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
-        self.liquidity_side = event.liquidity_side
-        self.filled_quantity = event.filled_quantity
+        self.liquidity_side = event.liq_side
+        self.filled_qty = event.filled_qty
         self.filled_timestamp = event.timestamp
-        self.average_price = event.average_price
+        self.avg_price = event.avg_price
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal64(self.average_price.as_double() - self.price.as_double(), self.average_price.precision)
+            self.slippage = Decimal64(self.avg_price.as_double() - self.price.as_double(), self.avg_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal64(self.price.as_double() - self.average_price.as_double(), self.average_price.precision)
+            self.slippage = Decimal64(self.price.as_double() - self.avg_price.as_double(), self.avg_price.precision)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -679,9 +679,9 @@ cdef class MarketOrder(Order):
         self.position_id = event.position_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
-        self.filled_quantity = event.filled_quantity
+        self.filled_qty = event.filled_qty
         self.filled_timestamp = event.timestamp
-        self.average_price = event.average_price
+        self.avg_price = event.avg_price
 
 
 cdef str _POST_ONLY = 'PostOnly'

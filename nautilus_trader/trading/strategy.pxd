@@ -28,7 +28,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
@@ -164,7 +164,7 @@ cdef class TradingStrategy:
     cpdef Account account(self)
     cpdef Portfolio portfolio(self)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
-    cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
+    cpdef OrderSide get_flatten_side(self, PositionSide side)
     cpdef double get_exchange_rate(
         self,
         Currency from_currency,

@@ -14,14 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum MarketPosition:
+cpdef enum PositionSide:
     UNDEFINED = 0,  # Invalid value
     FLAT = 1,
     LONG = 2,
     SHORT = 3
 
 
-cdef inline str market_position_to_string(int value):
+cdef inline str position_side_to_string(int value):
     if value == 1:
         return 'FLAT'
     elif value == 2:
@@ -32,12 +32,12 @@ cdef inline str market_position_to_string(int value):
         return 'UNDEFINED'
 
 
-cdef inline MarketPosition market_position_from_string(str value):
+cdef inline PositionSide position_side_from_string(str value):
     if value == 'FLAT':
-        return MarketPosition.FLAT
+        return PositionSide.FLAT
     elif value == 'LONG':
-        return MarketPosition.LONG
+        return PositionSide.LONG
     elif value == 'SHORT':
-        return MarketPosition.SHORT
+        return PositionSide.SHORT
     else:
-        return MarketPosition.UNDEFINED
+        return PositionSide.UNDEFINED

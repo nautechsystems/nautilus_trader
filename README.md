@@ -13,10 +13,10 @@
 
 **BETA**
 
-- **The API is still in a state of flux with potential breaking changes**
+- **The API is under heavy construction with constant breaking changes**
 - **There is currently a large effort to develop improved documentation**
 
-![WIP](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/under-construction.png?raw=true)
+![WIP](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/under-construction.png?raw=true "")
 
 ## Introduction
 

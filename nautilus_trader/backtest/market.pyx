@@ -30,8 +30,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.c_enums.market_position cimport market_position_to_string
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -388,21 +388,21 @@ cdef class SimulatedMarket:
             ask_rates=self._build_current_ask_rates(),
         )
 
-        cdef MarketPosition direction
+        cdef PositionSide side
         cdef Money pnl = Money(0, self.account_currency)
         if position is not None and position.entry != event.order_side:
             if position.entry == OrderSide.BUY:
-                direction = MarketPosition.LONG
+                side = PositionSide.LONG
             elif position.entry == OrderSide.SELL:
-                direction = MarketPosition.SHORT
+                side = PositionSide.SHORT
             else:
                 raise RuntimeError(f"Invalid entry direction")
 
             pnl = self.calculate_pnl(
-                direction=direction,
-                open_price=position.average_open_price,
-                close_price=event.average_price.as_double(),
-                quantity=event.filled_quantity,
+                side=side,
+                open_price=position.avg_open_price,
+                close_price=event.avg_price.as_double(),
+                quantity=event.filled_qty,
                 exchange_rate=exchange_rate,
             )
 
@@ -432,7 +432,7 @@ cdef class SimulatedMarket:
 
     cpdef Money calculate_pnl(
             self,
-            MarketPosition direction,
+            PositionSide side,
             double open_price,
             double close_price,
             Quantity quantity,
@@ -440,13 +440,13 @@ cdef class SimulatedMarket:
         Condition.not_none(quantity, "quantity")
 
         cdef double difference
-        if direction == MarketPosition.LONG:
+        if side == PositionSide.LONG:
             difference = close_price - open_price
-        elif direction == MarketPosition.SHORT:
+        elif side == PositionSide.SHORT:
             difference = open_price - close_price
         else:
             raise ValueError(f"Cannot calculate the pnl of a "
-                             f"{market_position_to_string(direction)} direction")
+                             f"{position_side_to_string(side)} side")
 
         return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
 
@@ -912,7 +912,7 @@ cdef class SimulatedMarket:
 
         cdef Money commission = self.commission_model.calculate(
             symbol=order.symbol,
-            filled_quantity=order.quantity,
+            filled_qty=order.quantity,
             filled_price=fill_price,
             exchange_rate=exchange_rate,
             currency=self.account_currency,
