@@ -547,8 +547,8 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state())
-        self.assertEqual(Quantity(100000), order.filled_quantity)
-        self.assertEqual(Price(1.00001, 5), order.average_price)
+        self.assertEqual(Quantity(100000), order.filled_qty)
+        self.assertEqual(Price(1.00001, 5), order.avg_price)
         self.assertTrue(order.is_completed())
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
@@ -592,9 +592,9 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state())
-        self.assertEqual(Quantity(100000), order.filled_quantity)
+        self.assertEqual(Quantity(100000), order.filled_qty)
         self.assertEqual(Price(1.00000, 5), order.price)
-        self.assertEqual(Price(1.00001, 5), order.average_price)
+        self.assertEqual(Price(1.00001, 5), order.avg_price)
         self.assertEqual(Decimal64(0.00001, 5), order.slippage)
         self.assertTrue(order.is_completed())
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
@@ -639,9 +639,9 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state())
-        self.assertEqual(Quantity(50000), order.filled_quantity)
+        self.assertEqual(Quantity(50000), order.filled_qty)
         self.assertEqual(Price(1.00000, 5), order.price)
-        self.assertEqual(Price(0.999999, 6), order.average_price)
+        self.assertEqual(Price(0.999999, 6), order.avg_price)
         self.assertEqual(Decimal64(-0.000001, 6), order.slippage)
         self.assertFalse(order.is_completed())
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)

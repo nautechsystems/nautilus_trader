@@ -1052,8 +1052,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     #     self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
     #     self.assertEqual(840, result.quote_currency)
     #     self.assertEqual(OrderSide.BUY, result.order_side)
-    #     self.assertEqual(Quantity(100000), result.filled_quantity)
-    #     self.assertEqual(Price(2, 1), result.average_price)
+    #     self.assertEqual(Quantity(100000), result.filled_qty)
+    #     self.assertEqual(Price(2, 1), result.avg_price)
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.execution_time)
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc), result.timestamp)
 

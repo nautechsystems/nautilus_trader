@@ -136,11 +136,11 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly PositionId position_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
-    cdef readonly Quantity filled_quantity
-    cdef readonly Quantity leaves_quantity
-    cdef readonly Price average_price
+    cdef readonly Quantity filled_qty
+    cdef readonly Quantity leaves_qty
+    cdef readonly Price avg_price
     cdef readonly Money commission
-    cdef readonly LiquiditySide liquidity_side
+    cdef readonly LiquiditySide liq_side
     cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly datetime execution_time

@@ -43,7 +43,7 @@ cdef class CommissionModel:
     cpdef Money calculate(
             self,
             Symbol symbol,
-            Quantity filled_quantity,
+            Quantity filled_qty,
             Price filled_price,
             double exchange_rate,
             Currency currency,
@@ -110,7 +110,7 @@ cdef class GenericCommissionModel:
     cpdef Money calculate(
             self,
             Symbol symbol,
-            Quantity filled_quantity,
+            Quantity filled_qty,
             Price filled_price,
             double exchange_rate,
             Currency currency,
@@ -123,7 +123,7 @@ cdef class GenericCommissionModel:
         ----------
         symbol : Symbol
             The symbol for calculation.
-        filled_quantity : Quantity
+        filled_qty : Quantity
             The filled quantity.
         filled_price : Price
             The filled price.
@@ -140,12 +140,12 @@ cdef class GenericCommissionModel:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(filled_quantity, "filled_quantity")
+        Condition.not_none(filled_qty, "filled_qty")
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
-        cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
+        cdef double commission = filled_qty.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
         cdef double final_commission = max(self.minimum.as_double(), commission)
         return Money(final_commission, currency)
 
@@ -250,7 +250,7 @@ cdef class MakerTakerCommissionModel:
     cpdef Money calculate(
             self,
             Symbol symbol,
-            Quantity filled_quantity,
+            Quantity filled_qty,
             Price filled_price,
             double exchange_rate,
             Currency currency,
@@ -263,7 +263,7 @@ cdef class MakerTakerCommissionModel:
         ----------
         symbol : Symbol
             The symbol for calculation.
-        filled_quantity : Quantity
+        filled_qty : Quantity
             The filled quantity.
         filled_price : Price
             The filled price.
@@ -280,12 +280,12 @@ cdef class MakerTakerCommissionModel:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(filled_quantity, "filled_quantity")
+        Condition.not_none(filled_qty, "filled_qty")
         Condition.not_none(filled_price, "filled_price")
         Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
-        cdef double commission = filled_quantity.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
+        cdef double commission = filled_qty.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
         return Money(commission, currency)
 
     cpdef Money calculate_for_notional(

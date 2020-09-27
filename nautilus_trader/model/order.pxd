@@ -64,9 +64,9 @@ cdef class Order:
     cdef readonly Quantity quantity
     cdef readonly datetime timestamp
     cdef readonly TimeInForce time_in_force
-    cdef readonly Quantity filled_quantity
+    cdef readonly Quantity filled_qty
     cdef readonly datetime filled_timestamp
-    cdef readonly Price average_price
+    cdef readonly Price avg_price
     cdef readonly Decimal64 slippage
     cdef readonly UUID init_id
 

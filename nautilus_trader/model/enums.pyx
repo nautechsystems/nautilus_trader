@@ -25,7 +25,7 @@ from nautilus_trader.model.c_enums.component_state import ComponentState  # noqa
 from nautilus_trader.model.c_enums.currency import Currency               # noqa F401 (being used)
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide    # noqa F401 (being used)
 from nautilus_trader.model.c_enums.maker import Maker                     # noqa F401 (being used)
-from nautilus_trader.model.c_enums.market_position import MarketPosition  # noqa F401 (being used)
+from nautilus_trader.model.c_enums.position_side import PositionSide      # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_side import OrderSide            # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_state import OrderState          # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_type import OrderType            # noqa F401 (being used)

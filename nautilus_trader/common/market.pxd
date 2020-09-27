@@ -29,7 +29,7 @@ cdef class CommissionModel:
     cpdef Money calculate(
         self,
         Symbol symbol,
-        Quantity filled_quantity,
+        Quantity filled_qty,
         Price filled_price,
         double exchange_rate,
         Currency currency,

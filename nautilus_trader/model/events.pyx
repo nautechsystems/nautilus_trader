@@ -844,7 +844,7 @@ cdef class OrderModified(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"quantity={self.modified_quantity.to_string_formatted()}, "
+                f"qty={self.modified_quantity.to_string_formatted()}, "
                 f"price={self.modified_price})")
 
 
@@ -920,11 +920,11 @@ cdef class OrderFilled(OrderEvent):
             PositionId position_id not None,
             Symbol symbol not None,
             OrderSide order_side,
-            Quantity filled_quantity not None,
-            Quantity leaves_quantity not None,
-            Price average_price not None,
+            Quantity filled_qty not None,
+            Quantity leaves_qty not None,
+            Price avg_price not None,
             Money commission not None,
-            LiquiditySide liquidity_side,
+            LiquiditySide liq_side,
             Currency base_currency,
             Currency quote_currency,
             datetime execution_time not None,
@@ -950,13 +950,13 @@ cdef class OrderFilled(OrderEvent):
             The order symbol.
         order_side : OrderSide
             The execution order side.
-        filled_quantity : Quantity
+        filled_qty : Quantity
             The execution filled quantity.
-        leaves_quantity : Quantity
+        leaves_qty : Quantity
             The execution leaves quantity.
-        average_price : Price
+        avg_price : Price
             The execution average price.
-        liquidity_side : LiquiditySide
+        liq_side : LiquiditySide
             The execution liquidity side.
         base_currency : Currency
             The order securities base currency.
@@ -971,7 +971,7 @@ cdef class OrderFilled(OrderEvent):
 
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.not_equal(liquidity_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.not_equal(liq_side, LiquiditySide.NONE, "liq_side", "NONE")
         Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
         super().__init__(
             cl_ord_id,
@@ -985,15 +985,15 @@ cdef class OrderFilled(OrderEvent):
         self.position_id = position_id
         self.symbol = symbol
         self.order_side = order_side
-        self.filled_quantity = filled_quantity
-        self.leaves_quantity = leaves_quantity
-        self.average_price = average_price
+        self.filled_qty = filled_qty
+        self.leaves_qty = leaves_qty
+        self.avg_price = avg_price
         self.commission = commission
-        self.liquidity_side = liquidity_side
+        self.liq_side = liq_side
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.execution_time = execution_time
-        self.is_partial_fill = not self.leaves_quantity.is_zero()
+        self.is_partial_fill = not self.leaves_qty.is_zero()
 
     def __str__(self) -> str:
         """
@@ -1010,10 +1010,10 @@ cdef class OrderFilled(OrderEvent):
                 f"order_id={self.order_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
-                f"-{liquidity_side_to_string(self.liquidity_side)}, "
-                f"filled_qty={self.filled_quantity.to_string_formatted()}, "
-                f"leaves_qty={self.leaves_quantity.to_string_formatted()}, "
-                f"avg_price={self.average_price}, "
+                f"-{liquidity_side_to_string(self.liq_side)}, "
+                f"filled_qty={self.filled_qty.to_string_formatted()}, "
+                f"leaves_qty={self.leaves_qty.to_string_formatted()}, "
+                f"avg_price={self.avg_price}, "
                 f"commission={self.commission})")
 
 
@@ -1117,7 +1117,7 @@ cdef class PositionOpened(PositionEvent):
                 f"cl_pos_id={self.position.cl_pos_id}, "
                 f"position_id={self.position.id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
-                f"avg_open={round(self.position.average_open_price, 5)}, "
+                f"avg_open={round(self.position.avg_open_price, 5)}, "
                 f"{self.position.status_string()})")
 
 
@@ -1180,7 +1180,7 @@ cdef class PositionModified(PositionEvent):
                 f"cl_pos_id={self.position.cl_pos_id}, "
                 f"position_id={self.position.id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
-                f"avg_open={self.position.average_open_price}, "
+                f"avg_open={self.position.avg_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_string(True)} {currency}, "
@@ -1248,8 +1248,8 @@ cdef class PositionClosed(PositionEvent):
                 f"position_id={self.position.id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"duration={duration}, "
-                f"avg_open={self.position.average_open_price}, "
-                f"avg_close={self.position.average_close_price}, "
+                f"avg_open={self.position.avg_open_price}, "
+                f"avg_close={self.position.avg_close_price}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_string(True)} {currency})")
