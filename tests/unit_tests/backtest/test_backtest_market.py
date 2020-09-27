@@ -527,8 +527,8 @@ class SimulatedMarketTests(unittest.TestCase):
         )  # Fill the limit order
 
         # Assert
-        self.assertEqual(LiquiditySide.TAKER, strategy.object_storer.get_store()[3].liq_side)
-        self.assertEqual(LiquiditySide.MAKER, strategy.object_storer.get_store()[8].liq_side)
+        self.assertEqual(LiquiditySide.TAKER, strategy.object_storer.get_store()[3].liquidity_side)
+        self.assertEqual(LiquiditySide.MAKER, strategy.object_storer.get_store()[8].liquidity_side)
         self.assertEqual(75, strategy.object_storer.get_store()[3].commission.as_double())
         self.assertEqual(-25, strategy.object_storer.get_store()[8].commission.as_double())
 

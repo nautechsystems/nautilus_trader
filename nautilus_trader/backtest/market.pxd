@@ -35,6 +35,10 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -44,7 +48,6 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.identifiers cimport Symbol, PositionId, OrderId, ExecutionId
 
 
 cdef class SimulatedMarket:
