@@ -75,14 +75,28 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Initialize a new instance of the RedisExecutionDatabase class.
 
-        :param trader_id: The trader_id.
-        :param host: The redis host for the database connection.
-        :param port: The redis port for the database connection.
-        :param command_serializer: The command serializer for database transactions.
-        :param event_serializer: The event serializer for database transactions.
-        :param load_caches: If the caches should be loaded from Redis on instantiation.
-        :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader_id.
+        host : str
+            The redis host for the database connection.
+        port : int
+            The redis port for the database connection.
+        command_serializer : CommandSerializer
+            The command serializer for database transactions.
+        event_serializer : EventSerializer
+            The event serializer for database transactions.
+        load_caches : bool
+            If the caches should be loaded from Redis on instantiation.
+
+        Raises
+        ------
+        ValueError
+            If the host is not a valid string.
+        ValueError
+            If the port is not in range [0, 65535].
+
         """
         Condition.valid_string(host, "host")
         Condition.in_range_int(port, 0, 65535, "port")
@@ -210,8 +224,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Add the given account to the execution database.
 
-        :param account: The account to add.
-        :raises ValueError: If the account_id is already contained in the cached_accounts.
+        Parameters
+        ----------
+        account : Account
+            The account to add.
+
+        Raises
+        ------
+        ValueError
+            If account_id is already contained in the cached_accounts.
+
         """
         Condition.not_none(account, "account")
         Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
@@ -231,13 +253,29 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
         """
-        Add the given order to the execution database indexed with the given strategy and position
+        Add the given order to the execution database indexed with the given
         identifiers.
 
-        :param order: The order to add.
-        :param position_id: The position identifier to index for the order.
-        :param strategy_id: The strategy identifier to index for the order.
-        :raises ValueError: If the order.cl_ord_id is already contained in the cached_orders.
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+        position_id : PositionId
+            The position identifier to index for the order.
+        strategy_id : StrategyId
+            The strategy identifier to index for the order.
+
+        Raises
+        ------
+        ValueError
+            If order.id is already contained in the cached_orders.
+        ValueError
+            If order.id is already contained in the index_orders.
+        ValueError
+            If order.id is already contained in the index_order_position.
+        ValueError
+            If order.id is already contained in the index_order_strategy.
+
         """
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
@@ -252,13 +290,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.hset(name=self.key_index_order_strategy, key=order.cl_ord_id.value, value=strategy_id.value)          # 1
         pipe.sadd(self.key_index_orders, order.cl_ord_id.value)                                                    # 2
         pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 3
+
+        if position_id.not_null():
+            pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=position_id.value)
+            pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
+            pipe.sadd(self.key_index_position_orders + position_id.value, order.cl_ord_id.value)
+            pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
+
         cdef list reply = pipe.execute()
 
-        if position_id.is_null():
-            return  # Do not index the NULL id
-
-        # TODO: Refactor for two options of a single pipeline
-        self.index_position_id(position_id, order.cl_ord_id, strategy_id)
         # Check data integrity of reply
         # TODO: Reorganize logging
         # if reply[0] > 1:  # Reply = The length of the list after the push operation
@@ -280,8 +320,22 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cdef void index_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """
-        *** WIP ***
+        Index the given position identifier with the other given identifiers.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to index.
+        cl_ord_id : ClientOrderId
+            The client order identifier to index.
+        strategy_id : StrategyId
+            The strategy identifier to index.
+
         """
+        Condition.not_none(position_id, "position_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(strategy_id, "strategy_id")
+
         # Command pipeline
         pipe = self._redis.pipeline()
         pipe.hset(name=self.key_index_order_position, key=cl_ord_id.value, value=position_id.value)
@@ -292,11 +346,24 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
-        Add the given position associated with the given strategy_id.
+        Add the given position associated with the given strategy identifier.
 
-        :param position: The position to add.
-        :param strategy_id: The strategy_id to associate with the position.
-        :raises ValueError: If the position_id is already contained in the cached_positions.
+        Parameters
+        ----------
+        position : Position
+            The position to add.
+        strategy_id : StrategyId
+            The strategy_id to associate with the position.
+
+        Raises
+        ------
+        ValueError
+            If position.id is already contained in the cached_positions.
+        ValueError
+            If position.id is already contained in the index_positions.
+        ValueError
+            If position.id is already contained in the index_positions_open.
+
         """
         Condition.not_none(position, "position")
         Condition.not_none(strategy_id, "strategy_id")
@@ -326,10 +393,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution database by persisting its
-        last event.
+        Update the given account in the execution database.
 
-        :param account: The account to update (from last event).
+        Parameters
+        ----------
+        account : The account to update (from last event).
+
         """
         Condition.not_none(account, "account")
 
@@ -340,14 +409,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Update the given strategy state in the execution database.
 
-        :param strategy: The strategy to update.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to update.
+
         """
         Condition.not_none(strategy, "strategy")
 
         cdef dict state = strategy.save()
 
+        # Command pipeline
         pipe = self._redis.pipeline()
-
         for key, value in state.items():
             pipe.hset(name=self.key_strategies + strategy.id.value + ":State", key=key, value=value)
             self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
@@ -359,7 +432,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Update the given order in the execution database.
 
-        :param order: The order to update (from last event).
+        Parameters
+        ----------
+        order : Order
+            The order to update (from last event).
+
         """
         Condition.not_none(order, "order")
 
@@ -384,7 +461,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Update the given position in the execution database.
 
-        :param position: The position to update (from last event).
+        Parameters
+        ----------
+        position : Position
+            The position to update (from last event).
+
         """
         Condition.not_none(position, "position")
 
@@ -409,7 +490,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Load the state for the given strategy from the execution database.
 
-        :param strategy: The strategy to load.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to load.
+
         """
         Condition.not_none(strategy, "strategy")
 
@@ -429,33 +514,48 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Load the account associated with the given account_id (if found).
 
+        Parameters
+        ----------
         :param account_id: The account identifier to load.
-        :return: Account or None.
+
+        Returns
+        -------
+        Account or None
+
         """
         Condition.not_none(account_id, "account_id")
 
         cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
         if not events:
-            self._log.error(f"Cannot load Account(id={account_id.value}) from database (not found).")
             return None
 
-        cdef AccountState last_event = self._event_serializer.deserialize(events.pop())
-        return Account(event=last_event)
+        cdef AccountState event
+        cdef Account account = Account(self._event_serializer.deserialize(events[0]))
+        for event in events[1:]:
+            account.apply(self._event_serializer.deserialize(event))
 
-    cpdef Order load_order(self, ClientOrderId order_id):
+        return account
+
+    cpdef Order load_order(self, ClientOrderId cl_ord_id):
         """
-        Load the order associated with the given order_id (if found).
+        Load the order associated with the given identifier (if found).
 
-        :param order_id: The order identifier to load.
-        :return: Order or None.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to load.
+
+        Returns
+        -------
+        Order or None
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        cdef list events = self._redis.lrange(name=self.key_orders + order_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(name=self.key_orders + cl_ord_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
         if not events:
-            self._log.error(f"Cannot load Order(id={order_id.value}) from database (not found).")
             return None
 
         cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
@@ -477,10 +577,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef Position load_position(self, PositionId position_id):
         """
-        Load the position associated with the given position_id (if found).
+        Load the position associated with the given identifier (if found).
 
-        :param position_id: The position_id to load.
-        :return: Position or None.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to load.
+
+        Returns
+        -------
+        Position or None
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -488,7 +595,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Check there is at least one event to pop
         if not events:
-            self._log.error(f"Cannot load Position(id={position_id.value}) from database (not found).")
             return None
 
         cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
@@ -502,8 +608,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
         Delete the given strategy from the execution database.
+        Logs error if strategy not found in the database.
 
-        :param strategy: The strategy to deregister.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to deregister.
+
+        Raises
+        ------
+        ValueError
+            If strategy is not contained in the strategies.
+
         """
         Condition.not_none(strategy, "strategy")
 
@@ -540,10 +656,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef Account get_account(self, AccountId account_id):
         """
-        Return the order matching the given identifier (if found).
+        Return the account matching the given identifier (if found).
 
-        :param account_id: The account identifier.
-        :return Account or None.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+
+        Returns
+        -------
+        Account or None
+
         """
         Condition.not_none(account_id, "account_id")
 
@@ -553,16 +676,26 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all strategy_ids.
 
-        :return Set[StrategyId].
+        Returns
+        -------
+        Set[StrategyId]
+
         """
         return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f"{self.key_strategies}*"))
 
     cpdef set get_order_ids(self, StrategyId strategy_id=None):
         """
-        Return a set of all order_ids.
+        Return a set of all client order identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[OrderId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Set[ClientOrderId]
+
         """
         if strategy_id is None:
             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders))
@@ -570,10 +703,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef set get_order_working_ids(self, StrategyId strategy_id=None):
         """
-        Return a set of all working order_ids.
+        Return a set of all working client order identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[OrderId].
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The optional strategy_id query filter.
+
+        Returns
+        -------
+        Set[ClientOrderId]
+
         """
         if strategy_id is None:
             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_working))
@@ -583,10 +723,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef set get_order_completed_ids(self, StrategyId strategy_id=None):
         """
-        Return a set of all completed order_ids.
+        Return a set of all completed client order identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[OrderId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[ClientOrderId]
+
         """
         if strategy_id is None:
             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_completed))
@@ -596,10 +743,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef set get_position_ids(self, StrategyId strategy_id=None):
         """
-        Return a set of all position_ids.
+        Return a set of all client position identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[PositionId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[PositionId]
+
         """
         if strategy_id is None:
             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions))
@@ -608,10 +762,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef set get_position_open_ids(self, StrategyId strategy_id=None):
         """
-        Return a set of all open position_ids.
+        Return a set of all open client position identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[PositionId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[PositionId]
+
         """
         if strategy_id is None:
             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_open))
@@ -621,10 +782,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef set get_position_closed_ids(self, StrategyId strategy_id=None):
         """
-        Return a set of all closed position_ids.
+        Return a set of all closed position identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[PositionId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Set[PositionId]
+
         """
         if strategy_id is None:
             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_closed))
@@ -632,24 +800,38 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
         return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
 
-    cpdef StrategyId get_strategy_for_order(self, ClientOrderId order_id):
+    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
         """
-        Return the strategy_id associated with the given order_id (if found).
+        Return the strategy_id associated with the given identifier (if found).
 
-        :param order_id: The order_id associated with the strategy.
-        :return StrategyId or None.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier associated with the strategy.
+
+        Returns
+        -------
+        StrategyId or None
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=order_id.value)
+        cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=cl_ord_id.value)
         return StrategyId.from_string(strategy_id.decode(_UTF8))
 
     cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
         """
-        Return the strategy_id associated with the given position_id (if found).
+        Return the strategy_id associated with the given identifier (if found).
 
-        :param position_id: The position_id associated with the strategy.
-        :return StrategyId or None.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier associated with the strategy.
+
+        Returns
+        -------
+        StrategyId or None
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -660,7 +842,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return the order matching the given identifier (if found).
 
-        :return Order or None.
+        Returns
+        -------
+        Order or None
+
         """
         Condition.not_none(order_id, "order_id")
 
@@ -670,8 +855,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all orders.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The optional strategy_id query filter.
+
+        Returns
+        -------
+        Dict[OrderId, Order]
+
         """
         cdef set order_ids = self.get_order_ids(strategy_id)
         cdef dict orders = {}
@@ -687,8 +879,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all working orders.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[OrderId, Order]
+
         """
         cdef set order_ids = self.get_order_working_ids(strategy_id)
         cdef dict cached_orders = {}
@@ -713,8 +912,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all completed orders.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[OrderId, Order]
+
         """
         cdef set order_ids = self.get_order_completed_ids(strategy_id)
         cdef dict cached_orders = {}
@@ -737,27 +943,42 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef Position get_position(self, PositionId position_id):
         """
-        Return the position associated with the given position_id (if found, else None).
+        Return the position associated with the given identifier (if found, else None).
 
-        :param position_id: The position identifier.
-        :return Position or None.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        Position or None
+
         """
         Condition.not_none(position_id, "position_id")
 
         return self._cached_positions.get(position_id)
 
-    cpdef PositionId get_position_id(self, ClientOrderId order_id):
+    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
         """
-        Return the position associated with the given order_id (if found, else None).
+        Return the position identifier associated with the given client order identifier
+        (if found, else None).
 
-        :param order_id: The order_id associated with the position.
-        :return PositionId or None.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier associated with the position.
+
+        Returns
+        -------
+        PositionId or None
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "order_id")
 
-        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
+        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
         if position_id_bytes is None:
-            self._log.warning(f"Cannot get PositionId for {order_id.to_string(with_class=True)} "
+            self._log.warning(f"Cannot get PositionId for {cl_ord_id.to_string(with_class=True)} "
                               f"(no matching PositionId found in database).")
             return position_id_bytes
 
@@ -767,8 +988,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all positions.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef set position_ids = self.get_position_ids(strategy_id)
         cdef dict positions = {}
@@ -784,8 +1012,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all open positions.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef set position_ids = self.get_position_open_ids(strategy_id)
         cdef dict cached_positions = {}
@@ -808,10 +1043,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef dict get_positions_closed(self, StrategyId strategy_id=None):
         """
-        Return a dictionary of all closed cached_positions.
+        Return a dictionary of all closed positions.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef set position_ids = self.get_position_closed_ids(strategy_id)
         cdef dict cached_positions = {}
@@ -832,85 +1074,194 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return positions
 
-    cpdef bint order_exists(self, ClientOrderId order_id):
+    cpdef bint order_exists(self, ClientOrderId cl_ord_id):
         """
         Return a value indicating whether an order with the given identifier exists.
 
-        :param order_id: The order_id to check.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to check.
+
+        Returns
+        -------
+        bool
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        return self._redis.sismember(name=self.key_index_orders, value=order_id.value)
+        return self._redis.sismember(name=self.key_index_orders, value=cl_ord_id.value)
 
-    cpdef bint is_order_working(self, ClientOrderId order_id):
+    cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
         """
         Return a value indicating whether an order with the given identifier is working.
 
-        :param order_id: The order_id to check.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to check.
+
+        Returns
+        -------
+        bool
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        return self._redis.sismember(name=self.key_index_orders_working, value=order_id.value)
+        return self._redis.sismember(name=self.key_index_orders_working, value=cl_ord_id.value)
 
-    cpdef bint is_order_completed(self, ClientOrderId order_id):
+    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
         """
         Return a value indicating whether an order with the given identifier is completed.
 
-        :param order_id: The order_id to check.
-        :return bool.
-        """
-        Condition.not_none(order_id, "order_id")
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to check.
 
-        return self._redis.sismember(name=self.key_index_orders_completed, value=order_id.value)
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        return self._redis.sismember(name=self.key_index_orders_completed, value=cl_ord_id.value)
+
+    cpdef int orders_total_count(self, StrategyId strategy_id=None):
+        """
+        Return the count of order held by the execution database.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        if strategy_id is None:
+            return self._redis.scard(self.key_index_orders)
+
+        cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
+        return len(self._redis.sinter(keys=keys))
+
+    cpdef int orders_working_count(self, StrategyId strategy_id=None):
+        """
+        Return the count of working orders held by the execution database.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        if strategy_id is None:
+            return self._redis.scard(self.key_index_orders_working)
+
+        cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
+        return len(self._redis.sinter(keys=keys))
+
+    cpdef int orders_completed_count(self, StrategyId strategy_id=None):
+        """
+        Return the count of completed orders held by the execution database.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        if strategy_id is None:
+            return self._redis.scard(self.key_index_orders_completed)
+
+        cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
+        return len(self._redis.sinter(keys=keys))
 
     cpdef bint position_exists(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists.
 
-        :param position_id: The position identifier.
-        :return bool.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        int
+
         """
         Condition.not_none(position_id, "position_id")
 
         return self._redis.sismember(name=self.key_index_positions, value=position_id.value)
 
-    cpdef bint position_exists_for_order(self, ClientOrderId order_id):
+    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
         """
         Return a value indicating whether there is a position associated with the given
-        order_id.
+        identifier.
 
-        :param order_id: The order identifier.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+
+        Returns
+        -------
+        bool
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        cdef bytes position_id = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
+        cdef bytes position_id = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
 
         if position_id is None:
             return False
         return self._redis.sismember(name=self.key_index_positions, value=position_id)
 
-    cpdef bint position_indexed_for_order(self, ClientOrderId order_id):
+    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id):
         """
         Return a value indicating whether there is a position_id indexed for the
-        given order_id.
+        given identifier.
 
-        :param order_id: The order_id to check.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+
+        Returns
+        -------
+        bool
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        return self._redis.hexists(name=self.key_index_order_position, key=order_id.value)
+        return self._redis.hexists(name=self.key_index_order_position, key=cl_ord_id.value)
 
     cpdef bint is_position_open(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists
         and is open.
 
-        :param position_id: The position identifier.
-        :return bool.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -921,58 +1272,33 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether a position with the given identifier exists
         and is closed.
 
-        :param position_id: The position identifier.
-        :return bool.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(position_id, "position_id")
 
         return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
 
-    cpdef int orders_total_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of order_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders)
-
-        cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int orders_working_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of working order_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders_working)
-
-        cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int orders_completed_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of completed order_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders_completed)
-
-        cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
     cpdef int positions_total_count(self, StrategyId strategy_id=None):
         """
-        Return the count of position_ids held by the execution database.
+        Return the count of positions held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         if strategy_id is None:
             return self._redis.scard(self.key_index_positions)
@@ -982,10 +1308,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef int positions_open_count(self, StrategyId strategy_id=None):
         """
-        Return the count of open position_ids held by the execution database.
+        Return the count of open positions held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         if strategy_id is None:
             return self._redis.scard(self.key_index_positions_open)
@@ -995,10 +1328,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef int positions_closed_count(self, StrategyId strategy_id=None):
         """
-        Return the count of closed position_ids held by the execution database.
+        Return the count of closed positions held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         if strategy_id is None:
             return self._redis.scard(self.key_index_positions_closed)
