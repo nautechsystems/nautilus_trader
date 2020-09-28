@@ -27,6 +27,11 @@ from nautilus_trader.enterprise.execution import LiveExecClient
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import LiveExecutionEngine
 from nautilus_trader.model.commands import AccountInquiry
+from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import ModifyOrder
+from nautilus_trader.model.commands import SubmitBracketOrder
+from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
@@ -48,75 +53,93 @@ GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 UTF8 = "utf8"
 LOCALHOST = "127.0.0.1"
-TEST_COMMANDS_REQ_PORT = 57555
-TEST_COMMANDS_REP_PORT = 57556
-TEST_EVENTS_PUB_PORT = 57557
 
 
 class LiveExecutionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        trader_id = TraderId("TESTER", "000")
-        account_id = TestStubs.account_id()
+        self.trader_id = TraderId("TESTER", "000")
+        self.account_id = TestStubs.account_id()
 
-        clock = LiveClock()
-        uuid_factory = LiveUUIDFactory()
-        logger = LiveLogger(clock)
-
-        self.command_server = MessageServer(
-            server_id=ServerId("CommandServer-001"),
-            recv_port=TEST_COMMANDS_REQ_PORT,
-            send_port=TEST_COMMANDS_REP_PORT,
-            header_serializer=MsgPackDictionarySerializer(),
-            request_serializer=MsgPackRequestSerializer(),
-            response_serializer=MsgPackResponseSerializer(),
-            compressor=BypassCompressor(),
-            encryption=EncryptionSettings(),
-            clock=clock,
-            uuid_factory=uuid_factory,
-            logger=LoggerAdapter("CommandServer", logger),
-        )
+        self.clock = LiveClock()
+        self.uuid_factory = LiveUUIDFactory()
+        self.logger = LiveLogger(self.clock)
 
         self.command_serializer = MsgPackCommandSerializer()
-
         self.command_server_sink = []
-        self.command_server.register_handler(MessageType.COMMAND, self.command_handler)
-        self.command_server.start()
-
-        time.sleep(0.5)
+        self.command_server = None
 
         self.portfolio = Portfolio(
-            clock=clock,
-            uuid_factory=uuid_factory,
-            logger=logger,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
         )
 
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_db = InMemoryExecutionDatabase(
-            trader_id=trader_id,
-            logger=logger,
+            trader_id=self.trader_id,
+            logger=self.logger,
         )
 
-        self.exec_engine = LiveExecutionEngine(
-            trader_id=trader_id,
-            account_id=account_id,
+        self.bar_type = TestStubs.bartype_audusd_1min_bid()
+        self.strategy = TestStrategy1(self.bar_type, id_tag_strategy="001")
+        self.strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.uuid_factory,
+            self.logger,
+        )
+
+    def command_handler(self, message):
+        command = self.command_serializer.deserialize(message)
+        self.command_server_sink.append(command)
+
+    def setup_command_server(
+            self,
+            commands_req_port: int,
+            commands_rep_port: int,
+    ):
+        return MessageServer(
+            server_id=ServerId("CommandServer-001"),
+            recv_port=commands_req_port,
+            send_port=commands_rep_port,
+            header_serializer=MsgPackDictionarySerializer(),
+            request_serializer=MsgPackRequestSerializer(),
+            response_serializer=MsgPackResponseSerializer(),
+            compressor=BypassCompressor(),
+            encryption=EncryptionSettings(),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=LoggerAdapter("CommandServer", self.logger),
+        )
+
+    def setup_exec_engine(self):
+        return LiveExecutionEngine(
+            trader_id=self.trader_id,
+            account_id=self.account_id,
             database=self.exec_db,
+            oms_type=OMSType.HEDGING,
             portfolio=self.portfolio,
-            clock=clock,
-            uuid_factory=uuid_factory,
-            logger=logger,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
         )
 
-        self.exec_engine.process(TestStubs.account_event())
-
-        self.exec_client = LiveExecClient(
-            exec_engine=self.exec_engine,
+    def setup_exec_client(
+            self,
+            exec_engine: LiveExecutionEngine,
+            commands_req_port: int,
+            commands_rep_port: int,
+            events_pub_port: int,
+    ):
+        return LiveExecClient(
+            exec_engine=exec_engine,
             host=LOCALHOST,
-            command_req_port=TEST_COMMANDS_REQ_PORT,
-            command_res_port=TEST_COMMANDS_REP_PORT,
-            event_pub_port=TEST_EVENTS_PUB_PORT,
+            command_req_port=commands_req_port,
+            command_res_port=commands_rep_port,
+            event_pub_port=events_pub_port,
             compressor=BypassCompressor(),
             encryption=EncryptionSettings(),
             command_serializer=MsgPackCommandSerializer(),
@@ -124,44 +147,62 @@ class LiveExecutionTests(unittest.TestCase):
             request_serializer=MsgPackRequestSerializer(),
             response_serializer=MsgPackResponseSerializer(),
             event_serializer=MsgPackEventSerializer(),
-            clock=clock,
-            uuid_factory=uuid_factory,
-            logger=logger,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
         )
 
-        self.exec_engine.register_client(self.exec_client)
+    def setup_test_fixture(
+            self,
+            commands_req_port: int,
+            commands_rep_port: int,
+            events_pub_port: int,
+    ):
+        # Setup command server
+        self.command_server = self.setup_command_server(
+            commands_req_port,
+            commands_rep_port,
+        )
+        self.command_server.register_handler(MessageType.COMMAND, self.command_handler)
+        self.command_server.start()
+        time.sleep(0.1)
+
+        # Setup execution engine
+        exec_engine = self.setup_exec_engine()
+        exec_engine.process(TestStubs.account_event())  # Setup account
+        exec_engine.register_strategy(self.strategy)
+
+        self.exec_client = self.setup_exec_client(
+            exec_engine,
+            commands_req_port,
+            commands_rep_port,
+            events_pub_port,
+        )
+
+        # Connect execution engine and client
+        exec_engine.register_client(self.exec_client)
         self.exec_client.connect()
-
-        time.sleep(0.5)
-
-        self.bar_type = TestStubs.bartype_audusd_1min_bid()
-        self.strategy = TestStrategy1(self.bar_type, id_tag_strategy="001")
-        self.strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock,
-            uuid_factory,
-            logger,
-        )
-        self.exec_engine.register_strategy(self.strategy)
+        time.sleep(0.1)
 
     def tearDown(self):
         # Tear Down
         self.exec_client.disconnect()
         self.command_server.stop()
 
-        time.sleep(0.5)  # Must be longer than 1 second linger
-        # self.exec_client.dispose()
-        # self.command_server.dispose()
+        time.sleep(1.1)  # Must be greater than default linger of 1 second
+        self.exec_client.dispose()
+        self.command_server.dispose()
         # Allowing the garbage collector to clean up resources avoids threading
         # errors caused by the continuous disposal of sockets.
-        time.sleep(2.0)
-
-    def command_handler(self, message):
-        command = self.command_serializer.deserialize(message)
-        self.command_server_sink.append(command)
 
     def test_send_submit_order_command(self):
         # Arrange
+        self.setup_test_fixture(
+            commands_rep_port=57555,
+            commands_req_port=57556,
+            events_pub_port=57557,
+        )
+
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -170,18 +211,22 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_order(order)
-
-        time.sleep(0.5)
+        time.sleep(0.1)  # Allow order to reach server and server to respond
 
         # Assert
-        # TODO: Investigate socket disposal
-        # self.assertEqual(order, self.strategy.order(order.cl_ord_id))
-        # self.assertEqual(2, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(2, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
 
     def test_send_submit_bracket_order(self):
         # Arrange
+        self.setup_test_fixture(
+            commands_rep_port=57565,
+            commands_req_port=57566,
+            events_pub_port=57567,
+        )
+
         entry_order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -195,18 +240,23 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_bracket_order(bracket_order)
+        time.sleep(0.1)  # Allow command to reach server and server to respond
 
-        time.sleep(0.5)
         # Assert
-        # TODO: Investigate socket disposal
-        # self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.cl_ord_id))
-        # self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.cl_ord_id))
-        # self.assertEqual(2, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
+        self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.cl_ord_id))
+        self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.cl_ord_id))
+        self.assertEqual(2, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
 
     def test_send_cancel_order_command(self):
         # Arrange
+        self.setup_test_fixture(
+            commands_rep_port=57565,
+            commands_req_port=57566,
+            events_pub_port=57567,
+        )
+
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -216,19 +266,23 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order)
         self.strategy.cancel_order(order)
-
-        time.sleep(0.5)
+        time.sleep(0.1)  # Allow command to reach server and server to respond
 
         # Assert
-        # TODO: Investigate socket disposal
-        # self.assertEqual(order, self.strategy.order(order.cl_ord_id))
-        # self.assertEqual(3, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
-        # self.assertEqual(CancelOrder, type(self.command_server_sink[1]))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(3, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(CancelOrder, type(self.command_server_sink[1]))
 
     def test_send_modify_order_command(self):
         # Arrange
+        self.setup_test_fixture(
+            commands_rep_port=57575,
+            commands_req_port=57576,
+            events_pub_port=57577,
+        )
+
         order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -239,23 +293,26 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order)
         self.strategy.modify_order(order, Quantity(110000), Price(1.00001, 5))
-
-        time.sleep(0.5)
+        time.sleep(0.1)  # Allow command to reach server and server to respond
 
         # Assert
-        # TODO: Investigate socket disposal
-        # self.assertEqual(order, self.strategy.order(order.cl_ord_id))
-        # self.assertEqual(3, self.command_server.recv_count)
-        # self.assertEqual(1, self.command_server.sent_count)
-        # self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
-        # self.assertEqual(ModifyOrder, type(self.command_server_sink[1]))
+        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(3, self.command_server.recv_count)
+        self.assertEqual(1, self.command_server.sent_count)
+        self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
+        self.assertEqual(ModifyOrder, type(self.command_server_sink[1]))
 
     def test_send_account_inquiry_command(self):
         # Arrange
+        self.setup_test_fixture(
+            commands_rep_port=57585,
+            commands_req_port=57586,
+            events_pub_port=57578,
+        )
+
         # Act
         self.strategy.account_inquiry()
-
-        time.sleep(0.5)
+        time.sleep(0.1)  # Allow command to reach server and server to respond
 
         # Assert
         self.assertEqual(2, self.command_server.recv_count)

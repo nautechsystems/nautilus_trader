@@ -66,6 +66,7 @@ cdef class ExecutionEngine:
             TraderId trader_id not None,
             AccountId account_id not None,
             ExecutionDatabase database not None,
+            OMSType oms_type,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -82,6 +83,8 @@ cdef class ExecutionEngine:
             The account identifier for the engine.
         database : ExecutionDatabase
             The execution database for the engine.
+        oms_type : OMSType
+            The order management type for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -95,16 +98,20 @@ cdef class ExecutionEngine:
         ------
         ValueError
             If trader_id is not equal to the database.trader_id.
+        ValueError
+            If oms_type is UNDEFINED.
 
         """
         Condition.equal(trader_id, database.trader_id, "trader_id", "database.trader_id")
+        Condition.not_equal(oms_type, OMSType.UNDEFINED, "oms_type", "UNDEFINED")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
+        self._oms_type = oms_type
         self._pos_id_generator = PositionIdGenerator(trader_id.identifier_tag)
-        self._registered_strategies = {}    # type: {StrategyId, TradingStrategy}
         self._exec_client = None
+        self._registered_strategies = {}    # type: {StrategyId, TradingStrategy}
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -569,6 +576,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             TraderId trader_id not None,
             AccountId account_id not None,
             ExecutionDatabase database not None,
+            OMSType oms_type,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -585,6 +593,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The account_id for the engine.
         database : ExecutionDatabase
             The execution database for the engine.
+        oms_type : OMSType
+            The order management type for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -599,6 +609,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             trader_id=trader_id,
             account_id=account_id,
             database=database,
+            oms_type=oms_type,
             portfolio=portfolio,
             clock=clock,
             uuid_factory=uuid_factory,

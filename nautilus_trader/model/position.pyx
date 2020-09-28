@@ -50,7 +50,6 @@ cdef class Position:
         self._relative_quantity = 0.0               # Initialized in _update()
         self._qty_precision = event.filled_qty.precision
 
-
         self.id = event.position_id
         self.account_id = event.account_id
         self.from_order = event.cl_ord_id

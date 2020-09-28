@@ -18,6 +18,16 @@
     "log_file_path": "logs/"
   },
 
+  "exec_engine": {
+    "oms_type": "NETTING"
+  },
+
+  "exec_database": {
+    "type": "redis",
+    "host": "localhost",
+    "port": 6379
+  },
+
   "strategy": {
     "load_state": true,
     "save_state": true
@@ -47,11 +57,5 @@
     "command_req_port": 55555,
     "command_res_port": 55556,
     "event_pub_port": 55557
-  },
-
-  "exec_database": {
-    "type": "redis",
-    "host": "localhost",
-    "port": 6379
   }
 }
