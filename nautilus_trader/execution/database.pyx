@@ -343,7 +343,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
         """
-        Add the given order to the execution database indexed with the given strategy and position
+        Add the given order to the execution database indexed with the given
         identifiers.
 
         Parameters
@@ -439,13 +439,24 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
-        Add the given position associated with the given strategy_id.
+        Add the given position associated with the given strategy identifier.
 
-        :param position: The position to add.
-        :param strategy_id: The strategy_id to associate with the position.
-        :raises ValueError: If position.id is already contained in the cached_positions.
-        :raises ValueError: If position.id is already contained in the index_positions.
-        :raises ValueError: If position.id is already contained in the index_positions_open.
+        Parameters
+        ----------
+        position : Position
+            The position to add.
+        strategy_id : StrategyId
+            The strategy_id to associate with the position.
+
+        Raises
+        ------
+        ValueError
+            If position.id is already contained in the cached_positions.
+        ValueError
+            If position.id is already contained in the index_positions.
+        ValueError
+            If position.id is already contained in the index_positions_open.
+
         """
         Condition.not_none(position, "position")
         Condition.not_none(strategy_id, "strategy_id")
@@ -464,16 +475,22 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Update the given account in the execution database.
 
-        :param account: The account to update (from last event).
+        Parameters
+        ----------
+        account : The account to update (from last event).
+
         """
         # Do nothing in memory
         pass
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution database .
+        Update the given strategy state in the execution database.
 
-        :param strategy: The strategy to update.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to update.
         """
         Condition.not_none(strategy, "strategy")
 
@@ -484,7 +501,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Update the given order in the execution database.
 
-        :param order: The order to update (from last event).
+        Parameters
+        ----------
+        order : Order
+            The order to update (from last event).
+
         """
         Condition.not_none(order, "order")
 
@@ -499,7 +520,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Update the given position in the execution database.
 
-        :param position: The position to update (from last event).
+        Parameters
+        ----------
+        position : Position
+            The position to update (from last event).
+
         """
         Condition.not_none(position, "position")
 
@@ -511,7 +536,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Load the state for the given strategy from the execution database.
 
-        :param strategy: The strategy to load.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to load.
+
         """
         Condition.not_none(strategy, "strategy")
 
@@ -522,8 +551,14 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Load the account associated with the given account_id (if found).
 
+        Parameters
+        ----------
         :param account_id: The account identifier to load.
-        :return: Account or None.
+
+        Returns
+        -------
+        Account or None
+
         """
         Condition.not_none(account_id, "account_id")
 
@@ -533,8 +568,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Load the order associated with the given identifier (if found).
 
-        :param cl_ord_id: The client order identifier to load.
-        :return: Order or None.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to load.
+
+        Returns
+        -------
+        Order or None
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -544,8 +586,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Load the position associated with the given identifier (if found).
 
-        :param position_id: The position identifier to load.
-        :return: Position or None.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to load.
+
+        Returns
+        -------
+        Position or None
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -554,9 +603,18 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
         Delete the given strategy from the execution database.
+        Logs error if strategy not found in the database.
 
-        :param strategy: The strategy to deregister.
-        :raises ValueError: If strategy is not contained in the strategies.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to deregister.
+
+        Raises
+        ------
+        ValueError
+            If strategy is not contained in the strategies.
+
         """
         Condition.not_none(strategy, "strategy")
         Condition.is_in(strategy.id, self._strategies, "strategy.id", "strategies")
@@ -603,8 +661,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the account matching the given identifier (if found).
 
-        :param account_id: The account identifier.
-        :return Account or None.
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+
+        Returns
+        -------
+        Account or None
+
         """
         Condition.not_none(account_id, "account_id")
 
@@ -614,7 +679,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all strategy_ids.
 
-        :return Set[StrategyId].
+        Returns
+        -------
+        Set[StrategyId]
+
         """
         return self._strategies.copy()
 
@@ -622,8 +690,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all client order identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[ClientOrderId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Set[ClientOrderId]
+
         """
         if strategy_id is None:
             return self._index_orders.copy()
@@ -638,8 +713,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all working client order identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[ClientOrderId].
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The optional strategy_id query filter.
+
+        Returns
+        -------
+        Set[ClientOrderId]
+
         """
         if strategy_id is None:
             return self._index_orders_working.copy()
@@ -654,8 +736,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all completed client order identifiers.
 
-        :param strategy_id: The optional strategy identifier query filter.
-        :return Set[ClientOrderId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[ClientOrderId]
+
         """
         if strategy_id is None:
             return self._index_orders_completed.copy()
@@ -670,8 +759,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all client position identifiers.
 
-        :param strategy_id: The optional strategy identifier query filter.
-        :return Set[PositionId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[PositionId]
+
         """
         if strategy_id is None:
             return self._index_positions.copy()
@@ -686,8 +782,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all open client position identifiers.
 
-        :param strategy_id: The optional strategy identifier query filter.
-        :return Set[PositionId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[PositionId]
+
         """
         if strategy_id is None:
             return self._index_positions_open.copy()
@@ -703,8 +806,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a set of all closed position identifiers.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[PositionId].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Set[PositionId]
+
         """
         if strategy_id is None:
             return self._index_positions_closed.copy()
@@ -719,8 +829,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the strategy_id associated with the given identifier (if found).
 
-        :param cl_ord_id: The client order identifier associated with the strategy.
-        :return StrategyId or None.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier associated with the strategy.
+
+        Returns
+        -------
+        StrategyId or None
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -730,8 +847,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the strategy_id associated with the given identifier (if found).
 
-        :param position_id: The position identifier associated with the strategy.
-        :return StrategyId or None.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier associated with the strategy.
+
+        Returns
+        -------
+        StrategyId or None
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -741,7 +865,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the order matching the given identifier (if found).
 
-        :return Order or None.
+        Returns
+        -------
+        Order or None
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -751,8 +878,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all orders.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The optional strategy_id query filter.
+
+        Returns
+        -------
+        Dict[OrderId, Order]
+
         """
         cdef set order_ids = self.get_order_ids(strategy_id)
         cdef dict orders
@@ -768,8 +902,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all working orders.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[OrderId, Order]
+
         """
         cdef set order_ids = self.get_order_working_ids(strategy_id)
         cdef dict orders_working
@@ -785,8 +926,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all completed orders.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[OrderId, Order]
+
         """
         cdef set order_ids = self.get_order_completed_ids(strategy_id)
         cdef dict orders_completed
@@ -802,8 +950,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the position associated with the given identifier (if found, else None).
 
-        :param position_id: The position identifier.
-        :return Position or None.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        Position or None
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -814,8 +969,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return the position identifier associated with the given client order identifier
         (if found, else None).
 
-        :param cl_ord_id: The client order identifier associated with the position.
-        :return PositionId or None.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier associated with the position.
+
+        Returns
+        -------
+        PositionId or None
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -825,8 +987,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all positions.
 
-        :param strategy_id: The optional strategy identifier query filter.
-        :return Dict[PositionId, Position].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef set position_ids = self.get_position_ids(strategy_id)
         cdef dict positions
@@ -842,8 +1011,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all open positions.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef set position_ids = self.get_position_open_ids(strategy_id)
         cdef dict positions
@@ -859,8 +1035,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a dictionary of all closed positions.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef set position_ids = self.get_position_closed_ids(strategy_id)
         cdef dict positions
@@ -876,8 +1059,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a value indicating whether an order with the given identifier exists.
 
-        :param cl_ord_id: The client order identifier to check.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to check.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -887,8 +1077,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a value indicating whether an order with the given identifier is working.
 
-        :param cl_ord_id: The client order identifier to check.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to check.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -898,8 +1095,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a value indicating whether an order with the given identifier is completed.
 
-        :param cl_ord_id: The client order identifier to check.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to check.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -909,8 +1113,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of order held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         return len(self.get_order_ids(strategy_id))
 
@@ -918,8 +1129,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of working orders held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         return len(self.get_order_working_ids(strategy_id))
 
@@ -927,8 +1145,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of completed orders held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         return len(self.get_order_completed_ids(strategy_id))
 
@@ -936,20 +1161,34 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a value indicating whether a position with the given identifier exists.
 
-        :param position_id: The position identifier.
-        :return bool.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        int
+
         """
         Condition.not_none(position_id, "position_id")
 
-        return position_id in self._index_positions  # Only open positions added here
+        return position_id in self._index_positions
 
     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
         """
         Return a value indicating whether there is a position associated with the given
         identifier.
 
-        :param cl_ord_id: The client order identifier.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -963,8 +1202,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether there is a position_id indexed for the
         given identifier.
 
-        :param cl_ord_id: The client order identifier.
-        :return bool.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
@@ -975,8 +1221,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether a position with the given identifier exists
         and is open.
 
-        :param position_id: The position identifier.
-        :return bool.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -987,8 +1240,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a value indicating whether a position with the given identifier exists
         and is closed.
 
-        :param position_id: The position identifier.
-        :return bool.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(position_id, "position_id")
 
@@ -998,8 +1258,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of positions held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         return len(self.get_position_ids(strategy_id))
 
@@ -1007,8 +1274,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of open positions held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         return len(self.get_position_open_ids(strategy_id))
 
@@ -1016,7 +1290,14 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the count of closed positions held by the execution database.
 
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
         """
         return len(self.get_position_closed_ids(strategy_id))
