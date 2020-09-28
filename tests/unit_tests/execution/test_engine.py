@@ -24,6 +24,7 @@ from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
@@ -69,6 +70,7 @@ class ExecutionEngineTests(unittest.TestCase):
             trader_id=self.trader_id,
             account_id=self.account_id,
             database=self.exec_db,
+            oms_type=OMSType.HEDGING,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,

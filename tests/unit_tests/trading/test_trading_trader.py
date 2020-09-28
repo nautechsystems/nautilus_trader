@@ -31,6 +31,7 @@ from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import ComponentState
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
@@ -80,6 +81,7 @@ class TraderTests(unittest.TestCase):
             trader_id=trader_id,
             account_id=account_id,
             database=self.exec_db,
+            oms_type=OMSType.HEDGING,
             portfolio=self.portfolio,
             clock=clock,
             uuid_factory=uuid_factory,

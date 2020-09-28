@@ -21,6 +21,7 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
@@ -49,8 +50,9 @@ cdef class ExecutionEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef ExecutionClient _exec_client
+    cdef OMSType _oms_type
     cdef PositionIdGenerator _pos_id_generator
+    cdef ExecutionClient _exec_client
     cdef dict _registered_strategies
 
     cdef readonly TraderId trader_id

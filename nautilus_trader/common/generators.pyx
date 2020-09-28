@@ -221,9 +221,17 @@ cdef class PositionIdGenerator:
 
         self._counts[symbol] = count
 
-    cpdef PositionId generate(self, Symbol symbol):
+    cpdef PositionId generate(self, Symbol symbol, bint flipped=False):
         """
         Return a unique position identifier.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the identifier.
+        flipped : bool
+            If the position is being flipped. If True then the generated id
+            will be appended with 'F'.
 
         Returns
         -------
@@ -236,4 +244,6 @@ cdef class PositionIdGenerator:
         count += 1
         self._counts[symbol] = count
 
-        return PositionId(f"P-{self.id_tag_trader}-{symbol}-{count}")
+        cdef str flipped_str = 'F' if flipped else ''
+
+        return PositionId(f"P-{self.id_tag_trader.value}-{symbol.value}-{count}{flipped_str}")

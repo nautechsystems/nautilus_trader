@@ -46,4 +46,4 @@ cdef class PositionIdGenerator:
 
     cpdef void set_count(self, Symbol symbol, int count)
     cpdef void reset(self) except *
-    cpdef PositionId generate(self, Symbol symbol)
+    cpdef PositionId generate(self, Symbol symbol, bint flipped=*)

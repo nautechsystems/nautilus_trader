@@ -28,6 +28,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.database cimport InMemoryExecutionDatabase
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
+from nautilus_trader.model.c_enums.oms_type cimport oms_type_from_string
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -109,10 +110,11 @@ cdef class TradingNode:
         config_trader = config["trader"]
         config_account = config["account"]
         config_log = config["logging"]
+        config_exec_engine = config["exec_engine"]
+        config_exec_db = config["exec_database"]
         config_strategy = config["strategy"]
         config_messaging = config["messaging"]
         config_data = config["data_client"]
-        config_exec_db = config["exec_database"]
         config_exec_client = config["exec_client"]
 
         self._clock = LiveClock()
@@ -165,7 +167,8 @@ cdef class TradingNode:
         keys_dir = os.path.join(working_directory, config_messaging["keys_dir"])
         encryption = EncryptionSettings(
             algorithm=config_messaging["encryption"],
-            keys_dir=keys_dir)
+            keys_dir=keys_dir,
+        )
 
         # Serializers
         command_serializer = MsgPackCommandSerializer()
@@ -226,6 +229,7 @@ cdef class TradingNode:
             trader_id=self.trader_id,
             account_id=self.account_id,
             database=self._exec_db,
+            oms_type=oms_type_from_string(config_exec_engine["oms_type"]),
             portfolio=self.portfolio,
             clock=self._clock,
             uuid_factory=self._uuid_factory,

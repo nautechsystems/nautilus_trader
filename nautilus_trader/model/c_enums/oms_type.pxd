@@ -13,22 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
 
-import os
+cpdef enum OMSType:
+    UNDEFINED = 0,  # Invalid value
+    NETTING = 1,
+    HEDGING = 2
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+cdef inline str oms_type_to_string(int value):
+    if value == 1:
+        return 'NETTING'
+    elif value == 2:
+        return 'HEDGING'
+    else:
+        return 'UNDEFINED'
 
 
-__author__ = "Nautech Systems"
-
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 69
-_PATCH_VERSION = 4
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+cdef inline OMSType oms_type_from_string(str value):
+    if value == 'NETTING':
+        return OMSType.NETTING
+    elif value == 'HEDGING':
+        return OMSType.HEDGING
+    else:
+        return OMSType.UNDEFINED
