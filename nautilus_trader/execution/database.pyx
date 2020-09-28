@@ -19,7 +19,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -49,7 +48,7 @@ cdef class ExecutionDatabase:
 
         self._cached_accounts = {}   # type: {AccountId, Account}
         self._cached_orders = {}     # type: {ClientOrderId, Order}
-        self._cached_positions = {}  # type: {ClientPositionId, Position}
+        self._cached_positions = {}  # type: {PositionId, Position}
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -57,7 +56,7 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId cl_pos_id=None) except *:
+    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -65,7 +64,7 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef void set_cl_pos_id(self, ClientPositionId cl_pos_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+    cdef void index_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -93,7 +92,7 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Position load_position(self, ClientPositionId cl_pos_id):
+    cpdef Position load_position(self, PositionId position_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -107,10 +106,10 @@ cdef class ExecutionDatabase:
 
     cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
-        for cl_ord_id, order in self.get_orders_working().items():
+        for order in self.get_orders_working().values():
             self._log.warning(f"Residual {order}")
 
-        for cl_pos_id, position in self.get_positions_open().items():
+        for position in self.get_positions_open().values():
             self._log.warning(f"Residual {position}")
 
     cpdef void reset(self) except *:
@@ -187,7 +186,7 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef StrategyId get_strategy_for_position(self, ClientPositionId cl_pos_id):
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -207,19 +206,11 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Position get_position(self, ClientPositionId cl_pos_id):
+    cpdef Position get_position(self, PositionId position_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Position get_position_for_order(self, ClientOrderId cl_ord_id):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef ClientPositionId get_cl_pos_id(self, ClientOrderId cl_ord_id):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef ClientPositionId get_cl_pos_id_for_position_id(self, PositionId position_id):
+    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -247,7 +238,7 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint position_exists(self, ClientPositionId cl_pos_id):
+    cpdef bint position_exists(self, PositionId position_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -259,11 +250,11 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_position_open(self, ClientPositionId cl_pos_id):
+    cpdef bint is_position_open(self, PositionId position_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id):
+    cpdef bint is_position_closed(self, PositionId position_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -301,26 +292,30 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Initialize a new instance of the InMemoryExecutionDatabase class.
 
-        :param trader_id: The trader_id for the component.
-        :param logger: The logger for the component.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader_id for the database.
+        logger : Logger
+            The logger for the database.
+
         """
         super().__init__(trader_id, logger)
 
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._strategies = set()              # type: {StrategyId}
-        self._index_order_position = {}       # type: {ClientOrderId, ClientPositionId}
+        self._index_order_position = {}       # type: {ClientOrderId, PositionId}
         self._index_order_strategy = {}       # type: {ClientOrderId, StrategyId}
-        self._index_broker_position = {}      # type: {PositionId, ClientPositionId}
-        self._index_position_strategy = {}    # type: {ClientPositionId, StrategyId}
-        self._index_position_orders = {}      # type: {ClientPositionId, {ClientOrderId}}
+        self._index_position_strategy = {}    # type: {PositionId, StrategyId}
+        self._index_position_orders = {}      # type: {PositionId, {ClientOrderId}}
         self._index_strategy_orders = {}      # type: {StrategyId, {ClientOrderId}}
-        self._index_strategy_positions = {}   # type: {StrategyId, {ClientPositionId}}
+        self._index_strategy_positions = {}   # type: {StrategyId, {PositionId}}
         self._index_orders = set()            # type: {ClientOrderId}
         self._index_orders_working = set()    # type: {ClientOrderId}
         self._index_orders_completed = set()  # type: {ClientOrderId}
-        self._index_positions = set()         # type: {ClientPositionId}
-        self._index_positions_open = set()    # type: {ClientPositionId}
-        self._index_positions_closed = set()  # type: {ClientPositionId}
+        self._index_positions = set()         # type: {PositionId}
+        self._index_positions_open = set()    # type: {PositionId}
+        self._index_positions_closed = set()  # type: {PositionId}
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -328,8 +323,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Add the given account to the execution database.
 
-        :param account: The account to add.
-        :raises ValueError: If account_id is already contained in the cached_accounts.
+        Parameters
+        ----------
+        account : Account
+            The account to add.
+
+        Raises
+        ------
+        ValueError
+            If account_id is already contained in the cached_accounts.
+
         """
         Condition.not_none(account, "account")
         Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
@@ -338,25 +341,39 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added Account(id={account.id.value}).")
 
-    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId cl_pos_id=None) except *:
+    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
         """
         Add the given order to the execution database indexed with the given strategy and position
         identifiers.
 
-        :param order: The order to add.
-        :param strategy_id: The strategy identifier to index for the order.
-        :param cl_pos_id: The position identifier to index for the order. (optional)
-        :raises ValueError: If order.id is already contained in the cached_orders.
-        :raises ValueError: If order.id is already contained in the index_orders.
-        :raises ValueError: If order.id is already contained in the index_order_strategy.
-        :raises ValueError: If order.id is already contained in the index_order_position.
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+        position_id : PositionId
+            The position identifier to index for the order.
+        strategy_id : StrategyId
+            The strategy identifier to index for the order.
+
+        Raises
+        ------
+        ValueError
+            If order.id is already contained in the cached_orders.
+        ValueError
+            If order.id is already contained in the index_orders.
+        ValueError
+            If order.id is already contained in the index_order_position.
+        ValueError
+            If order.id is already contained in the index_order_strategy.
+
         """
         Condition.not_none(order, "order")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(strategy_id, "strategy_id")
         Condition.not_in(order.cl_ord_id, self._cached_orders, "order.cl_ord_id", "cached_orders")
         Condition.not_in(order.cl_ord_id, self._index_orders, "order.cl_ord_id", "index_orders")
-        Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.cl_ord_id", "index_order_strategy")
         Condition.not_in(order.cl_ord_id, self._index_order_position, "order.cl_ord_id", "index_order_position")
+        Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.cl_ord_id", "index_order_strategy")
 
         self._cached_orders[order.cl_ord_id] = order
 
@@ -371,44 +388,54 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added Order(cl_ord_id={order.cl_ord_id.value}).")
 
-        if cl_pos_id is None or cl_pos_id == ClientPositionId.none():  # Do not index 'NoneId'
-            return  # Do not index 'NoneId'
+        if position_id.is_null():
+            return  # Do not index the NULL id
 
-        self.set_cl_pos_id(cl_pos_id, order.cl_ord_id, strategy_id)
+        self.index_position_id(position_id, order.cl_ord_id, strategy_id)
 
-    cdef void set_cl_pos_id(self, ClientPositionId cl_pos_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+    cdef void index_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """
-        *** WIP ***
+        Index the given position identifier with the other given identifiers.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to index.
+        cl_ord_id : ClientOrderId
+            The client order identifier to index.
+        strategy_id : StrategyId
+            The strategy identifier to index.
+
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(cl_ord_id, "cl_ord_id")
         Condition.not_none(strategy_id, "strategy_id")
 
-        # Index: ClientOrderId -> ClientPositionId
-        if cl_pos_id not in self._index_order_position:
-            self._index_order_position[cl_ord_id] = cl_pos_id
+        # Index: ClientOrderId -> PositionId
+        if cl_ord_id not in self._index_order_position:
+            self._index_order_position[cl_ord_id] = position_id
         else:
-            if not cl_pos_id.equals(self._index_order_position[cl_ord_id]):
-                self._log.error(f"Order indexing invalid for {cl_pos_id}.")
+            if not position_id.equals(self._index_order_position[cl_ord_id]):
+                self._log.error(f"Order indexing invalid for {position_id}.")
 
-        # Index: ClientPositionId -> StrategyId
-        if cl_pos_id not in self._index_position_strategy:
-            self._index_position_strategy[cl_pos_id] = strategy_id
+        # Index: PositionId -> StrategyId
+        if position_id not in self._index_position_strategy:
+            self._index_position_strategy[position_id] = strategy_id
         else:
-            if not strategy_id.equals(self._index_position_strategy[cl_pos_id]):
-                self._log.error(f"Strategy indexing invalid for {cl_pos_id}.")
+            if not strategy_id.equals(self._index_position_strategy[position_id]):
+                self._log.error(f"Strategy indexing invalid for {position_id}.")
 
-        # Index: ClientPositionId -> Set[ClientOrderId]
-        if cl_pos_id not in self._index_position_orders:
-            self._index_position_orders[cl_pos_id] = {cl_ord_id}
+        # Index: PositionId -> Set[ClientOrderId]
+        if position_id not in self._index_position_orders:
+            self._index_position_orders[position_id] = {cl_ord_id}
         else:
-            self._index_position_orders[cl_pos_id].add(cl_ord_id)
+            self._index_position_orders[position_id].add(cl_ord_id)
 
-        # Index: StrategyId -> Set[ClientPositionId]
+        # Index: StrategyId -> Set[PositionId]
         if strategy_id not in self._index_strategy_positions:
-            self._index_strategy_positions[strategy_id] = {cl_pos_id}
+            self._index_strategy_positions[strategy_id] = {position_id}
         else:
-            self._index_strategy_positions[strategy_id].add(cl_pos_id)
+            self._index_strategy_positions[strategy_id].add(position_id)
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -417,23 +444,21 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position: The position to add.
         :param strategy_id: The strategy_id to associate with the position.
         :raises ValueError: If position.id is already contained in the cached_positions.
-        :raises ValueError: If position.cl_pos_id is already contained in the index_broker_position.
         :raises ValueError: If position.id is already contained in the index_positions.
         :raises ValueError: If position.id is already contained in the index_positions_open.
         """
         Condition.not_none(position, "position")
         Condition.not_none(strategy_id, "strategy_id")
-        Condition.not_in(position.cl_pos_id, self._cached_positions, "position.cl_pos_id", "cached_positions")
-        Condition.not_in(position.id, self._index_broker_position, "position.id", "index_broker_position")
-        Condition.not_in(position.cl_pos_id, self._index_positions, "position.cl_pos_id", "index_positions")
-        Condition.not_in(position.cl_pos_id, self._index_positions_open, "position.cl_pos_id", "index_positions_open")
+        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
+        Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
+        Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
-        self._cached_positions[position.cl_pos_id] = position
+        self._cached_positions[position.id] = position
 
-        self._index_broker_position[position.id] = position.cl_pos_id
-        self._index_positions.add(position.cl_pos_id)
-        self._index_positions_open.add(position.cl_pos_id)
-        self._log.debug(f"Added Position(id={position.cl_pos_id.value}).")
+        self._index_positions.add(position.id)
+        self._index_positions_open.add(position.id)
+        self.index_position_id(position.id, position.from_order, strategy_id)
+        self._log.debug(f"Added Position(id={position.id.value}).")
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -479,8 +504,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Condition.not_none(position, "position")
 
         if position.is_closed():
-            self._index_positions_closed.add(position.cl_pos_id)
-            self._index_positions_open.discard(position.cl_pos_id)
+            self._index_positions_closed.add(position.id)
+            self._index_positions_open.discard(position.id)
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
@@ -515,16 +540,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return self._cached_orders.get(cl_ord_id)
 
-    cpdef Position load_position(self, ClientPositionId cl_pos_id):
+    cpdef Position load_position(self, PositionId position_id):
         """
         Load the position associated with the given identifier (if found).
 
-        :param cl_pos_id: The client position identifier to load.
+        :param position_id: The position identifier to load.
         :return: Position or None.
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
 
-        return self._cached_positions.get(cl_pos_id)
+        return self._cached_positions.get(position_id)
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
@@ -553,7 +578,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._strategies.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
-        self._index_broker_position.clear()
         self._index_position_strategy.clear()
         self._index_position_orders.clear()
         self._index_strategy_orders.clear()
@@ -647,7 +671,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a set of all client position identifiers.
 
         :param strategy_id: The optional strategy identifier query filter.
-        :return Set[ClientPositionId].
+        :return Set[PositionId].
         """
         if strategy_id is None:
             return self._index_positions.copy()
@@ -663,7 +687,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a set of all open client position identifiers.
 
         :param strategy_id: The optional strategy identifier query filter.
-        :return Set[ClientPositionId].
+        :return Set[PositionId].
         """
         if strategy_id is None:
             return self._index_positions_open.copy()
@@ -680,7 +704,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return a set of all closed position identifiers.
 
         :param strategy_id: The optional strategy_id query filter.
-        :return Set[ClientPositionId].
+        :return Set[PositionId].
         """
         if strategy_id is None:
             return self._index_positions_closed.copy()
@@ -702,16 +726,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return self._index_order_strategy.get(cl_ord_id)
 
-    cpdef StrategyId get_strategy_for_position(self, ClientPositionId cl_pos_id):
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
         """
         Return the strategy_id associated with the given identifier (if found).
 
-        :param cl_pos_id: The client position identifier associated with the strategy.
+        :param position_id: The position identifier associated with the strategy.
         :return StrategyId or None.
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
 
-        return self._index_position_strategy.get(cl_pos_id)
+        return self._index_position_strategy.get(position_id)
 
     cpdef Order get_order(self, ClientOrderId cl_ord_id):
         """
@@ -774,66 +798,28 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return orders_completed
 
-    cpdef Position get_position(self, ClientPositionId cl_pos_id):
+    cpdef Position get_position(self, PositionId position_id):
         """
         Return the position associated with the given identifier (if found, else None).
 
-        :param cl_pos_id: The client position identifier.
+        :param position_id: The position identifier.
         :return Position or None.
-        """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
-
-        return self._cached_positions.get(cl_pos_id)
-
-    cpdef Position get_position_for_order(self, ClientOrderId cl_ord_id):
-        """
-        Return the position associated with the given client order identifier (if found, else None).
-
-        :param cl_ord_id: The client order identifier for the position.
-        :return Position or None.
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        cdef ClientPositionId cl_pos_id = self.get_cl_pos_id(cl_ord_id)
-        # if cl_pos_id is None:
-        #     self._log.warning(f"Cannot get Position for {cl_ord_id.to_string(with_class=True)} "
-        #                       f"(no matching id found).")
-        #     return None
-
-        return self._cached_positions.get(cl_pos_id)
-
-    cpdef ClientPositionId get_cl_pos_id(self, ClientOrderId cl_ord_id):
-        """
-        Return the client position identifier associated with the given client order identifier
-        (if found, else None).
-
-        :param cl_ord_id: The client order identifier associated with the position.
-        :return ClientPositionId or None.
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        # cdef ClientPositionId cl_pos_id = self._index_order_position.get(cl_ord_id)
-        # if cl_pos_id is None:
-        #     self._log.warning(f"Cannot get ClientPositionId for {cl_ord_id.to_string(with_class=True)} "
-        #                       f"(no matching id found).")
-
-        return self._index_order_position.get(cl_ord_id)
-
-    cpdef ClientPositionId get_cl_pos_id_for_position_id(self, PositionId position_id):
-        """
-        Return the position_id associated with the given position identifier (if found, else None).
-
-        :param position_id: The broker/exchange position identifier.
-        :return ClientPositionId or None.
         """
         Condition.not_none(position_id, "position_id")
 
-        # cdef ClientPositionId cl_pos_id = self._index_broker_position.get(position_id)
-        # if cl_pos_id is None:
-        #     self._log.warning(f"Cannot get ClientPositionId for {position_id.to_string(with_class=True)} "
-        #                       f"(no matching id found).")
+        return self._cached_positions.get(position_id)
 
-        return self._index_broker_position.get(position_id)
+    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
+        """
+        Return the position identifier associated with the given client order identifier
+        (if found, else None).
+
+        :param cl_ord_id: The client order identifier associated with the position.
+        :return PositionId or None.
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        return self._index_order_position.get(cl_ord_id)
 
     cpdef dict get_positions(self, StrategyId strategy_id=None):
         """
@@ -946,16 +932,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         return len(self.get_order_completed_ids(strategy_id))
 
-    cpdef bint position_exists(self, ClientPositionId cl_pos_id):
+    cpdef bint position_exists(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists.
 
-        :param cl_pos_id: The client position identifier.
+        :param position_id: The position identifier.
         :return bool.
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
 
-        return cl_pos_id in self._index_positions  # Only open positions added here
+        return position_id in self._index_positions  # Only open positions added here
 
     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
         """
@@ -967,7 +953,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        cdef ClientPositionId position_id = self._index_order_position.get(cl_ord_id)
+        cdef PositionId position_id = self._index_order_position.get(cl_ord_id)
         if position_id is None:
             return False
         return position_id in self._index_positions
@@ -984,29 +970,29 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return cl_ord_id in self._index_order_position
 
-    cpdef bint is_position_open(self, ClientPositionId cl_ord_id):
+    cpdef bint is_position_open(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists
         and is open.
 
-        :param cl_ord_id: The position identifier.
+        :param position_id: The position identifier.
         :return bool.
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(position_id, "position_id")
 
-        return cl_ord_id in self._index_positions_open
+        return position_id in self._index_positions_open
 
-    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id):
+    cpdef bint is_position_closed(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists
         and is closed.
 
-        :param cl_pos_id: The client position identifier.
+        :param position_id: The position identifier.
         :return bool.
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
 
-        return cl_pos_id in self._index_positions_closed
+        return position_id in self._index_positions_closed
 
     cpdef int positions_total_count(self, StrategyId strategy_id=None):
         """

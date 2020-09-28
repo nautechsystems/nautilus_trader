@@ -54,7 +54,6 @@ from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -75,7 +74,7 @@ _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 cdef class SimulatedMarket:
     """
-    Provides a simulated brokerage.
+    Provides a simulated financial market.
     """
 
     def __init__(
@@ -151,7 +150,7 @@ cdef class SimulatedMarket:
         self._position_index = {}       # type: {ClientOrderId, PositionId}
         self._child_orders = {}         # type: {ClientOrderId, [Order]}
         self._oco_orders = {}           # type: {ClientOrderId, ClientOrderId}
-        self._position_oco_orders = {}  # type: {ClientPositionId, [ClientOrderId]}
+        self._position_oco_orders = {}  # type: {PositionId, [ClientOrderId]}
         self._symbol_pos_count = {}     # type: {Symbol, int}
         self._symbol_ord_count = {}     # type: {Symbol, int}
         self._executions_count = 0
@@ -541,6 +540,9 @@ cdef class SimulatedMarket:
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
+        if command.position_id.not_null():
+            self._position_index[command.order.cl_ord_id] = command.position_id
+
         self._submit_order(command.order)
         self._process_order(command.order)
 
@@ -927,17 +929,15 @@ cdef class SimulatedMarket:
             Price fill_price,
             LiquiditySide liquidity_side) except *:
         # Query if there is an existing position for this order
-        cdef Position position = self.exec_engine.database.get_position_for_order(order.cl_ord_id)
-        # position could be None here
+        cdef PositionId position_id = self._position_index.get(order.cl_ord_id)
+        # position_id could be None here
 
-        cdef PositionId position_id
-        if position is None:
-            # Try position index
-            position_id = self._position_index.get(order.cl_ord_id)
-
-        if position is None and position_id is None:
+        cdef Position position = None
+        if position_id is None:
             position_id = self._generate_position_id(order.symbol)
+            self._position_index[order.cl_ord_id] = position_id
         else:
+            position = self.exec_engine.database.get_position(position_id)
             position_id = position.id
 
         # Calculate commission
@@ -977,12 +977,12 @@ cdef class SimulatedMarket:
             del self._child_orders[order.cl_ord_id]
 
         if position is not None and position.is_closed():
-            oco_orders = self._position_oco_orders.get(position.cl_pos_id)
+            oco_orders = self._position_oco_orders.get(position.id)
             if oco_orders is not None:
-                for order in self._position_oco_orders[position.cl_pos_id]:
+                for order in self._position_oco_orders[position.id]:
                     if order.is_working():
                         self._cancel_order(order)
-                del self._position_oco_orders[position.cl_pos_id]
+                del self._position_oco_orders[position.id]
 
     cdef void _clean_up_child_orders(self, ClientOrderId order_id) except *:
         # Clean up any residual child orders from the completed order associated

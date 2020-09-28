@@ -25,6 +25,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
@@ -48,8 +49,7 @@ from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientPositionId
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
@@ -58,7 +58,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class ExecutionEngine:
     """
-    Provides a generic execution engine.
+    Provides a high performance execution engine.
     """
 
     def __init__(
@@ -102,20 +102,20 @@ cdef class ExecutionEngine:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
-
+        self._pos_id_generator = PositionIdGenerator(trader_id.identifier_tag)
         self._registered_strategies = {}    # type: {StrategyId, TradingStrategy}
-        self._symbol_cl_pos_id_counts = {}  # type: {Symbol, int}
-        self._symbol_cl_pos_ids = {}        # type: {Symbol, ClientPositionId}
         self._exec_client = None
 
         self.trader_id = trader_id
         self.account_id = account_id
         self.database = database
-        self.account = self.database.get_account(self.account_id)
+        self.account = self.database.get_account(account_id)
         self.portfolio = portfolio
 
         # Set symbol position counts
-        self._symbol_cl_pos_id_counts = self.database.get_symbol_position_counts()
+        symbol_counts = self.database.get_symbol_position_counts()
+        for symbol, count in symbol_counts.items():
+            self._pos_id_generator.set_count(symbol, count)
 
         self.command_count = 0
         self.event_count = 0
@@ -126,7 +126,11 @@ cdef class ExecutionEngine:
         """
         Register the given execution client with the execution engine.
 
-        :param exec_client: The execution client to register.
+        Parameters
+        ----------
+        exec_client : ExecutionClient
+            The execution client to register.
+
         """
         Condition.not_none(exec_client, "exec_client")
 
@@ -137,8 +141,16 @@ cdef class ExecutionEngine:
         """
         Register the given strategy with the execution engine.
 
-        :param strategy: The strategy to register.
-        :raises ValueError: If strategy is already registered with the execution engine.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to register.
+
+        Raises
+        ------
+        ValueError
+            If strategy is already registered with the execution engine.
+
         """
         Condition.not_none(strategy, "strategy")
         Condition.not_in(strategy.id, self._registered_strategies, "strategy.id", "registered_strategies")
@@ -151,8 +163,16 @@ cdef class ExecutionEngine:
         """
         Deregister the given strategy with the execution engine.
 
-        :param strategy: The strategy to deregister.
-        :raises ValueError: If strategy is not registered with the execution client.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to deregister.
+
+        Raises
+        ------
+        ValueError
+            If strategy is not registered with the execution engine.
+
         """
         Condition.not_none(strategy, "strategy")
         Condition.is_in(strategy.id, self._registered_strategies, "strategy.id", "registered_strategies")
@@ -164,7 +184,11 @@ cdef class ExecutionEngine:
         """
         Execute the given command.
 
-        :param command: The command to execute.
+        Parameters
+        ----------
+        command : Command
+            The command to execute.
+
         """
         Condition.not_none(command, "command")
 
@@ -174,7 +198,11 @@ cdef class ExecutionEngine:
         """
         Process the given event.
 
-        :param event: The event to handle.
+        Parameters
+        ----------
+        event : Event
+            The event to process.
+
         """
         Condition.not_none(event, "event")
 
@@ -191,7 +219,7 @@ cdef class ExecutionEngine:
         Reset the execution engine by clearing all stateful values.
         """
         self.database.reset()
-        self._symbol_cl_pos_ids.clear()
+        self._pos_id_generator.reset()
 
         self.command_count = 0
         self.event_count = 0
@@ -202,7 +230,10 @@ cdef class ExecutionEngine:
         """
         Return a list of strategy_ids registered with the execution engine.
 
-        :return List[StrategyId].
+        Returns
+        -------
+        List[StrategyId]
+
         """
         return list(self._registered_strategies.keys())
 
@@ -211,8 +242,15 @@ cdef class ExecutionEngine:
         Return a value indicating whether the strategy given identifier is flat
         (all associated positions FLAT).
 
-        :param strategy_id: The strategy_id.
-        :return bool.
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy_id.
+
+        Returns
+        -------
+        bool
+
         """
         Condition.not_none(strategy_id, "strategy_id")
 
@@ -222,7 +260,10 @@ cdef class ExecutionEngine:
         """
         Return a value indicating whether the execution engine is flat.
 
-        :return bool.
+        Returns
+        -------
+        bool
+
         """
         return self.database.positions_open_count() == 0
 
@@ -274,8 +315,12 @@ cdef class ExecutionEngine:
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Cannot submit order
 
+        if command.position_id.not_null() and not self.database.position_exists(command.position_id):
+            self._invalidate_order(command.order, f"position_id does not exist")
+            return  # Cannot submit order
+
         # Persist order
-        self.database.add_order(command.order, command.strategy_id, command.cl_pos_id)
+        self.database.add_order(command.order, command.position_id, command.strategy_id)
 
         # Submit order
         self._exec_client.submit_order(command)
@@ -302,10 +347,10 @@ cdef class ExecutionEngine:
         # ------------------------------------------------------------------------------------------
 
         # Persist all orders
-        self.database.add_order(command.bracket_order.entry, command.strategy_id)
-        self.database.add_order(command.bracket_order.stop_loss, command.strategy_id)
+        self.database.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
+        self.database.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
         if command.bracket_order.has_take_profit:
-            self.database.add_order(command.bracket_order.take_profit, command.strategy_id)
+            self.database.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
 
         # Submit bracket order
         self._exec_client.submit_bracket_order(command)
@@ -363,70 +408,69 @@ cdef class ExecutionEngine:
 
         self._send_to_strategy(event, self.database.get_strategy_for_order(event.cl_ord_id))
 
-    cdef void _handle_order_fill(self, OrderFilled event) except *:
-        cdef ClientPositionId cl_pos_id = self._find_cl_pos_id(event)
+    cdef void _handle_order_fill(self, OrderFilled fill) except *:
+        # Get PositionId corresponding to fill
+        cdef PositionId position_id = self.database.get_position_id(fill.cl_ord_id)
+        # --- position_id could be None here (position not opened yet) ---
 
-        cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.cl_ord_id)
+        # Get StrategyId corresponding to fill
+        cdef StrategyId strategy_id = self.database.get_strategy_for_order(fill.cl_ord_id)
         if strategy_id is None:
-            self._log.error(f"Cannot process event {event}, "
-                            f"StrategyId for {event.cl_ord_id.to_string(with_class=True)} "
-                            f"not found.")
+            self._log.error(f"Cannot process event {fill}, StrategyId for "
+                            f"{fill.cl_ord_id.to_string(with_class=True)} not found.")
             return  # Cannot process event further
 
-        cdef Position position = self._find_position(cl_pos_id, event)
+        if fill.position_id is None:  # Exchange not assigning position_ids
+            self._fill_pos_id_none(position_id, fill, strategy_id)
+        else:
+            self._fill_pos_id(position_id, fill, strategy_id)
+
+    cdef void _fill_pos_id_none(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *:
+        if position_id is None:  # No position yet
+            # Generate identifier
+            position_id = self._pos_id_generator.generate(fill.symbol)
+            fill.set_position_id(position_id)
+
+            # Create new position
+            self._open_position(fill, strategy_id)
+        else:  # Position exists
+            fill.set_position_id(position_id)
+            self._update_position(fill, strategy_id)
+
+    cdef void _fill_pos_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *:
+        if position_id is None:  # No position
+            self._open_position(fill, strategy_id)
+        else:
+            self._update_position(fill, strategy_id)
+
+    cdef void _open_position(self, OrderFilled fill, StrategyId strategy_id) except *:
+        cdef Position position = Position(fill)
+        self.database.add_position(position, strategy_id)
+        #self.database.index_position_id(position_id, fill.cl_ord_id, strategy_id)
+
+        self._send_to_strategy(fill, strategy_id)
+        self.process(self._pos_opened_event(position, fill, strategy_id))
+
+    cdef void _update_position(self, OrderFilled fill, StrategyId strategy_id) except *:
+        cdef Position position = self.database.get_position(fill.position_id)
 
         if position is None:
-            # Position does not exist - create new position
-            if cl_pos_id is None:
-                cl_pos_id = self._make_cl_pos_id(event)
-                # Set default symbol cl_pos_id
-                self._symbol_cl_pos_ids[event.symbol] = cl_pos_id
-                self.database.set_cl_pos_id(cl_pos_id, event.cl_ord_id, strategy_id)
+            self._log.error(f"Cannot update position for "
+                            f"{fill.position_id.to_string(with_class=True)} "
+                            f"(no position found in cache).")
+            return
 
-            position = Position(cl_pos_id, event)
-            self.database.add_position(position, strategy_id)
-            self._generate_position_opened_event(position, strategy_id, event)
+        position.apply(fill)
+        self.database.update_position(position)
+
+        cdef PositionEvent position_event
+        if position.is_closed():
+            position_event = self._pos_closed_event(position, fill, strategy_id)
         else:
-            # Position exists - apply event
-            position.apply(event)
-            self.database.update_position(position)
-            if position.is_closed():
-                # Remove default symbol cl_pos_id if it was closed
-                self._symbol_cl_pos_ids.pop(position.symbol, None)
-                self._generate_position_closed_event(position, strategy_id, event)
-            else:
-                self._generate_position_modified_event(position, strategy_id, event)
+            position_event = self._pos_modified_event(position, fill, strategy_id)
 
-    cdef inline ClientPositionId _find_cl_pos_id(self, OrderFilled event):
-        cdef ClientPositionId cl_pos_id = self.database.get_cl_pos_id(event.cl_ord_id)
-
-        if cl_pos_id is None:
-            # Fill may have come from a outside generated order without an indexed cl_ord_id
-            cl_pos_id = self.database.get_cl_pos_id_for_position_id(event.position_id)
-
-        # Check if default symbol cl_pos_id exists
-        if cl_pos_id is None:
-            cl_pos_id = self._symbol_cl_pos_ids.get(event.symbol)
-
-        return cl_pos_id
-
-    cdef inline ClientPositionId _make_cl_pos_id(self, OrderFilled event):
-        if event.symbol not in self._symbol_cl_pos_id_counts:
-            self._symbol_cl_pos_id_counts[event.symbol] = 0
-
-        # Increment symbol counter
-        self._symbol_cl_pos_id_counts[event.symbol] += 1
-        cdef int position_count = self._symbol_cl_pos_id_counts[event.symbol]
-
-        return ClientPositionId(f'P-{event.symbol}-{position_count}')
-
-    cdef inline Position _find_position(self, ClientPositionId cl_pos_id, OrderFilled event):
-        cdef Position position = self.database.get_position_for_order(event.cl_ord_id)
-
-        if position is None and cl_pos_id is not None:
-            position = self.database.get_position(cl_pos_id)
-
-        return position
+        self._send_to_strategy(fill, strategy_id)
+        self.process(position_event)
 
     cdef void _handle_position_event(self, PositionEvent event) except *:
         self.portfolio.update(event)
@@ -450,41 +494,46 @@ cdef class ExecutionEngine:
                           f"event {event.account_id.to_string(with_class=True)} "
                           f"does not match traders {self.account_id.to_string(with_class=True)}.")
 
-    cdef void _generate_position_opened_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
-        cdef PositionOpened position_opened = PositionOpened(
+    cdef PositionOpened _pos_opened_event(self,
+            Position position,
+            OrderFilled event,
+            StrategyId strategy_id,
+    ):
+        return PositionOpened(
             position,
-            strategy_id,
             event,
+            strategy_id,
             self._uuid_factory.generate(),
             event.timestamp,
         )
 
-        self._send_to_strategy(event, strategy_id)
-        self.process(position_opened)
-
-    cdef void _generate_position_modified_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
-        cdef PositionModified position_modified = PositionModified(
+    cdef PositionModified _pos_modified_event(
+            self,
+            Position position,
+            OrderFilled event,
+            StrategyId strategy_id,
+    ):
+        return PositionModified(
             position,
-            strategy_id,
             event,
+            strategy_id,
             self._uuid_factory.generate(),
             event.timestamp,
         )
 
-        self._send_to_strategy(event, strategy_id)
-        self.process(position_modified)
-
-    cdef void _generate_position_closed_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *:
-        cdef PositionClosed position_closed = PositionClosed(
+    cdef PositionClosed _pos_closed_event(
+            self,
+            Position position,
+            OrderFilled event,
+            StrategyId strategy_id,
+    ):
+        return PositionClosed(
             position,
-            strategy_id,
             event,
+            strategy_id,
             self._uuid_factory.generate(),
             event.timestamp,
         )
-
-        self._send_to_strategy(event, strategy_id)
-        self.process(position_closed)
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
@@ -505,14 +554,14 @@ cdef class ExecutionEngine:
         Reset the execution engine to its initial state.
         """
         self._registered_strategies.clear()
-        self._symbol_cl_pos_ids.clear()
+        self._pos_id_generator.reset()
         self.command_count = 0
         self.event_count = 0
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     """
-    Provides a process and thread safe execution engine utilizing Redis.
+    Provides a process and thread safe high performance execution engine.
     """
 
     def __init__(
@@ -528,13 +577,23 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Initialize a new instance of the LiveExecutionEngine class.
 
-        :param trader_id: The trader identifier for the engine.
-        :param account_id: The account_id for the engine.
-        :param database: The execution database for the engine.
-        :param portfolio: The portfolio for the engine.
-        :param clock: The clock for the engine.
-        :param uuid_factory: The uuid factory for the engine.
-        :param logger: The logger for the engine.
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier for the engine.
+        account_id : AccountId
+            The account_id for the engine.
+        database : ExecutionDatabase
+            The execution database for the engine.
+        portfolio : Portfolio
+            The portfolio for the engine.
+        clock : Clock
+            The clock for the engine.
+        uuid_factory : UUIDFactory
+            The uuid factory for the engine.
+        logger : Logger
+            The logger for the engine.
+
         """
         super().__init__(
             trader_id=trader_id,
@@ -554,7 +613,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Execute the given command by inserting it into the message bus for processing.
 
-        :param command: The command to execute.
+        Parameters
+        ----------
+        command : Command
+            The command to execute.
+
         """
         Condition.not_none(command, "command")
 
@@ -564,7 +627,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Handle the given event by inserting it into the message bus for processing.
 
-        :param event: The event to handle
+        Parameters
+        ----------
+        event : Event
+            The event to process.
+
         """
         Condition.not_none(event, "event")
 

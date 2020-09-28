@@ -20,6 +20,7 @@ import pytz
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.generators import PositionIdGenerator
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
@@ -43,7 +44,6 @@ from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionModified
 from nautilus_trader.model.events import PositionOpened
-from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
@@ -279,11 +279,14 @@ class TestStubs:
     @staticmethod
     def event_order_filled(
             order,
+            position_id=None,
             fill_price=None,
             filled_qty=None,
             leaves_qty=None,
             commission=0.,
     ) -> OrderFilled:
+        if position_id is None:
+            position_id = PositionId(order.cl_ord_id.value.replace('P', 'T'))
         if fill_price is None:
             fill_price = Price(1.00000, 5)
         if filled_qty is None:
@@ -296,7 +299,7 @@ class TestStubs:
             order.cl_ord_id,
             OrderId("1"),
             ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
-            PositionId(order.cl_ord_id.value.replace('P', 'T')),
+            position_id,
             order.symbol,
             order.side,
             filled_qty,
@@ -358,8 +361,8 @@ class TestStubs:
     def event_position_opened(position) -> PositionOpened:
         return PositionOpened(
             position,
-            StrategyId("SCALPER", "001"),
             position.last_event(),
+            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -368,8 +371,8 @@ class TestStubs:
     def event_position_modified(position) -> PositionModified:
         return PositionModified(
             position,
-            StrategyId("SCALPER", "001"),
             position.last_event(),
+            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -378,8 +381,8 @@ class TestStubs:
     def event_position_closed(position) -> PositionClosed:
         return PositionClosed(
             position,
-            StrategyId("SCALPER", "001"),
             position.last_event(),
+            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -389,14 +392,10 @@ class TestStubs:
         if entry_price is None:
             entry_price = Price(1.00000, 5)
 
-        generator = PositionIdGenerator(
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=LiveClock(),
-        )
+        generator = PositionIdGenerator(id_tag_trader=IdTag("001"))
 
-        for _i in range(number - 1):
-            generator.generate()
+        for _i in range(number):
+            generator.generate(TestStubs.symbol_audusd_fxcm())
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
@@ -410,19 +409,21 @@ class TestStubs:
             Quantity(100000),
         )
 
-        order_filled = TestStubs.event_order_filled(order, entry_price)
+        position_id = PositionId(TestStubs.symbol_audusd_fxcm().value)
+        order_filled = TestStubs.event_order_filled(
+            order,
+            position_id=position_id,
+            fill_price=entry_price,
+        )
 
-        position_id = generator.generate()
-        position = Position(cl_pos_id=position_id, event=order_filled)
+        position = Position(event=order_filled)
 
         return position
 
     @staticmethod
-    def position_which_is_closed(number=1, close_price=None) -> Position:
+    def position_which_is_closed(position_id, close_price=None) -> Position:
         if close_price is None:
             close_price = Price(1.0001, 5)
-
-        position = TestStubs.position(number=number)
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
@@ -435,12 +436,12 @@ class TestStubs:
             Quantity(100000),
         )
 
-        order_filled = OrderFilled(
+        filled1 = OrderFilled(
             TestStubs.account_id(),
             order.cl_ord_id,
             OrderId("1"),
             ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
-            PositionId(position.id.value.replace('P', 'T')),
+            position_id,
             order.symbol,
             order.side,
             order.quantity,
@@ -455,6 +456,27 @@ class TestStubs:
             UNIX_EPOCH + timedelta(minutes=5),
         )
 
-        position.apply(order_filled)
+        filled2 = OrderFilled(
+            TestStubs.account_id(),
+            order.cl_ord_id,
+            OrderId("2"),
+            ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
+            position_id,
+            order.symbol,
+            OrderSide.BUY,
+            order.quantity,
+            Quantity(0),
+            close_price,
+            Money(0, Currency.USD),
+            LiquiditySide.TAKER,
+            Currency.USD,  # Stub event
+            Currency.USD,  # Stub event
+            UNIX_EPOCH + timedelta(minutes=5),
+            uuid4(),
+            UNIX_EPOCH + timedelta(minutes=5),
+        )
+
+        position = Position(filled1)
+        position.apply(filled2)
 
         return position

@@ -41,7 +41,7 @@ cdef class BacktestEngine:
     cdef readonly BacktestConfig config
     cdef readonly BacktestDataEngine data_engine
     cdef readonly BacktestExecClient exec_client
-    cdef readonly SimulatedMarket broker
+    cdef readonly SimulatedMarket market
     cdef readonly ExecutionDatabase exec_db
     cdef readonly ExecutionEngine exec_engine
     cdef readonly LoggerAdapter log

@@ -126,8 +126,8 @@ cdef class TradingNode:
         )
 
         self.account_id = AccountId(
-            broker=config_account["broker"],
-            account_number=config_account["account_number"],
+            issuer=config_account["issuer"],
+            identifier=config_account["identifier"],
             account_type=account_type_from_string(config_account["account_type"]),
         )
 

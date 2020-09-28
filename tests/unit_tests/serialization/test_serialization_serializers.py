@@ -47,7 +47,6 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
@@ -285,7 +284,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
-            ClientPositionId("P-123456"),
+            PositionId("P-123456"),
             order,
             uuid4(),
             UNIX_EPOCH)
@@ -1048,7 +1047,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     #     self.assertEqual(OrderId("O-123456"), result.order_id)
     #     self.assertEqual(AccountId('FXCM', "02851908", AccountType.DEMO), result.account_id)
     #     self.assertEqual(ExecutionId("E123456"), result.execution_id)
-    #     self.assertEqual(PositionIdBroker("P123456"), result.position_id_broker)
     #     self.assertEqual(Symbol("AUDUSD", Venue('FXCM')), result.symbol)
     #     self.assertEqual(840, result.quote_currency)
     #     self.assertEqual(OrderSide.BUY, result.order_side)

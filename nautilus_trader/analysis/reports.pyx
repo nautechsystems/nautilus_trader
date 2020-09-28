@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 
@@ -87,7 +87,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
 
-    cpdef object generate_positions_report(self, dict positions: {ClientPositionId, Position}):
+    cpdef object generate_positions_report(self, dict positions: {PositionId, Position}):
         """
         Return a positions report dataframe.
 
@@ -109,7 +109,7 @@ cdef class ReportProvider:
             self._position_to_dict(p) for p in positions.values() if p.is_closed()
         ]
 
-        return pd.DataFrame(data=trades).set_index("cl_pos_id")
+        return pd.DataFrame(data=trades).set_index("position_id")
 
     cpdef object generate_account_report(self, list events, datetime start=None, datetime end=None):
         """
@@ -161,7 +161,6 @@ cdef class ReportProvider:
 
     cdef dict _position_to_dict(self, Position position):
         return {
-            "cl_pos_id": position.cl_pos_id.value,
             "position_id": position.id.value,
             "symbol": position.symbol.code,
             "entry": order_side_to_string(position.entry),

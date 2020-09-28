@@ -16,11 +16,12 @@
 import unittest
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.generators import OrderIdGenerator
-from nautilus_trader.model.generators import PositionIdGenerator
+from nautilus_trader.common.generators import OrderIdGenerator
+from nautilus_trader.common.generators import PositionIdGenerator
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import PositionId
+from tests.test_kit.stubs import TestStubs
 
 
 class OrderIdGeneratorTests(unittest.TestCase):
@@ -62,32 +63,29 @@ class PositionIdGeneratorTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=TestClock())
+        self.position_id_generator = PositionIdGenerator(id_tag_trader=IdTag("001"))
 
     def test_generate_position_id(self):
         # Arrange
         # Act
-        result1 = self.position_id_generator.generate()
-        result2 = self.position_id_generator.generate()
-        result3 = self.position_id_generator.generate()
+        result1 = self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
+        result2 = self.position_id_generator.generate(TestStubs.symbol_usdjpy_fxcm())
+        result3 = self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
 
         # Assert
-        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-1"), result1)
-        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-2"), result2)
-        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-3"), result3)
+        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-1"), result1)
+        self.assertEqual(PositionId("P-001-USD/JPY.FXCM-1"), result2)
+        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-2"), result3)
 
     def test_reset_id_generator(self):
         # Arrange
-        self.position_id_generator.generate()
-        self.position_id_generator.generate()
-        self.position_id_generator.generate()
+        self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
+        self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
+        self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
 
         # Act
         self.position_id_generator.reset()
-        result1 = self.position_id_generator.generate()
+        result1 = self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
 
         # Assert
-        self.assertEqual(ClientPositionId("P-19700101-000000-001-001-1"), result1)
+        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-1"), result1)

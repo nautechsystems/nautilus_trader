@@ -17,9 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
@@ -81,7 +81,7 @@ cdef class SubmitOrder(Command):
             TraderId trader_id not None,
             AccountId account_id not None,
             StrategyId strategy_id not None,
-            ClientPositionId cl_pos_id not None,
+            PositionId position_id not None,
             Order order not None,
             UUID command_id not None,
             datetime command_timestamp not None,
@@ -94,11 +94,11 @@ cdef class SubmitOrder(Command):
         trader_id : TraderId
             The trader identifier.
         account_id : AccountId
-            The account identifier for the inquiry.
+            The account identifier for the order.
         strategy_id : StrategyId
-            The strategy identifier associated with the order.
-        cl_pos_id : ClientPositionId
-            The client position identifier to associate with the order.
+            The strategy identifier for the order.
+        position_id : PositionId
+            The position identifier for the order.
         order : Order
             The order to submit.
         command_id : UUID
@@ -112,7 +112,7 @@ cdef class SubmitOrder(Command):
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
-        self.cl_pos_id = cl_pos_id
+        self.position_id = position_id
         self.order = order
 
     def __str__(self) -> str:
@@ -124,12 +124,13 @@ cdef class SubmitOrder(Command):
         str
 
         """
+        cdef str position_id_str = "" if self.position_id.is_null() else f"position_id={self.position_id.value}, "
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"cl_pos_id={self.cl_pos_id.value}, "
-                f"cl_ord_id={self.order.cl_ord_id.value})")
+                f"cl_ord_id={self.order.cl_ord_id.value}, "
+                f"{position_id_str}"
+                f"strategy_id={self.strategy_id.value}")
 
 
 cdef class SubmitBracketOrder(Command):

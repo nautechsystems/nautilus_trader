@@ -34,7 +34,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
@@ -185,12 +185,12 @@ cdef class TradingStrategy:
     cpdef int orders_total_count(self)
     cpdef set stop_loss_ids(self)
     cpdef set take_profit_ids(self)
-    cpdef Position position(self, ClientPositionId cl_pos_id)
+    cpdef Position position(self, PositionId position_id)
     cpdef Position position_for_order(self, ClientOrderId cl_ord_id)
     cpdef dict positions(self)
     cpdef dict positions_open(self)
     cpdef dict positions_closed(self)
-    cpdef bint position_exists(self, ClientPositionId cl_pos_id)
+    cpdef bint position_exists(self, PositionId position_id)
     cpdef int positions_open_count(self)
     cpdef int positions_closed_count(self)
     cpdef int positions_total_count(self)
@@ -199,8 +199,8 @@ cdef class TradingStrategy:
     cpdef bint is_take_profit(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
-    cpdef bint is_position_open(self, ClientPositionId cl_pos_id)
-    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id)
+    cpdef bint is_position_open(self, PositionId position_id)
+    cpdef bint is_position_closed(self, PositionId position_id)
     cpdef bint is_flat(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -213,11 +213,11 @@ cdef class TradingStrategy:
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
     cpdef void account_inquiry(self) except *
-    cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id=*) except *
+    cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self) except *
-    cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *
+    cpdef void flatten_position(self, PositionId position_id) except *
     cpdef void flatten_all_positions(self) except *
     cdef void _flatten_on_reject(self, OrderRejected event) except *

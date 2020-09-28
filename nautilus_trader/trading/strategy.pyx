@@ -52,7 +52,7 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
@@ -107,10 +107,10 @@ cdef class TradingStrategy:
         Raises
         ------
         ValueError
-            If order_id_tag is not a valid string.
+            If identifier_tag is not a valid string.
 
         """
-        Condition.valid_string(order_id_tag, "order_id_tag")
+        Condition.valid_string(order_id_tag, "identifier_tag")
 
         # Identification
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
@@ -129,7 +129,7 @@ cdef class TradingStrategy:
 
         # Order / Position components
         self.order_factory = None          # Initialized when registered with a trader
-        self._flattening_ids = set()       # type: {ClientPositionId}
+        self._flattening_ids = set()       # type: {PositionId}
         self._stop_loss_ids = set()        # type: {ClientOrderId}
         self._take_profit_ids = set()      # type: {ClientOrderId}
 
@@ -384,8 +384,8 @@ cdef class TradingStrategy:
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.order_factory = OrderFactory(
-            id_tag_trader=self.trader_id.order_id_tag,
-            id_tag_strategy=self.id.order_id_tag,
+            id_tag_trader=self.trader_id.identifier_tag,
+            id_tag_strategy=self.id.identifier_tag,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
         )
@@ -764,7 +764,7 @@ cdef class TradingStrategy:
         elif isinstance(event, OrderCancelReject):
             self.log.warning(f"{RECV}{EVT} {event}.")
         elif isinstance(event, PositionClosed):
-            self._flattening_ids.discard(event.position.cl_pos_id)
+            self._flattening_ids.discard(event.position.id)
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
 
@@ -1554,24 +1554,24 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.orders_total_count(self.id)
 
-    cpdef Position position(self, ClientPositionId cl_pos_id):
+    cpdef Position position(self, PositionId position_id):
         """
         Return the position associated with the given identifier (if found).
 
         Parameters
         ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
+        position_id : PositionId
+            The position identifier.
 
         Returns
         -------
         Position or None
 
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec_engine.database.get_position(cl_pos_id)
+        return self._exec_engine.database.get_position(position_id)
 
     cpdef Position position_for_order(self, ClientOrderId cl_ord_id):
         """
@@ -1631,24 +1631,25 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.get_positions_closed(self.id)
 
-    cpdef bint position_exists(self, ClientPositionId cl_pos_id):
+    cpdef bint position_exists(self, PositionId position_id):
         """
-        Return a value indicating whether a position with the given identifier exists.
+        Return a value indicating whether a position with the given identifier
+        exists.
 
         Parameters
         ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
+        position_id : PositionId
+            The position identifier.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec_engine.database.position_exists(cl_pos_id)
+        return self._exec_engine.database.position_exists(position_id)
 
     cpdef int positions_open_count(self):
         """
@@ -1784,43 +1785,44 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.is_order_completed(cl_ord_id)
 
-    cpdef bint is_position_open(self, ClientPositionId cl_pos_id):
+    cpdef bint is_position_open(self, PositionId position_id):
         """
-        Return a value indicating whether a position with the given identifier is open.
+        Return a value indicating whether a position with the given identifier
+        is open.
 
         Parameters
         ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
+        position_id : PositionId
+            The position identifier.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec_engine.database.is_position_open(cl_pos_id)
+        return self._exec_engine.database.is_position_open(position_id)
 
-    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id):
+    cpdef bint is_position_closed(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier is closed.
 
         Parameters
         ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
+        position_id : PositionId
+            The position identifier.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(self._exec_engine, "execution_engine")
 
-        return self._exec_engine.database.is_position_closed(cl_pos_id)
+        return self._exec_engine.database.is_position_closed(position_id)
 
     cpdef bint is_flat(self):
         """
@@ -1952,7 +1954,7 @@ cdef class TradingStrategy:
         if self.order_factory is not None:
             self.order_factory.reset()
 
-        self._flattening_ids = set()   # type: {ClientPositionId}
+        self._flattening_ids = set()   # type: {PositionId}
         self._stop_loss_ids = set()    # type: {ClientOrderId}
         self._take_profit_ids = set()  # type: {ClientOrderId}
 
@@ -2040,7 +2042,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id=None) except *:
+    cpdef void submit_order(self, Order order, PositionId position_id=None) except *:
         """
         Send a submit order command with the given order to the execution engine.
 
@@ -2048,22 +2050,23 @@ cdef class TradingStrategy:
         ----------
         order : Order
             The order to submit.
-        cl_pos_id : ClientPositionId, optional
-            The client position identifier to submit the order against.
+        position_id : PositionId, optional
+            The position identifier to submit the order against.
 
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "execution_engine")
 
-        if cl_pos_id is None:
-            cl_pos_id = ClientPositionId.none()
+        if position_id is None:
+            # Null object pattern
+            position_id = PositionId.null()
 
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
-            cl_pos_id,
+            position_id,
             order,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -2208,7 +2211,7 @@ cdef class TradingStrategy:
             self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute(command)
 
-    cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *:
+    cpdef void flatten_position(self, PositionId position_id) except *:
         """
         Flatten the position.
 
@@ -2218,8 +2221,8 @@ cdef class TradingStrategy:
 
         Parameters
         ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier to flatten.
+        position_id : PositionId
+            The position identifier to flatten.
 
         Raises
         ------
@@ -2227,20 +2230,20 @@ cdef class TradingStrategy:
             If position_id is not found.
 
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(self._exec_engine, "execution_engine")
 
-        if cl_pos_id in self._flattening_ids:
-            self.log.warning(f"Already flattening {cl_pos_id}.")
+        if position_id in self._flattening_ids:
+            self.log.warning(f"Already flattening {position_id}.")
             return
 
-        cdef Position position = self._exec_engine.database.get_position(cl_pos_id)
+        cdef Position position = self._exec_engine.database.get_position(position_id)
         if position is None:
-            self.log.error(f"Cannot flatten position (cannot find {cl_pos_id} in cached positions.")
+            self.log.error(f"Cannot flatten position (cannot find {position_id} in cached positions.")
             return
 
         if position.is_closed():
-            self.log.warning(f"Cannot flatten position (the position {cl_pos_id} was already closed).")
+            self.log.warning(f"Cannot flatten position (the position {position_id} was already closed).")
             return
 
         cdef Order order = self.order_factory.market(
@@ -2249,10 +2252,10 @@ cdef class TradingStrategy:
             position.quantity,
         )
 
-        self._flattening_ids.add(cl_pos_id)
+        self._flattening_ids.add(position_id)
 
         self.log.info(f"Flattening {position}...")
-        self.submit_order(order, cl_pos_id)  # Assumption that market order won't be rejected
+        self.submit_order(order, position_id)  # Assumption that market order won't be rejected
 
     cpdef void flatten_all_positions(self) except *:
         """
@@ -2272,7 +2275,7 @@ cdef class TradingStrategy:
 
         self.log.info(f"Flattening {open_positions_count} open position(s)...")
 
-        cdef ClientPositionId position_id
+        cdef PositionId position_id
         cdef Position position
         cdef Order order
         for position_id, position in positions.items():
@@ -2293,7 +2296,7 @@ cdef class TradingStrategy:
             return  # Not a registered stop-loss
 
         # Find position_id for order
-        cdef ClientPositionId position_id = self._exec_engine.database.get_cl_pos_id(event.cl_ord_id)
+        cdef PositionId position_id = self._exec_engine.database.get_position_id(event.cl_ord_id)
         if position_id is None:
             self.log.error(f"Cannot find PositionId for {event.cl_ord_id}.")
             return

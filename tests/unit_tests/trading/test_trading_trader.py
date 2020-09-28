@@ -85,7 +85,7 @@ class TraderTests(unittest.TestCase):
             uuid_factory=uuid_factory,
             logger=logger)
 
-        self.broker = SimulatedMarket(
+        self.market = SimulatedMarket(
             exec_engine=self.exec_engine,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
@@ -96,7 +96,7 @@ class TraderTests(unittest.TestCase):
             logger=logger)
 
         self.exec_client = BacktestExecClient(
-            broker=self.broker,
+            market=self.market,
             logger=logger)
 
         self.exec_engine.register_client(self.exec_client)
@@ -121,7 +121,7 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(TraderId("TESTER", "000"), trader_id)
-        self.assertEqual(IdTag("000"), trader_id.order_id_tag)
+        self.assertEqual(IdTag("000"), trader_id.identifier_tag)
         self.assertEqual(ComponentState.INITIALIZED, self.trader.state())
         self.assertEqual(2, len(self.trader.strategy_states()))
 

@@ -22,7 +22,6 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -43,11 +42,10 @@ cdef class Position:
     cdef double _relative_quantity
     cdef int _qty_precision
 
-    cdef readonly ClientPositionId cl_pos_id
     cdef readonly PositionId id
     cdef readonly AccountId account_id
-
     cdef readonly ClientOrderId from_order
+
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
     cdef readonly OrderSide entry

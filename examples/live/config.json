@@ -5,8 +5,8 @@
   },
 
   "account": {
-    "broker": "FXCM",
-    "account_number": "02402856",
+    "issuer": "FXCM",
+    "identifier": "02402856",
     "account_type": "DEMO"
   },
 

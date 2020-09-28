@@ -20,7 +20,7 @@ from nautilus_trader.model.objects cimport Money
 
 cdef class Account:
     """
-    Represents a brokerage account.
+    Represents a trading account.
     """
 
     def __init__(self, AccountState event):
@@ -38,8 +38,6 @@ cdef class Account:
         self._events = [event]
 
         self.id = event.account_id
-        self.broker = self.id.broker
-        self.account_number = self.id.account_number
         self.account_type = self.id.account_type
         self.currency = event.currency
         self.cash_balance = event.cash_balance
@@ -127,7 +125,7 @@ cdef class Account:
 
         Returns
         -------
-        List[Event]
+        List[AccountState]
 
         """
         return self._events.copy()

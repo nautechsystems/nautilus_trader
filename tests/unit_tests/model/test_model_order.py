@@ -537,7 +537,10 @@ class OrderTests(unittest.TestCase):
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
 
-        filled = TestStubs.event_order_filled(order, Price(1.00001, 5))
+        filled = TestStubs.event_order_filled(
+            order,
+            PositionId("P-123456"),
+            Price(1.00001, 5))
 
         order.apply(submitted)
         order.apply(accepted)
