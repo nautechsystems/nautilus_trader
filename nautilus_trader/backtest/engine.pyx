@@ -186,7 +186,7 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.broker = SimulatedMarket(
+        self.market = SimulatedMarket(
             exec_engine=self.exec_engine,
             instruments=data.instruments,
             config=config,
@@ -198,7 +198,7 @@ cdef class BacktestEngine:
         )
 
         self.exec_client = BacktestExecClient(
-            broker=self.broker,
+            market=self.market,
             logger=self.test_logger,
         )
 
@@ -290,7 +290,7 @@ cdef class BacktestEngine:
 
         # Setup new fill model
         if fill_model is not None:
-            self.broker.change_fill_model(fill_model)
+            self.market.change_fill_model(fill_model)
 
         # Setup new strategies
         if strategies is not None:
@@ -310,7 +310,7 @@ cdef class BacktestEngine:
         while self.data_engine.has_data:
             tick = self.data_engine.generate_tick()
             self.advance_time(tick.timestamp)
-            self.broker.process_tick(tick)
+            self.market.process_tick(tick)
             self.data_engine.process_tick(tick)
             self.iteration += 1
         # ---------------------------------------------------------------------#
@@ -417,7 +417,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
         for resolution in self.data_engine.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")
-        if self.broker.frozen_account:
+        if self.market.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
             currency = currency_to_string(self.config.account_currency)
@@ -445,13 +445,13 @@ cdef class BacktestEngine:
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")
         self.log.info(f"Total orders: {self.exec_engine.database.orders_total_count():,}")
         self.log.info(f"Total positions: {self.exec_engine.database.positions_total_count():,}")
-        if self.broker.frozen_account:
+        if self.market.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()
         account_starting_length = len(account_balance_starting)
-        account_balance_ending = pad_string(self.broker.account_capital.to_string_formatted(), account_starting_length)
-        commissions_total = pad_string(self.broker.total_commissions.to_string_formatted(), account_starting_length)
-        rollover_interest = pad_string(self.broker.total_rollover.to_string_formatted(), account_starting_length)
+        account_balance_ending = pad_string(self.market.account_capital.to_string_formatted(), account_starting_length)
+        commissions_total = pad_string(self.market.total_commissions.to_string_formatted(), account_starting_length)
+        rollover_interest = pad_string(self.market.total_rollover.to_string_formatted(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")
         self.log.info(f"Account balance (ending):   {account_balance_ending}")
         self.log.info(f"Commissions (total):        {commissions_total}")

@@ -40,8 +40,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import MatchId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -99,7 +99,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         usdjpy = TestStubs.instrument_usdjpy()
 
-        self.broker = SimulatedMarket(
+        self.market = SimulatedMarket(
             exec_engine=self.exec_engine,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
@@ -110,13 +110,13 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger)
 
         self.exec_client = BacktestExecClient(
-            broker=self.broker,
+            market=self.market,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.account_event())
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(
@@ -373,7 +373,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        result = strategy.position(ClientPositionId("P-123456"))
+        result = strategy.position(PositionId("P-123456"))
         # Assert
         self.assertIsNone(result)
 
@@ -392,15 +392,15 @@ class TradingStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id = ClientPositionId('P-1')
+        strategy.submit_order(order)
 
-        strategy.submit_order(order, position_id)
+        expected_position_id = PositionId("B-USD/JPY-1")
 
         # Act
-        result = strategy.position(position_id)
+        result = strategy.position(expected_position_id)
 
         # Assert
-        self.assertTrue(strategy.position_exists(position_id))
+        self.assertTrue(strategy.position_exists(expected_position_id))
         self.assertTrue(type(result) == Position)
 
     def test_start_strategy(self):
@@ -697,10 +697,8 @@ class TradingStrategyTests(unittest.TestCase):
             Quantity(100000),
             Price(90.005, 3))
 
-        position_id = ClientPositionId('P-1')
-
-        strategy.submit_order(order1, position_id)
-        strategy.submit_order(order2, position_id)
+        strategy.submit_order(order1)
+        strategy.submit_order(order2)
 
         # Act
         strategy.cancel_all_orders()
@@ -762,7 +760,7 @@ class TradingStrategyTests(unittest.TestCase):
             stop_loss=Price(90.000, 3),
             take_profit=Price(91.000, 3))
 
-        position_id = ClientPositionId('P-1')
+        position_id = PositionId('P-1')
 
         strategy.submit_bracket_order(bracket_order, position_id)
 
@@ -791,19 +789,18 @@ class TradingStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id = ClientPositionId('P-1')
-
-        strategy.submit_order(order, position_id)
+        strategy.submit_order(order)
 
         # Act
-        strategy.flatten_position(position_id)
+        expected_generated_id = PositionId("B-USD/JPY-1")
+        strategy.flatten_position(expected_generated_id)
 
         # Assert
         self.assertEqual(order, strategy.orders()[order.cl_ord_id])
         self.assertEqual(OrderState.FILLED, strategy.orders()[order.cl_ord_id].state())
-        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id].side)
-        self.assertTrue(strategy.positions()[position_id].is_closed())
-        self.assertTrue(position_id in strategy.positions_closed())
+        self.assertEqual(PositionSide.FLAT, strategy.positions()[expected_generated_id].side)
+        self.assertTrue(strategy.positions()[expected_generated_id].is_closed())
+        self.assertTrue(expected_generated_id in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
 
     def test_flatten_all_positions(self):
@@ -826,11 +823,11 @@ class TradingStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id1 = ClientPositionId('P-1')
-        position_id2 = ClientPositionId('P-2')
+        strategy.submit_order(order1)
+        strategy.submit_order(order2)
 
-        strategy.submit_order(order1, position_id1)
-        strategy.submit_order(order2, position_id2)
+        expected_position_id1 = PositionId("B-USD/JPY-1")
+        expected_position_id2 = PositionId("B-USD/JPY-1")
 
         # Act
         strategy.flatten_all_positions()
@@ -840,12 +837,12 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(order2, strategy.orders()[order2.cl_ord_id])
         self.assertEqual(OrderState.FILLED, strategy.orders()[order1.cl_ord_id].state())
         self.assertEqual(OrderState.FILLED, strategy.orders()[order2.cl_ord_id].state())
-        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id1].side)
-        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id2].side)
-        self.assertTrue(strategy.positions()[position_id1].is_closed())
-        self.assertTrue(strategy.positions()[position_id2].is_closed())
-        self.assertTrue(position_id1 in strategy.positions_closed())
-        self.assertTrue(position_id2 in strategy.positions_closed())
+        self.assertEqual(PositionSide.FLAT, strategy.positions()[expected_position_id1].side)
+        self.assertEqual(PositionSide.FLAT, strategy.positions()[expected_position_id2].side)
+        self.assertTrue(strategy.positions()[expected_position_id1].is_closed())
+        self.assertTrue(strategy.positions()[expected_position_id2].is_closed())
+        self.assertTrue(expected_position_id1 in strategy.positions_closed())
+        self.assertTrue(expected_position_id2 in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
 
     def test_update_indicators(self):
@@ -888,17 +885,17 @@ class TradingStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy.submit_order(order, ClientPositionId('P-1'))
+        strategy.submit_order(order)
 
         # Act
         # Assert
         self.assertTrue(ClientOrderId("O-19700101-000000-000-001-1") in strategy.orders())
-        self.assertTrue(ClientPositionId('P-1') in strategy.positions())
+        self.assertTrue(PositionId("B-USD/JPY-1") in strategy.positions())
         self.assertEqual(0, len(strategy.orders_working()))
         self.assertEqual(order, strategy.orders_completed()[order.cl_ord_id])
         self.assertEqual(0, len(strategy.positions_closed()))
         self.assertTrue(ClientOrderId("O-19700101-000000-000-001-1") in strategy.orders_completed())
-        self.assertTrue(ClientPositionId('P-1') in strategy.positions_open())
+        self.assertTrue(PositionId("B-USD/JPY-1") in strategy.positions_open())
         self.assertFalse(strategy.is_flat())
 
     def test_can_track_orders_for_a_closing_position(self):
@@ -912,7 +909,6 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger)
         self.exec_engine.register_strategy(strategy)
 
-        position1 = ClientPositionId("P-123456")
         order1 = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -923,8 +919,8 @@ class TradingStrategyTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        strategy.submit_order(order1, position1)
-        strategy.submit_order(order2, position1)
+        strategy.submit_order(order1)
+        strategy.submit_order(order2, PositionId("B-USD/JPY-1"))  # Position identifier generated by exchange
 
         # Act
         # Assert
@@ -932,6 +928,6 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(order1, strategy.orders_completed()[order1.cl_ord_id])
         self.assertEqual(order2, strategy.orders_completed()[order2.cl_ord_id])
         self.assertEqual(1, len(strategy.positions_closed()))
-        self.assertFalse(ClientPositionId("P-123456") in strategy.positions_open())
-        self.assertTrue(ClientPositionId("P-123456") in strategy.positions_closed())
+        self.assertFalse(PositionId("B-USD/JPY-1") in strategy.positions_open())
+        self.assertTrue(PositionId("B-USD/JPY-1") in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())

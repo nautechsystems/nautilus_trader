@@ -925,7 +925,7 @@ cdef class BracketOrder:
     low-side sell stop order. A SELL order is bracketed by a high-side buy stop
     order and a low side buy limit order.
     Once the 'parent' entry order is triggered the 'child' OCO orders being a
-    STOP and optional LIMIT automatically become working on the brokers side.
+    STOP and optional LIMIT automatically become working on the broker/exchange side.
     """
     def __init__(
             self,

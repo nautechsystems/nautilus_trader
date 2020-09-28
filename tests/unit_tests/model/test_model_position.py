@@ -28,7 +28,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
@@ -63,7 +62,7 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        fill = TestStubs.event_order_filled(order, Price(1.00001, 5))
+        fill = TestStubs.event_order_filled(order, PositionId("P-123456"), Price(1.00001, 5))
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -74,7 +73,7 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position = Position(ClientPositionId("P-123456"), fill)
+        position = Position(fill)
 
         # Assert
         self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), position.from_order)
@@ -89,7 +88,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual([order.cl_ord_id], position.get_order_ids())
         self.assertEqual([ExecutionId("E-19700101-000000-001-001-1")], position.get_execution_ids())
         self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
-        self.assertEqual(PositionId("O-19700101-000000-001-001-1"), position.id)
+        self.assertEqual(PositionId("P-123456"), position.id)
         self.assertTrue(position.is_long())
         self.assertFalse(position.is_short())
         self.assertFalse(position.is_closed())
@@ -110,7 +109,7 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        fill = TestStubs.event_order_filled(order, Price(1.00001, 5))
+        fill = TestStubs.event_order_filled(order, PositionId("P-123456"), Price(1.00001, 5))
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -121,7 +120,7 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position = Position(ClientPositionId("P-123456"), fill)
+        position = Position(fill)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
@@ -132,7 +131,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(1, position.event_count())
         self.assertEqual([ExecutionId("E-19700101-000000-001-001-1")], position.get_execution_ids())
         self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
-        self.assertEqual(PositionId("O-19700101-000000-001-001-1"), position.id)
+        self.assertEqual(PositionId("P-123456"), position.id)
         self.assertFalse(position.is_long())
         self.assertTrue(position.is_short())
         self.assertFalse(position.is_closed())
@@ -155,6 +154,7 @@ class PositionTests(unittest.TestCase):
 
         fill = TestStubs.event_order_filled(
             order,
+            position_id=PositionId("P-123456"),
             fill_price=Price(1.00001, 5),
             filled_qty=Quantity(50000),
             leaves_qty=Quantity(50000),
@@ -168,7 +168,7 @@ class PositionTests(unittest.TestCase):
             Quantity(1),
             UNIX_EPOCH)
 
-        position = Position(ClientPositionId("P-123456"), fill)
+        position = Position(fill)
 
         # Act
         # Assert
@@ -200,6 +200,7 @@ class PositionTests(unittest.TestCase):
 
         fill1 = TestStubs.event_order_filled(
             order,
+            position_id=PositionId("P-123456"),
             fill_price=Price(1.00001, 5),
             filled_qty=Quantity(50000),
             leaves_qty=Quantity(50000),
@@ -207,12 +208,13 @@ class PositionTests(unittest.TestCase):
 
         fill2 = TestStubs.event_order_filled(
             order,
+            position_id=PositionId("P-123456"),
             fill_price=Price(1.00002, 5),
             filled_qty=Quantity(100000),
             leaves_qty=Quantity(0),
         )
 
-        position = Position(ClientPositionId("P-123456"), fill1)
+        position = Position(fill1)
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -251,9 +253,13 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        fill1 = TestStubs.event_order_filled(order, fill_price=Price(1.00001, 5))
+        fill1 = TestStubs.event_order_filled(
+            order,
+            position_id=PositionId("P-123456"),
+            fill_price=Price(1.00001, 5),
+        )
 
-        position = Position(ClientPositionId("P-123456"), fill1)
+        position = Position(fill1)
 
         fill2 = OrderFilled(
             self.account_id,
@@ -321,10 +327,11 @@ class PositionTests(unittest.TestCase):
 
         fill1 = TestStubs.event_order_filled(order1)
 
-        position = Position(ClientPositionId("P-123456"), fill1)
+        position = Position(fill1)
 
         fill2 = TestStubs.event_order_filled(
             order2,
+            position_id=PositionId("P-123456"),
             fill_price=Price(1.00001, 5),
             filled_qty=Quantity(50000),
             leaves_qty=Quantity(50000),
@@ -332,6 +339,7 @@ class PositionTests(unittest.TestCase):
 
         fill3 = TestStubs.event_order_filled(
             order2,
+            position_id=PositionId("P-123456"),
             fill_price=Price(1.00003, 5),
             filled_qty=Quantity(100000),
             leaves_qty=Quantity(50000),
@@ -385,9 +393,13 @@ class PositionTests(unittest.TestCase):
 
         fill1 = TestStubs.event_order_filled(order1)
 
-        position = Position(ClientPositionId("P-123456"), fill1)
+        position = Position(fill1)
 
-        fill2 = TestStubs.event_order_filled(order2, fill_price=Price(1.00000, 5))
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            position_id=PositionId("P-123456"),
+            fill_price=Price(1.00000, 5),
+        )
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -395,7 +407,8 @@ class PositionTests(unittest.TestCase):
             Price(1.00048, 5),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         position.apply(fill2)
@@ -412,7 +425,7 @@ class PositionTests(unittest.TestCase):
             ExecutionId("E-19700101-000000-001-001-2")
         ],
             position.get_execution_ids(),
-        ),
+        )
         self.assertEqual(UNIX_EPOCH, position.closed_time)
         self.assertEqual(1.0, position.avg_close_price)
         self.assertFalse(position.is_long())
@@ -433,21 +446,24 @@ class PositionTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         order2 = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         order3 = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
-            Quantity(200000))
+            Quantity(200000),
+        )
 
-        fill1 = TestStubs.event_order_filled(order1)
-        fill2 = TestStubs.event_order_filled(order2, fill_price=Price(1.00001, 5))
-        fill3 = TestStubs.event_order_filled(order3, fill_price=Price(1.00010, 5))
+        fill1 = TestStubs.event_order_filled(order1, PositionId("P-123456"))
+        fill2 = TestStubs.event_order_filled(order2, PositionId("P-123456"), fill_price=Price(1.00001, 5))
+        fill3 = TestStubs.event_order_filled(order3, PositionId("P-123456"), fill_price=Price(1.00010, 5))
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -455,10 +471,11 @@ class PositionTests(unittest.TestCase):
             Price(1.00048, 5),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
-        position = Position(ClientPositionId("P-123456"), fill1)
+        position = Position(fill1)
         position.apply(fill2)
         position.apply(fill3)
 

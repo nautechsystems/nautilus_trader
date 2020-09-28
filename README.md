@@ -42,7 +42,7 @@ Note that initial compilation may take several minutes due to the quantity of ex
 
 - **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport with MsgPack serialization.
 - **Reliable:** Redis provides performant state persistence for the live `ExecutionEngine`.
-- **Flexible:** Any FIX or REST broker API can be integrated into the platform, with no changes to your strategy scripts.
+- **Flexible:** Any FIX or REST API can be integrated into the platform, with no changes to your strategy scripts.
 - **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).

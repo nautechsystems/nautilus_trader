@@ -26,7 +26,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef readonly str key_strategies
     cdef readonly str key_index_order_position      # HASH
     cdef readonly str key_index_order_strategy      # HASH
-    cdef readonly str key_index_broker_position     # HASH
     cdef readonly str key_index_position_strategy   # HASH
     cdef readonly str key_index_position_orders     # SET
     cdef readonly str key_index_strategy_orders     # SET

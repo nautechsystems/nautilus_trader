@@ -60,7 +60,6 @@ from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -316,7 +315,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[CLIENT_POSITION_ID] = command.cl_pos_id.value
+            package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitBracketOrder):
             package[TRADER_ID] = command.trader_id.value
@@ -369,7 +368,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
-                ClientPositionId(unpacked[CLIENT_POSITION_ID].decode(UTF8)),
+                PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp,

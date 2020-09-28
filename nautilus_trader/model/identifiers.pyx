@@ -20,8 +20,6 @@ from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
 
 
-cdef str _NONE_ID = 'NoneId'
-
 
 cdef class Symbol(Identifier):
     """
@@ -151,30 +149,6 @@ cdef class Exchange(Venue):
         super().__init__(name.upper())
 
 
-cdef class Brokerage(Identifier):
-    """
-    Represents a brokerage. The identifier value must be unique at the fund
-    level.
-    """
-
-    def __init__(self, str name):
-        """
-        Initialize a new instance of the Brokerage class.
-
-        Parameters
-        ----------
-        name : str
-            The brokerage name identifier value.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-
-        """
-        super().__init__(name.upper())
-
-
 cdef class IdTag(Identifier):
     """
     Represents an identifier tag.
@@ -200,11 +174,11 @@ cdef class IdTag(Identifier):
 
 cdef class TraderId(Identifier):
     """
-    Represents a valid trader identifier. The name and order_id_tag combination
+    Represents a valid trader identifier. The name and identifier_tag combination
     identifier value must be unique at the fund level.
     """
 
-    def __init__(self, str name, str order_id_tag):
+    def __init__(self, str name, str identifier_tag):
         """
         Initialize a new instance of the TraderId class.
 
@@ -212,23 +186,23 @@ cdef class TraderId(Identifier):
         ----------
         name : str
             The trader name identifier value.
-        order_id_tag : str
-            The trader order identifier tag value.
+        identifier_tag : str
+            The trader identifier tag value.
 
         Raises
         ------
         ValueError
             If name is not a valid string.
         ValueError
-            If order_id_tag is not a valid string.
+            If identifier_tag is not a valid string.
 
         """
         Condition.valid_string(name, "name")
-        Condition.valid_string(order_id_tag, "order_id_tag")
-        super().__init__(f"{name}-{order_id_tag}")
+        Condition.valid_string(identifier_tag, "identifier_tag")
+        super().__init__(f"{name}-{identifier_tag}")
 
         self.name = name
-        self.order_id_tag = IdTag(order_id_tag)
+        self.identifier_tag = IdTag(identifier_tag)
 
     @staticmethod
     cdef TraderId from_string(str value):
@@ -255,7 +229,7 @@ cdef class TraderId(Identifier):
 
         cdef tuple partitioned = value.partition('-')
 
-        return TraderId(name=partitioned[0], order_id_tag=partitioned[2])
+        return TraderId(name=partitioned[0], identifier_tag=partitioned[2])
 
     @staticmethod
     def py_from_string(value: str) -> TraderId:
@@ -283,11 +257,11 @@ cdef class TraderId(Identifier):
 
 cdef class StrategyId(Identifier):
     """
-    Represents a valid strategy identifier. The name and order_id_tag combination
+    Represents a valid strategy identifier. The name and identifier_tag combination
     must be unique at the trader level.
     """
 
-    def __init__(self, str name, str order_id_tag):
+    def __init__(self, str name, str identifier_tag):
         """
         Initialize a new instance of the StrategyId class.
 
@@ -295,23 +269,23 @@ cdef class StrategyId(Identifier):
         ----------
         name : str
             The strategy name identifier value.
-        order_id_tag : str
-            The strategy order identifier tag value.
+        identifier_tag : str
+            The strategy identifier tag value.
 
         Raises
         ------
         ValueError
             If name is not a valid string.
         ValueError
-            If order_id_tag is not a valid string.
+            If identifier_tag is not a valid string.
 
         """
         Condition.valid_string(name, "name")
-        Condition.valid_string(order_id_tag, "order_id_tag")
-        super().__init__(f"{name}-{order_id_tag}")
+        Condition.valid_string(identifier_tag, "identifier_tag")
+        super().__init__(f"{name}-{identifier_tag}")
 
         self.name = name
-        self.order_id_tag = IdTag(order_id_tag)
+        self.identifier_tag = IdTag(identifier_tag)
 
     @staticmethod
     cdef StrategyId from_string(str value):
@@ -337,7 +311,7 @@ cdef class StrategyId(Identifier):
         Condition.valid_string(value, "value")
 
         cdef tuple partitioned = value.partition('-')
-        return StrategyId(name=partitioned[0], order_id_tag=partitioned[2])
+        return StrategyId(name=partitioned[0], identifier_tag=partitioned[2])
 
     @staticmethod
     def py_from_string(value: str) -> StrategyId:
@@ -365,14 +339,14 @@ cdef class StrategyId(Identifier):
 
 cdef class AccountId(Identifier):
     """
-    Represents a valid account identifier. The broker and account_number
+    Represents a valid account identifier. The issuer and identifier
     combination must be unique at the fund level.
     """
 
     def __init__(
             self,
-            str broker,
-            str account_number,
+            str issuer,
+            str identifier,
             AccountType account_type,
     ):
         """
@@ -380,27 +354,27 @@ cdef class AccountId(Identifier):
 
         Parameters
         ----------
-        broker : str
-            The broker identifier value.
-        account_number : str
-            The account number identifier value.
+        issuer : str
+            The issuer identifier value (broker/exchange).
+        identifier : str
+            The account identifier value.
         account_type : AccountType
             The account type.
 
         Raises
         ------
         ValueError
-            If broker is not a valid string.
+            If issuer is not a valid string.
         ValueError
             If account_number is not a valid string.
 
         """
-        Condition.valid_string(broker, "broker")
-        Condition.valid_string(account_number, "account_number")
-        super().__init__(f"{broker}-{account_number}-{account_type_to_string(account_type)}")
+        Condition.valid_string(issuer, "issuer")
+        Condition.valid_string(identifier, "identifier")
+        super().__init__(f"{issuer}-{identifier}-{account_type_to_string(account_type)}")
 
-        self.broker = Brokerage(broker)
-        self.account_number = AccountNumber(account_number)
+        self.issuer = issuer
+        self.identifier = Identifier(identifier)
         self.account_type = account_type
 
     @staticmethod
@@ -425,8 +399,8 @@ cdef class AccountId(Identifier):
 
         cdef list split = value.split('-', maxsplit=2)
         return AccountId(
-            broker=split[0],
-            account_number=split[1],
+            issuer=split[0],
+            identifier=split[1],
             account_type=account_type_from_string(split[2]))
 
     @staticmethod
@@ -546,54 +520,7 @@ cdef class OrderId(Identifier):
         super().__init__(value)
 
 
-cdef class ClientPositionId(Identifier):
-    """
-    Represents a valid client position identifier. The identifier value must be unique
-    at the fund level.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the ClientPositionId class.
-
-        Parameters
-        ----------
-        value : str
-            The client position identifier value.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string, or does not start with 'P-'.
-
-        """
-        if value != _NONE_ID:
-            Condition.true(value.startswith("P-"), f" value must begin with \"P-\", was {value}.")
-        super().__init__(value)
-
-    @staticmethod
-    cdef ClientPositionId none():
-        """
-        Returns a client position identifier with a `None` value.
-
-        Returns
-        -------
-        ClientPositionId
-
-        """
-        return ClientPositionId(_NONE_ID)
-
-    cdef bint is_none_value(self):
-        """
-        Return a value indicating whether the identifier value is 'None'.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.value == _NONE_ID
-
+cdef PositionId _NULL_POSITION_ID = PositionId('P-NULL')
 
 cdef class PositionId(Identifier):
     """
@@ -614,31 +541,61 @@ cdef class PositionId(Identifier):
         ValueError
             If value is not a valid string.
 
+        References
+        ----------
+        Null Object Pattern
+        https://deviq.com/null-object-pattern/
+
         """
         super().__init__(value)
 
     @staticmethod
-    cdef PositionId none():
+    cdef PositionId null():
         """
-        Returns a position identifier with a `None` value.
+        Returns a position identifier with a `P-NULL` value.
 
         Returns
         -------
         PositionId
 
         """
-        return PositionId(_NONE_ID)
+        return _NULL_POSITION_ID
 
-    cdef bint is_none_value(self):
+    @staticmethod
+    def py_null() -> PositionId:
         """
-        Return a value indicating whether the identifier value is 'None'.
+        Returns a position identifier with a `P-NULL` value.
+
+        Returns
+        -------
+        PositionId
+
+        """
+        return _NULL_POSITION_ID
+
+    cdef bint is_null(self):
+        """
+        Return a value indicating whether this position identifier is equal to
+        the null identifier 'P-NULL'.
 
         Returns
         -------
         bool
 
         """
-        return self.value == _NONE_ID
+        return self.equals(_NULL_POSITION_ID)
+
+    cdef bint not_null(self):
+        """
+        Return a value indicating whether this position identifier is not equal
+        to the null identifier 'P-NULL'.
+
+        Returns
+        -------
+        bool
+
+        """
+        return not self.equals(_NULL_POSITION_ID)
 
 
 cdef class ExecutionId(Identifier):

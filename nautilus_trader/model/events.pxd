@@ -39,8 +39,6 @@ from nautilus_trader.model.position cimport Position
 
 cdef class AccountState(Event):
     cdef readonly AccountId account_id
-    cdef readonly Brokerage broker
-    cdef readonly AccountNumber number
     cdef readonly Currency currency
     cdef readonly Money cash_balance
     cdef readonly Money cash_start_day
@@ -146,11 +144,13 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly datetime execution_time
     cdef readonly bint is_partial_fill
 
+    cdef void set_position_id(self, PositionId position_id) except *
+
 
 cdef class PositionEvent(Event):
     cdef readonly Position position
+    cdef readonly OrderFilled order_fill
     cdef readonly StrategyId strategy_id
-    cdef readonly OrderEvent order_fill
 
 
 cdef class PositionOpened(PositionEvent):

@@ -43,7 +43,7 @@ cdef class IdTag(Identifier):
 
 cdef class TraderId(Identifier):
     cdef readonly str name
-    cdef readonly IdTag order_id_tag
+    cdef readonly IdTag identifier_tag
 
     @staticmethod
     cdef TraderId from_string(str value)
@@ -51,15 +51,15 @@ cdef class TraderId(Identifier):
 
 cdef class StrategyId(Identifier):
     cdef readonly str name
-    cdef readonly IdTag order_id_tag
+    cdef readonly IdTag identifier_tag
 
     @staticmethod
     cdef StrategyId from_string(str value)
 
 
 cdef class AccountId(Identifier):
-    cdef readonly Brokerage broker
-    cdef readonly AccountNumber account_number
+    cdef readonly str issuer
+    cdef readonly Identifier identifier
     cdef readonly AccountType account_type
 
     @staticmethod
@@ -82,16 +82,12 @@ cdef class OrderId(Identifier):
     pass
 
 
-cdef class ClientPositionId(Identifier):
-    @staticmethod
-    cdef ClientPositionId none()
-    cdef bint is_none_value(self)
-
-
 cdef class PositionId(Identifier):
+
     @staticmethod
-    cdef PositionId none()
-    cdef bint is_none_value(self)
+    cdef PositionId null()
+    cdef bint is_null(self)
+    cdef bint not_null(self)
 
 
 cdef class ExecutionId(Identifier):

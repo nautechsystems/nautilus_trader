@@ -15,6 +15,7 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -31,9 +32,12 @@ from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
+from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
@@ -46,9 +50,8 @@ cdef class ExecutionEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef ExecutionClient _exec_client
+    cdef PositionIdGenerator _pos_id_generator
     cdef dict _registered_strategies
-    cdef dict _symbol_cl_pos_id_counts
-    cdef dict _symbol_cl_pos_ids
 
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
@@ -88,14 +91,15 @@ cdef class ExecutionEngine:
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFilled event) except *
-    cdef inline ClientPositionId _find_cl_pos_id(self, OrderFilled event)
-    cdef inline ClientPositionId _make_cl_pos_id(self, OrderFilled event)
-    cdef inline Position _find_position(self, ClientPositionId cl_pos_id, OrderFilled event)
+    cdef void _fill_pos_id_none(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef void _fill_pos_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef void _open_position(self, OrderFilled event, StrategyId strategy_id) except *
+    cdef void _update_position(self, OrderFilled event, StrategyId strategy_id) except *
     cdef void _handle_position_event(self, PositionEvent event) except *
     cdef void _handle_account_event(self, AccountState event) except *
-    cdef void _generate_position_opened_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *
-    cdef void _generate_position_modified_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *
-    cdef void _generate_position_closed_event(self, Position position, StrategyId strategy_id, OrderEvent event) except *
+    cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
+    cdef PositionModified _pos_modified_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
+    cdef PositionClosed _pos_closed_event(self, Position position,  OrderFilled fill, StrategyId strategy_id)
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
     cdef void _reset(self) except *
 
