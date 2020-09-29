@@ -27,6 +27,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
@@ -52,6 +53,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -127,7 +129,7 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- REGISTRATIONS ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *:
         """
@@ -187,6 +189,19 @@ cdef class ExecutionEngine:
         del self._registered_strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")
 
+    cpdef list registered_strategies(self):
+        """
+        Return a list of strategy_ids registered with the execution engine.
+
+        Returns
+        -------
+        List[StrategyId]
+
+        """
+        return list(self._registered_strategies.keys())
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void execute(self, Command command) except *:
         """
         Execute the given command.
@@ -233,18 +248,59 @@ cdef class ExecutionEngine:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef list registered_strategies(self):
+    cdef inline Decimal64 _sum_net_position(self, list positions):
+        cdef Decimal64 net_quantity = Decimal64()
+
+        cdef Position position
+        for position in positions:
+            if position.is_long():
+                net_quantity += position.quantity
+            elif position.is_short():
+                net_quantity -= position.quantity
+
+        return net_quantity
+
+    cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
         """
-        Return a list of strategy_ids registered with the execution engine.
+        Return a value indicating whether the execution engine is net long a
+        given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
 
         Returns
         -------
-        List[StrategyId]
+        bool
 
         """
-        return list(self._registered_strategies.keys())
+        cdef dict positions = self.database.get_positions_open(symbol, strategy_id)
+        return self._sum_net_position(positions.values()) > 0
 
-    cpdef bint is_flat(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=None) except *:
+        """
+        Return a value indicating whether the execution engine is net short a
+        given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        bool
+
+        """
+        cdef dict positions = self.database.get_positions_open(symbol, strategy_id)
+        return self._sum_net_position(positions.values()) < 0
+
+    cpdef bint is_flat(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
         Return a value indicating whether the execution engine is flat.
 

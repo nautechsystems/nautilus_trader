@@ -672,7 +672,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(OrderState.WORKING, strategy.orders()[order.cl_ord_id].state())
         self.assertEqual(Quantity(110000), strategy.orders()[order.cl_ord_id].quantity)
         self.assertEqual(Price(90.002, 3), strategy.orders()[order.cl_ord_id].price)
-        self.assertTrue(strategy.is_flat())
+        self.assertTrue(strategy.is_completely_flat())
         self.assertTrue(strategy.order_exists(order.cl_ord_id))
         self.assertTrue(strategy.is_order_working(order.cl_ord_id))
         self.assertFalse(strategy.is_order_completed(order.cl_ord_id))
@@ -803,7 +803,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(PositionSide.FLAT, strategy.positions()[expected_generated_id].side)
         self.assertTrue(strategy.positions()[expected_generated_id].is_closed())
         self.assertTrue(expected_generated_id in strategy.positions_closed())
-        self.assertTrue(strategy.is_flat())
+        self.assertTrue(strategy.is_completely_flat())
 
     def test_flatten_all_positions(self):
         # Arrange
@@ -845,7 +845,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertTrue(strategy.positions()[expected_position_id2].is_closed())
         self.assertTrue(expected_position_id1 in strategy.positions_closed())
         self.assertTrue(expected_position_id2 in strategy.positions_closed())
-        self.assertTrue(strategy.is_flat())
+        self.assertTrue(strategy.is_completely_flat())
 
     def test_update_indicators(self):
         # Arrange
@@ -898,7 +898,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(0, len(strategy.positions_closed()))
         self.assertTrue(ClientOrderId("O-19700101-000000-000-001-1") in strategy.orders_completed())
         self.assertTrue(PositionId("B-USD/JPY-1") in strategy.positions_open())
-        self.assertFalse(strategy.is_flat())
+        self.assertFalse(strategy.is_completely_flat())
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
@@ -932,4 +932,4 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(1, len(strategy.positions_closed()))
         self.assertFalse(PositionId("B-USD/JPY-1") in strategy.positions_open())
         self.assertTrue(PositionId("B-USD/JPY-1") in strategy.positions_closed())
-        self.assertTrue(strategy.is_flat())
+        self.assertTrue(strategy.is_completely_flat())

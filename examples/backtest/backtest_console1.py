@@ -18,7 +18,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from examples.strategies.ema_cross import EMACross
+from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -52,12 +52,9 @@ if __name__ == "__main__":
 
     strategies = [EMACross(
         symbol=USDJPY.symbol,
-        bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
-        risk_bp=10,
+        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
         fast_ema=10,
         slow_ema=20,
-        atr_period=20,
-        sl_atr_multiple=2.0,
     )]
 
     config = BacktestConfig(
