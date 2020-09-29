@@ -37,9 +37,10 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport AccountId, Symbol
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position

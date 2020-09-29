@@ -119,7 +119,7 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef void index_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -127,7 +127,7 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+    cpdef void add_strategy(self, TradingStrategy strategy) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -153,6 +153,90 @@ cdef class ExecutionDatabase:
 
     cpdef void flush(self) except *:
         raise NotImplementedError(f"method must be implemented in the subclass")
+
+    cdef void _add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
+        self._index_orders.add(order.cl_ord_id)
+        self._index_order_strategy[order.cl_ord_id] = strategy_id
+
+        # Index: Symbol -> Set[ClientOrderId]
+        if order.symbol not in self._index_symbol_orders:
+            self._index_symbol_orders[order.symbol] = {order.cl_ord_id}
+        else:
+            self._index_symbol_orders[order.symbol].add(order.cl_ord_id)
+
+        # Index: StrategyId -> Set[ClientOrderId]
+        if strategy_id not in self._index_strategy_orders:
+            self._index_strategy_orders[strategy_id] = {order.cl_ord_id}
+        else:
+            self._index_strategy_orders[strategy_id].add(order.cl_ord_id)
+
+        cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
+        self._log.debug(f"Added Order(id={order.cl_ord_id.value}{position_id_str}).")
+
+        if position_id.is_null():
+            return  # Do not index the NULL id
+
+        self._add_position_id(position_id, order.cl_ord_id, strategy_id)
+
+    cdef void _add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        # Index: ClientOrderId -> PositionId
+        if cl_ord_id not in self._index_order_position:
+            self._index_order_position[cl_ord_id] = position_id
+        else:
+            if not position_id.equals(self._index_order_position[cl_ord_id]):
+                self._log.error(f"Order indexing invalid for {position_id}.")
+
+        # Index: PositionId -> StrategyId
+        if position_id not in self._index_position_strategy:
+            self._index_position_strategy[position_id] = strategy_id
+        else:
+            if not strategy_id.equals(self._index_position_strategy[position_id]):
+                self._log.error(f"Strategy indexing invalid for {position_id}.")
+
+        # Index: PositionId -> Set[ClientOrderId]
+        if position_id not in self._index_position_orders:
+            self._index_position_orders[position_id] = {cl_ord_id}
+        else:
+            self._index_position_orders[position_id].add(cl_ord_id)
+
+        # Index: StrategyId -> Set[PositionId]
+        if strategy_id not in self._index_strategy_positions:
+            self._index_strategy_positions[strategy_id] = {position_id}
+        else:
+            self._index_strategy_positions[strategy_id].add(position_id)
+
+        self._log.debug(f"Indexed {position_id.to_string(with_class=True)}, "
+                        f"cl_ord_id={cl_ord_id}, "
+                        f"strategy_id={strategy_id}).")
+
+    cdef void _add_position(self, Position position, StrategyId strategy_id) except *:
+        self._index_positions.add(position.id)
+        self._index_positions_open.add(position.id)
+        self._add_position_id(position.id, position.from_order, strategy_id)
+
+        # Index: Symbol -> Set[PositionId]
+        if position.symbol not in self._index_symbol_positions:
+            self._index_symbol_positions[position.symbol] = {position.id}
+        else:
+            self._index_symbol_positions[position.symbol].add(position.id)
+
+        self._log.debug(f"Added Position(id={position.id.value}, strategy_id={strategy_id}).")
+
+    cdef void _update_order(self, Order order) except *:
+        if order.is_working():
+            self._index_orders_working.add(order.cl_ord_id)
+            self._index_orders_completed.discard(order.cl_ord_id)
+        elif order.is_completed():
+            self._index_orders_completed.add(order.cl_ord_id)
+            self._index_orders_working.discard(order.cl_ord_id)
+
+    cdef void _update_position(self, Position position) except *:
+        if position.is_closed():
+            self._index_positions_closed.add(position.id)
+            self._index_positions_open.discard(position.id)
+
+    cdef void _update_strategy(self, TradingStrategy strategy) except *:
+        self._index_strategies.add(strategy.id)
 
     cdef void _reset(self) except *:
         # Reset the class to its initial state
@@ -219,17 +303,6 @@ cdef class ExecutionDatabase:
 
         return self._cached_accounts.get(account_id)
 
-    cpdef set get_strategy_ids(self):
-        """
-        Return all strategy_ids.
-
-        Returns
-        -------
-        Set[StrategyId]
-
-        """
-        return self._index_strategies.copy()
-
     cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all client order identifiers.
@@ -246,6 +319,9 @@ cdef class ExecutionDatabase:
         Set[ClientOrderId]
 
         """
+        if symbol is None and strategy_id is None:
+            return self._index_orders
+
         cdef set query = set()
 
         # Build query set
@@ -254,10 +330,7 @@ cdef class ExecutionDatabase:
         if strategy_id:
             query = query.union(self._index_strategy_orders.get(strategy_id, set()))
 
-        if len(query) == 0:
-            return self._index_orders
-        else:
-            return self._index_orders.intersection(query)
+        return self._index_orders.intersection(query)
 
     cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -275,6 +348,9 @@ cdef class ExecutionDatabase:
         Set[ClientOrderId]
 
         """
+        if symbol is None and strategy_id is None:
+            return self._index_orders_working
+
         cdef set query = set()
 
         # Build query set
@@ -283,10 +359,7 @@ cdef class ExecutionDatabase:
         if strategy_id:
             query = query.union(self._index_strategy_orders.get(strategy_id, set()))
 
-        if len(query) == 0:
-            return self._index_orders_working
-        else:
-            return self._index_orders_working.intersection(query)
+        return self._index_orders_working.intersection(query)
 
     cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -304,6 +377,9 @@ cdef class ExecutionDatabase:
         Set[ClientOrderId]
 
         """
+        if symbol is None and strategy_id is None:
+            return self._index_orders_completed
+
         cdef set query = set()
 
         # Build query set
@@ -312,10 +388,7 @@ cdef class ExecutionDatabase:
         if strategy_id:
             query = query.union(self._index_strategy_orders.get(strategy_id, set()))
 
-        if len(query) == 0:
-            return self._index_orders_completed
-        else:
-            return self._index_orders_completed.intersection(query)
+        return self._index_orders_completed.intersection(query)
 
     cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -333,6 +406,9 @@ cdef class ExecutionDatabase:
         Set[PositionId]
 
         """
+        if symbol is None and strategy_id is None:
+            return self._index_positions
+
         cdef set query = set()
 
         # Build query set
@@ -341,10 +417,7 @@ cdef class ExecutionDatabase:
         if strategy_id:
             query = query.union(self._index_strategy_positions.get(strategy_id, set()))
 
-        if len(query) == 0:
-            return self._index_positions
-        else:
-            return self._index_positions.intersection(query)
+        return self._index_positions.intersection(query)
 
     cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -362,6 +435,9 @@ cdef class ExecutionDatabase:
         Set[PositionId]
 
         """
+        if symbol is None and strategy_id is None:
+            return self._index_positions_open
+
         cdef set query = set()
 
         # Build query set
@@ -370,10 +446,7 @@ cdef class ExecutionDatabase:
         if strategy_id:
             query = query.union(self._index_strategy_positions.get(strategy_id, set()))
 
-        if len(query) == 0:
-            return self._index_positions_open
-        else:
-            return self._index_positions_open.intersection(query)
+        return self._index_positions_open.intersection(query)
 
     cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -391,6 +464,9 @@ cdef class ExecutionDatabase:
         Set[PositionId]
 
         """
+        if symbol is None and strategy_id is None:
+            return self._index_positions_closed
+
         cdef set query = set()
 
         # Build query set
@@ -399,46 +475,7 @@ cdef class ExecutionDatabase:
         if strategy_id:
             query = query.union(self._index_strategy_positions.get(strategy_id, set()))
 
-        if len(query) == 0:
-            return self._index_positions_closed
-        else:
-            return self._index_positions_closed.intersection(query)
-
-    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
-        """
-        Return the strategy identifier associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier associated with the strategy.
-
-        Returns
-        -------
-        StrategyId or None
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return self._index_order_strategy.get(cl_ord_id)
-
-    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
-        """
-        Return the strategy identifier associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier associated with the strategy.
-
-        Returns
-        -------
-        StrategyId or None
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._index_position_strategy.get(position_id)
+        return self._index_positions_closed.intersection(query)
 
     cpdef Order get_order(self, ClientOrderId cl_ord_id):
         """
@@ -469,11 +506,12 @@ cdef class ExecutionDatabase:
         Dict[OrderId, Order]
 
         """
-        cdef set order_ids = self.get_order_ids(symbol, strategy_id)
+        cdef set cl_ord_ids = self.get_order_ids(symbol, strategy_id)
 
+        cdef ClientOrderId cl_ord_id
         cdef dict orders
         try:
-            orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+            orders = {cl_ord_id: self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids}
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
 
@@ -495,11 +533,12 @@ cdef class ExecutionDatabase:
         Dict[OrderId, Order]
 
         """
-        cdef set order_ids = self.get_order_working_ids(symbol, strategy_id)
+        cdef set cl_ord_ids = self.get_order_working_ids(symbol, strategy_id)
 
+        cdef ClientOrderId cl_ord_id
         cdef dict orders_working
         try:
-            orders_working = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+            orders_working = {cl_ord_id: self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids}
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
@@ -521,11 +560,12 @@ cdef class ExecutionDatabase:
         Dict[OrderId, Order]
 
         """
-        cdef set order_ids = self.get_order_completed_ids(symbol, strategy_id)
+        cdef set cl_ord_ids = self.get_order_completed_ids(symbol, strategy_id)
 
+        cdef ClientOrderId cl_ord_id
         cdef dict orders_completed
         try:
-            orders_completed = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+            orders_completed = {cl_ord_id: self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids}
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
@@ -586,6 +626,7 @@ cdef class ExecutionDatabase:
         """
         cdef set position_ids = self.get_position_ids(symbol, strategy_id)
 
+        cdef PositionId position_id
         cdef dict positions
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
@@ -612,6 +653,7 @@ cdef class ExecutionDatabase:
         """
         cdef set position_ids = self.get_position_open_ids(symbol, strategy_id)
 
+        cdef PositionId position_id
         cdef dict positions
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
@@ -638,6 +680,7 @@ cdef class ExecutionDatabase:
         """
         cdef set position_ids = self.get_position_closed_ids(symbol, strategy_id)
 
+        cdef PositionId position_id
         cdef dict positions
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
@@ -905,6 +948,53 @@ cdef class ExecutionDatabase:
         """
         return len(self.get_position_closed_ids(symbol, strategy_id))
 
+    cpdef set get_strategy_ids(self):
+        """
+        Return all strategy_ids.
+
+        Returns
+        -------
+        Set[StrategyId]
+
+        """
+        return self._index_strategies.copy()
+
+    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
+        """
+        Return the strategy identifier associated with the given identifier (if found).
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier associated with the strategy.
+
+        Returns
+        -------
+        StrategyId or None
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        return self._index_order_strategy.get(cl_ord_id)
+
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+        """
+        Return the strategy identifier associated with the given identifier (if found).
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier associated with the strategy.
+
+        Returns
+        -------
+        StrategyId or None
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        return self._index_position_strategy.get(position_id)
+
 
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     """
@@ -926,6 +1016,34 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void load_accounts_cache(self) except *:
+        """
+        Clear the current accounts cache and load accounts from the database.
+        """
+        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        # Do nothing in memory
+
+    cpdef void load_orders_cache(self) except *:
+        """
+        Clear the current order cache and load orders from the database.
+        """
+        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        # Do nothing in memory
+
+    cpdef void load_positions_cache(self) except *:
+        """
+        Clear the current order cache and load orders from the database.
+        """
+        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        # Do nothing in memory
+
+    cpdef void load_index_cache(self) except *:
+        """
+        Clear the current index cache and load indexes from the database.
+        """
+        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        # Do nothing in memory
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
@@ -1052,30 +1170,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.cl_ord_id", "index_order_strategy")
 
         self._cached_orders[order.cl_ord_id] = order
+        self._add_order(order, position_id, strategy_id)  # Logs
 
-        self._index_orders.add(order.cl_ord_id)
-        self._index_order_strategy[order.cl_ord_id] = strategy_id
-
-        # Index: Symbol -> Set[ClientOrderId]
-        if order.symbol not in self._index_symbol_orders:
-            self._index_symbol_orders[order.symbol] = {order.cl_ord_id}
-        else:
-            self._index_symbol_orders[order.symbol].add(order.cl_ord_id)
-
-        # Index: StrategyId -> Set[ClientOrderId]
-        if strategy_id not in self._index_strategy_orders:
-            self._index_strategy_orders[strategy_id] = {order.cl_ord_id}
-        else:
-            self._index_strategy_orders[strategy_id].add(order.cl_ord_id)
-
-        self._log.debug(f"Added Order(cl_ord_id={order.cl_ord_id.value}).")
-
-        if position_id.is_null():
-            return  # Do not index the NULL id
-
-        self.index_position_id(position_id, order.cl_ord_id, strategy_id)
-
-    cdef void index_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """
         Index the given position identifier with the other given identifiers.
 
@@ -1093,31 +1190,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Condition.not_none(cl_ord_id, "cl_ord_id")
         Condition.not_none(strategy_id, "strategy_id")
 
-        # Index: ClientOrderId -> PositionId
-        if cl_ord_id not in self._index_order_position:
-            self._index_order_position[cl_ord_id] = position_id
-        else:
-            if not position_id.equals(self._index_order_position[cl_ord_id]):
-                self._log.error(f"Order indexing invalid for {position_id}.")
-
-        # Index: PositionId -> StrategyId
-        if position_id not in self._index_position_strategy:
-            self._index_position_strategy[position_id] = strategy_id
-        else:
-            if not strategy_id.equals(self._index_position_strategy[position_id]):
-                self._log.error(f"Strategy indexing invalid for {position_id}.")
-
-        # Index: PositionId -> Set[ClientOrderId]
-        if position_id not in self._index_position_orders:
-            self._index_position_orders[position_id] = {cl_ord_id}
-        else:
-            self._index_position_orders[position_id].add(cl_ord_id)
-
-        # Index: StrategyId -> Set[PositionId]
-        if strategy_id not in self._index_strategy_positions:
-            self._index_strategy_positions[strategy_id] = {position_id}
-        else:
-            self._index_strategy_positions[strategy_id].add(position_id)
+        self._add_position_id(position_id, cl_ord_id, strategy_id)
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -1147,18 +1220,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
         self._cached_positions[position.id] = position
-
-        self._index_positions.add(position.id)
-        self._index_positions_open.add(position.id)
-        self.index_position_id(position.id, position.from_order, strategy_id)
-
-        # Index: Symbol -> Set[PositionId]
-        if position.symbol not in self._index_symbol_positions:
-            self._index_symbol_positions[position.symbol] = {position.id}
-        else:
-            self._index_symbol_positions[position.symbol].add(position.id)
-
-        self._log.debug(f"Added Position(id={position.id.value}).")
+        self._add_position(position, strategy_id)  # Logs
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -1172,20 +1234,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         # Do nothing in memory
         pass
 
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
-        """
-        Update the given strategy state in the execution database.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to update.
-        """
-        Condition.not_none(strategy, "strategy")
-
-        self._log.info(f"Saving {strategy.id} (in-memory database does nothing).")
-        self._index_strategies.add(strategy.id)
-
     cpdef void update_order(self, Order order) except *:
         """
         Update the given order in the execution database.
@@ -1198,12 +1246,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(order, "order")
 
-        if order.is_working():
-            self._index_orders_working.add(order.cl_ord_id)
-            self._index_orders_completed.discard(order.cl_ord_id)
-        elif order.is_completed():
-            self._index_orders_completed.add(order.cl_ord_id)
-            self._index_orders_working.discard(order.cl_ord_id)
+        self._update_order(order)
 
     cpdef void update_position(self, Position position) except *:
         """
@@ -1217,9 +1260,21 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        if position.is_closed():
-            self._index_positions_closed.add(position.id)
-            self._index_positions_open.discard(position.id)
+        self._update_position(position)
+
+    cpdef void add_strategy(self, TradingStrategy strategy) except *:
+        """
+        Update the given strategy state in the execution database.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to update.
+        """
+        Condition.not_none(strategy, "strategy")
+
+        self._index_strategies.add(strategy.id)
+        self._log.info(f"Saving {strategy.id} (in-memory database does nothing).")
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
