@@ -52,7 +52,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
-            id_tag_trader=self.trader_id.identifier_tag,
+            id_tag_trader=self.trader_id.tag,
             id_tag_strategy=IdTag("001"),
             clock=self.clock,
         )

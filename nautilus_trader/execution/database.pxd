@@ -56,6 +56,7 @@ cdef class ExecutionDatabase:
     cpdef void load_orders_cache(self) except *
     cpdef void load_positions_cache(self) except *
     cpdef void load_index_cache(self) except *
+    cpdef void integrity_check(self) except *
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)

@@ -257,6 +257,7 @@ cdef class OrderInitialized(OrderEvent):
         self.quantity = quantity
         self.time_in_force = time_in_force
         self.options = options
+        self.is_completion_trigger = False
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -298,6 +299,7 @@ cdef class OrderSubmitted(OrderEvent):
 
         self.account_id = account_id
         self.submitted_time = submitted_time
+        self.is_completion_trigger = False
 
     def __str__(self) -> str:
         """
@@ -353,6 +355,7 @@ cdef class OrderInvalid(OrderEvent):
         )
 
         self.reason = reason
+        self.is_completion_trigger = True
 
     def __str__(self) -> str:
         """
@@ -408,6 +411,7 @@ cdef class OrderDenied(OrderEvent):
         )
 
         self.reason = reason
+        self.is_completion_trigger = True
 
     def __str__(self) -> str:
         """
@@ -471,6 +475,7 @@ cdef class OrderRejected(OrderEvent):
         self.account_id = account_id
         self.rejected_time = rejected_time
         self.reason = reason
+        self.is_completion_trigger = True
 
     def __str__(self) -> str:
         """
@@ -529,6 +534,7 @@ cdef class OrderAccepted(OrderEvent):
         self.account_id = account_id
         self.order_id = order_id
         self.accepted_time = accepted_time
+        self.is_completion_trigger = False
 
     def __str__(self) -> str:
         """
@@ -629,6 +635,7 @@ cdef class OrderWorking(OrderEvent):
         self.time_in_force = time_in_force
         self.expire_time = expire_time
         self.working_time = working_time
+        self.is_completion_trigger = False
 
     def __str__(self) -> str:
         """
@@ -705,6 +712,7 @@ cdef class OrderCancelReject(OrderEvent):
         self.rejected_time = rejected_time
         self.response_to = response_to
         self.reason = reason
+        self.is_completion_trigger = False
 
     def __str__(self) -> str:
         """
@@ -765,6 +773,7 @@ cdef class OrderCancelled(OrderEvent):
         self.account_id = account_id
         self.order_id = order_id
         self.cancelled_time = cancelled_time
+        self.is_completion_trigger = True
 
     def __str__(self) -> str:
         """
@@ -832,6 +841,7 @@ cdef class OrderModified(OrderEvent):
         self.modified_quantity = modified_quantity
         self.modified_price = modified_price
         self.modified_time = modified_time
+        self.is_completion_trigger = False
 
     def __str__(self) -> str:
         """
@@ -892,6 +902,7 @@ cdef class OrderExpired(OrderEvent):
         self.account_id = account_id
         self.order_id = order_id
         self.expired_time = expired_time
+        self.is_completion_trigger = True
 
     def __str__(self) -> str:
         """
@@ -996,6 +1007,7 @@ cdef class OrderFilled(OrderEvent):
         self.quote_currency = quote_currency
         self.execution_time = execution_time
         self.is_partial_fill = not self.leaves_qty.is_zero()
+        self.is_completion_trigger = self.leaves_qty.is_zero()
 
     cdef void set_position_id(self, PositionId position_id) except *:
         """

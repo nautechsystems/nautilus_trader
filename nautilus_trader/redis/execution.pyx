@@ -27,8 +27,8 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
@@ -137,6 +137,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self.load_accounts_cache()
             self.load_orders_cache()
             self.load_positions_cache()
+            self.load_index_cache()
         else:
             self._log.warning(f"The load_caches flag was {load_caches} "
                               f"(this should only be done in a testing environment).")
@@ -227,7 +228,29 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Clear the current index cache and load indexes from the database.
         """
+        # load _index_order_position
+        # load _index_order_strategy
+        # load _index_position_strategy
+        # load _index_position_orders
+        # load _index_symbol_orders
+        # load _index_symbol_positions
+        # load _index_strategy_orders
+        # load _index_strategy_positions
+        # load _index_orders
+        # load _index_orders_working
+        # load _index_orders_completed
+        # load _index_positions
+        # load _index_positions_open
+        # load _index_positions_closed
+        # load _index_strategies
+        cdef dict index_order_position_bytes = self._redis.hgetall(name=self.key_index_order_position)
+
+    cpdef void integrity_check(self) except *:
+        """
+        TODO
+        """
         pass
+
 
     cpdef Account load_account(self, AccountId account_id):
         """

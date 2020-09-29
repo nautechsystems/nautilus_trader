@@ -18,6 +18,7 @@ import threading
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
@@ -25,7 +26,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
@@ -109,7 +109,7 @@ cdef class ExecutionEngine:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
         self._oms_type = oms_type
-        self._pos_id_generator = PositionIdGenerator(trader_id.identifier_tag)
+        self._pos_id_generator = PositionIdGenerator(trader_id.tag)
         self._exec_client = None
         self._registered_strategies = {}    # type: {StrategyId, TradingStrategy}
 
