@@ -89,6 +89,8 @@ cdef class ExecutionDatabase:
     cpdef Account get_account(self, AccountId account_id)
 
     # -- Identifier queries ----------------------------------------------------
+    cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
+    cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
     cpdef set get_order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set get_order_working_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set get_order_completed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
