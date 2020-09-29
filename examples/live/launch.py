@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from examples.strategies.ema_cross_filtered import EMACrossFiltered
+from examples.strategies.ema_cross_complex import EMACrossFiltered
 from nautilus_trader.enterprise.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation

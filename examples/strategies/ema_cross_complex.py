@@ -43,7 +43,7 @@ NEWS_FLATTEN = 'NEWS-FLATTEN'
 DONE_FOR_DAY = 'DONE-FOR-DAY'
 
 
-class EMACrossFiltered(TradingStrategy):
+class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
@@ -63,7 +63,7 @@ class EMACrossFiltered(TradingStrategy):
                  news_impacts: list=None,
                  extra_id_tag: str=""):
         """
-        Initialize a new instance of the EMACrossFiltered class.
+        Initialize a new instance of the EMACross class.
 
         :param symbol: The symbol for the strategy.
         :param bar_spec: The bar specification for the strategy.

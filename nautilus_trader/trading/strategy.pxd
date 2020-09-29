@@ -194,14 +194,17 @@ cdef class TradingStrategy:
     cpdef int positions_open_count(self, Symbol symbol=*)
     cpdef int positions_closed_count(self, Symbol symbol=*)
     cpdef int positions_total_count(self, Symbol symbol=*)
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id)
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id)
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id)
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
-    cpdef bint is_position_open(self, PositionId position_id)
-    cpdef bint is_position_closed(self, PositionId position_id)
-    cpdef bint is_flat(self, Symbol symbol=*)
+    cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *
+    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *
+    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *
+    cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *
+    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *
+    cpdef bint is_position_open(self, PositionId position_id) except *
+    cpdef bint is_position_closed(self, PositionId position_id) except *
+    cpdef bint is_net_long(self, Symbol symbol) except *
+    cpdef bint is_net_short(self, Symbol symbol) except *
+    cpdef bint is_flat(self, Symbol symbol) except *
+    cpdef bint is_completely_flat(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

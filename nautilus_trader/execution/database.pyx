@@ -338,7 +338,7 @@ cdef class ExecutionDatabase:
 
     cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all client order identifiers.
+        Return all client order identifiers with the given query filters.
 
         Parameters
         ----------
@@ -361,7 +361,8 @@ cdef class ExecutionDatabase:
 
     cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all working client order identifiers.
+        Return all working client order identifiers with the given query
+        filters.
 
         Parameters
         ----------
@@ -384,7 +385,8 @@ cdef class ExecutionDatabase:
 
     cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all completed client order identifiers.
+        Return all completed client order identifiers with the given query
+        filters.
 
         Parameters
         ----------
@@ -407,7 +409,7 @@ cdef class ExecutionDatabase:
 
     cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all position identifiers.
+        Return all position identifiers with the given query filters.
 
         Parameters
         ----------
@@ -430,7 +432,7 @@ cdef class ExecutionDatabase:
 
     cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all open position identifiers.
+        Return all open position identifiers with the given query filters.
 
         Parameters
         ----------
@@ -453,7 +455,7 @@ cdef class ExecutionDatabase:
 
     cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all closed position identifiers.
+        Return all closed position identifiers with the given query filters.
 
         Parameters
         ----------
@@ -476,7 +478,7 @@ cdef class ExecutionDatabase:
 
     cpdef set get_strategy_ids(self):
         """
-        Return all strategy_ids.
+        Return all strategy identifiers.
 
         Returns
         -------
@@ -501,7 +503,7 @@ cdef class ExecutionDatabase:
 
     cpdef dict get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all orders.
+        Return all orders with the given query filters.
 
         Parameters
         ----------
@@ -528,7 +530,7 @@ cdef class ExecutionDatabase:
 
     cpdef dict get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all working orders.
+        Return all working orders with the given query filters.
 
         Parameters
         ----------
@@ -555,7 +557,7 @@ cdef class ExecutionDatabase:
 
     cpdef dict get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all completed orders.
+        Return all completed orders with the given query filters.
 
         Parameters
         ----------
@@ -583,7 +585,7 @@ cdef class ExecutionDatabase:
     # -- Position queries ------------------------------------------------------
     cpdef Position get_position(self, PositionId position_id):
         """
-        Return the position associated with the given identifier (if found, else None).
+        Return the position associated with the given identifier (if found).
 
         Parameters
         ----------
@@ -601,8 +603,8 @@ cdef class ExecutionDatabase:
 
     cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
         """
-        Return the position identifier associated with the given client order identifier
-        (if found, else None).
+        Return the position identifier associated with the given client order
+        identifier (if found).
 
         Parameters
         ----------
@@ -620,7 +622,7 @@ cdef class ExecutionDatabase:
 
     cpdef dict get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return all positions for the given query.
+        Return all positions with the given query filters.
 
         Parameters
         ----------
@@ -647,7 +649,7 @@ cdef class ExecutionDatabase:
 
     cpdef dict get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a dictionary of all open positions.
+        Return all open positions with the given query filters.
 
         Parameters
         ----------
@@ -674,7 +676,7 @@ cdef class ExecutionDatabase:
 
     cpdef dict get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a dictionary of all closed positions.
+        Return all closed positions with the given query filters.
 
         Parameters
         ----------
@@ -701,7 +703,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint order_exists(self, ClientOrderId cl_ord_id):
         """
-        Return a value indicating whether an order with the given identifier exists.
+        Return a value indicating whether an order with the given identifier
+        exists.
 
         Parameters
         ----------
@@ -719,7 +722,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
         """
-        Return a value indicating whether an order with the given identifier is working.
+        Return a value indicating whether an order with the given identifier is
+        working.
 
         Parameters
         ----------
@@ -737,7 +741,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
         """
-        Return a value indicating whether an order with the given identifier is completed.
+        Return a value indicating whether an order with the given identifier is
+        completed.
 
         Parameters
         ----------
@@ -755,7 +760,7 @@ cdef class ExecutionDatabase:
 
     cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return the count of order held by the execution database.
+        Return the total count of orders with the given query filters.
 
         Parameters
         ----------
@@ -773,7 +778,7 @@ cdef class ExecutionDatabase:
 
     cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return the count of working orders held by the execution database.
+        Return the count of working orders with the given query filters.
 
         Parameters
         ----------
@@ -791,7 +796,7 @@ cdef class ExecutionDatabase:
 
     cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return the count of completed orders held by the execution database.
+        Return the count of completed orders with the given query filters.
 
         Parameters
         ----------
@@ -809,7 +814,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint position_exists(self, PositionId position_id):
         """
-        Return a value indicating whether a position with the given identifier exists.
+        Return a value indicating whether a position with the given identifier
+        exists.
 
         Parameters
         ----------
@@ -827,8 +833,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
         """
-        Return a value indicating whether there is a position associated with the given
-        identifier.
+        Return a value indicating whether there is a position associated with
+        the given client order identifier.
 
         Parameters
         ----------
@@ -849,8 +855,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id):
         """
-        Return a value indicating whether there is a position_id indexed for the
-        given identifier.
+        Return a value indicating whether there is a position identifier indexed
+        for the given identifier.
 
         Parameters
         ----------
@@ -868,8 +874,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint is_position_open(self, PositionId position_id):
         """
-        Return a value indicating whether a position with the given identifier exists
-        and is open.
+        Return a value indicating whether a position with the given identifier
+        exists and is open.
 
         Parameters
         ----------
@@ -887,8 +893,8 @@ cdef class ExecutionDatabase:
 
     cpdef bint is_position_closed(self, PositionId position_id):
         """
-        Return a value indicating whether a position with the given identifier exists
-        and is closed.
+        Return a value indicating whether a position with the given identifier
+        exists and is closed.
 
         Parameters
         ----------
@@ -906,7 +912,7 @@ cdef class ExecutionDatabase:
 
     cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return the count of positions held by the execution database.
+        Return the total count of positions with the given query filters.
 
         Parameters
         ----------
@@ -924,7 +930,7 @@ cdef class ExecutionDatabase:
 
     cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return the count of open positions held by the execution database.
+        Return the count of open positions with the given query filters.
 
         Parameters
         ----------
@@ -942,7 +948,7 @@ cdef class ExecutionDatabase:
 
     cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return the count of closed positions held by the execution database.
+        Return the count of closed positions with the given query filters.
 
         Parameters
         ----------

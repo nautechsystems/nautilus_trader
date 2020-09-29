@@ -19,6 +19,7 @@ from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -64,11 +65,15 @@ cdef class ExecutionEngine:
     cdef readonly int command_count
     cdef readonly int event_count
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- REGISTRATIONS ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
+    cpdef list registered_strategies(self)
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
@@ -76,8 +81,10 @@ cdef class ExecutionEngine:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef list registered_strategies(self)
-    cpdef bint is_flat(self, Symbol symbol =*, StrategyId strategy_id=*)
+    cdef inline Decimal64 _sum_net_position(self, list positions)
+    cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
+    cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *
+    cpdef bint is_flat(self, Symbol symbol =*, StrategyId strategy_id=*) except *
 
 # -------------------------------------------------------------------------------------------------#
 

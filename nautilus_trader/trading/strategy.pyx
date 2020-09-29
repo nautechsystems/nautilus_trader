@@ -1715,7 +1715,7 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.positions_total_count(symbol, self.id)
 
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id):
+    cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether an order with the given identifier exists.
 
@@ -1734,7 +1734,7 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.order_exists(cl_ord_id)
 
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id):
+    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether the order with the given identifier is
         a registered stop-loss.
@@ -1753,7 +1753,7 @@ cdef class TradingStrategy:
 
         return cl_ord_id in self._stop_loss_ids
 
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id):
+    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether the order with the given identifier is
         a registered take-profit.
@@ -1772,7 +1772,7 @@ cdef class TradingStrategy:
 
         return cl_ord_id in self._take_profit_ids
 
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
+    cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether an order with the given identifier is working.
 
@@ -1791,7 +1791,7 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.is_order_working(cl_ord_id)
 
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
+    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether an order with the given identifier is complete.
 
@@ -1810,7 +1810,7 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.is_order_completed(cl_ord_id)
 
-    cpdef bint is_position_open(self, PositionId position_id):
+    cpdef bint is_position_open(self, PositionId position_id) except *:
         """
         Return a value indicating whether a position with the given identifier
         is open.
@@ -1830,7 +1830,7 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.is_position_open(position_id)
 
-    cpdef bint is_position_closed(self, PositionId position_id):
+    cpdef bint is_position_closed(self, PositionId position_id) except *:
         """
         Return a value indicating whether a position with the given identifier is closed.
 
@@ -1849,7 +1849,41 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.is_position_closed(position_id)
 
-    cpdef bint is_flat(self, Symbol symbol=None):
+    cpdef bint is_net_long(self, Symbol symbol) except *:
+        """
+        Return a value indicating whether the execution engine is net long a
+        given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._exec_engine.is_net_long(symbol, strategy_id=self.id)
+
+    cpdef bint is_net_short(self, Symbol symbol) except *:
+        """
+        Return a value indicating whether the execution engine is net short a
+        given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._exec_engine.is_net_short(symbol, strategy_id=self.id)
+
+    cpdef bint is_flat(self, Symbol symbol) except *:
         """
         Return a value indicating whether the strategy is flat.
 
@@ -1864,6 +1898,19 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.is_flat(symbol=symbol, strategy_id=self.id)
+
+    cpdef bint is_completely_flat(self) except *:
+        """
+        Return a value indicating whether the trader is completely flat.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(self._exec_engine, "_exec_engine")
+
+        return self._exec_engine.is_flat()
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

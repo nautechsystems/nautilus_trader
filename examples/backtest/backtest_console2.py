@@ -18,7 +18,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from examples.strategies.ema_cross_filtered import EMACrossFiltered
+from examples.strategies.ema_cross_complex import EMACross
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -50,7 +50,7 @@ if __name__ == "__main__":
         TestDataProvider.usdjpy_1min_ask(),
     )
 
-    strategies = [EMACrossFiltered(
+    strategies = [EMACross(
         symbol=USDJPY.symbol,
         bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
         risk_bp=10,
