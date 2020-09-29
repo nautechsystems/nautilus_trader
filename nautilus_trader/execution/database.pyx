@@ -307,6 +307,35 @@ cdef class ExecutionDatabase:
 
         return self._cached_accounts.get(account_id)
 
+    # -- Identifier queries ----------------------------------------------------
+    cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id):
+        cdef set query = None
+
+        # Build potential query set
+        if symbol:
+            query = self._index_symbol_orders.get(symbol, set())
+        if strategy_id:
+            if not query:
+                query = self._index_strategy_orders.get(strategy_id, set())
+            else:
+                query = query.intersection(self._index_strategy_orders.get(strategy_id, set()))
+
+        return query
+
+    cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id):
+        cdef set query = None
+
+        # Build potential query set
+        if symbol:
+            query = self._index_symbol_positions.get(symbol, set())
+        if strategy_id:
+            if not query:
+                query = self._index_strategy_positions.get(strategy_id, set())
+            else:
+                query = query.intersection(self._index_strategy_positions.get(strategy_id, set()))
+
+        return query
+
     cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all client order identifiers.
@@ -323,18 +352,12 @@ cdef class ExecutionDatabase:
         Set[ClientOrderId]
 
         """
-        if symbol is None and strategy_id is None:
+        cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
+
+        if not query:
             return self._index_orders
-
-        cdef set query = set()
-
-        # Build query set
-        if symbol:
-            query = query.union(self._index_symbol_orders.get(symbol, set()))
-        if strategy_id:
-            query = query.union(self._index_strategy_orders.get(strategy_id, set()))
-
-        return self._index_orders.intersection(query)
+        else:
+            return self._index_orders.intersection(query)
 
     cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -352,18 +375,12 @@ cdef class ExecutionDatabase:
         Set[ClientOrderId]
 
         """
-        if symbol is None and strategy_id is None:
+        cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
+
+        if not query:
             return self._index_orders_working
-
-        cdef set query = set()
-
-        # Build query set
-        if symbol:
-            query = query.union(self._index_symbol_orders.get(symbol, set()))
-        if strategy_id:
-            query = query.union(self._index_strategy_orders.get(strategy_id, set()))
-
-        return self._index_orders_working.intersection(query)
+        else:
+            return self._index_orders_working.intersection(query)
 
     cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -381,18 +398,12 @@ cdef class ExecutionDatabase:
         Set[ClientOrderId]
 
         """
-        if symbol is None and strategy_id is None:
+        cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
+
+        if not query:
             return self._index_orders_completed
-
-        cdef set query = set()
-
-        # Build query set
-        if symbol:
-            query = query.union(self._index_symbol_orders.get(symbol, set()))
-        if strategy_id:
-            query = query.union(self._index_strategy_orders.get(strategy_id, set()))
-
-        return self._index_orders_completed.intersection(query)
+        else:
+            return self._index_orders_completed.intersection(query)
 
     cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -410,18 +421,12 @@ cdef class ExecutionDatabase:
         Set[PositionId]
 
         """
-        if symbol is None and strategy_id is None:
+        cdef set query = self._build_pos_query_filter_set(symbol, strategy_id)
+
+        if not query:
             return self._index_positions
-
-        cdef set query = set()
-
-        # Build query set
-        if symbol:
-            query = query.union(self._index_symbol_positions.get(symbol, set()))
-        if strategy_id:
-            query = query.union(self._index_strategy_positions.get(strategy_id, set()))
-
-        return self._index_positions.intersection(query)
+        else:
+            return self._index_positions.intersection(query)
 
     cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -439,18 +444,12 @@ cdef class ExecutionDatabase:
         Set[PositionId]
 
         """
-        if symbol is None and strategy_id is None:
+        cdef set query = self._build_pos_query_filter_set(symbol, strategy_id)
+
+        if not query:
             return self._index_positions_open
-
-        cdef set query = set()
-
-        # Build query set
-        if symbol:
-            query = query.union(self._index_symbol_positions.get(symbol, set()))
-        if strategy_id:
-            query = query.union(self._index_strategy_positions.get(strategy_id, set()))
-
-        return self._index_positions_open.intersection(query)
+        else:
+            return self._index_positions_open.intersection(query)
 
     cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -468,19 +467,25 @@ cdef class ExecutionDatabase:
         Set[PositionId]
 
         """
-        if symbol is None and strategy_id is None:
+        cdef set query = self._build_pos_query_filter_set(symbol, strategy_id)
+
+        if not query:
             return self._index_positions_closed
+        else:
+            return self._index_positions_closed.intersection(query)
 
-        cdef set query = set()
+    cpdef set get_strategy_ids(self):
+        """
+        Return all strategy_ids.
 
-        # Build query set
-        if symbol:
-            query = query.union(self._index_symbol_positions.get(symbol, set()))
-        if strategy_id:
-            query = query.union(self._index_strategy_positions.get(strategy_id, set()))
+        Returns
+        -------
+        Set[StrategyId]
 
-        return self._index_positions_closed.intersection(query)
+        """
+        return self._index_strategies.copy()
 
+    # -- Order queries ---------------------------------------------------------
     cpdef Order get_order(self, ClientOrderId cl_ord_id):
         """
         Return the order matching the given identifier (if found).
@@ -575,6 +580,7 @@ cdef class ExecutionDatabase:
 
         return orders_completed
 
+    # -- Position queries ------------------------------------------------------
     cpdef Position get_position(self, PositionId position_id):
         """
         Return the position associated with the given identifier (if found, else None).
@@ -614,7 +620,7 @@ cdef class ExecutionDatabase:
 
     cpdef dict get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a dictionary of all positions.
+        Return all positions for the given query.
 
         Parameters
         ----------
@@ -952,17 +958,7 @@ cdef class ExecutionDatabase:
         """
         return len(self.get_position_closed_ids(symbol, strategy_id))
 
-    cpdef set get_strategy_ids(self):
-        """
-        Return all strategy_ids.
-
-        Returns
-        -------
-        Set[StrategyId]
-
-        """
-        return self._index_strategies.copy()
-
+    # -- Strategy queries ------------------------------------------------------
     cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
         """
         Return the strategy identifier associated with the given identifier (if found).
