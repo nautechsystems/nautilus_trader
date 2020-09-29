@@ -37,7 +37,7 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport AccountId, Symbol
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -76,8 +76,7 @@ cdef class ExecutionEngine:
 # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef list registered_strategies(self)
-    cpdef bint is_strategy_flat(self, StrategyId strategy_id)
-    cpdef bint is_flat(self)
+    cpdef bint is_flat(self, Symbol symbol =*, StrategyId strategy_id=*)
 
 # -------------------------------------------------------------------------------------------------#
 

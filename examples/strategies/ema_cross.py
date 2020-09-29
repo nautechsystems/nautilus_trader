@@ -165,7 +165,7 @@ class EMACross(TradingStrategy):
         price_entry = Price(bar.high.as_double() + self.entry_buffer + spread_buffer, self.precision)
         price_stop_loss = Price(bar.low.as_double() - sl_buffer, self.precision)
 
-        risk = price_entry.as_double() - price_stop_loss.as_double()
+        risk = price_entry - price_stop_loss
         price_take_profit = Price(price_entry.as_double() + risk, self.precision)
 
         # Calculate exchange rate

@@ -1303,7 +1303,7 @@ cdef class TradingStrategy:
         Account
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.account
 
@@ -1316,7 +1316,7 @@ cdef class TradingStrategy:
         Portfolio
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.portfolio
 
@@ -1450,35 +1450,41 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.get_order(cl_ord_id)
 
-    cpdef dict orders(self):
+    cpdef dict orders(self, Symbol symbol=None):
         """
         Return a all orders associated with this strategy.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         Dict[OrderId, Order]
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.get_orders(self.id)
+        return self._exec_engine.database.get_orders(symbol, self.id)
 
-    cpdef dict orders_working(self):
+    cpdef dict orders_working(self, Symbol symbol=None):
         """
         Return all working orders associated with this strategy.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -----
         Dict[OrderId, Order]
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.get_orders_working(self.id)
+        return self._exec_engine.database.get_orders_working(symbol, self.id)
 
     cpdef set stop_loss_ids(self):
         """
@@ -1502,57 +1508,69 @@ cdef class TradingStrategy:
         """
         return self._take_profit_ids.copy()
 
-    cpdef dict orders_completed(self):
+    cpdef dict orders_completed(self, Symbol symbol=None):
         """
         Return all completed orders associated with this strategy.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         Dict[OrderId, Order]
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.get_orders_completed(self.id)
+        return self._exec_engine.database.get_orders_completed(symbol, self.id)
 
-    cpdef int orders_working_count(self):
+    cpdef int orders_working_count(self, Symbol symbol=None):
         """
-        Return the count of working orders held by the execution database.
+        Return the count of working orders held by the execution engine.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.orders_working_count(self.id)
+        return self._exec_engine.database.orders_working_count(symbol, self.id)
 
-    cpdef int orders_completed_count(self):
+    cpdef int orders_completed_count(self, Symbol symbol=None):
         """
-        Return the count of completed orders held by the execution database.
+        Return the count of completed orders held by the execution engine.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.orders_completed_count(self.id)
+        return self._exec_engine.database.orders_completed_count(symbol, self.id)
 
-    cpdef int orders_total_count(self):
+    cpdef int orders_total_count(self, Symbol symbol=None):
         """
-        Return the total count of orders held by the execution database.
+        Return the total count of orders held by the execution engine.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.orders_total_count(self.id)
+        return self._exec_engine.database.orders_total_count(symbol, self.id)
 
     cpdef Position position(self, PositionId position_id):
         """
@@ -1569,7 +1587,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.get_position(position_id)
 
@@ -1588,48 +1606,60 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.get_position_for_order(cl_ord_id)
+        cdef PositionId position_id = self._exec_engine.database.get_position_id(cl_ord_id)
+        # If position_id is None then .get_position(position_id) will return None
 
-    cpdef dict positions(self):
+        return self._exec_engine.database.get_position(position_id)
+
+    cpdef dict positions(self, Symbol symbol=None):
         """
         Return a dictionary of all positions associated with this strategy.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         Dict[PositionId, Position]
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.get_positions(self.id)
+        return self._exec_engine.database.get_positions(symbol, self.id)
 
-    cpdef dict positions_open(self):
+    cpdef dict positions_open(self, Symbol symbol=None):
         """
         Return a dictionary of all active positions associated with this strategy.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         ------
         Dict[PositionId, Position]
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.get_positions_open(self.id)
+        return self._exec_engine.database.get_positions_open(symbol, self.id)
 
-    cpdef dict positions_closed(self):
+    cpdef dict positions_closed(self, Symbol symbol=None):
         """
         Return a dictionary of all closed positions associated with this strategy.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         Dict[PositionId, Position]
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.get_positions_closed(self.id)
+        return self._exec_engine.database.get_positions_closed(symbol, self.id)
 
     cpdef bint position_exists(self, PositionId position_id):
         """
@@ -1647,48 +1677,57 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.position_exists(position_id)
 
-    cpdef int positions_open_count(self):
+    cpdef int positions_open_count(self, Symbol symbol=None):
         """
-        Return the count of open positions held by the execution database.
+        Return the count of open positions held by the execution engine.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.positions_open_count(self.id)
+        return self._exec_engine.database.positions_open_count(symbol, self.id)
 
-    cpdef int positions_closed_count(self):
+    cpdef int positions_closed_count(self, Symbol symbol=None):
         """
-        Return the count of closed positions held by the execution database.
+        Return the count of closed positions held by the execution engine.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.positions_closed_count(self.id)
+        return self._exec_engine.database.positions_closed_count(symbol, self.id)
 
-    cpdef int positions_total_count(self):
+    cpdef int positions_total_count(self, Symbol symbol=None):
         """
-        Return the total count of positions held by the execution database.
+        Return the total count of positions held by the execution engine.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.database.positions_total_count(self.id)
+        return self._exec_engine.database.positions_total_count(symbol, self.id)
 
     cpdef bint order_exists(self, ClientOrderId cl_ord_id):
         """
@@ -1705,7 +1744,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.order_exists(cl_ord_id)
 
@@ -1762,7 +1801,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.is_order_working(cl_ord_id)
 
@@ -1781,7 +1820,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.is_order_completed(cl_ord_id)
 
@@ -1801,7 +1840,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.is_position_open(position_id)
 
@@ -1820,23 +1859,25 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.is_position_closed(position_id)
 
-    cpdef bint is_flat(self):
+    cpdef bint is_flat(self, Symbol symbol=None):
         """
-        Return a value indicating whether the strategy is completely flat
-        (i.e no positions which are not FLAT across all instruments).
+        Return a value indicating whether the strategy is flat.
+
+        symbol : Symbol, optional
+            The symbol identifier query filter.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        return self._exec_engine.is_strategy_flat(self.id)
+        return self._exec_engine.is_flat(symbol=symbol, strategy_id=self.id)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -2031,7 +2072,7 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution engine.
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         cdef AccountInquiry command = AccountInquiry(
             self.trader_id,
@@ -2051,12 +2092,13 @@ cdef class TradingStrategy:
         order : Order
             The order to submit.
         position_id : PositionId, optional
-            The position identifier to submit the order against.
+            The position identifier to submit the order against. Only required
+            if the execution engine is configured for OMS.HEDGING.
 
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "exec_engine")
 
         if position_id is None:
             # Null object pattern
@@ -2090,7 +2132,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         if register:
             self.register_stop_loss(bracket_order.stop_loss)
@@ -2131,7 +2173,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         if new_quantity is None and new_price is None:
             self.log.error("Cannot send command ModifyOrder (both new_quantity and new_price were None).")
@@ -2169,7 +2211,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         cdef CancelOrder command = CancelOrder(
             self.trader_id,
@@ -2187,9 +2229,13 @@ cdef class TradingStrategy:
         Send a cancel order command for orders associated with this strategy
         which are not completed.
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
+        cdef dict working_orders = self._exec_engine.database.get_orders_working(
+            symbol=None,
+            strategy_id=self.id,
+        )
+
         cdef int working_orders_count = len(working_orders)
         if working_orders_count == 0:
             self.log.info("No working orders to cancel.")
@@ -2231,7 +2277,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         if position_id in self._flattening_ids:
             self.log.warning(f"Already flattening {position_id}.")
@@ -2265,9 +2311,9 @@ cdef class TradingStrategy:
         flatten open positions. If no positions found or a position is None
         then will log a warning.
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef dict positions = self._exec_engine.database.get_positions_open(self.id)
+        cdef dict positions = self._exec_engine.database.get_positions_open(symbol=None, strategy_id=self.id)
         cdef int open_positions_count = len(positions)
         if open_positions_count == 0:
             self.log.info("No open positions to flatten.")
