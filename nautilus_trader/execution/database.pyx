@@ -21,8 +21,8 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -84,6 +84,10 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void load_index_cache(self) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void integrity_check(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -1044,6 +1048,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         self._log.info(f"Loading accounts cache (in-memory database does nothing).")
         # Do nothing in memory
+
+    cpdef void integrity_check(self) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """

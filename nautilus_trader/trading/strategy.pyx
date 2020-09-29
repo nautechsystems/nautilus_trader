@@ -34,8 +34,8 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
@@ -44,11 +44,7 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
-from nautilus_trader.model.events cimport OrderCancelled
-from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -63,16 +59,6 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-
-
-cdef tuple _ORDER_COMPLETION_TRIGGERS = (
-    OrderInvalid,
-    OrderDenied,
-    OrderRejected,
-    OrderCancelled,
-    OrderExpired,
-    OrderFilled,
-)
 
 
 cdef class TradingStrategy:
@@ -107,10 +93,10 @@ cdef class TradingStrategy:
         Raises
         ------
         ValueError
-            If identifier_tag is not a valid string.
+            If tag is not a valid string.
 
         """
-        Condition.valid_string(order_id_tag, "identifier_tag")
+        Condition.valid_string(order_id_tag, "tag")
 
         # Identification
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
@@ -384,8 +370,8 @@ cdef class TradingStrategy:
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.order_factory = OrderFactory(
-            id_tag_trader=self.trader_id.identifier_tag,
-            id_tag_strategy=self.id.identifier_tag,
+            id_tag_trader=self.trader_id.tag,
+            id_tag_strategy=self.id.tag,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
         )
@@ -769,7 +755,7 @@ cdef class TradingStrategy:
             self.log.info(f"{RECV}{EVT} {event}.")
 
         # Remove order from registered orders
-        if isinstance(event, _ORDER_COMPLETION_TRIGGERS):
+        if isinstance(event, OrderEvent) and event.is_completion_trigger:
             self._stop_loss_ids.discard(event.cl_ord_id)
             self._take_profit_ids.discard(event.cl_ord_id)
 

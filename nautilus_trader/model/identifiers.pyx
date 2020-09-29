@@ -20,7 +20,6 @@ from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
 
 
-
 cdef class Symbol(Identifier):
     """
     Represents the symbol for a financial market tradeable instrument.
@@ -151,7 +150,7 @@ cdef class Exchange(Venue):
 
 cdef class IdTag(Identifier):
     """
-    Represents an identifier tag.
+    Represents a generic identifier tag.
     """
 
     def __init__(self, str value):
@@ -174,35 +173,38 @@ cdef class IdTag(Identifier):
 
 cdef class TraderId(Identifier):
     """
-    Represents a valid trader identifier. The name and identifier_tag combination
+    Represents a valid trader identifier. The name and tag combination
     identifier value must be unique at the fund level.
     """
 
-    def __init__(self, str name, str identifier_tag):
+    def __init__(self, str name, str tag):
         """
         Initialize a new instance of the TraderId class.
 
         Parameters
         ----------
         name : str
-            The trader name identifier value.
-        identifier_tag : str
-            The trader identifier tag value.
+            The trader name identifier value. Used for internal system
+            identification, it is never used for identifiers which may
+            be sent outside of the Nautilus stack, such as on order identifiers.
+        tag : str
+            The trader identifier tag value. Used to tag client order identifiers
+            which relate to a particular trader.
 
         Raises
         ------
         ValueError
             If name is not a valid string.
         ValueError
-            If identifier_tag is not a valid string.
+            If tag is not a valid string.
 
         """
         Condition.valid_string(name, "name")
-        Condition.valid_string(identifier_tag, "identifier_tag")
-        super().__init__(f"{name}-{identifier_tag}")
+        Condition.valid_string(tag, "tag")
+        super().__init__(f"{name}-{tag}")
 
         self.name = name
-        self.identifier_tag = IdTag(identifier_tag)
+        self.tag = IdTag(tag)
 
     @staticmethod
     cdef TraderId from_string(str value):
@@ -229,7 +231,7 @@ cdef class TraderId(Identifier):
 
         cdef tuple partitioned = value.partition('-')
 
-        return TraderId(name=partitioned[0], identifier_tag=partitioned[2])
+        return TraderId(name=partitioned[0], tag=partitioned[2])
 
     @staticmethod
     def py_from_string(value: str) -> TraderId:
@@ -257,11 +259,11 @@ cdef class TraderId(Identifier):
 
 cdef class StrategyId(Identifier):
     """
-    Represents a valid strategy identifier. The name and identifier_tag combination
+    Represents a valid strategy identifier. The name and tag combination
     must be unique at the trader level.
     """
 
-    def __init__(self, str name, str identifier_tag):
+    def __init__(self, str name, str tag):
         """
         Initialize a new instance of the StrategyId class.
 
@@ -269,23 +271,24 @@ cdef class StrategyId(Identifier):
         ----------
         name : str
             The strategy name identifier value.
-        identifier_tag : str
-            The strategy identifier tag value.
+        tag : str
+            The strategy identifier tag value. Used to tag client order
+            identifiers which relate to a particular strategy.
 
         Raises
         ------
         ValueError
             If name is not a valid string.
         ValueError
-            If identifier_tag is not a valid string.
+            If tag is not a valid string.
 
         """
         Condition.valid_string(name, "name")
-        Condition.valid_string(identifier_tag, "identifier_tag")
-        super().__init__(f"{name}-{identifier_tag}")
+        Condition.valid_string(tag, "tag")
+        super().__init__(f"{name}-{tag}")
 
         self.name = name
-        self.identifier_tag = IdTag(identifier_tag)
+        self.tag = IdTag(tag)
 
     @staticmethod
     cdef StrategyId from_string(str value):
@@ -311,7 +314,7 @@ cdef class StrategyId(Identifier):
         Condition.valid_string(value, "value")
 
         cdef tuple partitioned = value.partition('-')
-        return StrategyId(name=partitioned[0], identifier_tag=partitioned[2])
+        return StrategyId(name=partitioned[0], tag=partitioned[2])
 
     @staticmethod
     def py_from_string(value: str) -> StrategyId:

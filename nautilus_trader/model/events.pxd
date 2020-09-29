@@ -22,8 +22,6 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport AccountNumber
-from nautilus_trader.model.identifiers cimport Brokerage
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -51,6 +49,7 @@ cdef class AccountState(Event):
 
 cdef class OrderEvent(Event):
     cdef readonly ClientOrderId cl_ord_id
+    cdef readonly bint is_completion_trigger
 
 
 cdef class OrderInitialized(OrderEvent):

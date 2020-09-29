@@ -43,7 +43,7 @@ cdef class IdTag(Identifier):
 
 cdef class TraderId(Identifier):
     cdef readonly str name
-    cdef readonly IdTag identifier_tag
+    cdef readonly IdTag tag
 
     @staticmethod
     cdef TraderId from_string(str value)
@@ -51,7 +51,7 @@ cdef class TraderId(Identifier):
 
 cdef class StrategyId(Identifier):
     cdef readonly str name
-    cdef readonly IdTag identifier_tag
+    cdef readonly IdTag tag
 
     @staticmethod
     cdef StrategyId from_string(str value)

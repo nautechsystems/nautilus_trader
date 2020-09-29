@@ -17,9 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
