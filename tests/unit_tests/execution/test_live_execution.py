@@ -165,7 +165,7 @@ class LiveExecutionTests(unittest.TestCase):
         )
         self.command_server.register_handler(MessageType.COMMAND, self.command_handler)
         self.command_server.start()
-        time.sleep(0.1)
+        time.sleep(0.3)
 
         # Setup execution engine
         exec_engine = self.setup_exec_engine()
@@ -182,18 +182,12 @@ class LiveExecutionTests(unittest.TestCase):
         # Connect execution engine and client
         exec_engine.register_client(self.exec_client)
         self.exec_client.connect()
-        time.sleep(0.1)
+        time.sleep(0.3)
 
     def tearDown(self):
         # Tear Down
         self.exec_client.disconnect()
         self.command_server.stop()
-
-        time.sleep(1.1)  # Must be greater than default linger of 1 second
-        self.exec_client.dispose()
-        self.command_server.dispose()
-        # Allowing the garbage collector to clean up resources avoids threading
-        # errors caused by the continuous disposal of sockets.
 
     def test_send_submit_order_command(self):
         # Arrange
@@ -211,7 +205,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_order(order)
-        time.sleep(0.1)  # Allow order to reach server and server to respond
+        time.sleep(0.3)  # Allow order to reach server and server to respond
 
         # Assert
         self.assertEqual(order, self.strategy.order(order.cl_ord_id))
@@ -240,7 +234,7 @@ class LiveExecutionTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_bracket_order(bracket_order)
-        time.sleep(0.1)  # Allow command to reach server and server to respond
+        time.sleep(0.3)  # Allow command to reach server and server to respond
 
         # Assert
         self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.cl_ord_id))
@@ -252,9 +246,9 @@ class LiveExecutionTests(unittest.TestCase):
     def test_send_cancel_order_command(self):
         # Arrange
         self.setup_test_fixture(
-            commands_rep_port=57565,
-            commands_req_port=57566,
-            events_pub_port=57567,
+            commands_rep_port=57575,
+            commands_req_port=57576,
+            events_pub_port=57577,
         )
 
         order = self.strategy.order_factory.market(
@@ -266,7 +260,7 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order)
         self.strategy.cancel_order(order)
-        time.sleep(0.1)  # Allow command to reach server and server to respond
+        time.sleep(0.3)  # Allow command to reach server and server to respond
 
         # Assert
         self.assertEqual(order, self.strategy.order(order.cl_ord_id))
@@ -278,9 +272,9 @@ class LiveExecutionTests(unittest.TestCase):
     def test_send_modify_order_command(self):
         # Arrange
         self.setup_test_fixture(
-            commands_rep_port=57575,
-            commands_req_port=57576,
-            events_pub_port=57577,
+            commands_rep_port=57585,
+            commands_req_port=57586,
+            events_pub_port=57587,
         )
 
         order = self.strategy.order_factory.limit(
@@ -293,7 +287,7 @@ class LiveExecutionTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order)
         self.strategy.modify_order(order, Quantity(110000), Price(1.00001, 5))
-        time.sleep(0.1)  # Allow command to reach server and server to respond
+        time.sleep(0.3)  # Allow command to reach server and server to respond
 
         # Assert
         self.assertEqual(order, self.strategy.order(order.cl_ord_id))
@@ -305,14 +299,14 @@ class LiveExecutionTests(unittest.TestCase):
     def test_send_account_inquiry_command(self):
         # Arrange
         self.setup_test_fixture(
-            commands_rep_port=57585,
-            commands_req_port=57586,
-            events_pub_port=57578,
+            commands_rep_port=57595,
+            commands_req_port=57596,
+            events_pub_port=57598,
         )
 
         # Act
         self.strategy.account_inquiry()
-        time.sleep(0.1)  # Allow command to reach server and server to respond
+        time.sleep(0.3)  # Allow command to reach server and server to respond
 
         # Assert
         self.assertEqual(2, self.command_server.recv_count)
