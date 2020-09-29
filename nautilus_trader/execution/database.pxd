@@ -19,8 +19,8 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -63,21 +63,31 @@ cdef class ExecutionDatabase:
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
-    cdef void index_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
     cpdef void update_account(self, Account account) except *
-    cpdef void update_strategy(self, TradingStrategy strategy) except *
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
+    cpdef void add_strategy(self, TradingStrategy strategy) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
     cpdef void flush(self) except *
+
+    cdef void _add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
+    cdef void _add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
+    cdef void _add_position(self, Position position, StrategyId strategy_id) except *
+    cdef void _update_order(self, Order order) except *
+    cdef void _update_position(self, Position position) except *
+    cdef void _update_strategy(self, TradingStrategy strategy) except *
+
     cdef void _reset(self) except *
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef dict get_symbol_position_counts(self)
     cpdef Account get_account(self, AccountId account_id)
+
+    # -- Identifier queries ----------------------------------------------------
     cpdef set get_order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set get_order_working_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set get_order_completed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
@@ -85,23 +95,25 @@ cdef class ExecutionDatabase:
     cpdef set get_position_open_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set get_position_closed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set get_strategy_ids(self)
-    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id)
-    cpdef StrategyId get_strategy_for_position(self, PositionId position_id)
+
+    # -- Order queries ---------------------------------------------------------
     cpdef Order get_order(self, ClientOrderId cl_ord_id)
     cpdef dict get_orders(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef dict get_orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef dict get_orders_completed(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef Position get_position(self, PositionId position_id)
-    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id)
-    cpdef dict get_positions(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef dict get_positions_open(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef dict get_positions_closed(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef bint order_exists(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
     cpdef int orders_total_count(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef int orders_working_count(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef int orders_completed_count(self, Symbol symbol=*, StrategyId strategy_id=*)
+
+    # -- Position queries ------------------------------------------------------
+    cpdef Position get_position(self, PositionId position_id)
+    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id)
+    cpdef dict get_positions(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef dict get_positions_open(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef dict get_positions_closed(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id)
     cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id)
@@ -110,6 +122,10 @@ cdef class ExecutionDatabase:
     cpdef int positions_total_count(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef int positions_open_count(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef int positions_closed_count(self, Symbol symbol=*, StrategyId strategy_id=*)
+
+    # -- Strategy queries ------------------------------------------------------
+    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id)
+    cpdef StrategyId get_strategy_for_position(self, PositionId position_id)
 
 # -------------------------------------------------------------------------------------------------"
 
