@@ -49,6 +49,7 @@ cdef str _ORDER = 'Order'
 cdef str _ORDERS = 'Orders'
 cdef str _POSITION = 'Position'
 cdef str _POSITIONS = 'Positions'
+cdef str _SYMBOL = 'Symbol'
 cdef str _STRATEGY = 'Strategy'
 cdef str _STRATEGIES = 'Strategies'
 cdef str _WORKING = 'Working'
@@ -112,6 +113,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_index_order_strategy     = f"{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}"      # HASH  # noqa
         self.key_index_position_strategy  = f"{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}"   # HASH  # noqa
         self.key_index_position_orders    = f"{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:"    # SET   # noqa
+        self.key_index_symbol_orders      = f"{self.key_trader}:{_INDEX}:{_SYMBOL}{_ORDERS}:"      # SET   # noqa
+        self.key_index_symbol_positions   = f"{self.key_trader}:{_INDEX}:{_SYMBOL}{_POSITIONS}:"   # SET   # noqa
         self.key_index_strategy_orders    = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:"    # SET   # noqa
         self.key_index_strategy_positions = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:" # SET   # noqa
         self.key_index_orders             = f"{self.key_trader}:{_INDEX}:{_ORDERS}"                # SET   # noqa
@@ -220,6 +223,158 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
 
+    cpdef void load_index_cache(self) except *:
+        """
+        Clear the current index cache and load indexes from the database.
+        Returns
+        -------
+
+        """
+        pass
+
+    cpdef void load_strategy(self, TradingStrategy strategy) except *:
+        """
+        Load the state for the given strategy from the execution database.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to load.
+
+        """
+        Condition.not_none(strategy, "strategy")
+
+        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ":State")
+
+        if not state:
+            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
+            return
+
+        for key, value in state.items():
+            self._log.debug(f"Loading Strategy(id={strategy.id.value}) state (key='{key}', value={value})...")
+        strategy.load(state)
+
+        self._log.info(f"Loaded Strategy(id={strategy.id.value}) state.")
+
+    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+        """
+        Delete the given strategy from the execution database.
+        Logs error if strategy not found in the database.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to deregister.
+
+        Raises
+        ------
+        ValueError
+            If strategy is not contained in the strategies.
+
+        """
+        Condition.not_none(strategy, "strategy")
+
+        pipe = self._redis.pipeline()
+        pipe.delete(self.key_strategies + strategy.id.value)
+        pipe.execute()
+
+        self._log.info(f"Deleted Strategy(id={strategy.id.value}).")
+
+    cpdef Account load_account(self, AccountId account_id):
+        """
+        Load the account associated with the given account_id (if found).
+
+        Parameters
+        ----------
+        :param account_id: The account identifier to load.
+
+        Returns
+        -------
+        Account or None
+
+        """
+        Condition.not_none(account_id, "account_id")
+
+        cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
+        if not events:
+            return None
+
+        cdef AccountState event
+        cdef Account account = Account(self._event_serializer.deserialize(events[0]))
+        for event in events[1:]:
+            account.apply(self._event_serializer.deserialize(event))
+
+        return account
+
+    cpdef Order load_order(self, ClientOrderId cl_ord_id):
+        """
+        Load the order associated with the given identifier (if found).
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to load.
+
+        Returns
+        -------
+        Order or None
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        cdef list events = self._redis.lrange(name=self.key_orders + cl_ord_id.value, start=0, end=-1)
+
+        # Check there is at least one event to pop
+        if not events:
+            return None
+
+        cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
+
+        cdef Order order
+        if initial.order_type == OrderType.MARKET:
+            order = MarketOrder.create(event=initial)
+        elif initial.order_type == OrderType.LIMIT:
+            order = LimitOrder.create(event=initial)
+        elif initial.order_type == OrderType.STOP:
+            order = StopOrder.create(event=initial)
+        else:
+            raise RuntimeError("Invalid order type")
+
+        cdef bytes event_bytes
+        for event_bytes in events:
+            order.apply(self._event_serializer.deserialize(event_bytes))
+        return order
+
+    cpdef Position load_position(self, PositionId position_id):
+        """
+        Load the position associated with the given identifier (if found).
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to load.
+
+        Returns
+        -------
+        Position or None
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
+
+        # Check there is at least one event to pop
+        if not events:
+            return None
+
+        cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
+        cdef Position position = Position(event=initial)
+
+        cdef bytes event_bytes
+        for event_bytes in events:
+            position.apply(self._event_serializer.deserialize(event_bytes))
+        return position
+
     cpdef void add_account(self, Account account) except *:
         """
         Add the given account to the execution database.
@@ -289,7 +444,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))  # 0
         pipe.hset(name=self.key_index_order_strategy, key=order.cl_ord_id.value, value=strategy_id.value)          # 1
         pipe.sadd(self.key_index_orders, order.cl_ord_id.value)                                                    # 2
-        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 3
+        pipe.sadd(self.key_index_symbol_orders + order.symbol.value, order.cl_ord_id.value)                        # 3
+        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 4
 
         if position_id.not_null():
             pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=position_id.value)
@@ -376,6 +532,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event()))
         pipe.sadd(self.key_index_positions, position.id.value)
         pipe.sadd(self.key_index_positions_open, position.id.value)
+        pipe.sadd(self.key_index_symbol_positions + position.symbol.value, position.id.value)
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -486,149 +643,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Updated Position(id={position.id.value}).")
 
-    cpdef void load_strategy(self, TradingStrategy strategy) except *:
-        """
-        Load the state for the given strategy from the execution database.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to load.
-
-        """
-        Condition.not_none(strategy, "strategy")
-
-        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ":State")
-
-        if not state:
-            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
-            return
-
-        for key, value in state.items():
-            self._log.debug(f"Loading Strategy(id={strategy.id.value}) state (key='{key}', value={value})...")
-        strategy.load(state)
-
-        self._log.info(f"Loaded Strategy(id={strategy.id.value}) state.")
-
-    cpdef Account load_account(self, AccountId account_id):
-        """
-        Load the account associated with the given account_id (if found).
-
-        Parameters
-        ----------
-        :param account_id: The account identifier to load.
-
-        Returns
-        -------
-        Account or None
-
-        """
-        Condition.not_none(account_id, "account_id")
-
-        cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
-        if not events:
-            return None
-
-        cdef AccountState event
-        cdef Account account = Account(self._event_serializer.deserialize(events[0]))
-        for event in events[1:]:
-            account.apply(self._event_serializer.deserialize(event))
-
-        return account
-
-    cpdef Order load_order(self, ClientOrderId cl_ord_id):
-        """
-        Load the order associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier to load.
-
-        Returns
-        -------
-        Order or None
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        cdef list events = self._redis.lrange(name=self.key_orders + cl_ord_id.value, start=0, end=-1)
-
-        # Check there is at least one event to pop
-        if not events:
-            return None
-
-        cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
-
-        cdef Order order
-        if initial.order_type == OrderType.MARKET:
-            order = MarketOrder.create(event=initial)
-        elif initial.order_type == OrderType.LIMIT:
-            order = LimitOrder.create(event=initial)
-        elif initial.order_type == OrderType.STOP:
-            order = StopOrder.create(event=initial)
-        else:
-            raise RuntimeError("Invalid order type")
-
-        cdef bytes event_bytes
-        for event_bytes in events:
-            order.apply(self._event_serializer.deserialize(event_bytes))
-        return order
-
-    cpdef Position load_position(self, PositionId position_id):
-        """
-        Load the position associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier to load.
-
-        Returns
-        -------
-        Position or None
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
-
-        # Check there is at least one event to pop
-        if not events:
-            return None
-
-        cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
-        cdef Position position = Position(event=initial)
-
-        cdef bytes event_bytes
-        for event_bytes in events:
-            position.apply(self._event_serializer.deserialize(event_bytes))
-        return position
-
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
-        """
-        Delete the given strategy from the execution database.
-        Logs error if strategy not found in the database.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to deregister.
-
-        Raises
-        ------
-        ValueError
-            If strategy is not contained in the strategies.
-
-        """
-        Condition.not_none(strategy, "strategy")
-
-        pipe = self._redis.pipeline()
-        pipe.delete(self.key_strategies + strategy.id.value)
-        pipe.execute()
-
-        self._log.info(f"Deleted Strategy(id={strategy.id.value}).")
-
     cpdef void reset(self) except *:
         """
         Reset the execution database by clearing the cache.
@@ -644,12 +658,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.info("Flushed database.")
 
     cdef set _decode_set_to_order_ids(self, set original):
+        cdef bytes element
         return {ClientOrderId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_position_ids(self, set original):
+        cdef bytes element
         return {PositionId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_strategy_ids(self, list original):
+        cdef bytes element
         return {StrategyId.from_string(element.decode(_UTF8).rsplit(':', 2)[1]) for element in original}
 
 # -- QUERIES ---------------------------------------------------------------------------------------
@@ -683,14 +700,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f"{self.key_strategies}*"))
 
-    cpdef set get_order_ids(self, StrategyId strategy_id=None):
+    cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a set of all client order identifiers.
+        Return all client order identifiers.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
@@ -701,14 +720,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders))
         return self._decode_set_to_order_ids(self._redis.smembers(name=f"{self.key_index_strategy_orders}{strategy_id.value}"))
 
-    cpdef set get_order_working_ids(self, StrategyId strategy_id=None):
+    cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a set of all working client order identifiers.
+        Return all working client order identifiers.
 
         Parameters
         ----------
-        strategy_id : StrategyId
-            The optional strategy_id query filter.
+        symbol : Symbol, optional
+            The symbol query filter.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
 
         Returns
         -------
@@ -721,12 +742,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
         return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
 
-    cpdef set get_order_completed_ids(self, StrategyId strategy_id=None):
+    cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a set of all completed client order identifiers.
+        Return all completed client order identifiers.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -741,12 +764,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
         return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
 
-    cpdef set get_position_ids(self, StrategyId strategy_id=None):
+    cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a set of all client position identifiers.
+        Return all position identifiers.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -760,12 +785,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._decode_set_to_position_ids(self._redis.smembers(name=f"{self.key_index_strategy_positions}{strategy_id.value}"))
 
-    cpdef set get_position_open_ids(self, StrategyId strategy_id=None):
+    cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a set of all open client position identifiers.
+        Return all open position identifiers.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -780,14 +807,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
         return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
 
-    cpdef set get_position_closed_ids(self, StrategyId strategy_id=None):
+    cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
-        Return a set of all closed position identifiers.
+        Return all closed position identifiers.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
@@ -851,14 +880,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._cached_orders.get(order_id)
 
-    cpdef dict get_orders(self, StrategyId strategy_id=None):
+    cpdef dict get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return a dictionary of all orders.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
-            The optional strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
@@ -875,21 +906,23 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return orders
 
-    cpdef dict get_orders_working(self, StrategyId strategy_id=None):
+    cpdef dict get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return a dictionary of all working orders.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
         Dict[OrderId, Order]
 
         """
-        cdef set order_ids = self.get_order_working_ids(strategy_id)
+        cdef set order_ids = self.get_order_working_ids(symbol, strategy_id)
         cdef dict cached_orders = {}
 
         try:
@@ -908,21 +941,23 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return orders
 
-    cpdef dict get_orders_completed(self, StrategyId strategy_id=None):
+    cpdef dict get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return a dictionary of all completed orders.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
         Dict[OrderId, Order]
 
         """
-        cdef set order_ids = self.get_order_completed_ids(strategy_id)
+        cdef set order_ids = self.get_order_completed_ids(symbol, strategy_id)
         cdef dict cached_orders = {}
 
         try:
@@ -984,12 +1019,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return PositionId(position_id_bytes.decode(_UTF8))
 
-    cpdef dict get_positions(self, StrategyId strategy_id=None):
+    cpdef dict get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return a dictionary of all positions.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -998,7 +1035,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Dict[PositionId, Position]
 
         """
-        cdef set position_ids = self.get_position_ids(strategy_id)
+        cdef set position_ids = self.get_position_ids(symbol,strategy_id)
         cdef dict positions = {}
 
         try:
@@ -1008,12 +1045,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return positions
 
-    cpdef dict get_positions_open(self, StrategyId strategy_id=None):
+    cpdef dict get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return a dictionary of all open positions.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
             The strategy_id query filter.
 
@@ -1022,7 +1061,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Dict[PositionId, Position]
 
         """
-        cdef set position_ids = self.get_position_open_ids(strategy_id)
+        cdef set position_ids = self.get_position_open_ids(symbol, strategy_id)
         cdef dict cached_positions = {}
 
         try:
@@ -1041,12 +1080,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return positions
 
-    cpdef dict get_positions_closed(self, StrategyId strategy_id=None):
+    cpdef dict get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return a dictionary of all closed positions.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
             The strategy_id query filter.
 
@@ -1055,7 +1096,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Dict[PositionId, Position]
 
         """
-        cdef set position_ids = self.get_position_closed_ids(strategy_id)
+        cdef set position_ids = self.get_position_closed_ids(symbol, strategy_id)
         cdef dict cached_positions = {}
 
         try:
@@ -1128,12 +1169,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_orders_completed, value=cl_ord_id.value)
 
-    cpdef int orders_total_count(self, StrategyId strategy_id=None):
+    cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return the count of order held by the execution database.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
             The strategy_id query filter.
 
@@ -1148,12 +1191,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int orders_working_count(self, StrategyId strategy_id=None):
+    cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return the count of working orders held by the execution database.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
             The strategy_id query filter.
 
@@ -1168,12 +1213,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int orders_completed_count(self, StrategyId strategy_id=None):
+    cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return the count of completed orders held by the execution database.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
             The strategy_id query filter.
 
@@ -1286,14 +1333,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
 
-    cpdef int positions_total_count(self, StrategyId strategy_id=None):
+    cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return the count of positions held by the execution database.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
@@ -1306,14 +1355,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_positions, f"{self.key_index_strategy_positions}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int positions_open_count(self, StrategyId strategy_id=None):
+    cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return the count of open positions held by the execution database.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
@@ -1326,14 +1377,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
         return len(self._redis.sinter(keys=keys))
 
-    cpdef int positions_closed_count(self, StrategyId strategy_id=None):
+    cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return the count of closed positions held by the execution database.
 
         Parameters
         ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------

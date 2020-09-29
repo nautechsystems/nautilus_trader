@@ -244,35 +244,23 @@ cdef class ExecutionEngine:
         """
         return list(self._registered_strategies.keys())
 
-    cpdef bint is_strategy_flat(self, StrategyId strategy_id):
-        """
-        Return a value indicating whether the strategy given identifier is flat
-        (all associated positions FLAT).
-
-        Parameters
-        ----------
-        strategy_id : StrategyId
-            The strategy_id.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(strategy_id, "strategy_id")
-
-        return self.database.positions_open_count(strategy_id) == 0
-
-    cpdef bint is_flat(self):
+    cpdef bint is_flat(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return a value indicating whether the execution engine is flat.
 
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol query filter.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
         Returns
         -------
         bool
 
         """
-        return self.database.positions_open_count() == 0
+        return self.database.positions_open_count(symbol, strategy_id) == 0
 
 # --------------------------------------------------------------------------------------------------
 
@@ -321,6 +309,9 @@ cdef class ExecutionEngine:
         if self.database.order_exists(command.order.cl_ord_id):
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Cannot submit order
+
+        # TODO
+        # if self._oms_type == OMSType.NETTING:
 
         if command.position_id.not_null() and not self.database.position_exists(command.position_id):
             self._invalidate_order(command.order, f"position_id does not exist")

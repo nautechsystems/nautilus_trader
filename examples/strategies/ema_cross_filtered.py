@@ -126,7 +126,7 @@ class EMACrossFiltered(TradingStrategy):
         instrument = self.instrument(self.symbol)
 
         self.precision = instrument.price_precision
-        self.entry_buffer = instrument.tick_size.as_double() * 3.0
+        self.entry_buffer = instrument.tick_size * 3
         self.SL_buffer = instrument.tick_size * 10.0
         self.position_sizer = FixedRiskSizer(instrument)
         self.quote_currency = instrument.quote_currency
@@ -310,11 +310,11 @@ class EMACrossFiltered(TradingStrategy):
                 self._enter_short(bar, sl_buffer, spread_buffer)
 
     def _enter_long(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        price_entry = Price(bar.high.as_double() + self.entry_buffer + spread_buffer, self.precision)
-        price_stop_loss = Price(bar.low.as_double() - sl_buffer, self.precision)
+        price_entry = Price(bar.high + self.entry_buffer + spread_buffer, self.precision)
+        price_stop_loss = Price(bar.low - sl_buffer, self.precision)
 
-        risk = price_entry.as_double() - price_stop_loss.as_double()
-        price_take_profit = Price(price_entry.as_double() + risk, self.precision)
+        risk = price_entry - price_stop_loss
+        price_take_profit = Price(price_entry + risk, self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -359,11 +359,11 @@ class EMACrossFiltered(TradingStrategy):
         self.submit_bracket_order(bracket_order)
 
     def _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        price_entry = Price(bar.low.as_double() - self.entry_buffer, self.precision)
-        price_stop_loss = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+        price_entry = Price(bar.low - self.entry_buffer, self.precision)
+        price_stop_loss = Price(bar.high + sl_buffer + spread_buffer, self.precision)
 
-        risk = price_stop_loss.as_double() - price_entry.as_double()
-        price_take_profit = Price(price_entry.as_double() - risk, self.precision)
+        risk = price_stop_loss - price_entry
+        price_take_profit = Price(price_entry - risk, self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -414,12 +414,12 @@ class EMACrossFiltered(TradingStrategy):
 
             # SELL SIDE ORDERS
             if order.is_sell():
-                temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
+                temp_price = Price(bar.low - sl_buffer, self.precision)
                 if temp_price.gt(order.price):
                     self.modify_order(order, order.quantity, temp_price)
             # BUY SIDE ORDERS
             elif order.is_buy():
-                temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+                temp_price = Price(bar.high + sl_buffer + spread_buffer, self.precision)
                 if temp_price.lt(order.price):
                     self.modify_order(order, order.quantity, temp_price)
 
