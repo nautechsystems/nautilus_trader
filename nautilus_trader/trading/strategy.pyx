@@ -1440,7 +1440,7 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.get_order(cl_ord_id)
 
-    cpdef dict orders(self, Symbol symbol=None):
+    cpdef list orders(self, Symbol symbol=None):
         """
         Return a all orders associated with this strategy.
 
@@ -1449,14 +1449,14 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        Dict[OrderId, Order]
+        List[Order]
 
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.get_orders(symbol, self.id)
 
-    cpdef dict orders_working(self, Symbol symbol=None):
+    cpdef list orders_working(self, Symbol symbol=None):
         """
         Return all working orders associated with this strategy.
 
@@ -1465,7 +1465,7 @@ cdef class TradingStrategy:
 
         Returns
         -----
-        Dict[OrderId, Order]
+        List[Order]
 
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
@@ -1494,7 +1494,7 @@ cdef class TradingStrategy:
         """
         return self._take_profit_ids.copy()
 
-    cpdef dict orders_completed(self, Symbol symbol=None):
+    cpdef list orders_completed(self, Symbol symbol=None):
         """
         Return all completed orders associated with this strategy.
 
@@ -1503,7 +1503,7 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        Dict[OrderId, Order]
+        List[Order]
 
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
@@ -1599,7 +1599,7 @@ cdef class TradingStrategy:
 
         return self._exec_engine.database.get_position(position_id)
 
-    cpdef dict positions(self, Symbol symbol=None):
+    cpdef list positions(self, Symbol symbol=None):
         """
         Return a dictionary of all positions associated with this strategy.
 
@@ -1608,14 +1608,14 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        Dict[PositionId, Position]
+        List[Position]
 
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.get_positions(symbol, self.id)
 
-    cpdef dict positions_open(self, Symbol symbol=None):
+    cpdef list positions_open(self, Symbol symbol=None):
         """
         Return a dictionary of all active positions associated with this strategy.
 
@@ -1624,14 +1624,14 @@ cdef class TradingStrategy:
 
         Returns
         ------
-        Dict[PositionId, Position]
+        List[Position]
 
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.database.get_positions_open(symbol, self.id)
 
-    cpdef dict positions_closed(self, Symbol symbol=None):
+    cpdef list positions_closed(self, Symbol symbol=None):
         """
         Return a dictionary of all closed positions associated with this strategy.
 
@@ -1640,7 +1640,7 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        Dict[PositionId, Position]
+        List[Position]
 
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
@@ -2264,7 +2264,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef dict working_orders = self._exec_engine.database.get_orders_working(
+        cdef list working_orders = self._exec_engine.database.get_orders_working(
             symbol=None,
             strategy_id=self.id,
         )
@@ -2275,14 +2275,13 @@ cdef class TradingStrategy:
             return
 
         self.log.info(f"Cancelling {working_orders_count} working order(s)...")
-        cdef ClientOrderId order_id
         cdef Order order
         cdef CancelOrder command
-        for order_id, order in working_orders.items():
+        for order in working_orders:
             command = CancelOrder(
                 self.trader_id,
                 self._exec_engine.account_id,
-                order_id,
+                order.cl_ord_id,
                 self.uuid_factory.generate(),
                 self.clock.utc_now(),
             )
@@ -2346,7 +2345,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef dict positions = self._exec_engine.database.get_positions_open(symbol=None, strategy_id=self.id)
+        cdef list positions = self._exec_engine.database.get_positions_open(symbol=None, strategy_id=self.id)
         cdef int open_positions_count = len(positions)
         if open_positions_count == 0:
             self.log.info("No open positions to flatten.")
@@ -2354,12 +2353,11 @@ cdef class TradingStrategy:
 
         self.log.info(f"Flattening {open_positions_count} open position(s)...")
 
-        cdef PositionId position_id
         cdef Position position
         cdef Order order
-        for position_id, position in positions.items():
+        for position in positions:
             if position.is_closed():
-                self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT.")
+                self.log.warning(f"Cannot flatten position (the position {position.id} was already FLAT.")
                 continue
 
             order = self.order_factory.market(
@@ -2368,7 +2366,7 @@ cdef class TradingStrategy:
                 position.quantity)
 
             self.log.info(f"Flattening {position}...")
-            self.submit_order(order, position_id)
+            self.submit_order(order, position.id)
 
     cdef void _flatten_on_reject(self, OrderRejected event) except *:
         if event.cl_ord_id not in self._stop_loss_ids and event.cl_ord_id not in self._take_profit_ids:

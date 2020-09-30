@@ -59,7 +59,7 @@ cdef class PerformanceAnalyzer:
         self._positions = pd.DataFrame(columns=["cash"])
         self._transactions = pd.DataFrame(columns=["capital", "pnl"])
 
-    cpdef void calculate_statistics(self, Account account, dict positions) except *:
+    cpdef void calculate_statistics(self, Account account, list positions) except *:
         """
         Calculate performance metrics from the given data.
 
@@ -79,7 +79,7 @@ cdef class PerformanceAnalyzer:
             self.add_transaction(event)
 
         cdef Position position
-        for position in positions.values():
+        for position in positions:
             if position.is_closed():
                 self.add_return(position.closed_time, position.realized_return)
 

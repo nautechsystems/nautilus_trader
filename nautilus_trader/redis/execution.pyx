@@ -586,6 +586,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(strategy, "strategy")
 
         cdef dict state = strategy.save()
+        self._index_strategies.add(strategy.id)
 
         # Command pipeline
         pipe = self._redis.pipeline()
@@ -697,732 +698,725 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes element
         return {StrategyId.from_string(element.decode(_UTF8).rsplit(':', 2)[1]) for element in original}
 
-# -- QUERIES ---------------------------------------------------------------------------------------
-
-    cpdef Account get_account(self, AccountId account_id):
-        """
-        Return the account matching the given identifier (if found).
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account identifier.
-
-        Returns
-        -------
-        Account or None
-
-        """
-        Condition.not_none(account_id, "account_id")
-
-        return self._cached_accounts.get(account_id)
-
-    cpdef set get_strategy_ids(self):
-        """
-        Return a set of all strategy_ids.
-
-        Returns
-        -------
-        Set[StrategyId]
-
-        """
-        return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f"{self.key_strategies}*"))
-
-    cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return all client order identifiers.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[ClientOrderId]
-
-        """
-        if strategy_id is None:
-            return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders))
-        return self._decode_set_to_order_ids(self._redis.smembers(name=f"{self.key_index_strategy_orders}{strategy_id.value}"))
-
-    cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return all working client order identifiers.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[ClientOrderId]
-
-        """
-        if strategy_id is None:
-            return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_working))
-
-        cdef tuple keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
-
-    cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return all completed client order identifiers.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[ClientOrderId]
-
-        """
-        if strategy_id is None:
-            return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_completed))
-
-        cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
-
-    cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return all position identifiers.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[PositionId]
-
-        """
-        if strategy_id is None:
-            return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions))
-
-        return self._decode_set_to_position_ids(self._redis.smembers(name=f"{self.key_index_strategy_positions}{strategy_id.value}"))
-
-    cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return all open position identifiers.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[PositionId]
-
-        """
-        if strategy_id is None:
-            return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_open))
-
-        cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
-
-    cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return all closed position identifiers.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[PositionId]
-
-        """
-        if strategy_id is None:
-            return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_closed))
-
-        cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
-
-    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
-        """
-        Return the strategy_id associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier associated with the strategy.
-
-        Returns
-        -------
-        StrategyId or None
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=cl_ord_id.value)
-        return StrategyId.from_string(strategy_id.decode(_UTF8))
-
-    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
-        """
-        Return the strategy_id associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier associated with the strategy.
-
-        Returns
-        -------
-        StrategyId or None
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        cdef bytes strategy_id = self._redis.hget(name=self.key_index_position_strategy, key=position_id.value)
-        return StrategyId.from_string(strategy_id.decode(_UTF8))
-
-    cpdef Order get_order(self, ClientOrderId order_id):
-        """
-        Return the order matching the given identifier (if found).
-
-        Returns
-        -------
-        Order or None
-
-        """
-        Condition.not_none(order_id, "order_id")
-
-        return self._cached_orders.get(order_id)
-
-    cpdef dict get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all orders.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Dict[OrderId, Order]
-
-        """
-        cdef set order_ids = self.get_order_ids(strategy_id)
-        cdef dict orders = {}
-
-        try:
-            orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
-
-        return orders
-
-    cpdef dict get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all working orders.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Dict[OrderId, Order]
-
-        """
-        cdef set order_ids = self.get_order_working_ids(symbol, strategy_id)
-        cdef dict cached_orders = {}
-
-        try:
-            cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in the cache " + str(ex))
-
-        cdef dict orders = {}
-        cdef Order order
-        for order in cached_orders.values():
-            if order.is_working():
-                orders[order.cl_ord_id] = order
-            else:
-                self._log.error(f"Order indexed as working found not working, "
-                                f"state={order.state_as_string()}.")
-
-        return orders
-
-    cpdef dict get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all completed orders.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Dict[OrderId, Order]
-
-        """
-        cdef set order_ids = self.get_order_completed_ids(symbol, strategy_id)
-        cdef dict cached_orders = {}
-
-        try:
-            cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
-
-        cdef dict orders = {}
-        cdef Order order
-        for order in cached_orders.values():
-            if order.is_completed():
-                orders[order.cl_ord_id] = order
-            else:
-                self._log.error(f"Order indexed as completed found not completed, "
-                                f"state={order.state_as_string()}.")
-
-        return orders
-
-    cpdef Position get_position(self, PositionId position_id):
-        """
-        Return the position associated with the given identifier (if found, else None).
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier.
-
-        Returns
-        -------
-        Position or None
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._cached_positions.get(position_id)
-
-    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
-        """
-        Return the position identifier associated with the given client order identifier
-        (if found, else None).
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier associated with the position.
-
-        Returns
-        -------
-        PositionId or None
-
-        """
-        Condition.not_none(cl_ord_id, "order_id")
-
-        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
-        if position_id_bytes is None:
-            self._log.warning(f"Cannot get PositionId for {cl_ord_id.to_string(with_class=True)} "
-                              f"(no matching PositionId found in database).")
-            return position_id_bytes
-
-        return PositionId(position_id_bytes.decode(_UTF8))
-
-    cpdef dict get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all positions.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        cdef set position_ids = self.get_position_ids(symbol,strategy_id)
-        cdef dict positions = {}
-
-        try:
-            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
-
-        return positions
-
-    cpdef dict get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all open positions.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy_id query filter.
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        cdef set position_ids = self.get_position_open_ids(symbol, strategy_id)
-        cdef dict cached_positions = {}
-
-        try:
-            cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
-
-        cdef dict positions = {}
-        cdef Position position
-        for position in cached_positions.values():
-            if position.is_open():
-                positions[position.id] = position
-            else:
-                self._log.error(f"Position indexed as open found not open, "
-                                f"state={position.position_side_as_string()}.")
-
-        return positions
-
-    cpdef dict get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all closed positions.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy_id query filter.
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        cdef set position_ids = self.get_position_closed_ids(symbol, strategy_id)
-        cdef dict cached_positions = {}
-
-        try:
-            cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
-
-        cdef dict positions = {}
-        cdef Position position
-        for position in cached_positions.values():
-            if position.is_closed():
-                positions[position.id] = position
-            else:
-                self._log.error(f"Position indexed as closed found not closed, "
-                                f"state={position.position_side_as_string()}.")
-
-        return positions
-
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether an order with the given identifier exists.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier to check.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return self._redis.sismember(name=self.key_index_orders, value=cl_ord_id.value)
-
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether an order with the given identifier is working.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier to check.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return self._redis.sismember(name=self.key_index_orders_working, value=cl_ord_id.value)
-
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether an order with the given identifier is completed.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier to check.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return self._redis.sismember(name=self.key_index_orders_completed, value=cl_ord_id.value)
-
-    cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return the count of order held by the execution database.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy_id query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders)
-
-        cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return the count of working orders held by the execution database.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy_id query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders_working)
-
-        cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return the count of completed orders held by the execution database.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy_id query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders_completed)
-
-        cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef bint position_exists(self, PositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists.
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._redis.sismember(name=self.key_index_positions, value=position_id.value)
-
-    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether there is a position associated with the given
-        identifier.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        cdef bytes position_id = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
-
-        if position_id is None:
-            return False
-        return self._redis.sismember(name=self.key_index_positions, value=position_id)
-
-    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether there is a position_id indexed for the
-        given identifier.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return self._redis.hexists(name=self.key_index_order_position, key=cl_ord_id.value)
-
-    cpdef bint is_position_open(self, PositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists
-        and is open.
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._redis.sismember(name=self.key_index_positions_open, value=position_id.value)
-
-    cpdef bint is_position_closed(self, PositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists
-        and is closed.
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
-
-    cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return the count of positions held by the execution database.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_positions)
-
-        cdef tuple keys = (self.key_index_positions, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return the count of open positions held by the execution database.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_positions_open)
-
-        cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """
-        Return the count of closed positions held by the execution database.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol identifier query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_positions_closed)
-
-        cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
+# # -- QUERIES ---------------------------------------------------------------------------------------
+#
+#     cpdef Account get_account(self, AccountId account_id):
+#         """
+#         Return the account matching the given identifier (if found).
+#
+#         Parameters
+#         ----------
+#         account_id : AccountId
+#             The account identifier.
+#
+#         Returns
+#         -------
+#         Account or None
+#
+#         """
+#         Condition.not_none(account_id, "account_id")
+#
+#         return self._cached_accounts.get(account_id)
+#
+#     cpdef set get_strategy_ids(self):
+#         """
+#         Return a set of all strategy_ids.
+#
+#         Returns
+#         -------
+#         Set[StrategyId]
+#
+#         """
+#         return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f"{self.key_strategies}*"))
+#
+#     cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all client order identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[ClientOrderId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders))
+#         return self._decode_set_to_order_ids(self._redis.smembers(name=f"{self.key_index_strategy_orders}{strategy_id.value}"))
+#
+#     cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all working client order identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[ClientOrderId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_working))
+#
+#         cdef tuple keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all completed client order identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[ClientOrderId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_completed))
+#
+#         cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all position identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[PositionId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions))
+#
+#         return self._decode_set_to_position_ids(self._redis.smembers(name=f"{self.key_index_strategy_positions}{strategy_id.value}"))
+#
+#     cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all open position identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[PositionId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_open))
+#
+#         cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all closed position identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[PositionId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_closed))
+#
+#         cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
+#         """
+#         Return the strategy_id associated with the given identifier (if found).
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier associated with the strategy.
+#
+#         Returns
+#         -------
+#         StrategyId or None
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=cl_ord_id.value)
+#         return StrategyId.from_string(strategy_id.decode(_UTF8))
+#
+#     cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+#         """
+#         Return the strategy_id associated with the given identifier (if found).
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier associated with the strategy.
+#
+#         Returns
+#         -------
+#         StrategyId or None
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         cdef bytes strategy_id = self._redis.hget(name=self.key_index_position_strategy, key=position_id.value)
+#         return StrategyId.from_string(strategy_id.decode(_UTF8))
+#
+#     cpdef Order get_order(self, ClientOrderId order_id):
+#         """
+#         Return the order matching the given identifier (if found).
+#
+#         Returns
+#         -------
+#         Order or None
+#
+#         """
+#         Condition.not_none(order_id, "order_id")
+#
+#         return self._cached_orders.get(order_id)
+#
+#     cpdef list get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all orders.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         List[Order]
+#
+#         """
+#         cdef set order_ids = self.get_order_ids(strategy_id)
+#
+#         cdef ClientOrderId order_id
+#         cdef list orders
+#         try:
+#             orders = [self._cached_orders[order_id] for order_id in order_ids]
+#         except KeyError as ex:
+#             self._log.error("Cannot find Order object in cache " + str(ex))
+#
+#         return orders
+#
+#     cpdef list get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all working orders.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Dict[OrderId, Order]
+#
+#         """
+#         cdef set order_ids = self.get_order_working_ids(symbol, strategy_id)
+#
+#
+#         cdef list orders
+#         try:
+#             orders = [self._cached_orders[order_id] for order_id in order_ids]
+#         except KeyError as ex:
+#             self._log.error("Cannot find Order object in the cache " + str(ex))
+#
+#         return orders
+#
+#     cpdef dict get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all completed orders.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Dict[OrderId, Order]
+#
+#         """
+#         cdef set order_ids = self.get_order_completed_ids(symbol, strategy_id)
+#         cdef dict cached_orders = {}
+#
+#         try:
+#             cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Order object in cache " + str(ex))
+#
+#         cdef dict orders = {}
+#         cdef Order order
+#         for order in cached_orders.values():
+#             if order.is_completed():
+#                 orders[order.cl_ord_id] = order
+#             else:
+#                 self._log.error(f"Order indexed as completed found not completed, "
+#                                 f"state={order.state_as_string()}.")
+#
+#         return orders
+#
+#     cpdef Position get_position(self, PositionId position_id):
+#         """
+#         Return the position associated with the given identifier (if found, else None).
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         Position or None
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._cached_positions.get(position_id)
+#
+#     cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
+#         """
+#         Return the position identifier associated with the given client order identifier
+#         (if found, else None).
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier associated with the position.
+#
+#         Returns
+#         -------
+#         PositionId or None
+#
+#         """
+#         Condition.not_none(cl_ord_id, "order_id")
+#
+#         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
+#         if position_id_bytes is None:
+#             self._log.warning(f"Cannot get PositionId for {cl_ord_id.to_string(with_class=True)} "
+#                               f"(no matching PositionId found in database).")
+#             return position_id_bytes
+#
+#         return PositionId(position_id_bytes.decode(_UTF8))
+#
+#     cpdef dict get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all positions.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Dict[PositionId, Position]
+#
+#         """
+#         cdef set position_ids = self.get_position_ids(symbol,strategy_id)
+#         cdef dict positions = {}
+#
+#         try:
+#             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Position object in cache " + str(ex))
+#
+#         return positions
+#
+#     cpdef dict get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all open positions.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         Dict[PositionId, Position]
+#
+#         """
+#         cdef set position_ids = self.get_position_open_ids(symbol, strategy_id)
+#         cdef dict cached_positions = {}
+#
+#         try:
+#             cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Position object in cache " + str(ex))
+#
+#         cdef dict positions = {}
+#         cdef Position position
+#         for position in cached_positions.values():
+#             if position.is_open():
+#                 positions[position.id] = position
+#             else:
+#                 self._log.error(f"Position indexed as open found not open, "
+#                                 f"state={position.position_side_as_string()}.")
+#
+#         return positions
+#
+#     cpdef dict get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all closed positions.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         Dict[PositionId, Position]
+#
+#         """
+#         cdef set position_ids = self.get_position_closed_ids(symbol, strategy_id)
+#         cdef dict cached_positions = {}
+#
+#         try:
+#             cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Position object in cache " + str(ex))
+#
+#         cdef dict positions = {}
+#         cdef Position position
+#         for position in cached_positions.values():
+#             if position.is_closed():
+#                 positions[position.id] = position
+#             else:
+#                 self._log.error(f"Position indexed as closed found not closed, "
+#                                 f"state={position.position_side_as_string()}.")
+#
+#         return positions
+#
+#     cpdef bint order_exists(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether an order with the given identifier exists.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier to check.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.sismember(name=self.key_index_orders, value=cl_ord_id.value)
+#
+#     cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether an order with the given identifier is working.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier to check.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.sismember(name=self.key_index_orders_working, value=cl_ord_id.value)
+#
+#     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether an order with the given identifier is completed.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier to check.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.sismember(name=self.key_index_orders_completed, value=cl_ord_id.value)
+#
+#     cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of order held by the execution database.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_orders)
+#
+#         cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of working orders held by the execution database.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_orders_working)
+#
+#         cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of completed orders held by the execution database.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_orders_completed)
+#
+#         cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef bint position_exists(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists.
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._redis.sismember(name=self.key_index_positions, value=position_id.value)
+#
+#     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether there is a position associated with the given
+#         identifier.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         cdef bytes position_id = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
+#
+#         if position_id is None:
+#             return False
+#         return self._redis.sismember(name=self.key_index_positions, value=position_id)
+#
+#     cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether there is a position_id indexed for the
+#         given identifier.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.hexists(name=self.key_index_order_position, key=cl_ord_id.value)
+#
+#     cpdef bint is_position_open(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists
+#         and is open.
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._redis.sismember(name=self.key_index_positions_open, value=position_id.value)
+#
+#     cpdef bint is_position_closed(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists
+#         and is closed.
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
+#
+#     cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of positions held by the execution database.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_positions)
+#
+#         cdef tuple keys = (self.key_index_positions, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of open positions held by the execution database.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_positions_open)
+#
+#         cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of closed positions held by the execution database.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_positions_closed)
+#
+#         cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))

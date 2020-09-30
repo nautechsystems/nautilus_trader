@@ -29,7 +29,7 @@ cdef class PerformanceAnalyzer:
     cdef object _positions
     cdef object _transactions
 
-    cpdef void calculate_statistics(self, Account account, dict positions) except *
+    cpdef void calculate_statistics(self, Account account, list positions) except *
     cpdef void add_transaction(self, AccountState event) except *
     cpdef void add_return(self, datetime time, double value) except *
     cpdef void add_positions(self, datetime time, list positions, Money cash_balance) except *

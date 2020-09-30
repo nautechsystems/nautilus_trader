@@ -457,7 +457,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(strategy.object_storer.get_store()[11].commission.as_double(),
                          reduce_order.filled_qty.as_double() * commission_percent)
 
-        position = strategy.positions_open()[position_id]
+        position = strategy.positions_open()[0]
         expected_commission = position.quantity.as_double() * commission_percent
         self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
                          strategy.account().cash_balance.as_double())
@@ -486,7 +486,7 @@ class SimulatedMarketTests(unittest.TestCase):
         filled_price = strategy.object_storer.get_store()[3].avg_price.as_double()
         commission = strategy.object_storer.get_store()[3].commission.as_double()
         commission = Money(-commission * filled_price, 392)
-        position = strategy.positions_open()[PositionId("B-USD/JPY-1")]
+        position = strategy.positions_open()[0]
         self.assertEqual(position.realized_pnl, commission)
 
     def test_commission_maker_taker_order(self):
@@ -576,7 +576,7 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.submit_order(order_reduce, position_id)
 
         # Assert
-        position = strategy.positions_open()[position_id]
+        position = strategy.positions_open()[0]
         unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
         expected_unrealized_pnl = \
             order_reduce.quantity.as_double() * (reduce_quote.bid.sub(open_quote.ask).as_double())

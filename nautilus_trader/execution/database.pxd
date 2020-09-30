@@ -101,9 +101,9 @@ cdef class ExecutionDatabase:
 
     # -- Order queries ---------------------------------------------------------
     cpdef Order get_order(self, ClientOrderId cl_ord_id)
-    cpdef dict get_orders(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef dict get_orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef dict get_orders_completed(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list get_orders(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list get_orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list get_orders_completed(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef bint order_exists(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
@@ -114,9 +114,9 @@ cdef class ExecutionDatabase:
     # -- Position queries ------------------------------------------------------
     cpdef Position get_position(self, PositionId position_id)
     cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id)
-    cpdef dict get_positions(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef dict get_positions_open(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef dict get_positions_closed(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list get_positions(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list get_positions_open(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list get_positions_closed(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id)
     cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id)
