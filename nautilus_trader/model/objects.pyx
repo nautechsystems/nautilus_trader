@@ -81,7 +81,7 @@ cdef class Quantity(Decimal64):
 
         return Quantity(float(value), precision=precision_from_string(value))
 
-    cpdef bint equals(self, Quantity other):
+    cpdef bint equals(self, Quantity other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -221,7 +221,7 @@ cdef class Price(Decimal64):
 
         return Price(float(value), precision=precision_from_string(value))
 
-    cpdef bint equals(self, Price other):
+    cpdef bint equals(self, Price other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -340,7 +340,7 @@ cdef class Money(Decimal64):
 
         return Money(float(value), currency, precision=precision_from_string(value))
 
-    cpdef bint equals(self, Money other):
+    cpdef bint equals(self, Money other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

@@ -453,7 +453,7 @@ cdef class SimulatedMarket:
         Condition.not_none(timestamp, "timestamp")
         Condition.not_none(self.exec_engine, "_exec_engine")
 
-        cdef list open_positions = self.exec_engine.database.get_positions_open()
+        cdef list open_positions = self.exec_engine.database.positions_open()
 
         cdef Position position
         cdef Instrument instrument
@@ -938,7 +938,7 @@ cdef class SimulatedMarket:
             position_id = self._generate_position_id(order.symbol)
             self._position_index[order.cl_ord_id] = position_id
         else:
-            position = self.exec_engine.database.get_position(position_id)
+            position = self.exec_engine.database.position(position_id)
             position_id = position.id
 
         # Calculate commission
@@ -998,7 +998,7 @@ cdef class SimulatedMarket:
 
         if order_id in self._oco_orders:
             oco_order_id = self._oco_orders[order_id]
-            oco_order = self.exec_engine.database.get_order(oco_order_id)
+            oco_order = self.exec_engine.database.order(oco_order_id)
             del self._oco_orders[order_id]
             del self._oco_orders[oco_order_id]
 

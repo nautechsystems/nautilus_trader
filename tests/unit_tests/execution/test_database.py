@@ -73,11 +73,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, position_id, self.strategy.id)
 
         # Assert
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids())
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids(symbol=order.symbol))
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids(strategy_id=self.strategy.id))
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(order in self.database.get_orders())
+        self.assertTrue(order.cl_ord_id in self.database.order_ids())
+        self.assertTrue(order.cl_ord_id in self.database.order_ids(symbol=order.symbol))
+        self.assertTrue(order.cl_ord_id in self.database.order_ids(strategy_id=self.strategy.id))
+        self.assertTrue(order.cl_ord_id in self.database.order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(order in self.database.orders())
 
     def test_add_position(self):
         # Arrange
@@ -102,16 +102,16 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.database.position_exists_for_order(order.cl_ord_id))
         self.assertTrue(self.database.position_exists(position.id))
-        self.assertTrue(position.id in self.database.get_position_ids())
-        self.assertTrue(position in self.database.get_positions())
-        self.assertTrue(position in self.database.get_positions_open())
-        self.assertTrue(position in self.database.get_positions_open(symbol=position.symbol))
-        self.assertTrue(position in self.database.get_positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.database.get_positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_closed())
-        self.assertTrue(position not in self.database.get_positions_closed(symbol=position.symbol))
-        self.assertTrue(position not in self.database.get_positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(position.id in self.database.position_ids())
+        self.assertTrue(position in self.database.positions())
+        self.assertTrue(position in self.database.positions_open())
+        self.assertTrue(position in self.database.positions_open(symbol=position.symbol))
+        self.assertTrue(position in self.database.positions_open(strategy_id=self.strategy.id))
+        self.assertTrue(position in self.database.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_closed())
+        self.assertTrue(position not in self.database.positions_closed(symbol=position.symbol))
+        self.assertTrue(position not in self.database.positions_closed(strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
 
     def test_update_order_for_working_order(self):
         # Arrange
@@ -137,16 +137,16 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.database.order_exists(order.cl_ord_id))
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids())
-        self.assertTrue(order in self.database.get_orders())
-        self.assertTrue(order in self.database.get_orders_working())
-        self.assertTrue(order in self.database.get_orders_working(symbol=order.symbol))
-        self.assertTrue(order in self.database.get_orders_working(strategy_id=self.strategy.id))
-        self.assertTrue(order in self.database.get_orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.database.get_orders_completed())
-        self.assertTrue(order not in self.database.get_orders_completed(symbol=order.symbol))
-        self.assertTrue(order not in self.database.get_orders_completed(strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.database.get_orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(order.cl_ord_id in self.database.order_ids())
+        self.assertTrue(order in self.database.orders())
+        self.assertTrue(order in self.database.orders_working())
+        self.assertTrue(order in self.database.orders_working(symbol=order.symbol))
+        self.assertTrue(order in self.database.orders_working(strategy_id=self.strategy.id))
+        self.assertTrue(order in self.database.orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(order not in self.database.orders_completed())
+        self.assertTrue(order not in self.database.orders_completed(symbol=order.symbol))
+        self.assertTrue(order not in self.database.orders_completed(strategy_id=self.strategy.id))
+        self.assertTrue(order not in self.database.orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -169,16 +169,16 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.database.order_exists(order.cl_ord_id))
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids())
-        self.assertTrue(order in self.database.get_orders())
-        self.assertTrue(order in self.database.get_orders_completed())
-        self.assertTrue(order in self.database.get_orders_completed(symbol=order.symbol))
-        self.assertTrue(order in self.database.get_orders_completed(strategy_id=self.strategy.id))
-        self.assertTrue(order in self.database.get_orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.database.get_orders_working())
-        self.assertTrue(order not in self.database.get_orders_working(symbol=order.symbol))
-        self.assertTrue(order not in self.database.get_orders_working(strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.database.get_orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(order.cl_ord_id in self.database.order_ids())
+        self.assertTrue(order in self.database.orders())
+        self.assertTrue(order in self.database.orders_completed())
+        self.assertTrue(order in self.database.orders_completed(symbol=order.symbol))
+        self.assertTrue(order in self.database.orders_completed(strategy_id=self.strategy.id))
+        self.assertTrue(order in self.database.orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(order not in self.database.orders_working())
+        self.assertTrue(order not in self.database.orders_working(symbol=order.symbol))
+        self.assertTrue(order not in self.database.orders_working(strategy_id=self.strategy.id))
+        self.assertTrue(order not in self.database.orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
 
     def test_update_position_for_open_position(self):
         # Arrange
@@ -206,17 +206,17 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.database.position_exists(position.id))
-        self.assertTrue(position.id in self.database.get_position_ids())
-        self.assertTrue(position in self.database.get_positions())
-        self.assertTrue(position in self.database.get_positions_open())
-        self.assertTrue(position in self.database.get_positions_open(symbol=position.symbol))
-        self.assertTrue(position in self.database.get_positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.database.get_positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_closed())
-        self.assertTrue(position not in self.database.get_positions_closed(symbol=position.symbol))
-        self.assertTrue(position not in self.database.get_positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertEqual(position, self.database.get_position(position_id))
+        self.assertTrue(position.id in self.database.position_ids())
+        self.assertTrue(position in self.database.positions())
+        self.assertTrue(position in self.database.positions_open())
+        self.assertTrue(position in self.database.positions_open(symbol=position.symbol))
+        self.assertTrue(position in self.database.positions_open(strategy_id=self.strategy.id))
+        self.assertTrue(position in self.database.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_closed())
+        self.assertTrue(position not in self.database.positions_closed(symbol=position.symbol))
+        self.assertTrue(position not in self.database.positions_closed(strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertEqual(position, self.database.position(position_id))
 
     def test_update_position_for_closed_position(self):
         # Arrange
@@ -261,17 +261,17 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.database.position_exists(position.id))
-        self.assertTrue(position.id in self.database.get_position_ids())
-        self.assertTrue(position in self.database.get_positions())
-        self.assertTrue(position in self.database.get_positions_closed())
-        self.assertTrue(position in self.database.get_positions_closed(symbol=position.symbol))
-        self.assertTrue(position in self.database.get_positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.database.get_positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_open())
-        self.assertTrue(position not in self.database.get_positions_open(symbol=position.symbol))
-        self.assertTrue(position not in self.database.get_positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertEqual(position, self.database.get_position(position_id))
+        self.assertTrue(position.id in self.database.position_ids())
+        self.assertTrue(position in self.database.positions())
+        self.assertTrue(position in self.database.positions_closed())
+        self.assertTrue(position in self.database.positions_closed(symbol=position.symbol))
+        self.assertTrue(position in self.database.positions_closed(strategy_id=self.strategy.id))
+        self.assertTrue(position in self.database.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_open())
+        self.assertTrue(position not in self.database.positions_open(symbol=position.symbol))
+        self.assertTrue(position not in self.database.positions_open(strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertEqual(position, self.database.position(position_id))
 
     def test_add_account(self):
         # Arrange
@@ -328,7 +328,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.delete_strategy(self.strategy)
 
         # Assert
-        self.assertTrue(self.strategy.id not in self.database.get_strategy_ids())
+        self.assertTrue(self.strategy.id not in self.database.strategy_ids())
 
     def test_check_residuals(self):
         # Arrange
@@ -424,7 +424,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.reset()
 
         # Assert
-        self.assertEqual(0, len(self.database.get_strategy_ids()))
+        self.assertEqual(0, len(self.database.strategy_ids()))
         self.assertEqual(0, self.database.orders_total_count())
         self.assertEqual(0, self.database.positions_total_count())
 
@@ -479,7 +479,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
         # Arrange
         # Act
-        result = self.database.get_strategy_ids()
+        result = self.database.strategy_ids()
 
         # Assert
         self.assertEqual(set(), result)
@@ -489,7 +489,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_strategy(self.strategy)
 
         # Act
-        result = self.database.get_strategy_ids()
+        result = self.database.strategy_ids()
 
         # Assert
         self.assertEqual({self.strategy.id}, result)
@@ -517,7 +517,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         position_id = PositionId("P-123456")
 
         # Act
-        result = self.database.get_position(position_id)
+        result = self.database.position(position_id)
 
         # Assert
         self.assertIsNone(result)
@@ -527,7 +527,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order_id = ClientOrderId("O-201908080101-000-001")
 
         # Act
-        result = self.database.get_order(order_id)
+        result = self.database.order(order_id)
 
         # Assert
         self.assertIsNone(result)

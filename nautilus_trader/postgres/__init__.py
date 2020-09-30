@@ -12,25 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-cdef class Decimal64:
-
-    cdef object _value
-
-    cdef readonly int precision
-
-    @staticmethod
-    cdef Decimal64 from_string_to_decimal(str value)
-
-    cpdef str to_string(self, bint format_commas=*)
-    cpdef int as_int(self)
-    cpdef double as_double(self)
-    cpdef object as_decimal(self)
-    cpdef bint is_zero(self) except *
-    cpdef bint eq(self, Decimal64 other) except *
-    cpdef bint ne(self, Decimal64 other) except *
-    cpdef bint lt(self, Decimal64 other) except *
-    cpdef bint le(self, Decimal64 other) except *
-    cpdef bint gt(self, Decimal64 other) except *
-    cpdef bint ge(self, Decimal64 other) except *

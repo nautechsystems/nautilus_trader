@@ -144,7 +144,7 @@ cdef class Decimal64:
         """
         return self._value
 
-    cpdef bint is_zero(self):
+    cpdef bint is_zero(self) except *:
         """
         Return a value indicating whether the value of the decimal is equal to zero.
 
@@ -155,7 +155,7 @@ cdef class Decimal64:
         """
         return self._value == _QUANTIZE_MAP[0]
 
-    cpdef bint eq(self, Decimal64 other):
+    cpdef bint eq(self, Decimal64 other) except *:
         """
         Return a value indicating whether this decimal is equal to (==) the given decimal.
 
@@ -173,7 +173,7 @@ cdef class Decimal64:
         # direct access to protected member ok here
         return self._value == other._value
 
-    cpdef bint ne(self, Decimal64 other):
+    cpdef bint ne(self, Decimal64 other) except *:
         """
         Return a value indicating whether this decimal is not equal to (!=) the
         given decimal.
@@ -192,7 +192,7 @@ cdef class Decimal64:
         # direct access to protected member ok here
         return self._value != other._value
 
-    cpdef bint lt(self, Decimal64 other):
+    cpdef bint lt(self, Decimal64 other) except *:
         """
         Return a value indicating whether this decimal is less than (<) the
         given decimal.
@@ -211,7 +211,7 @@ cdef class Decimal64:
         # direct access to protected member ok here
         return self._value < other._value
 
-    cpdef bint le(self, Decimal64 other):
+    cpdef bint le(self, Decimal64 other) except *:
         """
         Return a value indicating whether this decimal is less than or equal to
         (<=) the given decimal.
@@ -230,7 +230,7 @@ cdef class Decimal64:
         # direct access to protected member ok here
         return self._value <= other._value
 
-    cpdef bint gt(self, Decimal64 other):
+    cpdef bint gt(self, Decimal64 other) except *:
         """
         Return a value indicating whether this decimal is greater than (>) the
         given decimal.
@@ -249,7 +249,7 @@ cdef class Decimal64:
         # direct access to protected member ok here
         return self._value > other._value
 
-    cpdef bint ge(self, Decimal64 other):
+    cpdef bint ge(self, Decimal64 other) except *:
         """
         Return a value indicating whether this decimal is greater than or equal
         to (>=) the given decimal.

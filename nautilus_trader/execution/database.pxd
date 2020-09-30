@@ -15,6 +15,8 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.decimal cimport Decimal64
+from nautilus_trader.execution.base cimport ExecutionDatabaseReadOnly
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -26,7 +28,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionDatabase:
+cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
     cdef LoggerAdapter _log
     cdef dict _cached_accounts
     cdef dict _cached_orders
@@ -74,6 +76,10 @@ cdef class ExecutionDatabase:
     cpdef void reset(self) except *
     cpdef void flush(self) except *
 
+    cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
+    cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
+    cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id)
+
     cdef void _add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
     cdef void _add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
     cdef void _add_position(self, Position position, StrategyId strategy_id) except *
@@ -83,54 +89,6 @@ cdef class ExecutionDatabase:
 
     cdef void _reset(self) except *
 
-# -- QUERIES ---------------------------------------------------------------------------------------
-
-    cpdef dict get_symbol_position_counts(self)
-    cpdef Account get_account(self, AccountId account_id)
-
-    # -- Identifier queries ----------------------------------------------------
-    cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
-    cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
-    cpdef set get_order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set get_order_working_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set get_order_completed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set get_position_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set get_position_open_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set get_position_closed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set get_strategy_ids(self)
-
-    # -- Order queries ---------------------------------------------------------
-    cpdef Order get_order(self, ClientOrderId cl_ord_id)
-    cpdef list get_orders(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list get_orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list get_orders_completed(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id)
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
-    cpdef int orders_total_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int orders_working_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int orders_completed_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-
-    # -- Position queries ------------------------------------------------------
-    cpdef Position get_position(self, PositionId position_id)
-    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id)
-    cpdef list get_positions(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list get_positions_open(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list get_positions_closed(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef bint position_exists(self, PositionId position_id)
-    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id)
-    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id)
-    cpdef bint is_position_open(self, PositionId position_id)
-    cpdef bint is_position_closed(self, PositionId position_id)
-    cpdef int positions_total_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int positions_open_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int positions_closed_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-
-    # -- Strategy queries ------------------------------------------------------
-    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id)
-    cpdef StrategyId get_strategy_for_position(self, PositionId position_id)
-
-# -------------------------------------------------------------------------------------------------"
 
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     pass

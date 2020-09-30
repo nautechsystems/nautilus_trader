@@ -134,7 +134,7 @@ cdef class Order:
 
         self._events.append(event)
 
-    cpdef bint equals(self, Order other):
+    cpdef bint equals(self, Order other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -205,7 +205,7 @@ cdef class Order:
         """
         return len(self._events)
 
-    cpdef bint is_buy(self):
+    cpdef bint is_buy(self) except *:
         """
         Return a value indicating whether the order side is buy.
 
@@ -216,7 +216,7 @@ cdef class Order:
         """
         return self.side == OrderSide.BUY
 
-    cpdef bint is_sell(self):
+    cpdef bint is_sell(self) except *:
         """
         Return a value indicating whether the order side is sell.
 
@@ -227,7 +227,7 @@ cdef class Order:
         """
         return self.side == OrderSide.SELL
 
-    cpdef bint is_working(self):
+    cpdef bint is_working(self) except *:
         """
         Return a value indicating whether the order is working.
 
@@ -238,7 +238,7 @@ cdef class Order:
         """
         return self._fsm.state == OrderState.WORKING
 
-    cpdef bint is_completed(self):
+    cpdef bint is_completed(self) except *:
         """
         Return a value indicating whether the order is completed.
 
@@ -953,7 +953,7 @@ cdef class BracketOrder:
         self.has_take_profit = take_profit is not None
         self.timestamp = entry.timestamp
 
-    cpdef bint equals(self, BracketOrder other):
+    cpdef bint equals(self, BracketOrder other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

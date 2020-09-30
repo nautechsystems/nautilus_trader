@@ -22,6 +22,7 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.execution.base cimport ExecutionDatabaseReadOnly
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
@@ -44,7 +45,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -57,12 +57,14 @@ cdef class TradingStrategy:
     cdef readonly StrategyId id
     cdef readonly TraderId trader_id
 
-    cdef readonly bint flatten_on_stop
-    cdef readonly bint flatten_on_reject
-    cdef readonly bint cancel_all_orders_on_stop
-    cdef readonly bint reraise_exceptions
-
     cdef readonly OrderFactory order_factory
+    cdef readonly ExecutionDatabaseReadOnly execution
+
+    cdef bint _is_flatten_on_stop
+    cdef bint _is_flatten_on_reject
+    cdef bint _is_cancel_all_orders_on_stop
+    cdef bint _is_reraise_exceptions
+
     cdef set _flattening_ids
     cdef set _stop_loss_ids
     cdef set _take_profit_ids
@@ -74,10 +76,9 @@ cdef class TradingStrategy:
 
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
-
     cdef FiniteStateMachine _fsm
 
-    cpdef bint equals(self, TradingStrategy other)
+    cpdef bint equals(self, TradingStrategy other) except *
     cpdef ComponentState state(self)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
@@ -150,14 +151,19 @@ cdef class TradingStrategy:
     cpdef int quote_tick_count(self, Symbol symbol)
     cpdef int trade_tick_count(self, Symbol symbol)
     cpdef int bar_count(self, BarType bar_type)
-    cpdef bint has_quote_ticks(self, Symbol symbol)
-    cpdef bint has_trade_ticks(self, Symbol symbol)
-    cpdef bint has_bars(self, BarType bar_type)
+    cpdef bint has_quote_ticks(self, Symbol symbol) except *
+    cpdef bint has_trade_ticks(self, Symbol symbol) except *
+    cpdef bint has_bars(self, BarType bar_type) except *
+
+    cpdef set stop_loss_ids(self)
+    cpdef set take_profit_ids(self)
+    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id)
+    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id)
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 
     cpdef readonly list registered_indicators(self)
-    cpdef readonly bint indicators_initialized(self)
+    cpdef readonly bint indicators_initialized(self) except *
 
 # -- MANAGEMENT METHODS ----------------------------------------------------------------------------
 
@@ -176,35 +182,6 @@ cdef class TradingStrategy:
         Currency quote_currency,
         PriceType price_type=*,
     )
-    cpdef Order order(self, ClientOrderId cl_ord_id)
-    cpdef list orders(self, Symbol symbol=*)
-    cpdef list orders_working(self, Symbol symbol=*)
-    cpdef list orders_completed(self, Symbol symbol=*)
-    cpdef int orders_working_count(self, Symbol symbol=*)
-    cpdef int orders_completed_count(self, Symbol symbol=*)
-    cpdef int orders_total_count(self, Symbol symbol=*)
-    cpdef set stop_loss_ids(self)
-    cpdef set take_profit_ids(self)
-    cpdef Position position(self, PositionId position_id)
-    cpdef Position position_for_order(self, ClientOrderId cl_ord_id)
-    cpdef list positions(self, Symbol symbol=*)
-    cpdef list positions_open(self, Symbol symbol=*)
-    cpdef list positions_closed(self, Symbol symbol=*)
-    cpdef bint position_exists(self, PositionId position_id)
-    cpdef int positions_open_count(self, Symbol symbol=*)
-    cpdef int positions_closed_count(self, Symbol symbol=*)
-    cpdef int positions_total_count(self, Symbol symbol=*)
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_position_open(self, PositionId position_id) except *
-    cpdef bint is_position_closed(self, PositionId position_id) except *
-    cpdef bint is_net_long(self, Symbol symbol) except *
-    cpdef bint is_net_short(self, Symbol symbol) except *
-    cpdef bint is_flat(self, Symbol symbol) except *
-    cpdef bint is_completely_flat(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

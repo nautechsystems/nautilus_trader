@@ -208,7 +208,7 @@ class LiveExecutionTests(unittest.TestCase):
         time.sleep(0.3)  # Allow order to reach server and server to respond
 
         # Assert
-        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(order, self.exec_db.order(order.cl_ord_id))
         self.assertEqual(2, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
@@ -237,8 +237,8 @@ class LiveExecutionTests(unittest.TestCase):
         time.sleep(0.3)  # Allow command to reach server and server to respond
 
         # Assert
-        self.assertEqual(bracket_order.entry, self.strategy.order(bracket_order.entry.cl_ord_id))
-        self.assertEqual(bracket_order.stop_loss, self.strategy.order(bracket_order.stop_loss.cl_ord_id))
+        self.assertEqual(bracket_order.entry, self.exec_db.order(bracket_order.entry.cl_ord_id))
+        self.assertEqual(bracket_order.stop_loss, self.exec_db.order(bracket_order.stop_loss.cl_ord_id))
         self.assertEqual(2, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitBracketOrder, type(self.command_server_sink[0]))
@@ -263,7 +263,7 @@ class LiveExecutionTests(unittest.TestCase):
         time.sleep(0.3)  # Allow command to reach server and server to respond
 
         # Assert
-        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(order, self.exec_db.order(order.cl_ord_id))
         self.assertEqual(3, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
@@ -290,7 +290,7 @@ class LiveExecutionTests(unittest.TestCase):
         time.sleep(0.3)  # Allow command to reach server and server to respond
 
         # Assert
-        self.assertEqual(order, self.strategy.order(order.cl_ord_id))
+        self.assertEqual(order, self.exec_db.order(order.cl_ord_id))
         self.assertEqual(3, self.command_server.recv_count)
         self.assertEqual(1, self.command_server.sent_count)
         self.assertEqual(SubmitOrder, type(self.command_server_sink[0]))
