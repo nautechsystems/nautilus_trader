@@ -26,6 +26,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -72,6 +73,11 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
         self._index_positions_open = set()    # type: {PositionId}
         self._index_positions_closed = set()  # type: {PositionId}
         self._index_strategies = set()        # type: {StrategyId}
+
+        # Registered order identifiers
+        self._flattening_ids = set()       # type: {PositionId}
+        self._stop_loss_ids = set()        # type: {ClientOrderId}
+        self._take_profit_ids = set()      # type: {ClientOrderId}
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -144,6 +150,30 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_position(self, Position position) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void register_stop_loss(self, PassiveOrder order) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void register_take_profit(self, PassiveOrder order) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void register_flattening_id(self, PositionId position_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void discard_flattening_id(self, PositionId position_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -270,6 +300,10 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
         self._index_positions_closed.clear()
         self._index_strategies.clear()
 
+        self._flattening_ids.clear()
+        self._stop_loss_ids.clear()
+        self._take_profit_ids.clear()
+
         self._log.info(f"Reset.")
 
 # -- QUERIES ---------------------------------------------------------------------------------------
@@ -312,7 +346,7 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
         return self._cached_accounts.get(account_id)
 
     cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
-        cdef dict positions = self.positions_open(symbol, strategy_id)
+        cdef list positions = self.positions_open(symbol, strategy_id)
         cdef Decimal64 net_quantity = Decimal64()
 
         cdef Position position
@@ -419,6 +453,83 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
                 query = query.intersection(self._index_strategy_positions.get(strategy_id, set()))
 
         return query
+
+    cpdef set stop_loss_ids(self, StrategyId strategy_id=None):
+        """
+        Return all working stop-loss orders associated with this strategy.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[OrderId]
+
+        """
+        return self._stop_loss_ids.copy()
+
+    cpdef set take_profit_ids(self, StrategyId strategy_id=None):
+        """
+        Return all working take-profit orders associated with this strategy.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        Set[OrderId]
+
+        """
+        return self._take_profit_ids.copy()
+
+    cpdef set flattening_ids(self):
+        """
+        TBD.
+
+        Returns
+        -------
+        Set[PositionId].
+
+        """
+        return self._flattening_ids.copy()
+
+    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *:
+        """
+        Return a value indicating whether the order with the given identifier is
+        a registered stop-loss.
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+
+        Returns
+        -------
+        bool
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        return cl_ord_id in self._stop_loss_ids
+
+    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *:
+        """
+        Return a value indicating whether the order with the given identifier is
+        a registered take-profit.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+        Returns
+        -------
+        bool
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        return cl_ord_id in self._take_profit_ids
 
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -1315,6 +1426,94 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._cached_positions[position.id] = position
         self._add_position(position, strategy_id)  # Logs
+
+    cpdef void register_stop_loss(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a stop-loss.
+
+        If cancel_on_sl_reject management flag is set to True then associated
+        position will be flattened if this order is rejected.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The stop-loss order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered stop-loss orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._stop_loss_ids, "order.id", "_stop_loss_ids")
+
+        self._stop_loss_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered SL order {order}")
+
+    cpdef void register_take_profit(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a take-profit.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The take-profit order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered take_profit orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._take_profit_ids, "order.cl_ord_id", "_take_profit_ids")
+
+        self._take_profit_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered TP order {order}")
+
+    cpdef void register_flattening_id(self, PositionId position_id) except *:
+        """
+        TBD.
+
+        """
+        self._flattening_ids.add(position_id)
+
+    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._stop_loss_ids.discard(cl_ord_id)
+
+    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._take_profit_ids.discard(cl_ord_id)
+
+    cpdef void discard_flattening_id(self, PositionId position_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        position_id
+
+
+        """
+        self._flattening_ids.discard(position_id)
 
     cpdef void update_account(self, Account account) except *:
         """

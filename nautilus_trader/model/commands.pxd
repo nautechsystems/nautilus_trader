@@ -22,6 +22,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 
 
@@ -57,3 +58,15 @@ cdef class CancelOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly ClientOrderId cl_ord_id
+
+
+cdef class FlattenPosition(Command):
+    cdef readonly TraderId trader_id
+    cdef readonly AccountId account_id
+    cdef readonly PositionId position_id
+    cdef readonly StrategyId strategy_id
+    cdef readonly MarketOrder market_order
+
+
+cdef class KillSwitch(Command):
+    cdef readonly TraderId trader_id

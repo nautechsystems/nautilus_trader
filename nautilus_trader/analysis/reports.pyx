@@ -39,7 +39,7 @@ cdef class ReportProvider:
         Initialize a new instance of the ReportProvider class.
         """
 
-    cpdef object generate_orders_report(self, dict orders: {ClientOrderId, Order}):
+    cpdef object generate_orders_report(self, list orders):
         """
         Return an orders report dataframe.
 
@@ -58,11 +58,11 @@ cdef class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        cdef list orders_all = [self._order_to_dict(o) for o in orders.values()]
+        cdef list orders_all = [self._order_to_dict(o) for o in orders]
 
         return pd.DataFrame(data=orders_all).set_index("cl_ord_id")
 
-    cpdef object generate_order_fills_report(self, dict orders: {ClientOrderId, Order}):
+    cpdef object generate_order_fills_report(self, list orders):
         """
         Return an order fills report dataframe.
 
@@ -82,12 +82,12 @@ cdef class ReportProvider:
             return pd.DataFrame()
 
         cdef list filled_orders = [
-            self._order_to_dict(o) for o in orders.values() if o.state() == OrderState.FILLED
+            self._order_to_dict(o) for o in orders if o.state() == OrderState.FILLED
         ]
 
         return pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
 
-    cpdef object generate_positions_report(self, dict positions: {PositionId, Position}):
+    cpdef object generate_positions_report(self, list positions):
         """
         Return a positions report dataframe.
 
@@ -105,9 +105,7 @@ cdef class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        cdef list trades = [
-            self._position_to_dict(p) for p in positions.values() if p.is_closed()
-        ]
+        cdef list trades = [self._position_to_dict(p) for p in positions if p.is_closed()]
 
         return pd.DataFrame(data=trades).set_index("position_id")
 

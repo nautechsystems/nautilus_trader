@@ -22,6 +22,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 
 
@@ -299,3 +300,104 @@ cdef class CancelOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value})")
+
+
+cdef class FlattenPosition(Command):
+    """
+    Represents a command to flatten a position.
+    """
+
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            PositionId position_id not None,
+            StrategyId strategy_id not None,
+            MarketOrder market_order not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
+        """
+        Initialize a new instance of the FlattenPosition class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        position_id : PositionId
+            The position identifier.
+        strategy_id : StrategyId
+            The strategy identifier.
+        market_order : MarketOrder
+            The flattening market order.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
+        """
+        super().__init__(command_id, command_timestamp)
+
+        self.trader_id = trader_id
+        self.account_id = account_id
+        self.position_id = position_id
+        self.strategy_id = strategy_id
+        self.market_order = market_order
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        Returns
+        -------
+        str
+
+        """
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"position_id={self.position_id.value}, "
+                f"strategy_id={self.strategy_id.value})")
+
+
+cdef class KillSwitch(Command):
+    """
+    Represents a command to kill the trading system.
+    """
+
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
+        """
+        Initialize a new instance of the KillSwitch class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
+        """
+        super().__init__(command_id, command_timestamp)
+
+        self.trader_id = trader_id
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        Returns
+        -------
+        str
+
+        """
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value})")

@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from examples.strategies.ema_cross_complex import EMACrossFiltered
+from examples.strategies.ema_cross_complex import EMACross
 from nautilus_trader.enterprise.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
@@ -48,7 +48,7 @@ strategies = []
 for symbol in symbols_fx:
     ccy1 = symbol.code[:3]
     ccy2 = symbol.code[-3:]
-    strategies.append(EMACrossFiltered(
+    strategies.append(EMACross(
         symbol,
         BAR_SPEC_FX,
         risk_bp=10.0,

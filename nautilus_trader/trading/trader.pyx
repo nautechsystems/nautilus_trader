@@ -225,7 +225,7 @@ cdef class Trader:
         Save all strategy states to the execution database.
         """
         for strategy in self.strategies:
-            self._exec_engine.database.update_strategy(strategy)
+            self._exec_engine.database.add_strategy(strategy)
 
     cpdef void load(self) except *:
         """
@@ -355,7 +355,7 @@ cdef class Trader:
         pd.DataFrame
 
         """
-        return self._report_provider.generate_positions_report(self._exec_engine.database.get_positions())
+        return self._report_provider.generate_positions_report(self._exec_engine.database.positions())
 
     cpdef object generate_account_report(self):
         """

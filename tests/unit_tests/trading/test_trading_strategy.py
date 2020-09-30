@@ -665,10 +665,10 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        self.assertTrue(strategy.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
-        self.assertTrue(strategy.is_take_profit(bracket_order.take_profit.cl_ord_id))
-        self.assertTrue(bracket_order.stop_loss.cl_ord_id in strategy.stop_loss_ids())
-        self.assertTrue(bracket_order.take_profit.cl_ord_id in strategy.take_profit_ids())
+        self.assertTrue(self.exec_db.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
+        self.assertTrue(self.exec_db.is_take_profit(bracket_order.take_profit.cl_ord_id))
+        self.assertTrue(bracket_order.stop_loss.cl_ord_id in self.exec_db.stop_loss_ids())
+        self.assertTrue(bracket_order.take_profit.cl_ord_id in self.exec_db.take_profit_ids())
 
     def test_completed_sl_tp_are_removed(self):
         # Arrange
