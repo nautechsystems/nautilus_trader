@@ -39,7 +39,6 @@ from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import MatchId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -48,7 +47,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -330,79 +328,6 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(tick, result)
-
-    def test_getting_order_which_does_not_exist_returns_none(self):
-        # Arrange
-        # Act
-        result = self.strategy.order(ClientOrderId("O-123456"))
-
-        # Assert
-        self.assertIsNone(result)
-
-    def test_get_order(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        strategy.submit_order(order)
-
-        # Act
-        result = strategy.order(order.cl_ord_id)
-
-        # Assert
-        self.assertTrue(strategy.order_exists(order.cl_ord_id))
-        self.assertEqual(order, result)
-
-    def test_getting_position_which_does_not_exist_returns_none(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        # Act
-        result = strategy.position(PositionId("P-123456"))
-        # Assert
-        self.assertIsNone(result)
-
-    def test_get_position(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        strategy.submit_order(order)
-
-        expected_position_id = PositionId("B-USD/JPY-1")
-
-        # Act
-        result = strategy.position(expected_position_id)
-
-        # Assert
-        self.assertTrue(strategy.position_exists(expected_position_id))
-        self.assertTrue(type(result) == Position)
 
     def test_start_strategy(self):
         # Arrange
@@ -932,9 +857,9 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, len(strategy.orders_working()))
-        self.assertTrue(order1 in strategy.orders_completed())
-        self.assertTrue(order2 in strategy.orders_completed())
-        self.assertEqual(1, len(strategy.positions_closed()))
-        self.assertEqual(0, len(strategy.positions_open()))
-        self.assertTrue(strategy.is_completely_flat())
+        self.assertEqual(0, len(strategy.execution.orders_working()))
+        self.assertTrue(order1 in strategy.execution.orders_completed())
+        self.assertTrue(order2 in strategy.execution.orders_completed())
+        self.assertEqual(1, len(strategy.execution.positions_closed()))
+        self.assertEqual(0, len(strategy.execution.positions_open()))
+        self.assertTrue(strategy.execution.is_completely_flat())

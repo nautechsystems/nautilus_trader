@@ -158,7 +158,7 @@ class SimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price(90.003, 3), strategy.order(order.cl_ord_id).avg_price)
+        self.assertEqual(Price(90.003, 3), self.exec_engine.database.order(order.cl_ord_id).avg_price)
 
     def test_submit_limit_order(self):
         # Arrange
@@ -276,7 +276,7 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.modify_order(order, order.quantity, Price(96.714, 3))
 
         # Assert
-        self.assertEqual(Price(96.714, 3), strategy.order(order.cl_ord_id).price)
+        self.assertEqual(Price(96.714, 3), strategy.execution.order(order.cl_ord_id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
@@ -309,7 +309,7 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price(85.100, 3))
 
         # Assert
-        self.assertEqual(Price(85.100, 3), strategy.order(bracket_order.stop_loss.cl_ord_id).price)
+        self.assertEqual(Price(85.100, 3), strategy.execution.order(bracket_order.stop_loss.cl_ord_id).price)
         self.assertEqual(9, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 
@@ -457,7 +457,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(strategy.object_storer.get_store()[11].commission.as_double(),
                          reduce_order.filled_qty.as_double() * commission_percent)
 
-        position = strategy.positions_open()[0]
+        position = self.exec_engine.database.positions_open()[0]
         expected_commission = position.quantity.as_double() * commission_percent
         self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
                          strategy.account().cash_balance.as_double())
@@ -486,7 +486,7 @@ class SimulatedMarketTests(unittest.TestCase):
         filled_price = strategy.object_storer.get_store()[3].avg_price.as_double()
         commission = strategy.object_storer.get_store()[3].commission.as_double()
         commission = Money(-commission * filled_price, 392)
-        position = strategy.positions_open()[0]
+        position = self.exec_engine.database.positions_open()[0]
         self.assertEqual(position.realized_pnl, commission)
 
     def test_commission_maker_taker_order(self):
@@ -576,7 +576,7 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.submit_order(order_reduce, position_id)
 
         # Assert
-        position = strategy.positions_open()[0]
+        position = self.exec_engine.database.positions_open()[0]
         unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
         expected_unrealized_pnl = \
             order_reduce.quantity.as_double() * (reduce_quote.bid.sub(open_quote.ask).as_double())

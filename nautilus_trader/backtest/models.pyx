@@ -61,7 +61,7 @@ cdef class FillModel:
         self.prob_slippage = prob_slippage
         srand48(random_seed)
 
-    cpdef bint is_limit_filled(self):
+    cpdef bint is_limit_filled(self) except *:
         """
         Return the models outcome for the probability of a LIMIT order filling.
 
@@ -69,7 +69,7 @@ cdef class FillModel:
         """
         return self._did_event_occur(self.prob_fill_at_limit)
 
-    cpdef bint is_stop_filled(self):
+    cpdef bint is_stop_filled(self) except *:
         """
         Return the models outcome for the probability of a STOP order filling.
 
@@ -77,7 +77,7 @@ cdef class FillModel:
         """
         return self._did_event_occur(self.prob_fill_at_stop)
 
-    cpdef bint is_slipped(self):
+    cpdef bint is_slipped(self) except *:
         """
         Return the models outcome for the probability of an order fill slipping.
 

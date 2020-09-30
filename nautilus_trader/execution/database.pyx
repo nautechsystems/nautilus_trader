@@ -17,6 +17,8 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal64
+from nautilus_trader.execution.base cimport ExecutionDatabaseReadOnly
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -27,7 +29,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionDatabase:
+cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
     """
     The base class for all execution databases.
     """
@@ -44,6 +46,8 @@ cdef class ExecutionDatabase:
             The logger for the database.
 
         """
+        super().__init__()
+
         self.trader_id = trader_id
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
@@ -145,10 +149,10 @@ cdef class ExecutionDatabase:
 
     cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
-        for order in self.get_orders_working():
+        for order in self.orders_working():
             self._log.warning(f"Residual {order}")
 
-        for position in self.get_positions_open():
+        for position in self.positions_open():
             self._log.warning(f"Residual {position}")
 
     cpdef void reset(self) except *:
@@ -307,6 +311,86 @@ cdef class ExecutionDatabase:
 
         return self._cached_accounts.get(account_id)
 
+    cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
+        cdef dict positions = self.positions_open(symbol, strategy_id)
+        cdef Decimal64 net_quantity = Decimal64()
+
+        cdef Position position
+        for position in positions:
+            if position.is_long():
+                net_quantity += position.quantity
+            elif position.is_short():
+                net_quantity -= position.quantity
+
+        return net_quantity
+
+    cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
+        """
+        Return a value indicating whether the execution engine is net long a
+        given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._sum_net_position(symbol, strategy_id) > 0
+
+    cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=None) except *:
+        """
+        Return a value indicating whether the execution engine is net short a
+        given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._sum_net_position(symbol, strategy_id) < 0
+
+    cpdef bint is_flat(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
+        """
+        Return a value indicating whether the execution engine is flat.
+
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol query filter.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.positions_open_count(symbol, strategy_id) == 0
+
+    cpdef bint is_completely_flat(self) except *:
+        """
+        Return a value indicating whether the execution engine is completely flat.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.positions_open_count() == 0
+
     # -- Identifier queries ----------------------------------------------------
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id):
         cdef set query = None
@@ -336,7 +420,7 @@ cdef class ExecutionDatabase:
 
         return query
 
-    cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all client order identifiers with the given query filters.
 
@@ -359,7 +443,7 @@ cdef class ExecutionDatabase:
         else:
             return self._index_orders.intersection(query)
 
-    cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef set order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all working client order identifiers with the given query
         filters.
@@ -383,7 +467,7 @@ cdef class ExecutionDatabase:
         else:
             return self._index_orders_working.intersection(query)
 
-    cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef set order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all completed client order identifiers with the given query
         filters.
@@ -407,7 +491,7 @@ cdef class ExecutionDatabase:
         else:
             return self._index_orders_completed.intersection(query)
 
-    cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef set position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all position identifiers with the given query filters.
 
@@ -430,7 +514,7 @@ cdef class ExecutionDatabase:
         else:
             return self._index_positions.intersection(query)
 
-    cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef set position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all open position identifiers with the given query filters.
 
@@ -453,7 +537,7 @@ cdef class ExecutionDatabase:
         else:
             return self._index_positions_open.intersection(query)
 
-    cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef set position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all closed position identifiers with the given query filters.
 
@@ -476,7 +560,7 @@ cdef class ExecutionDatabase:
         else:
             return self._index_positions_closed.intersection(query)
 
-    cpdef set get_strategy_ids(self):
+    cpdef set strategy_ids(self):
         """
         Return all strategy identifiers.
 
@@ -488,7 +572,7 @@ cdef class ExecutionDatabase:
         return self._index_strategies.copy()
 
     # -- Order queries ---------------------------------------------------------
-    cpdef Order get_order(self, ClientOrderId cl_ord_id):
+    cpdef Order order(self, ClientOrderId cl_ord_id):
         """
         Return the order matching the given identifier (if found).
 
@@ -501,7 +585,7 @@ cdef class ExecutionDatabase:
 
         return self._cached_orders.get(cl_ord_id)
 
-    cpdef list get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list orders(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all orders with the given query filters.
 
@@ -517,7 +601,7 @@ cdef class ExecutionDatabase:
         List[Order]
 
         """
-        cdef set cl_ord_ids = self.get_order_ids(symbol, strategy_id)
+        cdef set cl_ord_ids = self.order_ids(symbol, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders
@@ -528,7 +612,7 @@ cdef class ExecutionDatabase:
 
         return orders
 
-    cpdef list get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all working orders with the given query filters.
 
@@ -544,7 +628,7 @@ cdef class ExecutionDatabase:
         List[Order]
 
         """
-        cdef set cl_ord_ids = self.get_order_working_ids(symbol, strategy_id)
+        cdef set cl_ord_ids = self.order_working_ids(symbol, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders_working
@@ -555,7 +639,7 @@ cdef class ExecutionDatabase:
 
         return orders_working
 
-    cpdef list get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all completed orders with the given query filters.
 
@@ -571,7 +655,7 @@ cdef class ExecutionDatabase:
         List[Order]
 
         """
-        cdef set cl_ord_ids = self.get_order_completed_ids(symbol, strategy_id)
+        cdef set cl_ord_ids = self.order_completed_ids(symbol, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders_completed
@@ -583,7 +667,7 @@ cdef class ExecutionDatabase:
         return orders_completed
 
     # -- Position queries ------------------------------------------------------
-    cpdef Position get_position(self, PositionId position_id):
+    cpdef Position position(self, PositionId position_id):
         """
         Return the position associated with the given identifier (if found).
 
@@ -601,7 +685,7 @@ cdef class ExecutionDatabase:
 
         return self._cached_positions.get(position_id)
 
-    cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
+    cpdef PositionId position_id(self, ClientOrderId cl_ord_id):
         """
         Return the position identifier associated with the given client order
         identifier (if found).
@@ -620,7 +704,7 @@ cdef class ExecutionDatabase:
 
         return self._index_order_position.get(cl_ord_id)
 
-    cpdef list get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list positions(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all positions with the given query filters.
 
@@ -636,7 +720,7 @@ cdef class ExecutionDatabase:
         List[Position]
 
         """
-        cdef set position_ids = self.get_position_ids(symbol, strategy_id)
+        cdef set position_ids = self.position_ids(symbol, strategy_id)
 
         cdef PositionId position_id
         cdef list positions
@@ -647,7 +731,7 @@ cdef class ExecutionDatabase:
 
         return positions
 
-    cpdef list get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all open positions with the given query filters.
 
@@ -663,7 +747,7 @@ cdef class ExecutionDatabase:
         List[Position]
 
         """
-        cdef set position_ids = self.get_position_open_ids(symbol, strategy_id)
+        cdef set position_ids = self.position_open_ids(symbol, strategy_id)
 
         cdef PositionId position_id
         cdef list positions
@@ -674,7 +758,7 @@ cdef class ExecutionDatabase:
 
         return positions
 
-    cpdef list get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all closed positions with the given query filters.
 
@@ -690,7 +774,7 @@ cdef class ExecutionDatabase:
         List[Position]
 
         """
-        cdef set position_ids = self.get_position_closed_ids(symbol, strategy_id)
+        cdef set position_ids = self.position_closed_ids(symbol, strategy_id)
 
         cdef PositionId position_id
         cdef list positions
@@ -701,7 +785,7 @@ cdef class ExecutionDatabase:
 
         return positions
 
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id):
+    cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether an order with the given identifier
         exists.
@@ -720,7 +804,7 @@ cdef class ExecutionDatabase:
 
         return cl_ord_id in self._index_orders
 
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
+    cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether an order with the given identifier is
         working.
@@ -739,7 +823,7 @@ cdef class ExecutionDatabase:
 
         return cl_ord_id in self._index_orders_working
 
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
+    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether an order with the given identifier is
         completed.
@@ -774,7 +858,7 @@ cdef class ExecutionDatabase:
         int
 
         """
-        return len(self.get_order_ids(symbol, strategy_id))
+        return len(self.order_ids(symbol, strategy_id))
 
     cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -792,7 +876,7 @@ cdef class ExecutionDatabase:
         int
 
         """
-        return len(self.get_order_working_ids(symbol, strategy_id))
+        return len(self.order_working_ids(symbol, strategy_id))
 
     cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -810,9 +894,9 @@ cdef class ExecutionDatabase:
         int
 
         """
-        return len(self.get_order_completed_ids(symbol, strategy_id))
+        return len(self.order_completed_ids(symbol, strategy_id))
 
-    cpdef bint position_exists(self, PositionId position_id):
+    cpdef bint position_exists(self, PositionId position_id) except *:
         """
         Return a value indicating whether a position with the given identifier
         exists.
@@ -831,7 +915,7 @@ cdef class ExecutionDatabase:
 
         return position_id in self._index_positions
 
-    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
+    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether there is a position associated with
         the given client order identifier.
@@ -853,7 +937,7 @@ cdef class ExecutionDatabase:
             return False
         return position_id in self._index_positions
 
-    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id):
+    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether there is a position identifier indexed
         for the given identifier.
@@ -872,7 +956,7 @@ cdef class ExecutionDatabase:
 
         return cl_ord_id in self._index_order_position
 
-    cpdef bint is_position_open(self, PositionId position_id):
+    cpdef bint is_position_open(self, PositionId position_id) except *:
         """
         Return a value indicating whether a position with the given identifier
         exists and is open.
@@ -891,7 +975,7 @@ cdef class ExecutionDatabase:
 
         return position_id in self._index_positions_open
 
-    cpdef bint is_position_closed(self, PositionId position_id):
+    cpdef bint is_position_closed(self, PositionId position_id) except *:
         """
         Return a value indicating whether a position with the given identifier
         exists and is closed.
@@ -926,7 +1010,7 @@ cdef class ExecutionDatabase:
         int
 
         """
-        return len(self.get_position_ids(symbol, strategy_id))
+        return len(self.position_ids(symbol, strategy_id))
 
     cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -944,7 +1028,7 @@ cdef class ExecutionDatabase:
         int
 
         """
-        return len(self.get_position_open_ids(symbol, strategy_id))
+        return len(self.position_open_ids(symbol, strategy_id))
 
     cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -962,10 +1046,10 @@ cdef class ExecutionDatabase:
         int
 
         """
-        return len(self.get_position_closed_ids(symbol, strategy_id))
+        return len(self.position_closed_ids(symbol, strategy_id))
 
     # -- Strategy queries ------------------------------------------------------
-    cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
+    cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id):
         """
         Return the strategy identifier associated with the given identifier (if found).
 
@@ -983,7 +1067,7 @@ cdef class ExecutionDatabase:
 
         return self._index_order_strategy.get(cl_ord_id)
 
-    cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+    cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """
         Return the strategy identifier associated with the given identifier (if found).
 

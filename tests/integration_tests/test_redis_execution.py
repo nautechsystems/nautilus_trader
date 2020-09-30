@@ -115,8 +115,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, position_id, self.strategy.id)
 
         # Assert
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids())
-        self.assertEqual(order, self.database.get_orders()[0])
+        self.assertTrue(order.cl_ord_id in self.database.order_ids())
+        self.assertEqual(order, self.database.orders()[0])
 
     def test_add_position(self):
         # Arrange
@@ -136,12 +136,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.database.position_exists_for_order(order.cl_ord_id))
         self.assertTrue(self.database.position_exists(position.id))
-        self.assertTrue(position.id in self.database.get_position_ids())
-        self.assertTrue(position in self.database.get_positions())
-        self.assertTrue(position in self.database.get_positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.database.get_positions_open())
-        self.assertTrue(position not in self.database.get_positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_closed())
+        self.assertTrue(position.id in self.database.position_ids())
+        self.assertTrue(position in self.database.positions())
+        self.assertTrue(position in self.database.positions_open(strategy_id=self.strategy.id))
+        self.assertTrue(position in self.database.positions_open())
+        self.assertTrue(position not in self.database.positions_closed(strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_closed())
 
     def test_update_account(self):
         # Arrange
@@ -178,12 +178,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.database.order_exists(order.cl_ord_id))
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids())
-        self.assertTrue(order in self.database.get_orders())
-        self.assertTrue(order in self.database.get_orders_working(strategy_id=self.strategy.id))
-        self.assertTrue(order in self.database.get_orders_working())
-        self.assertTrue(order not in self.database.get_orders_completed(strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.database.get_orders_completed())
+        self.assertTrue(order.cl_ord_id in self.database.order_ids())
+        self.assertTrue(order in self.database.orders())
+        self.assertTrue(order in self.database.orders_working(strategy_id=self.strategy.id))
+        self.assertTrue(order in self.database.orders_working())
+        self.assertTrue(order not in self.database.orders_completed(strategy_id=self.strategy.id))
+        self.assertTrue(order not in self.database.orders_completed())
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -207,12 +207,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.database.order_exists(order.cl_ord_id))
-        self.assertTrue(order.cl_ord_id in self.database.get_order_ids())
-        self.assertTrue(order in self.database.get_orders())
-        self.assertTrue(order in self.database.get_orders_completed(strategy_id=self.strategy.id))
-        self.assertTrue(order in self.database.get_orders_completed())
-        self.assertTrue(order not in self.database.get_orders_working(strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.database.get_orders_working())
+        self.assertTrue(order.cl_ord_id in self.database.order_ids())
+        self.assertTrue(order in self.database.orders())
+        self.assertTrue(order in self.database.orders_completed(strategy_id=self.strategy.id))
+        self.assertTrue(order in self.database.orders_completed())
+        self.assertTrue(order not in self.database.orders_working(strategy_id=self.strategy.id))
+        self.assertTrue(order not in self.database.orders_working())
 
     def test_update_position_for_closed_position(self):
         # Arrange
@@ -259,13 +259,13 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.database.position_exists(position.id))
-        self.assertTrue(position.id in self.database.get_position_ids())
-        self.assertTrue(position in self.database.get_positions())
-        self.assertTrue(position in self.database.get_positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.database.get_positions_closed())
-        self.assertTrue(position not in self.database.get_positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.database.get_positions_open())
-        self.assertEqual(position, self.database.get_position(position.id))
+        self.assertTrue(position.id in self.database.position_ids())
+        self.assertTrue(position in self.database.positions())
+        self.assertTrue(position in self.database.positions_closed(strategy_id=self.strategy.id))
+        self.assertTrue(position in self.database.positions_closed())
+        self.assertTrue(position not in self.database.positions_open(strategy_id=self.strategy.id))
+        self.assertTrue(position not in self.database.positions_open())
+        self.assertEqual(position, self.database.position(position.id))
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
@@ -376,7 +376,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.load_orders_cache()
 
         # Assert
-        self.assertEqual([], self.database.get_orders())
+        self.assertEqual([], self.database.orders())
 
     def test_load_orders_cache_when_one_order_in_database(self):
         # Arrange
@@ -392,7 +392,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.load_orders_cache()
 
         # Assert
-        self.assertEqual([order], self.database.get_orders())
+        self.assertEqual([order], self.database.orders())
 
     def test_load_positions_cache_when_no_positions(self):
         # Arrange
@@ -400,7 +400,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.load_positions_cache()
 
         # Assert
-        self.assertEqual([], self.database.get_positions())
+        self.assertEqual([], self.database.positions())
 
     def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
@@ -425,7 +425,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.load_positions_cache()
 
         # Assert
-        self.assertEqual([position], self.database.get_positions())
+        self.assertEqual([position], self.database.positions())
 
     def test_can_delete_strategy(self):
         # Arrange
@@ -433,7 +433,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.delete_strategy(self.strategy)
 
         # Assert
-        self.assertTrue(self.strategy.id not in self.database.get_strategy_ids())
+        self.assertTrue(self.strategy.id not in self.database.strategy_ids())
 
     def test_can_check_residuals(self):
         # Arrange
@@ -525,8 +525,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.reset()
 
         # Assert
-        self.assertEqual(0, len(self.database.get_orders()))
-        self.assertEqual(0, len(self.database.get_positions()))
+        self.assertEqual(0, len(self.database.orders()))
+        self.assertEqual(0, len(self.database.positions()))
 
     def test_can_flush(self):
         # Arrange
@@ -567,7 +567,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
         # Arrange
         # Act
-        result = self.database.get_strategy_ids()
+        result = self.database.strategy_ids()
 
         # Assert
         self.assertEqual(set(), result)
@@ -577,7 +577,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_strategy(self.strategy)
 
         # Act
-        result = self.database.get_strategy_ids()
+        result = self.database.strategy_ids()
 
         # Assert
         self.assertEqual({self.strategy.id}, result)
@@ -611,7 +611,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         position_id = PositionId("P-123456")
 
         # Act
-        result = self.database.get_position(position_id)
+        result = self.database.position(position_id)
 
         # Assert
         self.assertIsNone(result)
@@ -621,7 +621,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order_id = ClientOrderId("O-201908080101-000-001")
 
         # Act
-        result = self.database.get_order(order_id)
+        result = self.database.order(order_id)
 
         # Assert
         self.assertIsNone(result)

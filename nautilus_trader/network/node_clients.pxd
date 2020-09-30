@@ -45,7 +45,7 @@ cdef class ClientNode:
     cdef readonly int recv_count
 
     cpdef void register_handler(self, handler) except *
-    cpdef bint is_connected(self)
+    cpdef bint is_connected(self) except *
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void dispose(self) except *

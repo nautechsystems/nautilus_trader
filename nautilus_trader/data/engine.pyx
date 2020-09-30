@@ -1201,7 +1201,7 @@ cdef class DataEngine:
 
         return len(self._bars[bar_type]) if bar_type in self._bars else 0
 
-    cpdef bint has_quote_ticks(self, Symbol symbol):
+    cpdef bint has_quote_ticks(self, Symbol symbol) except *:
         """
         Return a value indicating whether the data engine has quote ticks for
         the given symbol.
@@ -1220,7 +1220,7 @@ cdef class DataEngine:
 
         return symbol in self._quote_ticks and len(self._quote_ticks[symbol]) > 0
 
-    cpdef bint has_trade_ticks(self, Symbol symbol):
+    cpdef bint has_trade_ticks(self, Symbol symbol) except *:
         """
         Return a value indicating whether the data engine has trade ticks for
         the given symbol.
@@ -1239,7 +1239,7 @@ cdef class DataEngine:
 
         return symbol in self._trade_ticks and len(self._trade_ticks[symbol]) > 0
 
-    cpdef bint has_bars(self, BarType bar_type):
+    cpdef bint has_bars(self, BarType bar_type) except *:
         """
         Return a value indicating whether the data engine has bars for the given
         bar type.

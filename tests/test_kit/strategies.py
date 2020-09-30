@@ -311,7 +311,7 @@ class EMACross(TradingStrategy):
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
     def _check_signal(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        if self.orders_working_count() == 0 and self.is_completely_flat():  # No active or pending positions
+        if self.execution.orders_working_count() == 0 and self.execution.is_completely_flat():  # No active or pending positions
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self._enter_long(bar, sl_buffer, spread_buffer)
@@ -426,7 +426,7 @@ class EMACross(TradingStrategy):
         self.submit_bracket_order(bracket_order)
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        for order in self.orders_working():
+        for order in self.execution.orders_working():
             if not self.is_stop_loss(order.cl_ord_id):
                 return
 

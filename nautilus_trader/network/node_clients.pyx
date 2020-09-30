@@ -100,7 +100,7 @@ cdef class ClientNode:
 
         self._message_handler = handler
 
-    cpdef bint is_connected(self):
+    cpdef bint is_connected(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -206,7 +206,7 @@ cdef class MessageClient(ClientNode):
 
         self.session_id = None
 
-    cpdef bint is_connected(self):
+    cpdef bint is_connected(self) except *:
         """
         Return a value indicating whether the client is connected to the server.
         """
@@ -472,7 +472,7 @@ cdef class MessageSubscriber(ClientNode):
             self._log,
         )
 
-    cpdef bint is_connected(self):
+    cpdef bint is_connected(self) except *:
         return True  # TODO: Keep alive heartbeat polling
 
     cpdef void connect(self) except *:

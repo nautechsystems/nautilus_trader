@@ -27,7 +27,6 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
@@ -53,7 +52,6 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -246,77 +244,6 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-# -- QUERIES ---------------------------------------------------------------------------------------
-
-    cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
-        cdef dict positions = self.database.get_positions_open(symbol, strategy_id)
-        cdef Decimal64 net_quantity = Decimal64()
-
-        cdef Position position
-        for position in positions:
-            if position.is_long():
-                net_quantity += position.quantity
-            elif position.is_short():
-                net_quantity -= position.quantity
-
-        return net_quantity
-
-    cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
-        """
-        Return a value indicating whether the execution engine is net long a
-        given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the query.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._sum_net_position(symbol, strategy_id) > 0
-
-    cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=None) except *:
-        """
-        Return a value indicating whether the execution engine is net short a
-        given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the query.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._sum_net_position(symbol, strategy_id) < 0
-
-    cpdef bint is_flat(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
-        """
-        Return a value indicating whether the execution engine is flat.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter.
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.database.positions_open_count(symbol, strategy_id) == 0
-
 # --------------------------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
@@ -431,7 +358,7 @@ cdef class ExecutionEngine:
             self._log.error(f"Cannot handle event ({event} is unrecognized).")
 
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
-        cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.cl_ord_id)
+        cdef StrategyId strategy_id = self.database.strategy_id_for_order(event.cl_ord_id)
         if not strategy_id:
             self._log.error(f"Cannot process event {event}, "
                             f"{strategy_id.to_string(with_class=True)} "
@@ -441,7 +368,7 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, strategy_id)
 
     cdef void _handle_order_event(self, OrderEvent event) except *:
-        cdef Order order = self.database.get_order(event.cl_ord_id)
+        cdef Order order = self.database.order(event.cl_ord_id)
         if not order:
             self._log.warning(f"Cannot apply event {event} to any order, "
                               f"{event.cl_ord_id.to_string(with_class=True)} "
@@ -459,15 +386,15 @@ cdef class ExecutionEngine:
             self._handle_order_fill(event)
             return  # _handle_order_fill(event) will send to strategy (refactor)
 
-        self._send_to_strategy(event, self.database.get_strategy_for_order(event.cl_ord_id))
+        self._send_to_strategy(event, self.database.strategy_id_for_order(event.cl_ord_id))
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill
-        cdef PositionId position_id = self.database.get_position_id(fill.cl_ord_id)
+        cdef PositionId position_id = self.database.position_id(fill.cl_ord_id)
         # --- position_id could be None here (position not opened yet) ---
 
         # Get StrategyId corresponding to fill
-        cdef StrategyId strategy_id = self.database.get_strategy_for_order(fill.cl_ord_id)
+        cdef StrategyId strategy_id = self.database.strategy_id_for_order(fill.cl_ord_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
                             f"{fill.cl_ord_id.to_string(with_class=True)} not found.")
@@ -505,7 +432,7 @@ cdef class ExecutionEngine:
         self.process(self._pos_opened_event(position, fill, strategy_id))
 
     cdef void _update_position(self, OrderFilled fill, StrategyId strategy_id) except *:
-        cdef Position position = self.database.get_position(fill.position_id)
+        cdef Position position = self.database.position(fill.position_id)
 
         if position is None:
             self._log.error(f"Cannot update position for "

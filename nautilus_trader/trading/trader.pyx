@@ -333,7 +333,7 @@ cdef class Trader:
         pd.DataFrame
 
         """
-        return self._report_provider.generate_orders_report(self._exec_engine.database.get_orders())
+        return self._report_provider.generate_orders_report(self._exec_engine.database.orders())
 
     cpdef object generate_order_fills_report(self):
         """
@@ -344,7 +344,7 @@ cdef class Trader:
         pd.DataFrame
 
         """
-        return self._report_provider.generate_order_fills_report(self._exec_engine.database.get_orders())
+        return self._report_provider.generate_order_fills_report(self._exec_engine.database.orders())
 
     cpdef object generate_positions_report(self):
         """

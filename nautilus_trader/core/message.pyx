@@ -55,7 +55,7 @@ cdef class Message:
         self.id = identifier
         self.timestamp = timestamp
 
-    cpdef bint equals(self, Message other):
+    cpdef bint equals(self, Message other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

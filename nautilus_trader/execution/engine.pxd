@@ -19,7 +19,6 @@ from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -41,7 +40,6 @@ from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
@@ -78,13 +76,6 @@ cdef class ExecutionEngine:
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
-
-# -- QUERIES ---------------------------------------------------------------------------------------
-
-    cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id)
-    cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
-    cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *
-    cpdef bint is_flat(self, Symbol symbol =*, StrategyId strategy_id=*) except *
 
 # -------------------------------------------------------------------------------------------------#
 

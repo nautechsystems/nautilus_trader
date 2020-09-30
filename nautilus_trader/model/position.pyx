@@ -129,7 +129,7 @@ cdef class Position:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cpdef bint equals(self, Position other):
+    cpdef bint equals(self, Position other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -245,7 +245,7 @@ cdef class Position:
         """
         return len(self._events)
 
-    cpdef bint is_open(self):
+    cpdef bint is_open(self) except *:
         """
         Return a value indicating whether the position is open.
 
@@ -256,7 +256,7 @@ cdef class Position:
         """
         return self.side != PositionSide.FLAT
 
-    cpdef bint is_closed(self):
+    cpdef bint is_closed(self) except *:
         """
         Return a value indicating whether the position is closed.
 
@@ -267,7 +267,7 @@ cdef class Position:
         """
         return self.side == PositionSide.FLAT
 
-    cpdef bint is_long(self):
+    cpdef bint is_long(self) except *:
         """
         Return a value indicating whether the position is long.
 
@@ -278,7 +278,7 @@ cdef class Position:
         """
         return self.side == PositionSide.LONG
 
-    cpdef bint is_short(self):
+    cpdef bint is_short(self) except *:
         """
         Return a value indicating whether the position is short.
 

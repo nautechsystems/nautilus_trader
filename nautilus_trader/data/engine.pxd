@@ -145,9 +145,9 @@ cdef class DataEngine:
     cpdef int quote_tick_count(self, Symbol symbol)
     cpdef int trade_tick_count(self, Symbol symbol)
     cpdef int bar_count(self, BarType bar_type)
-    cpdef bint has_quote_ticks(self, Symbol symbol)
-    cpdef bint has_trade_ticks(self, Symbol symbol)
-    cpdef bint has_bars(self, BarType bar_type)
+    cpdef bint has_quote_ticks(self, Symbol symbol) except *
+    cpdef bint has_trade_ticks(self, Symbol symbol) except *
+    cpdef bint has_bars(self, BarType bar_type) except *
 
     cpdef double get_exchange_rate(
         self,
