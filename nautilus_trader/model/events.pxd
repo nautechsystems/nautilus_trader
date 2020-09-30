@@ -143,7 +143,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly datetime execution_time
     cdef readonly bint is_partial_fill
 
-    cdef void set_position_id(self, PositionId position_id) except *
+    cdef OrderFilled clone(self, PositionId new_position_id)
 
 
 cdef class PositionEvent(Event):
