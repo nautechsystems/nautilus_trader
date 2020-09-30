@@ -33,8 +33,10 @@ from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
+from nautilus_trader.model.commands cimport FlattenAllPositions
 from nautilus_trader.model.commands cimport FlattenPosition
 from nautilus_trader.model.commands cimport KillSwitch
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -53,6 +55,7 @@ from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -258,7 +261,7 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-# --------------------------------------------------------------------------------------------------
+# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
@@ -266,20 +269,178 @@ cdef class ExecutionEngine:
 
         if isinstance(command, KillSwitch):
             self._handle_kill_switch(command)
+        elif isinstance(command, FlattenAllPositions):
+            self._handle_flatten_all_positions(command)
         elif isinstance(command, FlattenPosition):
             self._handle_flatten_position(command)
-        elif isinstance(command, AccountInquiry):
-            self._handle_account_inquiry(command)
+        elif isinstance(command, CancelAllOrders):
+            self._handle_cancel_all_orders(command)
+        elif isinstance(command, CancelOrder):
+            self._handle_cancel_order(command)
         elif isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(command)
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(command)
-        elif isinstance(command, CancelOrder):
-            self._handle_cancel_order(command)
+        elif isinstance(command, AccountInquiry):
+            self._handle_account_inquiry(command)
         else:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
+
+    cdef void _handle_kill_switch(self, KillSwitch command) except *:
+        if self._is_kill_switch_active:
+            self._log.error("Received KillSwitch command when kill-switch already active.")
+            return
+
+        self._is_kill_switch_active = True
+
+    cdef void _handle_flatten_position(self, FlattenPosition command) except *:
+        # Validate command
+        self.database.register_flattening_id(command.position_id)
+
+        cdef Position position = self.database.position(command.position_id)
+
+        if position is None:
+            self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
+                              f"(the position was not found in the cache).")
+            return  # Invalid command
+
+        if position.is_closed():
+            self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
+                              f"(the position is already closed).")
+            return  # Invalid command
+
+        if position.id in self.database.flattening_ids():
+            self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
+                              f"(already flattening).")
+            return  # Invalid command
+
+        # Create flattening order
+        cdef MarketOrder order = self._order_factory.market(
+            position.symbol,
+            flatten_side(position.side),
+            position.quantity,
+        )
+
+        # Create command
+        cdef SubmitOrder submit_order = SubmitOrder(
+            command.trader_id,
+            command.account_id,
+            command.strategy_id,
+            command.position_id,
+            order,
+            self._uuid_factory.generate(),
+            self._clock.utc_now())
+
+        self._handle_submit_order(submit_order)
+
+    cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *:
+        cdef list positions_open = self.database.position_open_ids()
+
+        cdef FlattenPosition flatten_cmd
+        cdef PositionId position_id
+        for position_id in positions_open:
+            flatten_cmd = FlattenPosition(
+                command.trader_id,
+                command.account_id,
+                position_id,
+                self._uuid_factory.generate(),
+                self._clock.utc_now(),
+            )
+
+            self._handle_flatten_position(flatten_cmd)
+
+    cdef void _handle_cancel_order(self, CancelOrder command) except *:
+        # Validate command
+        if not self.database.is_order_working(command.cl_ord_id):
+            self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
+                              f"(already completed).")
+            return  # Invalid command
+
+        self._exec_client.cancel_order(command)
+
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
+        cdef list orders_working = self.database.order_working_ids()
+
+        cdef CancelOrder cancel_cmd
+        cdef ClientOrderId order_id
+        for order_id in orders_working:
+            cancel_cmd = CancelOrder(
+                command.trader_id,
+                command.account_id,
+                order_id,
+                self._uuid_factory.generate(),
+                self._clock.utc_now(),
+            )
+
+            self._exec_client.cancel_order(cancel_cmd)
+
+    cdef void _handle_submit_order(self, SubmitOrder command) except *:
+        # Validate command
+        if self.database.order_exists(command.order.cl_ord_id):
+            self._invalidate_order(command.order, f"cl_ord_id already exists")
+            return  # Invalid command
+
+        # TODO
+        # if self._oms_type == OMSType.NETTING:
+
+        if command.position_id.not_null() and not self.database.position_exists(command.position_id):
+            self._invalidate_order(command.order, f"position_id does not exist")
+            return  # Invalid command
+
+        # Persist order
+        self.database.add_order(command.order, command.position_id, command.strategy_id)
+
+        # Submit order
+        self._exec_client.submit_order(command)
+
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+        # Validate command -------------------------------------------------------------------------
+        if self.database.order_exists(command.bracket_order.entry.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
+            if command.bracket_order.has_take_profit:
+                self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
+            return  # Invalid command
+        if self.database.order_exists(command.bracket_order.stop_loss.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
+            if command.bracket_order.has_take_profit:
+                self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
+            return  # Invalid command
+        if command.bracket_order.has_take_profit and self.database.order_exists(command.bracket_order.take_profit.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
+            return  # Invalid command
+        # ------------------------------------------------------------------------------------------
+
+        # Persist all orders
+        self.database.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
+        self.database.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
+        if command.bracket_order.has_take_profit:
+            self.database.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
+
+        # Register stop-loss and take-profits
+        self.database.register_stop_loss(command.bracket_order.stop_loss)
+        if command.bracket_order.has_take_profit:
+            self.database.register_take_profit(command.bracket_order.take_profit)
+
+        # Submit bracket order
+        self._exec_client.submit_bracket_order(command)
+
+    cdef void _handle_modify_order(self, ModifyOrder command) except *:
+        # Validate command
+        if not self.database.is_order_working(command.cl_ord_id):
+            self._log.warning(f"Cannot modify {command.cl_ord_id.to_string(with_class=True)} "
+                              f"(already completed).")
+            return  # Invalid command
+
+        self._exec_client.modify_order(command)
+
+    cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
+        self._exec_client.account_inquiry(command)
 
     cdef void _invalidate_order(self, Order order, str reason) except *:
         # Generate event
@@ -301,72 +462,7 @@ cdef class ExecutionEngine:
 
         self._handle_event(denied)
 
-    cdef void _handle_kill_switch(self, KillSwitch command) except *:
-        self._is_kill_switch_active = True
-
-    cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
-        self._exec_client.account_inquiry(command)
-
-    cdef void _handle_submit_order(self, SubmitOrder command) except *:
-        # Validate order identifier
-        if self.database.order_exists(command.order.cl_ord_id):
-            self._invalidate_order(command.order, f"cl_ord_id already exists")
-            return  # Cannot submit order
-
-        # TODO
-        # if self._oms_type == OMSType.NETTING:
-
-        if command.position_id.not_null() and not self.database.position_exists(command.position_id):
-            self._invalidate_order(command.order, f"position_id does not exist")
-            return  # Cannot submit order
-
-        # Persist order
-        self.database.add_order(command.order, command.position_id, command.strategy_id)
-
-        # Submit order
-        self._exec_client.submit_order(command)
-
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
-        # Validate order identifiers ---------------------------------------------------------------
-        if self.database.order_exists(command.bracket_order.entry.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
-            if command.bracket_order.has_take_profit:
-                self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
-            return  # Cannot submit order
-        if self.database.order_exists(command.bracket_order.stop_loss.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
-            if command.bracket_order.has_take_profit:
-                self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
-            return  # Cannot submit order
-        if command.bracket_order.has_take_profit and self.database.order_exists(command.bracket_order.take_profit.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
-            return  # Cannot submit order
-        # ------------------------------------------------------------------------------------------
-
-        # Persist all orders
-        self.database.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
-        self.database.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
-        if command.bracket_order.has_take_profit:
-            self.database.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
-
-        self.database.register_stop_loss(command.bracket_order.stop_loss)
-        if command.bracket_order.has_take_profit:
-            self.database.register_take_profit(command.bracket_order.take_profit)
-
-        # Submit bracket order
-        self._exec_client.submit_bracket_order(command)
-
-    cdef void _handle_modify_order(self, ModifyOrder command) except *:
-        # TODO: Validate
-        self._exec_client.modify_order(command)
-
-    cdef void _handle_cancel_order(self, CancelOrder command) except *:
-        # TODO: Validate
-        self._exec_client.cancel_order(command)
+# -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
@@ -443,40 +539,6 @@ cdef class ExecutionEngine:
         if self.database.is_position_open(position_id):
             self._log.warning(f"Rejected {event.cl_ord_id} was a registered child order, now flattening {position_id}.")
             self._handle_flatten_position(position_id)
-
-    cdef void _handle_flatten_position(self, FlattenPosition command) except *:
-        self.database.register_flattening_id(command.position_id)
-
-        cdef Position position = self.database.position(command.position_id)
-
-        if position is None:
-            self._log.warning(f"Cannot flatten position (the position {position.id} was not found in the cache).")
-            return
-
-        if position.is_closed():
-            self._log.warning(f"Cannot flatten position (the position {position.id} is already closed).")
-            return
-
-        if position.id in self.database.flattening_ids():
-            self._log.warning(f"Already flattening {position.id}.")
-            return
-
-        cdef MarketOrder order = self._order_factory.market(
-            position.symbol,
-            flatten_side(position.side),
-            position.quantity,
-        )
-
-        cdef SubmitOrder submit_order = SubmitOrder(
-            command.trader_id,
-            command.account_id,
-            command.strategy_id,
-            command.position_id,
-            order,
-            self._uuid_factory.generate(),
-            self._clock.utc_now())
-
-        self._handle_submit_order(submit_order)
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill
