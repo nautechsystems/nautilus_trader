@@ -453,8 +453,9 @@ cdef class SimulatedMarket:
         Condition.not_none(timestamp, "timestamp")
         Condition.not_none(self.exec_engine, "_exec_engine")
 
-        cdef dict open_positions = self.exec_engine.database.get_positions_open()
+        cdef list open_positions = self.exec_engine.database.get_positions_open()
 
+        cdef Position position
         cdef Instrument instrument
         cdef Currency base_currency
         cdef double interest_rate
@@ -464,7 +465,7 @@ cdef class SimulatedMarket:
         cdef double mid_price
         cdef dict mid_prices = {}
         cdef QuoteTick market
-        for position in open_positions.values():
+        for position in open_positions:
             instrument = self.instruments[position.symbol]
             if instrument.security_type == SecurityType.FOREX:
                 mid_price = mid_prices.get(instrument.symbol, 0.0)

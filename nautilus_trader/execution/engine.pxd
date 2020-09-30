@@ -81,7 +81,7 @@ cdef class ExecutionEngine:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cdef inline Decimal64 _sum_net_position(self, list positions)
+    cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id)
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_flat(self, Symbol symbol =*, StrategyId strategy_id=*) except *

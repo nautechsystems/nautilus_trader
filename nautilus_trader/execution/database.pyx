@@ -145,10 +145,10 @@ cdef class ExecutionDatabase:
 
     cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
-        for order in self.get_orders_working().values():
+        for order in self.get_orders_working():
             self._log.warning(f"Residual {order}")
 
-        for position in self.get_positions_open().values():
+        for position in self.get_positions_open():
             self._log.warning(f"Residual {position}")
 
     cpdef void reset(self) except *:
@@ -501,7 +501,7 @@ cdef class ExecutionDatabase:
 
         return self._cached_orders.get(cl_ord_id)
 
-    cpdef dict get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all orders with the given query filters.
 
@@ -514,21 +514,21 @@ cdef class ExecutionDatabase:
 
         Returns
         -------
-        Dict[OrderId, Order]
+        List[Order]
 
         """
         cdef set cl_ord_ids = self.get_order_ids(symbol, strategy_id)
 
         cdef ClientOrderId cl_ord_id
-        cdef dict orders
+        cdef list orders
         try:
-            orders = {cl_ord_id: self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids}
+            orders = [self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids]
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
 
         return orders
 
-    cpdef dict get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all working orders with the given query filters.
 
@@ -541,21 +541,21 @@ cdef class ExecutionDatabase:
 
         Returns
         -------
-        Dict[OrderId, Order]
+        List[Order]
 
         """
         cdef set cl_ord_ids = self.get_order_working_ids(symbol, strategy_id)
 
         cdef ClientOrderId cl_ord_id
-        cdef dict orders_working
+        cdef list orders_working
         try:
-            orders_working = {cl_ord_id: self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids}
+            orders_working = [self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
         return orders_working
 
-    cpdef dict get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all completed orders with the given query filters.
 
@@ -568,15 +568,15 @@ cdef class ExecutionDatabase:
 
         Returns
         -------
-        Dict[OrderId, Order]
+        List[Order]
 
         """
         cdef set cl_ord_ids = self.get_order_completed_ids(symbol, strategy_id)
 
         cdef ClientOrderId cl_ord_id
-        cdef dict orders_completed
+        cdef list orders_completed
         try:
-            orders_completed = {cl_ord_id: self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids}
+            orders_completed = [self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
@@ -620,7 +620,7 @@ cdef class ExecutionDatabase:
 
         return self._index_order_position.get(cl_ord_id)
 
-    cpdef dict get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all positions with the given query filters.
 
@@ -633,21 +633,21 @@ cdef class ExecutionDatabase:
 
         Returns
         -------
-        Dict[PositionId, Position]
+        List[Position]
 
         """
         cdef set position_ids = self.get_position_ids(symbol, strategy_id)
 
         cdef PositionId position_id
-        cdef dict positions
+        cdef list positions
         try:
-            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+            positions = [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
-    cpdef dict get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all open positions with the given query filters.
 
@@ -660,21 +660,21 @@ cdef class ExecutionDatabase:
 
         Returns
         -------
-        Dict[PositionId, Position]
+        List[Position]
 
         """
         cdef set position_ids = self.get_position_open_ids(symbol, strategy_id)
 
         cdef PositionId position_id
-        cdef dict positions
+        cdef list positions
         try:
-            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+            positions = [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
 
         return positions
 
-    cpdef dict get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef list get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all closed positions with the given query filters.
 
@@ -687,15 +687,15 @@ cdef class ExecutionDatabase:
 
         Returns
         -------
-        Dict[PositionId, Position]
+        List[Position]
 
         """
         cdef set position_ids = self.get_position_closed_ids(symbol, strategy_id)
 
         cdef PositionId position_id
-        cdef dict positions
+        cdef list positions
         try:
-            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+            positions = [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
 

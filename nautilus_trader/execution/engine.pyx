@@ -248,7 +248,8 @@ cdef class ExecutionEngine:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cdef inline Decimal64 _sum_net_position(self, list positions):
+    cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
+        cdef dict positions = self.database.get_positions_open(symbol, strategy_id)
         cdef Decimal64 net_quantity = Decimal64()
 
         cdef Position position
@@ -277,8 +278,7 @@ cdef class ExecutionEngine:
         bool
 
         """
-        cdef dict positions = self.database.get_positions_open(symbol, strategy_id)
-        return self._sum_net_position(positions.values()) > 0
+        return self._sum_net_position(symbol, strategy_id) > 0
 
     cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=None) except *:
         """
@@ -297,8 +297,7 @@ cdef class ExecutionEngine:
         bool
 
         """
-        cdef dict positions = self.database.get_positions_open(symbol, strategy_id)
-        return self._sum_net_position(positions.values()) < 0
+        return self._sum_net_position(symbol, strategy_id) < 0
 
     cpdef bint is_flat(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
