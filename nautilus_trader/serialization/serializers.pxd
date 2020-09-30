@@ -18,10 +18,7 @@ from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport DictionarySerializer
 from nautilus_trader.serialization.base cimport EventSerializer
-from nautilus_trader.serialization.base cimport LogSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
-from nautilus_trader.serialization.base cimport RequestSerializer
-from nautilus_trader.serialization.base cimport ResponseSerializer
 
 
 cdef class MsgPackDictionarySerializer(DictionarySerializer):
@@ -39,15 +36,3 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
 cdef class MsgPackEventSerializer(EventSerializer):
     cdef IdentifierCache identifier_cache
-
-
-cdef class MsgPackRequestSerializer(RequestSerializer):
-    cdef DictionarySerializer dict_serializer
-
-
-cdef class MsgPackResponseSerializer(ResponseSerializer):
-    pass
-
-
-cdef class MsgPackLogSerializer(LogSerializer):
-    pass

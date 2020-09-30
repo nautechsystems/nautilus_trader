@@ -252,7 +252,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         pass
 
-
     cpdef Account load_account(self, AccountId account_id):
         """
         Load the account associated with the given account_id (if found).

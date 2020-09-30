@@ -61,9 +61,6 @@ Note that initial compilation may take several minutes due to the quantity of ex
 
 ## Installation
 
-Please ensure pyzmq >=19.0.1 is installed as some C definitions are required in
-order to compile nautilus_trader. This is due to accessing zmq sockets at the raw C level.
-
 Latest version;
 
     $ pip install nautilus_trader
