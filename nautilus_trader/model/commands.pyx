@@ -22,7 +22,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport BracketOrder
-from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 
 
@@ -200,8 +199,8 @@ cdef class ModifyOrder(Command):
             TraderId trader_id not None,
             AccountId account_id not None,
             ClientOrderId cl_ord_id not None,
-            Quantity modified_quantity not None,
-            Price modified_price not None,
+            Quantity quantity not None,
+            Price price not None,
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -216,10 +215,10 @@ cdef class ModifyOrder(Command):
             The account identifier for the inquiry.
         cl_ord_id : OrderId
             The client order identifier.
-        modified_quantity : Quantity
-            The modified quantity for the order.
-        modified_price :
-            The modified price for the order.
+        quantity : Quantity
+            The quantity for the order (modifying optional).
+        price : Price
+            The price for the order (modifying optional).
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -231,8 +230,8 @@ cdef class ModifyOrder(Command):
         self.trader_id = trader_id
         self.account_id = account_id
         self.cl_ord_id = cl_ord_id
-        self.modified_quantity = modified_quantity
-        self.modified_price = modified_price
+        self.quantity = quantity
+        self.price = price
 
     def __str__(self) -> str:
         """
@@ -247,8 +246,8 @@ cdef class ModifyOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
-                f"quantity={self.modified_quantity.to_string_formatted()}, "
-                f"price={self.modified_price})")
+                f"quantity={self.quantity.to_string_formatted()}, "
+                f"price={self.price})")
 
 
 cdef class CancelOrder(Command):
@@ -313,7 +312,6 @@ cdef class FlattenPosition(Command):
             AccountId account_id not None,
             PositionId position_id not None,
             StrategyId strategy_id not None,
-            MarketOrder market_order not None,
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -330,8 +328,6 @@ cdef class FlattenPosition(Command):
             The position identifier.
         strategy_id : StrategyId
             The strategy identifier.
-        market_order : MarketOrder
-            The flattening market order.
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -344,7 +340,6 @@ cdef class FlattenPosition(Command):
         self.account_id = account_id
         self.position_id = position_id
         self.strategy_id = strategy_id
-        self.market_order = market_order
 
     def __str__(self) -> str:
         """
@@ -360,6 +355,98 @@ cdef class FlattenPosition(Command):
                 f"account_id={self.account_id.value}, "
                 f"position_id={self.position_id.value}, "
                 f"strategy_id={self.strategy_id.value})")
+
+
+cdef class CancelAllOrders(Command):
+    """
+    Represents a command to cancel all orders for a trader and account.
+    """
+
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
+        """
+        Initialize a new instance of the CancelAllOrders class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
+        """
+        super().__init__(command_id, command_timestamp)
+
+        self.trader_id = trader_id
+        self.account_id = account_id
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        Returns
+        -------
+        str
+
+        """
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"account_id={self.account_id.value})")
+
+
+cdef class FlattenAllPositions(Command):
+    """
+    Represents a command to flatten all positions for a trader and account.
+    """
+
+    def __init__(
+            self,
+            TraderId trader_id not None,
+            AccountId account_id not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
+        """
+        Initialize a new instance of the FlattenAllPositions class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier.
+        account_id : AccountId
+            The account identifier for the inquiry.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
+        """
+        super().__init__(command_id, command_timestamp)
+
+        self.trader_id = trader_id
+        self.account_id = account_id
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        Returns
+        -------
+        str
+
+        """
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"account_id={self.account_id.value})")
 
 
 cdef class KillSwitch(Command):

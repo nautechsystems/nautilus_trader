@@ -38,7 +38,6 @@ from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import MatchId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -478,40 +477,6 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, strategy.object_storer.count)
-
-    def test_get_opposite_side_returns_expected_sides(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-
-        # Act
-        result1 = strategy.get_opposite_side(OrderSide.BUY)
-        result2 = strategy.get_opposite_side(OrderSide.SELL)
-
-        # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
-
-    def test_get_flatten_side_with_long_or_short_position_side_returns_expected_sides(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-
-        # Act
-        result1 = strategy.get_flatten_side(PositionSide.LONG)
-        result2 = strategy.get_flatten_side(PositionSide.SHORT)
-
-        # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
 
     # TODO: Potentially consolidating this API to ExecutionEngine
     # def test_strategy_can_submit_order(self):

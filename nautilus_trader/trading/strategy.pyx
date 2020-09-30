@@ -32,8 +32,6 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
@@ -52,6 +50,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport flatten_side
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -1239,48 +1238,6 @@ cdef class TradingStrategy:
 
         return self._exec_engine.portfolio
 
-    cpdef OrderSide get_opposite_side(self, OrderSide side):
-        """
-        Return the opposite order side from the given side.
-
-        Parameters
-        ----------
-        side : OrderSide
-            The original order side.
-
-        Returns
-        -------
-        OrderSide
-
-        """
-        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
-
-        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
-
-    cpdef OrderSide get_flatten_side(self, PositionSide side):
-        """
-        Return the order side needed to flatten a position from the given side.
-
-        Parameters
-        ----------
-        side : PositionSide
-            The position side to flatten.
-
-        Returns
-        -------
-        OrderSide
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED or FLAT.
-
-        """
-        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
-        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
-
-        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
-
     cpdef double get_exchange_rate(
             self,
             Currency from_currency,
@@ -1660,22 +1617,28 @@ cdef class TradingStrategy:
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        if new_quantity is None and new_price is None:
+        cdef bint modifying = False  # Set validation flag (must become true)
+        cdef Quantity quantity = order.quantity
+        cdef Price price = order.price
+
+        if new_quantity is not None:
+            modifying = True
+            quantity = new_quantity
+
+        if new_price is not None:
+            modifying = True
+            price = new_price
+
+        if not modifying:
             self.log.error("Cannot send command ModifyOrder (both new_quantity and new_price were None).")
             return
-
-        if new_quantity is None:
-            new_quantity = order.quantity
-
-        if new_price is None:
-            new_price = order.price
 
         cdef ModifyOrder command = ModifyOrder(
             self.trader_id,
             self._exec_engine.account_id,
             order.cl_ord_id,
-            new_quantity,
-            new_price,
+            quantity,
+            price,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
@@ -1718,12 +1681,11 @@ cdef class TradingStrategy:
 
         cdef list working_orders = self.execution.orders_working(symbol=None, strategy_id=self.id)
 
-        cdef int working_orders_count = len(working_orders)
-        if working_orders_count == 0:
+        if not working_orders:
             self.log.info("No working orders to cancel.")
             return
 
-        self.log.info(f"Cancelling {working_orders_count} working order(s)...")
+        self.log.info(f"Cancelling {len(working_orders)} working order(s)...")
         cdef Order order
         cdef CancelOrder command
         for order in working_orders:
@@ -1738,7 +1700,7 @@ cdef class TradingStrategy:
             self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute(command)
 
-    cpdef void flatten_position(self, Position position) except *:
+    cpdef void flatten_position(self, PositionId position_id) except *:
         """
         Flatten the position with the given identifier.
 
@@ -1749,39 +1711,23 @@ cdef class TradingStrategy:
 
         Parameters
         ----------
-        position : PositionId
-            The position to flatten.
+        position_id : PositionId
+            The identifier of the position to flatten.
 
         """
-        Condition.not_none(position, "position")
+        Condition.not_none(position_id, "position_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
-
-        if position.is_closed():
-            self.log.warning(f"Cannot flatten position (the position {position.id} is already closed).")
-            return
-
-        if position.id in self.execution.flattening_ids():
-            self.log.warning(f"Already flattening {position.id}.")
-            return
-
-        # TODO: Transfer burden of creating order to ExecutionEngine, then we only need the id
-        cdef Order order = self.order_factory.market(
-            position.symbol,
-            self.get_flatten_side(position.side),
-            position.quantity,
-        )
 
         cdef FlattenPosition command = FlattenPosition(
             self.trader_id,
             self._exec_engine.account_id,
-            position.id,
+            position_id,
             self.id,
-            order,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
 
-        self.log.info(f"Flattening {position}...")
+        self.log.info(f"Flattening {position_id}...")  # TODO: Log here?
         self._exec_engine.execute(command)
 
     cpdef void flatten_all_positions(self) except *:
@@ -1794,15 +1740,14 @@ cdef class TradingStrategy:
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef list positions = self.execution.positions_open(symbol=None, strategy_id=self.id)
-        cdef int open_positions_count = len(positions)
-        if open_positions_count == 0:
+        cdef list open_positions = self.execution.positions_open(symbol=None, strategy_id=self.id)
+
+        if not open_positions:
             self.log.info("No open positions to flatten.")
             return
 
-        self.log.info(f"Flattening {open_positions_count} open position(s)...")
+        self.log.info(f"Flattening {len(open_positions)} open position(s)...")
 
         cdef Position position
-        cdef Order order
-        for position in positions:
-            self.flatten_position(position)
+        for position in open_positions:
+            self.flatten_position(position.id)

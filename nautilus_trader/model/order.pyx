@@ -92,6 +92,50 @@ cdef dict _ORDER_STATE_TABLE = {
 }
 
 
+cpdef inline OrderSide opposite_side(OrderSide side):
+    """
+    Return the opposite order side from the given side.
+
+    Parameters
+    ----------
+    side : OrderSide
+        The original order side.
+
+    Returns
+    -------
+    OrderSide
+
+    """
+    Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
+
+    return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
+
+
+cpdef inline OrderSide flatten_side(PositionSide side):
+    """
+    Return the order side needed to flatten a position from the given side.
+
+    Parameters
+    ----------
+    side : PositionSide
+        The position side to flatten.
+
+    Returns
+    -------
+    OrderSide
+
+    Raises
+    ------
+    ValueError
+        If side is UNDEFINED or FLAT.
+
+    """
+    Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
+    Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
+
+    return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
+
+
 cdef class Order:
     """
     The base class for all orders.

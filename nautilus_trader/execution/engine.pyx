@@ -53,10 +53,13 @@ from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport flatten_side
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -113,6 +116,12 @@ cdef class ExecutionEngine:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
         self._oms_type = oms_type
+        self._order_factory = OrderFactory(
+            id_tag_trader=trader_id.tag,
+            id_tag_strategy=IdTag('X'),  # Placeholder to identify engine generated orders
+            clock=clock,
+            initial_count=0,
+        )
         self._pos_id_generator = PositionIdGenerator(trader_id.tag)
         self._exec_client = None
         self._registered_strategies = {}    # type: {StrategyId, TradingStrategy}
@@ -292,7 +301,7 @@ cdef class ExecutionEngine:
 
         self._handle_event(denied)
 
-    cdef void _handle_kill_switch(self, command) except *:
+    cdef void _handle_kill_switch(self, KillSwitch command) except *:
         self._is_kill_switch_active = True
 
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
@@ -352,9 +361,11 @@ cdef class ExecutionEngine:
         self._exec_client.submit_bracket_order(command)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
+        # TODO: Validate
         self._exec_client.modify_order(command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
+        # TODO: Validate
         self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event) except *:
@@ -436,16 +447,36 @@ cdef class ExecutionEngine:
     cdef void _handle_flatten_position(self, FlattenPosition command) except *:
         self.database.register_flattening_id(command.position_id)
 
-        cdef SubmitOrder submit = SubmitOrder(
+        cdef Position position = self.database.position(command.position_id)
+
+        if position is None:
+            self._log.warning(f"Cannot flatten position (the position {position.id} was not found in the cache).")
+            return
+
+        if position.is_closed():
+            self._log.warning(f"Cannot flatten position (the position {position.id} is already closed).")
+            return
+
+        if position.id in self.database.flattening_ids():
+            self._log.warning(f"Already flattening {position.id}.")
+            return
+
+        cdef MarketOrder order = self._order_factory.market(
+            position.symbol,
+            flatten_side(position.side),
+            position.quantity,
+        )
+
+        cdef SubmitOrder submit_order = SubmitOrder(
             command.trader_id,
             command.account_id,
             command.strategy_id,
             command.position_id,
-            command.market_order,
+            order,
             self._uuid_factory.generate(),
             self._clock.utc_now())
 
-        self._handle_submit_order(submit)
+        self._handle_submit_order(submit_order)
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill
@@ -454,9 +485,12 @@ cdef class ExecutionEngine:
 
         # Get StrategyId corresponding to fill
         cdef StrategyId strategy_id = self.database.strategy_id_for_order(fill.cl_ord_id)
+        if strategy_id is None and fill.position_id.not_null():
+            strategy_id = self.database.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
-                            f"{fill.cl_ord_id.to_string(with_class=True)} not found.")
+                            f"{fill.cl_ord_id.to_string(with_class=True)} or"
+                            f"{fill.position_id.to_string(with_class=True)} not found.")
             return  # Cannot process event further
 
         if fill.position_id is None:  # Exchange not assigning position_ids
@@ -465,7 +499,7 @@ cdef class ExecutionEngine:
             self._fill_pos_id(position_id, fill, strategy_id)
 
     cdef void _fill_pos_id_none(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *:
-        if position_id is None:  # No position yet
+        if position_id.is_null():  # No position yet
             # Generate identifier
             position_id = self._pos_id_generator.generate(fill.symbol)
             fill = fill.clone(new_position_id=position_id)
