@@ -485,7 +485,7 @@ cdef class ExecutionEngine:
     cdef void _open_position(self, OrderFilled fill, StrategyId strategy_id) except *:
         cdef Position position = Position(fill)
         self.database.add_position(position, strategy_id)
-        #self.database.index_position_id(position_id, fill.cl_ord_id, strategy_id)
+        # self.database.index_position_id(position_id, fill.cl_ord_id, strategy_id)
 
         self._send_to_strategy(fill, strategy_id)
         self.process(self._pos_opened_event(position, fill, strategy_id))
@@ -533,7 +533,8 @@ cdef class ExecutionEngine:
                           f"event {event.account_id.to_string(with_class=True)} "
                           f"does not match traders {self.account_id.to_string(with_class=True)}.")
 
-    cdef PositionOpened _pos_opened_event(self,
+    cdef PositionOpened _pos_opened_event(
+            self,
             Position position,
             OrderFilled event,
             StrategyId strategy_id,

@@ -106,7 +106,7 @@ cdef class ExecutionEngine:
     cdef void _handle_account_event(self, AccountState event) except *
     cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
     cdef PositionModified _pos_modified_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
-    cdef PositionClosed _pos_closed_event(self, Position position,  OrderFilled fill, StrategyId strategy_id)
+    cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
     cdef void _reset(self) except *
 
