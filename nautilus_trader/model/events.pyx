@@ -1009,19 +1009,44 @@ cdef class OrderFilled(OrderEvent):
         self.is_partial_fill = not self.leaves_qty.is_zero()
         self.is_completion_trigger = self.leaves_qty.is_zero()
 
-    cdef void set_position_id(self, PositionId position_id) except *:
+    cdef OrderFilled clone(self, PositionId new_position_id):
         """
-        Set the position identifier to the given identifier.
+        Clone this event with the position identifier changed to that given.
+        The original position_id must be null, otherwise an exception is raised.
 
         Parameters
         ----------
-        position_id : PositionId
-            The position identifier to set.
+        new_position_id : PositionId
+            The new position identifier to set.
+
+        Raises
+        ------
+        ValueError
+            If position_id is not null.
 
         """
-        Condition.not_none(position_id, "position_id")
+        Condition.not_none(new_position_id, "new_position_id")
+        Condition.true(self.position_id.is_null(), "original position_id is null")
 
-        self.position_id = position_id
+        return OrderFilled(
+            self.account_id,
+            self.cl_ord_id,
+            self.order_id,
+            self.execution_id,
+            new_position_id,  # Replacement identifier
+            self.symbol,
+            self.order_side,
+            self.filled_qty,
+            self.leaves_qty,
+            self.avg_price,
+            self.commission,
+            self.liquidity_side,
+            self.base_currency,
+            self.quote_currency,
+            self.execution_time,
+            self.id,
+            self.timestamp
+        )
 
     def __str__(self) -> str:
         """

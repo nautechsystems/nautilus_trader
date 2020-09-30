@@ -468,12 +468,12 @@ cdef class ExecutionEngine:
         if position_id is None:  # No position yet
             # Generate identifier
             position_id = self._pos_id_generator.generate(fill.symbol)
-            fill.set_position_id(position_id)
+            fill = fill.clone(new_position_id=position_id)
 
             # Create new position
             self._open_position(fill, strategy_id)
         else:  # Position exists
-            fill.set_position_id(position_id)
+            fill = fill.clone(new_position_id=position_id)
             self._update_position(fill, strategy_id)
 
     cdef void _fill_pos_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *:
