@@ -427,7 +427,7 @@ class EMACross(TradingStrategy):
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
         for order in self.execution.orders_working():
-            if not self.is_stop_loss(order.cl_ord_id):
+            if not self.execution.is_stop_loss(order.cl_ord_id):
                 return
 
             # SELL SIDE ORDERS

@@ -18,6 +18,7 @@ import threading
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -34,6 +35,8 @@ from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
+from nautilus_trader.model.commands cimport FlattenPosition
+from nautilus_trader.model.commands cimport KillSwitch
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -44,6 +47,7 @@ from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
@@ -112,6 +116,7 @@ cdef class ExecutionEngine:
         self._pos_id_generator = PositionIdGenerator(trader_id.tag)
         self._exec_client = None
         self._registered_strategies = {}    # type: {StrategyId, TradingStrategy}
+        self._is_kill_switch_active = False
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -250,7 +255,11 @@ cdef class ExecutionEngine:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        if isinstance(command, AccountInquiry):
+        if isinstance(command, KillSwitch):
+            self._handle_kill_switch(command)
+        elif isinstance(command, FlattenPosition):
+            self._handle_flatten_position(command)
+        elif isinstance(command, AccountInquiry):
             self._handle_account_inquiry(command)
         elif isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
@@ -282,6 +291,9 @@ cdef class ExecutionEngine:
             self._clock.utc_now())
 
         self._handle_event(denied)
+
+    cdef void _handle_kill_switch(self, command) except *:
+        self._is_kill_switch_active = True
 
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
         self._exec_client.account_inquiry(command)
@@ -332,6 +344,10 @@ cdef class ExecutionEngine:
         if command.bracket_order.has_take_profit:
             self.database.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
 
+        self.database.register_stop_loss(command.bracket_order.stop_loss)
+        if command.bracket_order.has_take_profit:
+            self.database.register_take_profit(command.bracket_order.take_profit)
+
         # Submit bracket order
         self._exec_client.submit_bracket_order(command)
 
@@ -368,6 +384,13 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, strategy_id)
 
     cdef void _handle_order_event(self, OrderEvent event) except *:
+        if isinstance(event, OrderRejected):
+            self._log.warning(f"{RECV}{EVT} {event}.")
+        elif isinstance(event, OrderCancelReject):
+            self._log.warning(f"{RECV}{EVT} {event}.")
+        else:
+            self._log.info(f"{RECV}{EVT} {event}.")
+
         cdef Order order = self.database.order(event.cl_ord_id)
         if not order:
             self._log.warning(f"Cannot apply event {event} to any order, "
@@ -382,11 +405,47 @@ cdef class ExecutionEngine:
 
         self.database.update_order(order)
 
-        if isinstance(event, OrderFilled):
+        # Remove order from registered orders
+        if isinstance(event, OrderEvent) and event.is_completion_trigger:
+            self.database.discard_stop_loss_id(event.cl_ord_id)
+            self.database.discard_take_profit_id(event.cl_ord_id)
+
+        if isinstance(event, OrderRejected):
+            self._handle_order_reject(event)
+        elif isinstance(event, OrderFilled):
             self._handle_order_fill(event)
             return  # _handle_order_fill(event) will send to strategy (refactor)
 
         self._send_to_strategy(event, self.database.strategy_id_for_order(event.cl_ord_id))
+
+    cdef void _handle_order_reject(self, OrderRejected event) except *:
+        if event.cl_ord_id not in self.database.stop_loss_ids() and event.cl_ord_id not in self.database.take_profit_ids():
+            return  # Not a registered order
+
+        # Find position_id for order
+        cdef PositionId position_id = self.database.position_id(event.cl_ord_id)
+        if position_id is None:
+            self._log.error(f"Cannot find PositionId for {event.cl_ord_id}.")  # Cannot flatten
+            return
+
+        # Flatten if open position
+        if self.database.is_position_open(position_id):
+            self._log.warning(f"Rejected {event.cl_ord_id} was a registered child order, now flattening {position_id}.")
+            self._handle_flatten_position(position_id)
+
+    cdef void _handle_flatten_position(self, FlattenPosition command) except *:
+        self.database.register_flattening_id(command.position_id)
+
+        cdef SubmitOrder submit = SubmitOrder(
+            command.trader_id,
+            command.account_id,
+            command.strategy_id,
+            command.position_id,
+            command.market_order,
+            self._uuid_factory.generate(),
+            self._clock.utc_now())
+
+        self._handle_submit_order(submit)
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill

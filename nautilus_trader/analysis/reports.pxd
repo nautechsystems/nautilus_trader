@@ -21,9 +21,9 @@ from nautilus_trader.model.position cimport Position
 
 
 cdef class ReportProvider:
-    cpdef object generate_orders_report(self, dict orders)
-    cpdef object generate_order_fills_report(self, dict orders)
-    cpdef object generate_positions_report(self, dict positions)
+    cpdef object generate_orders_report(self, list orders)
+    cpdef object generate_order_fills_report(self, list orders)
+    cpdef object generate_positions_report(self, list positions)
     cpdef object generate_account_report(self, list events, datetime start=*, datetime end=*)
 
     cdef dict _order_to_dict(self, Order order)

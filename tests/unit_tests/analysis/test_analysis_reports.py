@@ -74,8 +74,8 @@ class ReportProviderTests(unittest.TestCase):
 
         order1.apply(event)
 
-        orders = {order1.cl_ord_id: order1,
-                  order2.cl_ord_id: order2}
+        orders = [order1, order2]
+
         # Act
         report = report_provider.generate_orders_report(orders)
 
@@ -123,8 +123,8 @@ class ReportProviderTests(unittest.TestCase):
 
         order1.apply(filled)
 
-        orders = {order1.cl_ord_id: order1,
-                  order2.cl_ord_id: order2}
+        orders = [order1, order2]
+
         # Act
         report = report_provider.generate_order_fills_report(orders)
 
@@ -146,12 +146,11 @@ class ReportProviderTests(unittest.TestCase):
         position1 = TestStubs.position_which_is_closed(PositionId("P-1"))
         position2 = TestStubs.position_which_is_closed(PositionId("P-2"))
 
-        positions = {position1.id: position1,
-                     position2.id: position2}
+        positions = [position1, position2]
 
         # Act
         report = report_provider.generate_positions_report(positions)
-        print(report)
+
         # Assert
         self.assertEqual(2, len(report))
         self.assertEqual("position_id", report.index.name)

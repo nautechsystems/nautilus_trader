@@ -25,6 +25,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
+from nautilus_trader.model.commands cimport FlattenPosition
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -33,6 +34,7 @@ from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
@@ -54,6 +56,7 @@ cdef class ExecutionEngine:
     cdef PositionIdGenerator _pos_id_generator
     cdef ExecutionClient _exec_client
     cdef dict _registered_strategies
+    cdef int _is_kill_switch_active
 
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
@@ -82,15 +85,19 @@ cdef class ExecutionEngine:
     cdef void _execute_command(self, Command command) except *
     cdef void _invalidate_order(self, Order order, str reason) except *
     cdef void _deny_order(self, Order order, str reason) except *
+    cdef void _handle_kill_switch(self, command) except *
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+
     cdef void _handle_event(self, Event event) except *
+    cdef void _handle_order_reject(self, OrderRejected event) except *
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFilled event) except *
+    cdef void _handle_flatten_position(self, FlattenPosition command) except *
     cdef void _fill_pos_id_none(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
     cdef void _fill_pos_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
     cdef void _open_position(self, OrderFilled event, StrategyId strategy_id) except *

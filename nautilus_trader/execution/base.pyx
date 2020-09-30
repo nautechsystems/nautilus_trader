@@ -54,6 +54,26 @@ cdef class ExecutionDatabaseReadOnly:
 
     # -- Identifier queries ----------------------------------------------------
 
+    cpdef set stop_loss_ids(self, StrategyId strategy_id=None):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef set take_profit_ids(self, StrategyId strategy_id=None):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef set flattening_ids(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")

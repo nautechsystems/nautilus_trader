@@ -124,7 +124,7 @@ cdef class TradingNode:
         # Setup identifiers
         self.trader_id = TraderId(
             name=config_trader["name"],
-            order_id_tag=config_trader["id_tag"],
+            tag=config_trader["id_tag"],
         )
 
         self.account_id = AccountId(

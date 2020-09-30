@@ -32,6 +32,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.order cimport StopOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
@@ -671,6 +672,94 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
 
         self._log.debug(f"Updated Position(id={position.id.value}).")
+
+    cpdef void register_stop_loss(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a stop-loss.
+
+        If cancel_on_sl_reject management flag is set to True then associated
+        position will be flattened if this order is rejected.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The stop-loss order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered stop-loss orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._stop_loss_ids, "order.id", "_stop_loss_ids")
+
+        self._stop_loss_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered SL order {order}")
+
+    cpdef void register_take_profit(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a take-profit.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The take-profit order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered take_profit orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._take_profit_ids, "order.cl_ord_id", "_take_profit_ids")
+
+        self._take_profit_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered TP order {order}")
+
+    cpdef void register_flattening_id(self, PositionId position_id) except *:
+        """
+        TBD.
+
+        """
+        self._flattening_ids.add(position_id)
+
+    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._stop_loss_ids.discard(cl_ord_id)
+
+    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._take_profit_ids.discard(cl_ord_id)
+
+    cpdef void discard_flattening_id(self, PositionId position_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        position_id
+
+
+        """
+        self._flattening_ids.discard(position_id)
 
     cpdef void reset(self) except *:
         """

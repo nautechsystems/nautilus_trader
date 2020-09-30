@@ -18,7 +18,6 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Quantity
@@ -59,9 +58,6 @@ class EMACross(TradingStrategy):
         self.fast_ema = ExponentialMovingAverage(fast_ema)
         self.slow_ema = ExponentialMovingAverage(slow_ema)
 
-        # Users simple order management
-        self.net_position = PositionSide.FLAT
-
     def on_start(self):
         """Actions to be performed on strategy start."""
         # Register the indicators for updating
@@ -99,21 +95,21 @@ class EMACross(TradingStrategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.net_position == PositionSide.LONG:
-                pass
-            elif self.net_position == PositionSide.SHORT:
-                self.buy(Quantity(2000000))
-            else:
+            if self.execution.is_flat(self.symbol, self.id):
                 self.buy(Quantity(1000000))
+            elif self.execution.is_net_long(self.symbol, self.id):
+                pass
+            else:
+                self.buy(Quantity(2000000))
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.net_position == PositionSide.SHORT:
-                pass
-            elif self.net_position == PositionSide.LONG:
-                self.sell(Quantity(2000000))
-            else:
+            if self.execution.is_flat(self.symbol, self.id):
                 self.sell(Quantity(1000000))
+            elif self.execution.is_net_short(self.symbol, self.id):
+                pass
+            else:
+                self.sell(Quantity(2000000))
 
     def buy(self, quantity):
         """

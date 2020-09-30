@@ -33,8 +33,6 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -44,7 +42,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -64,10 +62,6 @@ cdef class TradingStrategy:
     cdef bint _is_flatten_on_reject
     cdef bint _is_cancel_all_orders_on_stop
     cdef bint _is_reraise_exceptions
-
-    cdef set _flattening_ids
-    cdef set _stop_loss_ids
-    cdef set _take_profit_ids
 
     cdef list _indicators
     cdef dict _indicators_for_quotes
@@ -110,8 +104,6 @@ cdef class TradingStrategy:
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
-    cpdef void register_stop_loss(self, PassiveOrder order)
-    cpdef void register_take_profit(self, PassiveOrder order)
 
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
@@ -155,11 +147,6 @@ cdef class TradingStrategy:
     cpdef bint has_trade_ticks(self, Symbol symbol) except *
     cpdef bint has_bars(self, BarType bar_type) except *
 
-    cpdef set stop_loss_ids(self)
-    cpdef set take_profit_ids(self)
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id)
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id)
-
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 
     cpdef readonly list registered_indicators(self)
@@ -188,6 +175,7 @@ cdef class TradingStrategy:
     cpdef void start(self) except *
     cpdef void stop(self) except *
     cpdef void resume(self) except *
+    cpdef void kill_switch(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
     cpdef dict save(self)
@@ -198,6 +186,5 @@ cdef class TradingStrategy:
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self) except *
-    cpdef void flatten_position(self, PositionId position_id) except *
+    cpdef void flatten_position(self, Position position) except *
     cpdef void flatten_all_positions(self) except *
-    cdef void _flatten_on_reject(self, OrderRejected event) except *
