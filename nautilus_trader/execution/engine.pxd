@@ -15,6 +15,7 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -26,6 +27,7 @@ from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport FlattenPosition
+from nautilus_trader.model.commands cimport KillSwitch
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -53,6 +55,7 @@ cdef class ExecutionEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef OMSType _oms_type
+    cdef OrderFactory _order_factory
     cdef PositionIdGenerator _pos_id_generator
     cdef ExecutionClient _exec_client
     cdef dict _registered_strategies
@@ -85,7 +88,7 @@ cdef class ExecutionEngine:
     cdef void _execute_command(self, Command command) except *
     cdef void _invalidate_order(self, Order order, str reason) except *
     cdef void _deny_order(self, Order order, str reason) except *
-    cdef void _handle_kill_switch(self, command) except *
+    cdef void _handle_kill_switch(self, KillSwitch command) except *
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *

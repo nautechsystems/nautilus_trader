@@ -23,6 +23,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelled
@@ -45,6 +46,10 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+
+cpdef OrderSide opposite_side(OrderSide side)
+cpdef OrderSide flatten_side(PositionSide side)
 
 
 cdef class Order:

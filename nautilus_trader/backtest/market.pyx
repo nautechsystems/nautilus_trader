@@ -605,11 +605,11 @@ cdef class SimulatedMarket:
         cdef Order order = self._working_orders[command.cl_ord_id]
         cdef Instrument instrument = self.instruments[order.symbol]
 
-        if command.modified_quantity.as_double() == 0.0:
+        if command.quantity.as_double() == 0.0:
             self._cancel_reject_order(
                 order,
                 "modify order",
-                f"modified quantity {command.modified_quantity} invalid")
+                f"modified quantity {command.quantity} invalid")
             return  # Cannot modify order
 
         cdef QuoteTick current_market = self._market.get(order.symbol)
@@ -654,8 +654,8 @@ cdef class SimulatedMarket:
             command.account_id,
             order.cl_ord_id,
             order.id,
-            command.modified_quantity,
-            command.modified_price,
+            command.quantity,
+            command.price,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),

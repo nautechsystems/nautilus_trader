@@ -309,8 +309,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
-            package[MODIFIED_QUANTITY] = command.modified_quantity.to_string()
-            package[MODIFIED_PRICE] = command.modified_price.to_string()
+            package[QUANTITY] = command.quantity.to_string()
+            package[PRICE] = command.price.to_string()
         elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
@@ -370,8 +370,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                Quantity.from_string(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
-                convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
+                Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[PRICE].decode(UTF8)),
                 command_id,
                 command_timestamp,
             )

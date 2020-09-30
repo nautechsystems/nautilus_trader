@@ -355,7 +355,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(TestStubs.event_order_filled(order2, expected_position_id))
 
-        # # Assert
+        # Assert
         self.assertTrue(self.exec_db.position_exists(TestStubs.event_order_filled(order1).position_id))
         self.assertTrue(self.exec_db.is_position_open(expected_position_id))
         self.assertFalse(self.exec_db.is_position_closed(expected_position_id))

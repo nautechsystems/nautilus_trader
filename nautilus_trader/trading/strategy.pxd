@@ -29,8 +29,6 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport PositionId
@@ -42,7 +40,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -156,8 +153,6 @@ cdef class TradingStrategy:
 
     cpdef Account account(self)
     cpdef Portfolio portfolio(self)
-    cpdef OrderSide get_opposite_side(self, OrderSide side)
-    cpdef OrderSide get_flatten_side(self, PositionSide side)
     cpdef double get_exchange_rate(
         self,
         Currency from_currency,
@@ -186,5 +181,5 @@ cdef class TradingStrategy:
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self) except *
-    cpdef void flatten_position(self, Position position) except *
+    cpdef void flatten_position(self, PositionId position_id) except *
     cpdef void flatten_all_positions(self) except *
