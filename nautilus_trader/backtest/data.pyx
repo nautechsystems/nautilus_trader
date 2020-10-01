@@ -584,7 +584,7 @@ cdef class BacktestDataEngine(DataEngine):
 
     cpdef void update_instruments(self, Venue venue) except *:
         """
-        Update all instruments from the database.
+        Update all instruments from the cache.
         """
         self._log.info(f"Simulated update all instruments for the {venue} venue "
                        f"(a backtest data engine already has all instruments needed).")

@@ -16,7 +16,7 @@
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.decimal cimport Decimal64
-from nautilus_trader.execution.base cimport ExecutionDatabaseReadOnly
+from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -29,7 +29,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
+cdef class ExecutionCache(ExecutionCacheReadOnly):
     cdef LoggerAdapter _log
     cdef dict _cached_accounts
     cdef dict _cached_orders
@@ -59,10 +59,10 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void load_accounts_cache(self) except *
-    cpdef void load_orders_cache(self) except *
-    cpdef void load_positions_cache(self) except *
-    cpdef void load_index_cache(self) except *
+    cpdef void load_accounts(self) except *
+    cpdef void load_orders(self) except *
+    cpdef void load_positions(self) except *
+    cpdef void load_index(self) except *
     cpdef void integrity_check(self) except *
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
@@ -104,5 +104,5 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
     cdef void _reset(self) except *
 
 
-cdef class InMemoryExecutionDatabase(ExecutionDatabase):
+cdef class InMemoryExecutionCache(ExecutionCache):
     pass

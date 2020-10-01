@@ -26,7 +26,7 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
@@ -70,7 +70,7 @@ cdef class ExecutionEngine:
             self,
             TraderId trader_id not None,
             AccountId account_id not None,
-            ExecutionDatabase database not None,
+            ExecutionCache database not None,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -85,8 +85,8 @@ cdef class ExecutionEngine:
             The trader identifier for the engine.
         account_id : AccountId
             The account identifier for the engine.
-        database : ExecutionDatabase
-            The execution database for the engine.
+        database : ExecutionCache
+            The execution cache for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -99,12 +99,12 @@ cdef class ExecutionEngine:
         Raises
         ------
         ValueError
-            If trader_id is not equal to the database.trader_id.
+            If trader_id is not equal to the cache.trader_id.
         ValueError
             If oms_type is UNDEFINED.
 
         """
-        Condition.equal(trader_id, database.trader_id, "trader_id", "database.trader_id")
+        Condition.equal(trader_id, database.trader_id, "trader_id", "cache.trader_id")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
@@ -122,12 +122,12 @@ cdef class ExecutionEngine:
 
         self.trader_id = trader_id
         self.account_id = account_id
-        self.database = database
-        self.account = self.database.get_account(account_id)
+        self.cache = database
+        self.account = self.cache.get_account(account_id)
         self.portfolio = portfolio
 
         # Set symbol position counts
-        symbol_counts = self.database.get_symbol_position_counts()
+        symbol_counts = self.cache.get_symbol_position_counts()
         for symbol, count in symbol_counts.items():
             self._pos_id_generator.set_count(symbol, count)
 
@@ -239,13 +239,13 @@ cdef class ExecutionEngine:
         """
         Check for residual working orders or open positions.
         """
-        self.database.check_residuals()
+        self.cache.check_residuals()
 
     cpdef void reset(self) except *:
         """
         Reset the execution engine by clearing all stateful values.
         """
-        self.database.reset()
+        self.cache.reset()
         self._pos_id_generator.reset()
 
         self.command_count = 0
@@ -288,9 +288,9 @@ cdef class ExecutionEngine:
 
     cdef void _handle_flatten_position(self, FlattenPosition command) except *:
         # Validate command
-        self.database.register_flattening_id(command.position_id)
+        self.cache.register_flattening_id(command.position_id)
 
-        cdef Position position = self.database.position(command.position_id)
+        cdef Position position = self.cache.position(command.position_id)
 
         if position is None:
             self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
@@ -302,7 +302,7 @@ cdef class ExecutionEngine:
                               f"(the position is already closed).")
             return  # Invalid command
 
-        if position.id in self.database.flattening_ids():
+        if position.id in self.cache.flattening_ids():
             self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
                               f"(already flattening).")
             return  # Invalid command
@@ -329,7 +329,7 @@ cdef class ExecutionEngine:
     cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *:
         # Get all open positions for the command symbol and strategy from the cache,
         # the symbol may be None in which case the query is not filtered on symbol.
-        cdef set position_open_ids = self.database.position_open_ids(
+        cdef set position_open_ids = self.cache.position_open_ids(
             symbol=command.symbol,
             strategy_id=command.strategy_id,
         )
@@ -351,7 +351,7 @@ cdef class ExecutionEngine:
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         # Validate command
-        if not self.database.is_order_working(command.cl_ord_id):
+        if not self.cache.is_order_working(command.cl_ord_id):
             self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
                               f"(already completed).")
             return  # Invalid command
@@ -361,7 +361,7 @@ cdef class ExecutionEngine:
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
         # Get all working orders for the command strategy from the cache,
         # the symbol may be None in which case the query is not filtered on symbol.
-        cdef set order_working_ids = self.database.order_working_ids(
+        cdef set order_working_ids = self.cache.order_working_ids(
             symbol=None,
             strategy_id=command.strategy_id,
         )
@@ -382,38 +382,38 @@ cdef class ExecutionEngine:
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
         # Validate command
-        if self.database.order_exists(command.order.cl_ord_id):
+        if self.cache.order_exists(command.order.cl_ord_id):
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Invalid command
 
         # TODO
         # if self._oms_type == OMSType.NETTING:
 
-        if command.position_id.not_null() and not self.database.position_exists(command.position_id):
+        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._invalidate_order(command.order, f"position_id does not exist")
             return  # Invalid command
 
         # Cache order
-        self.database.add_order(command.order, command.position_id, command.strategy_id)
+        self.cache.add_order(command.order, command.position_id, command.strategy_id)
 
         # Submit order
         self._exec_client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         # Validate command -------------------------------------------------------------------------
-        if self.database.order_exists(command.bracket_order.entry.cl_ord_id):
+        if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
             if command.bracket_order.has_take_profit:
                 self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
             return  # Invalid command
-        if self.database.order_exists(command.bracket_order.stop_loss.cl_ord_id):
+        if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
             if command.bracket_order.has_take_profit:
                 self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
             return  # Invalid command
-        if command.bracket_order.has_take_profit and self.database.order_exists(command.bracket_order.take_profit.cl_ord_id):
+        if command.bracket_order.has_take_profit and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
@@ -421,22 +421,22 @@ cdef class ExecutionEngine:
         # ------------------------------------------------------------------------------------------
 
         # Cache all orders
-        self.database.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
-        self.database.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
+        self.cache.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
+        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
         if command.bracket_order.has_take_profit:
-            self.database.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
+            self.cache.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
 
         # Register stop-loss and take-profits
-        self.database.register_stop_loss(command.bracket_order.stop_loss)
+        self.cache.register_stop_loss(command.bracket_order.stop_loss)
         if command.bracket_order.has_take_profit:
-            self.database.register_take_profit(command.bracket_order.take_profit)
+            self.cache.register_take_profit(command.bracket_order.take_profit)
 
         # Submit bracket order
         self._exec_client.submit_bracket_order(command)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         # Validate command
-        if not self.database.is_order_working(command.cl_ord_id):
+        if not self.cache.is_order_working(command.cl_ord_id):
             self._log.warning(f"Cannot modify {command.cl_ord_id.to_string(with_class=True)} "
                               f"(already completed).")
             return  # Invalid command
@@ -485,7 +485,7 @@ cdef class ExecutionEngine:
             self._log.error(f"Cannot handle event ({event} is unrecognized).")
 
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
-        cdef StrategyId strategy_id = self.database.strategy_id_for_order(event.cl_ord_id)
+        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
         if not strategy_id:
             self._log.error(f"Cannot process event {event}, "
                             f"{strategy_id.to_string(with_class=True)} "
@@ -502,7 +502,7 @@ cdef class ExecutionEngine:
         else:
             self._log.info(f"{RECV}{EVT} {event}.")
 
-        cdef Order order = self.database.order(event.cl_ord_id)
+        cdef Order order = self.cache.order(event.cl_ord_id)
         if not order:
             self._log.warning(f"Cannot apply event {event} to any order, "
                               f"{event.cl_ord_id.to_string(with_class=True)} "
@@ -514,12 +514,12 @@ cdef class ExecutionEngine:
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
 
-        self.database.update_order(order)
+        self.cache.update_order(order)
 
         # Remove order from registered orders
         if isinstance(event, OrderEvent) and event.is_completion_trigger:
-            self.database.discard_stop_loss_id(event.cl_ord_id)
-            self.database.discard_take_profit_id(event.cl_ord_id)
+            self.cache.discard_stop_loss_id(event.cl_ord_id)
+            self.cache.discard_take_profit_id(event.cl_ord_id)
 
         if isinstance(event, OrderRejected):
             self._handle_order_reject(event)
@@ -527,32 +527,32 @@ cdef class ExecutionEngine:
             self._handle_order_fill(event)
             return  # _handle_order_fill(event) will send to strategy (refactor)
 
-        self._send_to_strategy(event, self.database.strategy_id_for_order(event.cl_ord_id))
+        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
     cdef void _handle_order_reject(self, OrderRejected event) except *:
-        if event.cl_ord_id not in self.database.stop_loss_ids() and event.cl_ord_id not in self.database.take_profit_ids():
+        if event.cl_ord_id not in self.cache.stop_loss_ids() and event.cl_ord_id not in self.cache.take_profit_ids():
             return  # Not a registered order
 
         # Find position_id for order
-        cdef PositionId position_id = self.database.position_id(event.cl_ord_id)
+        cdef PositionId position_id = self.cache.position_id(event.cl_ord_id)
         if position_id is None:
             self._log.error(f"Cannot find PositionId for {event.cl_ord_id}.")  # Cannot flatten
             return
 
         # Flatten if open position
-        if self.database.is_position_open(position_id):
+        if self.cache.is_position_open(position_id):
             self._log.warning(f"Rejected {event.cl_ord_id} was a registered child order, now flattening {position_id}.")
             self._handle_flatten_position(position_id)
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill
-        cdef PositionId position_id = self.database.position_id(fill.cl_ord_id)
+        cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
         # --- position_id could be None here (position not opened yet) ---
 
         # Get StrategyId corresponding to fill
-        cdef StrategyId strategy_id = self.database.strategy_id_for_order(fill.cl_ord_id)
+        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
         if strategy_id is None and fill.position_id.not_null():
-            strategy_id = self.database.strategy_id_for_position(fill.position_id)
+            strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
                             f"{fill.cl_ord_id.to_string(with_class=True)} or"
@@ -584,14 +584,14 @@ cdef class ExecutionEngine:
 
     cdef void _open_position(self, OrderFilled fill, StrategyId strategy_id) except *:
         cdef Position position = Position(fill)
-        self.database.add_position(position, strategy_id)
-        # self.database.index_position_id(position_id, fill.cl_ord_id, strategy_id)
+        self.cache.add_position(position, strategy_id)
+        # self.cache.index_position_id(position_id, fill.cl_ord_id, strategy_id)
 
         self._send_to_strategy(fill, strategy_id)
         self.process(self._pos_opened_event(position, fill, strategy_id))
 
     cdef void _update_position(self, OrderFilled fill, StrategyId strategy_id) except *:
-        cdef Position position = self.database.position(fill.position_id)
+        cdef Position position = self.cache.position(fill.position_id)
 
         if position is None:
             self._log.error(f"Cannot update position for "
@@ -600,7 +600,7 @@ cdef class ExecutionEngine:
             return
 
         position.apply(fill)
-        self.database.update_position(position)
+        self.cache.update_position(position)
 
         cdef PositionEvent position_event
         if position.is_closed():
@@ -616,17 +616,17 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, event.strategy_id)
 
     cdef void _handle_account_event(self, AccountState event) except *:
-        cdef Account account = self.database.get_account(event.account_id)
+        cdef Account account = self.cache.get_account(event.account_id)
         if account is None:
             account = Account(event)
             if self.account_id.equals(account.id):
                 self.account = account
-                self.database.add_account(self.account)
+                self.cache.add_account(self.account)
                 self.portfolio.set_base_currency(event.currency)
                 return
         elif account.id == event.account_id:
             account.apply(event)
-            self.database.update_account(account)
+            self.cache.update_account(account)
             return
 
         self._log.warning(f"Cannot process event {event}, "

@@ -27,7 +27,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import ComponentState
@@ -73,7 +73,7 @@ class TraderTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        self.exec_db = InMemoryExecutionDatabase(
+        self.exec_db = InMemoryExecutionCache(
             trader_id=trader_id,
             logger=logger)
         self.exec_engine = ExecutionEngine(

@@ -350,7 +350,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_accounts_cache_when_no_accounts(self):
         # Arrange
         # Act
-        self.database.load_accounts_cache()
+        self.database.load_accounts()
         event = TestStubs.account_event()
         account = Account(event)
 
@@ -365,7 +365,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.reset()
 
         # Act
-        self.database.load_accounts_cache()
+        self.database.load_accounts()
 
         # Assert
         self.assertEqual(account, self.database.get_account(account.id))
@@ -373,7 +373,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_orders_cache_when_no_orders(self):
         # Arrange
         # Act
-        self.database.load_orders_cache()
+        self.database.load_orders()
 
         # Assert
         self.assertEqual([], self.database.orders())
@@ -389,7 +389,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, position_id, self.strategy.id)
 
         # Act
-        self.database.load_orders_cache()
+        self.database.load_orders()
 
         # Assert
         self.assertEqual([order], self.database.orders())
@@ -397,7 +397,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_positions_cache_when_no_positions(self):
         # Arrange
         # Act
-        self.database.load_positions_cache()
+        self.database.load_positions()
 
         # Assert
         self.assertEqual([], self.database.positions())
@@ -422,7 +422,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position, self.strategy.id)
 
         # Act
-        self.database.load_positions_cache()
+        self.database.load_positions()
 
         # Assert
         self.assertEqual([position], self.database.positions())

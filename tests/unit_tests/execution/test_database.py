@@ -21,7 +21,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
@@ -59,7 +59,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.database = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
+        self.database = InMemoryExecutionCache(trader_id=self.trader_id, logger=logger)
 
     def test_add_order(self):
         # Arrange

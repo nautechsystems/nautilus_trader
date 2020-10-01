@@ -23,7 +23,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport Event
@@ -40,7 +40,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self,
             TraderId trader_id not None,
             AccountId account_id not None,
-            ExecutionDatabase database not None,
+            ExecutionCache database not None,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -55,8 +55,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The trader identifier for the engine.
         account_id : AccountId
             The account_id for the engine.
-        database : ExecutionDatabase
-            The execution database for the engine.
+        database : ExecutionCache
+            The execution cache for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock

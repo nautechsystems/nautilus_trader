@@ -395,7 +395,7 @@ cdef class TradingStrategy:
         Condition.not_none(engine, "engine")
 
         self._exec_engine = engine
-        self.execution = engine.database
+        self.execution = engine.cache
 
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
         """

@@ -21,7 +21,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
@@ -64,7 +64,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.exec_db = InMemoryExecutionCache(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -128,14 +128,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Assert
-        self.assertTrue(self.exec_engine.database.is_flat(strategy_id=strategy.id))
-        self.assertTrue(self.exec_engine.database.is_flat())
+        self.assertTrue(self.exec_engine.cache.is_flat(strategy_id=strategy.id))
+        self.assertTrue(self.exec_engine.cache.is_flat())
 
     def test_is_flat_when_no_registered_strategies_returns_true(self):
         # Arrange
         # Act
         # Assert
-        self.assertTrue(self.exec_engine.database.is_flat())
+        self.assertTrue(self.exec_engine.cache.is_flat())
 
     def test_reset_execution_engine(self):
         strategy = TradingStrategy(order_id_tag="001")
@@ -230,8 +230,8 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_db.position_exists(expected_position_id))
         self.assertTrue(self.exec_db.is_position_open(expected_position_id))
         self.assertFalse(self.exec_db.is_position_closed(expected_position_id))
-        self.assertFalse(self.exec_engine.database.is_flat(strategy_id=strategy.id))
-        self.assertFalse(self.exec_engine.database.is_flat())
+        self.assertFalse(self.exec_engine.cache.is_flat(strategy_id=strategy.id))
+        self.assertFalse(self.exec_engine.cache.is_flat())
         self.assertEqual(Position, type(self.exec_db.position(expected_position_id)))
         self.assertTrue(expected_position_id in self.exec_db.position_ids())
         self.assertTrue(expected_position_id not in self.exec_db.position_closed_ids(strategy_id=strategy.id))
@@ -283,8 +283,8 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_db.position_exists(expected_id))
         self.assertTrue(self.exec_db.is_position_open(expected_id))
         self.assertFalse(self.exec_db.is_position_closed(expected_id))
-        self.assertFalse(self.exec_engine.database.is_flat(strategy_id=strategy.id))
-        self.assertFalse(self.exec_engine.database.is_flat())
+        self.assertFalse(self.exec_engine.cache.is_flat(strategy_id=strategy.id))
+        self.assertFalse(self.exec_engine.cache.is_flat())
         self.assertEqual(Position, type(self.exec_db.position(expected_id)))
         self.assertTrue(expected_id in self.exec_db.position_ids())
         self.assertTrue(expected_id not in self.exec_db.position_closed_ids(strategy_id=strategy.id))
