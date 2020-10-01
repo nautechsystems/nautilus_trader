@@ -25,7 +25,9 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
@@ -51,8 +53,12 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=strategies,
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             fill_model=FillModel(),
-            config=config)
+            config=config,
+        )
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -105,8 +111,12 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=strategies,
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             config=config,
-            fill_model=None)
+            fill_model=None,
+        )
 
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -144,8 +154,12 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=strategies,
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             config=config,
-            fill_model=None)
+            fill_model=None,
+        )
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -212,7 +226,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 25/07/19 15274063 function calls (15045703 primitive calls) in 14.408 seconds (removed compiler directives for perf)
         # 31/07/19 15274063 function calls (15045703 primitive calls) in 14.589 seconds (numerous changes)
         # 31/07/19 15324690 function calls (15096346 primitive calls) in 15.134 seconds (add typed collections to data client base)
-        # 06/08/19 15274063 function calls (15045703 primitive calls) in 14.749 seconds (add typed collections to exec client base)
+        # 06/08/19 15274063 function calls (15045703 primitive calls) in 14.749 seconds (add typed collections to execution client base)
         # 13/08/19 15402949 function calls (15045703 primitive calls) in 15.589 seconds (add typed collections to trader)
         # 21/08/19 15403153 function calls (15175335 primitive calls) in 15.264 seconds (remove typed collections)
         # 27/08/19 15403175 function calls (15175357 primitive calls) in 14.590 seconds (new execution engine)
@@ -243,6 +257,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 16/09/20 1889296 function calls (1885341 primitive calls) in 5.610 seconds (refactor indicator)
         # 17/09/20 1277734 function calls (1273643 primitive calls) in 4.873 seconds (refactor indicator updating)
         # 22/09/20 2102925 function calls (2095592 primitive calls) in 5.555 seconds (more checks in execution engine, method extractions)
+        # 27/09/20 1801292 function calls (1795667 primitive calls) in 6.894 seconds (refactor value type API)
 
         # 10/02/20 Profiling Mission: (Profile_Hooks = True)
         # -----------------------------------------------------------------------------------------------------------------------------------------

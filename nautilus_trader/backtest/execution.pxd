@@ -18,4 +18,4 @@ from nautilus_trader.execution.client cimport ExecutionClient
 
 
 cdef class BacktestExecClient(ExecutionClient):
-    cdef SimulatedMarket _broker
+    cdef SimulatedMarket _market

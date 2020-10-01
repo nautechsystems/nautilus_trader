@@ -20,6 +20,7 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class ExecutionClient:
@@ -27,17 +28,27 @@ cdef class ExecutionClient:
     The base class for all execution clients.
     """
 
-    def __init__(self, ExecutionEngine engine not None, Logger logger not None):
+    def __init__(
+            self,
+            Venue venue not None,
+            ExecutionEngine engine not None,
+            Logger logger not None):
         """
         Initialize a new instance of the ExecutionClient class.
 
-        :param engine: The execution engine to connect to the client.
-        :param logger: The logger for the component.
+        Parameters
+        ----------
+        venue : Venue
+            The trading venue identifier for the client.
+        engine : ExecutionEngine
+            The execution engine to connect to the client.
+        logger : Logger
+            The logger for the component.
         """
         self._engine = engine
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self.trader_id = engine.trader_id
+        self.venue = venue
         self.command_count = 0
         self.event_count = 0
 

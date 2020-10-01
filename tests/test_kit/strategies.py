@@ -24,7 +24,6 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
-from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick import QuoteTick
@@ -152,7 +151,7 @@ class TestStrategy1(TradingStrategy):
                     100000,
                 )
 
-                self.submit_order(buy_order, ClientPositionId(str(buy_order.cl_ord_id)))
+                self.submit_order(buy_order)
                 self.position_id = buy_order.cl_ord_id
 
             elif self.ema1.value < self.ema2.value:
@@ -162,7 +161,7 @@ class TestStrategy1(TradingStrategy):
                     100000,
                 )
 
-                self.submit_order(sell_order, ClientPositionId(str(sell_order.cl_ord_id)))
+                self.submit_order(sell_order)
                 self.position_id = sell_order.cl_ord_id
 
     def on_instrument(self, instrument):
@@ -312,7 +311,7 @@ class EMACross(TradingStrategy):
         self._check_trailing_stops(bar, sl_buffer, spread_buffer)
 
     def _check_signal(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        if self.orders_working_count() == 0 and self.is_flat():  # No active or pending positions
+        if self.execution.orders_working_count() == 0 and self.execution.is_completely_flat():  # No active or pending positions
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self._enter_long(bar, sl_buffer, spread_buffer)
@@ -427,8 +426,8 @@ class EMACross(TradingStrategy):
         self.submit_bracket_order(bracket_order)
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        for order in self.orders_working().values():
-            if not self.is_stop_loss(order.cl_ord_id):
+        for order in self.execution.orders_working():
+            if not self.execution.is_stop_loss(order.cl_ord_id):
                 return
 
             # SELL SIDE ORDERS
@@ -462,7 +461,8 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        pass
+        self.cancel_all_orders_for_symbol(self.symbol)
+        self.flatten_all_positions_for_symbol(self.symbol)
 
     def on_reset(self):
         """

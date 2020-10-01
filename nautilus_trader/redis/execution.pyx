@@ -18,21 +18,21 @@ import redis
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.order cimport StopOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
@@ -48,9 +48,9 @@ cdef str _CONFIG = 'Config'
 cdef str _ACCOUNTS = 'Accounts'
 cdef str _ORDER = 'Order'
 cdef str _ORDERS = 'Orders'
-cdef str _BROKER = 'BrokerId'
 cdef str _POSITION = 'Position'
 cdef str _POSITIONS = 'Positions'
+cdef str _SYMBOL = 'Symbol'
 cdef str _STRATEGY = 'Strategy'
 cdef str _STRATEGIES = 'Strategies'
 cdef str _WORKING = 'Working'
@@ -59,9 +59,9 @@ cdef str _OPEN = 'Open'
 cdef str _CLOSED = 'Closed'
 
 
-cdef class RedisExecutionDatabase(ExecutionDatabase):
+cdef class RedisExecutionDatabase(ExecutionCache):
     """
-    Provides an execution database utilizing Redis.
+    Provides an execution cache utilizing Redis.
     """
 
     def __init__(
@@ -77,14 +77,28 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Initialize a new instance of the RedisExecutionDatabase class.
 
-        :param trader_id: The trader_id.
-        :param host: The redis host for the database connection.
-        :param port: The redis port for the database connection.
-        :param command_serializer: The command serializer for database transactions.
-        :param event_serializer: The event serializer for database transactions.
-        :param load_caches: If the caches should be loaded from Redis on instantiation.
-        :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader_id.
+        host : str
+            The redis host for the cache connection.
+        port : int
+            The redis port for the cache connection.
+        command_serializer : CommandSerializer
+            The command serializer for cache transactions.
+        event_serializer : EventSerializer
+            The event serializer for cache transactions.
+        load_caches : bool
+            If the caches should be loaded from Redis on instantiation.
+
+        Raises
+        ------
+        ValueError
+            If the host is not a valid string.
+        ValueError
+            If the port is not in range [0, 65535].
+
         """
         Condition.valid_string(host, "host")
         Condition.in_range_int(port, 0, 65535, "port")
@@ -98,9 +112,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_strategies               = f"{self.key_trader}:{_STRATEGIES}:"                            # noqa
         self.key_index_order_position     = f"{self.key_trader}:{_INDEX}:{_ORDER}{_POSITION}"      # HASH  # noqa
         self.key_index_order_strategy     = f"{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}"      # HASH  # noqa
-        self.key_index_broker_position    = f"{self.key_trader}:{_INDEX}:{_BROKER}{_POSITION}"     # HASH  # noqa
         self.key_index_position_strategy  = f"{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}"   # HASH  # noqa
         self.key_index_position_orders    = f"{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:"    # SET   # noqa
+        self.key_index_symbol_orders      = f"{self.key_trader}:{_INDEX}:{_SYMBOL}{_ORDERS}:"      # SET   # noqa
+        self.key_index_symbol_positions   = f"{self.key_trader}:{_INDEX}:{_SYMBOL}{_POSITIONS}:"   # SET   # noqa
         self.key_index_strategy_orders    = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:"    # SET   # noqa
         self.key_index_strategy_positions = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:" # SET   # noqa
         self.key_index_orders             = f"{self.key_trader}:{_INDEX}:{_ORDERS}"                # SET   # noqa
@@ -120,25 +135,26 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if load_caches:
             self._log.info(f"The load_caches flag was {load_caches}")
             # Load cache
-            self.load_accounts_cache()
-            self.load_orders_cache()
-            self.load_positions_cache()
+            self.load_accounts()
+            self.load_orders()
+            self.load_positions()
+            self.load_index()
         else:
             self._log.warning(f"The load_caches flag was {load_caches} "
                               f"(this should only be done in a testing environment).")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void load_accounts_cache(self) except *:
+    cpdef void load_accounts(self) except *:
         """
-        Clear the current accounts cache and load accounts from the database.
+        Clear the current accounts cache and load accounts from the cache.
         """
-        self._log.info("Re-caching accounts from the database...")
+        self._log.info("Re-caching accounts from the cache...")
         self._cached_accounts.clear()
 
         cdef list account_keys = self._redis.keys(f"{self.key_accounts}*")
         if not account_keys:
-            self._log.info("No accounts found in database.")
+            self._log.info("No accounts found in cache.")
             return
 
         cdef bytes key_bytes
@@ -153,16 +169,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(self._cached_accounts)} account(s).")
 
-    cpdef void load_orders_cache(self) except *:
+    cpdef void load_orders(self) except *:
         """
-        Clear the current order cache and load orders from the database.
+        Clear the current order cache and load orders from the cache.
         """
-        self._log.info("Re-caching orders from the database...")
+        self._log.info("Re-caching orders from the cache...")
         self._cached_orders.clear()
 
         cdef list order_keys = self._redis.keys(f"{self.key_orders}*")
         if not order_keys:
-            self._log.info("No orders found in database.")
+            self._log.info("No orders found in cache.")
             return
 
         cdef bytes key_bytes
@@ -177,28 +193,28 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(self._cached_orders)} order(s).")
 
-    cpdef void load_positions_cache(self) except *:
+    cpdef void load_positions(self) except *:
         """
-        Clear the current order cache and load orders from the database.
+        Clear the current order cache and load orders from the cache.
         """
-        self._log.info("Re-caching positions from the database...")
+        self._log.info("Re-caching positions from the cache...")
         self._cached_positions.clear()
 
         cdef list position_keys = self._redis.keys(f"{self.key_positions}*")
         if not position_keys:
-            self._log.info("No positions found in database.")
+            self._log.info("No positions found in cache.")
             return
 
         cdef bytes key_bytes
-        cdef ClientPositionId position_id
+        cdef PositionId position_id
         cdef Position position
 
         for key_bytes in position_keys:
-            position_id = ClientPositionId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            position_id = PositionId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             position = self.load_position(position_id)
 
             if position:
-                self._cached_positions[position.cl_pos_id] = position
+                self._cached_positions[position.id] = position
 
         # Setup symbol position counts
         cdef dict position_counts = {}  # type: {Symbol, int}
@@ -209,254 +225,79 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
 
-    cpdef void add_account(self, Account account) except *:
+    cpdef void load_index(self) except *:
         """
-        Add the given account to the execution database.
-
-        :param account: The account to add.
-        :raises ValueError: If the account_id is already contained in the cached_accounts.
+        Clear the current index cache and load indexes from the cache.
         """
-        Condition.not_none(account, "account")
-        Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
+        # load _index_order_position
+        # load _index_order_strategy
+        # load _index_position_strategy
+        # load _index_position_orders
+        # load _index_symbol_orders
+        # load _index_symbol_positions
+        # load _index_strategy_orders
+        # load _index_strategy_positions
+        # load _index_orders
+        # load _index_orders_working
+        # load _index_orders_completed
+        # load _index_positions
+        # load _index_positions_open
+        # load _index_positions_closed
+        # load _index_strategies
+        cdef dict index_order_position_bytes = self._redis.hgetall(name=self.key_index_order_position)
 
-        self._cached_accounts[account.id] = account
-
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event()))
-        cdef list reply = pipe.execute()
-
-        # Check data integrity of reply
-        if reply[0] > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {account.id} already existed in the accounts and was appended to.")
-
-        self._log.debug(f"Added Account(id={account.id.value}).")
-
-    cpdef void add_order(self, Order order, StrategyId strategy_id, ClientPositionId cl_pos_id=None) except *:
+    cpdef void integrity_check(self) except *:
         """
-        Add the given order to the execution database indexed with the given strategy and position
-        identifiers.
-
-        :param order: The order to add.
-        :param strategy_id: The strategy identifier to index for the order.
-        :param cl_pos_id: The client position identifier to index for the order.
-        :raises ValueError: If the order.cl_ord_id is already contained in the cached_orders.
+        TODO
         """
-        Condition.not_none(order, "order")
-        Condition.not_none(strategy_id, "strategy_id")
-        Condition.not_none(cl_pos_id, "position_id")
-        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.id", "cached_orders")
-
-        self._cached_orders[order.cl_ord_id] = order
-
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))  # 0
-        pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=cl_pos_id.value)            # 1
-        pipe.hset(name=self.key_index_order_strategy, key=order.cl_ord_id.value, value=strategy_id.value)          # 2
-        pipe.hset(name=self.key_index_position_strategy, key=cl_pos_id.value, value=strategy_id.value)             # 3
-        pipe.sadd(self.key_index_orders, order.cl_ord_id.value)                                                    # 4
-        pipe.sadd(self.key_index_position_orders + cl_pos_id.value, order.cl_ord_id.value)                         # 5
-        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 6
-        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, cl_pos_id.value)                          # 7
-        cdef list reply = pipe.execute()
-
-        # Check data integrity of reply
-        if reply[0] > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {order.cl_ord_id} already existed in the orders and was appended to.")
-        if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-            self._log.error(f"The {order.cl_ord_id} already existed in index_order_position and was overwritten.")
-        if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-            self._log.error(f"The {order.cl_ord_id} already existed in index_order_strategy and was overwritten.")
-        # reply[3] index_position_strategy does not need to be checked as there will be multiple writes for bracket orders
-        if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {order.cl_ord_id} already existed in index_orders.")
-        if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {order.cl_ord_id} already existed in index_position_orders.")
-        if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {order.cl_ord_id} already existed in index_strategy_orders.")
-        # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
-
-        self._log.debug(f"Added Order(id={order.cl_ord_id.value}).")
-
-    cdef void set_cl_pos_id(self, ClientPositionId cl_pos_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
-        """
-        *** WIP ***
-        """
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.hset(name=self.key_index_order_position, key=cl_ord_id.value, value=cl_pos_id.value)
-        pipe.hset(name=self.key_index_position_strategy, key=cl_pos_id.value, value=strategy_id.value)
-        pipe.sadd(self.key_index_position_orders + cl_pos_id.value, cl_ord_id.value)
-        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, cl_pos_id.value)
-        pipe.execute()
-
-    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
-        """
-        Add the given position associated with the given strategy_id.
-
-        :param position: The position to add.
-        :param strategy_id: The strategy_id to associate with the position.
-        :raises ValueError: If the position_id is already contained in the cached_positions.
-        """
-        Condition.not_none(position, "position")
-        Condition.not_none(strategy_id, "strategy_id")
-        Condition.not_in(position.cl_pos_id, self._cached_positions, "position.id", "cached_positions")
-
-        self._cached_positions[position.cl_pos_id] = position
-
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_positions + position.cl_pos_id.value, self._event_serializer.serialize(position.last_event()))
-        pipe.hset(name=self.key_index_broker_position, key=position.id.value, value=position.cl_pos_id.value)
-        pipe.sadd(self.key_index_positions, position.cl_pos_id.value)
-        pipe.sadd(self.key_index_positions_open, position.cl_pos_id.value)
-        cdef list reply = pipe.execute()
-
-        # Check data integrity of reply
-        if reply[0] > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {position.id} already existed in the index_broker_position and was overwritten.")
-        if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {position.cl_pos_id} already existed in index_positions.")
-        if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {position.cl_pos_id} already existed in index_positions.")
-        if reply[3] == 0:  # Reply = 0 if the element was already a member of the set
-            self._log.error(f"The {position.cl_pos_id} already existed in index_positions_open.")
-
-        self._log.debug(f"Added Position(id={position.cl_pos_id.value}).")
-
-    cpdef void update_account(self, Account account) except *:
-        """
-        Update the given account in the execution database by persisting its
-        last event.
-
-        :param account: The account to update (from last event).
-        """
-        Condition.not_none(account, "account")
-
-        self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event()))
-        self._log.debug(f"Updated Account(id={account.id}).")
-
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
-        """
-        Update the given strategy state in the execution database.
-
-        :param strategy: The strategy to update.
-        """
-        Condition.not_none(strategy, "strategy")
-
-        cdef dict state = strategy.save()
-
-        pipe = self._redis.pipeline()
-
-        for key, value in state.items():
-            pipe.hset(name=self.key_strategies + strategy.id.value + ":State", key=key, value=value)
-            self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
-        cdef list reply = pipe.execute()
-
-        self._log.info(f"Saved strategy state for {strategy.id.value}.")
-
-    cpdef void update_order(self, Order order) except *:
-        """
-        Update the given order in the execution database.
-
-        :param order: The order to update (from last event).
-        """
-        Condition.not_none(order, "order")
-
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))
-        if order.is_working():
-            pipe.sadd(self.key_index_orders_working, order.cl_ord_id.value)
-            pipe.srem(self.key_index_orders_completed, order.cl_ord_id.value)
-        elif order.is_completed():
-            pipe.sadd(self.key_index_orders_completed, order.cl_ord_id.value)
-            pipe.srem(self.key_index_orders_working, order.cl_ord_id.value)
-        cdef list reply = pipe.execute()
-
-        # Check data integrity of reply
-        if reply[0] == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Order(id={order.cl_ord_id.value}) did not already exist.")
-
-        self._log.debug(f"Updated Order(id={order.cl_ord_id.value}).")
-
-    cpdef void update_position(self, Position position) except *:
-        """
-        Update the given position in the execution database.
-
-        :param position: The position to update (from last event).
-        """
-        Condition.not_none(position, "position")
-
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_positions + position.cl_pos_id.value, self._event_serializer.serialize(position.last_event()))
-        if position.is_closed():
-            pipe.sadd(self.key_index_positions_closed, position.cl_pos_id.value)
-            pipe.srem(self.key_index_positions_open, position.cl_pos_id.value)
-        else:
-            pipe.sadd(self.key_index_positions_open, position.cl_pos_id.value)
-            pipe.srem(self.key_index_positions_closed, position.cl_pos_id.value)
-        cdef list reply = pipe.execute()
-
-        # Check data integrity of reply
-        if reply[0] == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Position(id={position.cl_pos_id.value}) did not already exist.")
-
-        self._log.debug(f"Updated Position(id={position.cl_pos_id.value}).")
-
-    cpdef void load_strategy(self, TradingStrategy strategy) except *:
-        """
-        Load the state for the given strategy from the execution database.
-
-        :param strategy: The strategy to load.
-        """
-        Condition.not_none(strategy, "strategy")
-
-        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ":State")
-
-        if not state:
-            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
-            return
-
-        for key, value in state.items():
-            self._log.debug(f"Loading Strategy(id={strategy.id.value}) state (key='{key}', value={value})...")
-        strategy.load(state)
-
-        self._log.info(f"Loaded Strategy(id={strategy.id.value}) state.")
+        pass
 
     cpdef Account load_account(self, AccountId account_id):
         """
         Load the account associated with the given account_id (if found).
 
+        Parameters
+        ----------
         :param account_id: The account identifier to load.
-        :return: Account or None.
+
+        Returns
+        -------
+        Account or None
+
         """
         Condition.not_none(account_id, "account_id")
 
         cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
-        if not events:
-            self._log.error(f"Cannot load Account(id={account_id.value}) from database (not found).")
+        if len(events) == 0:
             return None
 
-        cdef AccountState last_event = self._event_serializer.deserialize(events.pop())
-        return Account(event=last_event)
+        cdef AccountState event
+        cdef Account account = Account(self._event_serializer.deserialize(events[0]))
+        for event in events[1:]:
+            account.apply(self._event_serializer.deserialize(event))
 
-    cpdef Order load_order(self, ClientOrderId order_id):
+        return account
+
+    cpdef Order load_order(self, ClientOrderId cl_ord_id):
         """
-        Load the order associated with the given order_id (if found).
+        Load the order associated with the given identifier (if found).
 
-        :param order_id: The order identifier to load.
-        :return: Order or None.
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to load.
+
+        Returns
+        -------
+        Order or None
+
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        cdef list events = self._redis.lrange(name=self.key_orders + order_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(name=self.key_orders + cl_ord_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
-        if not events:
-            self._log.error(f"Cannot load Order(id={order_id.value}) from database (not found).")
+        if len(events) == 0:
             return None
 
         cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
@@ -474,37 +315,79 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes event_bytes
         for event_bytes in events:
             order.apply(self._event_serializer.deserialize(event_bytes))
+
         return order
 
-    cpdef Position load_position(self, ClientPositionId position_id):
+    cpdef Position load_position(self, PositionId position_id):
         """
-        Load the position associated with the given position_id (if found).
+        Load the position associated with the given identifier (if found).
 
-        :param position_id: The position_id to load.
-        :return: Position or None.
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to load.
+
+        Returns
+        -------
+        Position or None
+
         """
         Condition.not_none(position_id, "position_id")
 
         cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
-        if not events:
-            self._log.error(f"Cannot load Position(id={position_id.value}) from database (not found).")
+        if len(events) == 0:
             return None
 
         cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
-        cdef Position position = Position(cl_pos_id=position_id, event=initial)
+        cdef Position position = Position(event=initial)
 
         cdef bytes event_bytes
         for event_bytes in events:
             position.apply(self._event_serializer.deserialize(event_bytes))
+
         return position
+
+    cpdef void load_strategy(self, TradingStrategy strategy) except *:
+        """
+        Load the state for the given strategy from the execution cache.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to load.
+
+        """
+        Condition.not_none(strategy, "strategy")
+
+        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ":State")
+
+        if not state:
+            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
+            return
+
+        for key, value in state.items():
+            self._log.debug(f"Loading Strategy(id={strategy.id.value}) state (key='{key}', value={value})...")
+        strategy.load(state)
+
+        self._log.info(f"Loaded Strategy(id={strategy.id.value}) state.")
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
-        Delete the given strategy from the execution database.
+        Delete the given strategy from the execution cache.
+        Logs error if strategy not found in the cache.
 
-        :param strategy: The strategy to deregister.
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to deregister.
+
+        Raises
+        ------
+        ValueError
+            If strategy is not contained in the strategies.
+
         """
         Condition.not_none(strategy, "strategy")
 
@@ -514,529 +397,1114 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Deleted Strategy(id={strategy.id.value}).")
 
+    cpdef void add_account(self, Account account) except *:
+        """
+        Add the given account to the execution cache.
+
+        Parameters
+        ----------
+        account : Account
+            The account to add.
+
+        Raises
+        ------
+        ValueError
+            If account_id is already contained in the cached_accounts.
+
+        """
+        Condition.not_none(account, "account")
+        Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
+
+        self._cached_accounts[account.id] = account
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event()))
+        cdef list reply = pipe.execute()
+
+        # Check data integrity of reply
+        if reply[0] > 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The {account.id} already existed in the accounts and was appended to.")
+
+        self._log.debug(f"Added Account(id={account.id.value}).")
+
+    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
+        """
+        Add the given order to the execution cache indexed with the given
+        identifiers.
+
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+        position_id : PositionId
+            The position identifier to index for the order.
+        strategy_id : StrategyId
+            The strategy identifier to index for the order.
+
+        Raises
+        ------
+        ValueError
+            If order.id is already contained in the cached_orders.
+        ValueError
+            If order.id is already contained in the index_orders.
+        ValueError
+            If order.id is already contained in the index_order_position.
+        ValueError
+            If order.id is already contained in the index_order_strategy.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_none(position_id, "position_id")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.id", "cached_orders")
+
+        self._cached_orders[order.cl_ord_id] = order
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))  # 0
+        pipe.hset(name=self.key_index_order_strategy, key=order.cl_ord_id.value, value=strategy_id.value)          # 1
+        pipe.sadd(self.key_index_orders, order.cl_ord_id.value)                                                    # 2
+        pipe.sadd(self.key_index_symbol_orders + order.symbol.value, order.cl_ord_id.value)                        # 3
+        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 4
+
+        if position_id.not_null():
+            pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=position_id.value)
+            pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
+            pipe.sadd(self.key_index_position_orders + position_id.value, order.cl_ord_id.value)
+            pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
+
+        cdef list reply = pipe.execute()
+        self._add_order(order, position_id, strategy_id)  # Logs
+
+        # Check data integrity of reply
+        # TODO: Reorganize logging
+        # if reply[0] > 1:  # Reply = The length of the list after the push operation
+        #     self._log.error(f"The {order.cl_ord_id} already existed in the orders and was appended to.")
+        # if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+        #     self._log.error(f"The {order.cl_ord_id} already existed in index_order_position and was overwritten.")
+        # if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+        #     self._log.error(f"The {order.cl_ord_id} already existed in index_order_strategy and was overwritten.")
+        # # reply[3] index_position_strategy does not need to be checked as there will be multiple writes for bracket orders
+        # if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
+        #     self._log.error(f"The {order.cl_ord_id} already existed in index_orders.")
+        # if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
+        #     self._log.error(f"The {order.cl_ord_id} already existed in index_position_orders.")
+        # if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
+        #     self._log.error(f"The {order.cl_ord_id} already existed in index_strategy_orders.")
+        # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
+
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        """
+        Index the given position identifier with the other given identifiers.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to index.
+        cl_ord_id : ClientOrderId
+            The client order identifier to index.
+        strategy_id : StrategyId
+            The strategy identifier to index.
+
+        """
+        Condition.not_none(position_id, "position_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(strategy_id, "strategy_id")
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.hset(name=self.key_index_order_position, key=cl_ord_id.value, value=position_id.value)
+        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
+        pipe.sadd(self.key_index_position_orders + position_id.value, cl_ord_id.value)
+        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
+        pipe.execute()
+
+        self._add_position_id(position_id, cl_ord_id, strategy_id)  # Logs
+
+    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+        """
+        Add the given position associated with the given strategy identifier.
+
+        Parameters
+        ----------
+        position : Position
+            The position to add.
+        strategy_id : StrategyId
+            The strategy_id to associate with the position.
+
+        Raises
+        ------
+        ValueError
+            If position.id is already contained in the cached_positions.
+        ValueError
+            If position.id is already contained in the index_positions.
+        ValueError
+            If position.id is already contained in the index_positions_open.
+
+        """
+        Condition.not_none(position, "position")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
+
+        self._cached_positions[position.id] = position
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event()))
+        pipe.sadd(self.key_index_positions, position.id.value)
+        pipe.sadd(self.key_index_positions_open, position.id.value)
+        pipe.sadd(self.key_index_symbol_positions + position.symbol.value, position.id.value)
+        cdef list reply = pipe.execute()
+
+        self._add_position(position, strategy_id)  # Logs
+
+        # Check data integrity of reply
+        # TODO: Reorganize logging
+        # if reply[0] > 1:  # Reply = The length of the list after the push operation
+        #     self._log.error(f"The {position.id} already existed in the index_broker_position and was overwritten.")
+        # if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
+        #     self._log.error(f"The {position.id} already existed in index_positions.")
+        # if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
+        #     self._log.error(f"The {position.id} already existed in index_positions.")
+        # if reply[3] == 0:  # Reply = 0 if the element was already a member of the set
+        #     self._log.error(f"The {position.id} already existed in index_positions_open.")
+
+        self._log.debug(f"Added Position(id={position.id.value}).")
+
+    cpdef void add_strategy(self, TradingStrategy strategy) except *:
+        """
+        Update the given strategy state in the execution cache.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to update.
+
+        """
+        Condition.not_none(strategy, "strategy")
+
+        cdef dict state = strategy.save()
+        self._index_strategies.add(strategy.id)
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        for key, value in state.items():
+            pipe.hset(name=self.key_strategies + strategy.id.value + ":State", key=key, value=value)
+            self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
+        cdef list reply = pipe.execute()
+
+        self._log.info(f"Saved strategy state for {strategy.id.value}.")
+
+    cpdef void update_account(self, Account account) except *:
+        """
+        Update the given account in the execution cache.
+
+        Parameters
+        ----------
+        account : The account to update (from last event).
+
+        """
+        Condition.not_none(account, "account")
+
+        self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event()))
+        self._log.debug(f"Updated Account(id={account.id}).")
+
+    cpdef void update_order(self, Order order) except *:
+        """
+        Update the given order in the execution cache.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update (from last event).
+
+        """
+        Condition.not_none(order, "order")
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))
+        if order.is_working():
+            pipe.sadd(self.key_index_orders_working, order.cl_ord_id.value)
+            pipe.srem(self.key_index_orders_completed, order.cl_ord_id.value)
+        elif order.is_completed():
+            pipe.sadd(self.key_index_orders_completed, order.cl_ord_id.value)
+            pipe.srem(self.key_index_orders_working, order.cl_ord_id.value)
+        cdef list reply = pipe.execute()
+
+        self._update_order(order)
+        # Check data integrity of reply
+        if reply[0] == 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The updated Order(id={order.cl_ord_id.value}) did not already exist.")
+
+        self._log.debug(f"Updated Order(id={order.cl_ord_id.value}).")
+
+    cpdef void update_position(self, Position position) except *:
+        """
+        Update the given position in the execution cache.
+
+        Parameters
+        ----------
+        position : Position
+            The position to update (from last event).
+
+        """
+        Condition.not_none(position, "position")
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event()))
+        if position.is_closed():
+            pipe.sadd(self.key_index_positions_closed, position.id.value)
+            pipe.srem(self.key_index_positions_open, position.id.value)
+        else:
+            pipe.sadd(self.key_index_positions_open, position.id.value)
+            pipe.srem(self.key_index_positions_closed, position.id.value)
+        cdef list reply = pipe.execute()
+
+        self._update_position(position)
+
+        # Check data integrity of reply
+        if reply[0] == 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
+
+        self._log.debug(f"Updated Position(id={position.id.value}).")
+
+    cpdef void register_stop_loss(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a stop-loss.
+
+        If cancel_on_sl_reject management flag is set to True then associated
+        position will be flattened if this order is rejected.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The stop-loss order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered stop-loss orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._stop_loss_ids, "order.id", "_stop_loss_ids")
+
+        self._stop_loss_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered SL order {order}")
+
+    cpdef void register_take_profit(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a take-profit.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The take-profit order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered take_profit orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._take_profit_ids, "order.cl_ord_id", "_take_profit_ids")
+
+        self._take_profit_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered TP order {order}")
+
+    cpdef void register_flattening_id(self, PositionId position_id) except *:
+        """
+        TBD.
+
+        """
+        self._flattening_ids.add(position_id)
+
+    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._stop_loss_ids.discard(cl_ord_id)
+
+    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._take_profit_ids.discard(cl_ord_id)
+
+    cpdef void discard_flattening_id(self, PositionId position_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        position_id
+
+
+        """
+        self._flattening_ids.discard(position_id)
+
     cpdef void reset(self) except *:
         """
-        Reset the execution database by clearing the cache.
+        Reset the execution cache by clearing the cache.
         """
         self._reset()
 
     cpdef void flush(self) except *:
         """
-        Flush the database which clears all data.
+        Flush the cache which clears all data.
         """
-        self._log.debug("Flushing database....")
+        self._log.debug("Flushing cache....")
         self._redis.flushdb()
-        self._log.info("Flushed database.")
+        self._log.info("Flushed cache.")
 
     cdef set _decode_set_to_order_ids(self, set original):
+        cdef bytes element
         return {ClientOrderId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_position_ids(self, set original):
-        return {ClientPositionId(element.decode(_UTF8)) for element in original}
+        cdef bytes element
+        return {PositionId(element.decode(_UTF8)) for element in original}
 
     cdef set _decode_set_to_strategy_ids(self, list original):
+        cdef bytes element
         return {StrategyId.from_string(element.decode(_UTF8).rsplit(':', 2)[1]) for element in original}
 
-# -- QUERIES ---------------------------------------------------------------------------------------
-
-    cpdef Account get_account(self, AccountId account_id):
-        """
-        Return the order matching the given identifier (if found).
-
-        :param account_id: The account identifier.
-        :return Account or None.
-        """
-        Condition.not_none(account_id, "account_id")
-
-        return self._cached_accounts.get(account_id)
-
-    cpdef set get_strategy_ids(self):
-        """
-        Return a set of all strategy_ids.
-
-        :return Set[StrategyId].
-        """
-        return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f"{self.key_strategies}*"))
-
-    cpdef set get_order_ids(self, StrategyId strategy_id=None):
-        """
-        Return a set of all order_ids.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[OrderId].
-        """
-        if strategy_id is None:
-            return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders))
-        return self._decode_set_to_order_ids(self._redis.smembers(name=f"{self.key_index_strategy_orders}{strategy_id.value}"))
-
-    cpdef set get_order_working_ids(self, StrategyId strategy_id=None):
-        """
-        Return a set of all working order_ids.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[OrderId].
-        """
-        if strategy_id is None:
-            return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_working))
-
-        cdef tuple keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
-
-    cpdef set get_order_completed_ids(self, StrategyId strategy_id=None):
-        """
-        Return a set of all completed order_ids.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[OrderId].
-        """
-        if strategy_id is None:
-            return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_completed))
-
-        cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
-
-    cpdef set get_position_ids(self, StrategyId strategy_id=None):
-        """
-        Return a set of all position_ids.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[PositionId].
-        """
-        if strategy_id is None:
-            return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions))
-
-        return self._decode_set_to_position_ids(self._redis.smembers(name=f"{self.key_index_strategy_positions}{strategy_id.value}"))
-
-    cpdef set get_position_open_ids(self, StrategyId strategy_id=None):
-        """
-        Return a set of all open position_ids.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[PositionId].
-        """
-        if strategy_id is None:
-            return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_open))
-
-        cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
-
-    cpdef set get_position_closed_ids(self, StrategyId strategy_id=None):
-        """
-        Return a set of all closed position_ids.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Set[PositionId].
-        """
-        if strategy_id is None:
-            return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_closed))
-
-        cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
-
-    cpdef StrategyId get_strategy_for_order(self, ClientOrderId order_id):
-        """
-        Return the strategy_id associated with the given order_id (if found).
-
-        :param order_id: The order_id associated with the strategy.
-        :return StrategyId or None.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=order_id.value)
-        return StrategyId.from_string(strategy_id.decode(_UTF8))
-
-    cpdef StrategyId get_strategy_for_position(self, ClientPositionId position_id):
-        """
-        Return the strategy_id associated with the given position_id (if found).
-
-        :param position_id: The position_id associated with the strategy.
-        :return StrategyId or None.
-        """
-        Condition.not_none(position_id, "position_id")
-
-        cdef bytes strategy_id = self._redis.hget(name=self.key_index_position_strategy, key=position_id.value)
-        return StrategyId.from_string(strategy_id.decode(_UTF8))
-
-    cpdef Order get_order(self, ClientOrderId order_id):
-        """
-        Return the order matching the given identifier (if found).
-
-        :return Order or None.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        return self._cached_orders.get(order_id)
-
-    cpdef dict get_orders(self, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all orders.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
-        """
-        cdef set order_ids = self.get_order_ids(strategy_id)
-        cdef dict orders = {}
-
-        try:
-            orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
-
-        return orders
-
-    cpdef dict get_orders_working(self, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all working orders.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
-        """
-        cdef set order_ids = self.get_order_working_ids(strategy_id)
-        cdef dict cached_orders = {}
-
-        try:
-            cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in the cache " + str(ex))
-
-        cdef dict orders = {}
-        cdef Order order
-        for order in cached_orders.values():
-            if order.is_working():
-                orders[order.cl_ord_id] = order
-            else:
-                self._log.error(f"Order indexed as working found not working, "
-                                f"state={order.state_as_string()}.")
-
-        return orders
-
-    cpdef dict get_orders_completed(self, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all completed orders.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[OrderId, Order].
-        """
-        cdef set order_ids = self.get_order_completed_ids(strategy_id)
-        cdef dict cached_orders = {}
-
-        try:
-            cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
-
-        cdef dict orders = {}
-        cdef Order order
-        for order in cached_orders.values():
-            if order.is_completed():
-                orders[order.cl_ord_id] = order
-            else:
-                self._log.error(f"Order indexed as completed found not completed, "
-                                f"state={order.state_as_string()}.")
-
-        return orders
-
-    cpdef Position get_position(self, ClientPositionId position_id):
-        """
-        Return the position associated with the given position_id (if found, else None).
-
-        :param position_id: The position identifier.
-        :return Position or None.
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._cached_positions.get(position_id)
-
-    cpdef Position get_position_for_order(self, ClientOrderId cl_ord_id):
-        """
-        Return the position associated with the given order_id (if found, else None).
-
-        :param cl_ord_id: The client order identifier for the position.
-        :return Position or None.
-        """
-        Condition.not_none(cl_ord_id, "order_id")
-
-        cdef ClientPositionId position_id = self.get_cl_pos_id(cl_ord_id)
-        if position_id is None:
-            self._log.warning(f"Cannot get Position for {cl_ord_id.to_string(with_class=True)} "
-                              f"(no matching PositionId found in database).")
-            return None
-
-        return self._cached_positions.get(position_id)
-
-    cpdef ClientPositionId get_cl_pos_id(self, ClientOrderId order_id):
-        """
-        Return the position associated with the given order_id (if found, else None).
-
-        :param order_id: The order_id associated with the position.
-        :return PositionId or None.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
-        if position_id_bytes is None:
-            self._log.warning(f"Cannot get PositionId for {order_id.to_string(with_class=True)} "
-                              f"(no matching PositionId found in database).")
-            return position_id_bytes
-
-        return ClientPositionId(position_id_bytes.decode(_UTF8))
-
-    cpdef ClientPositionId get_cl_pos_id_for_position_id(self, PositionId position_id):
-        """
-        Return the position associated with the given order_id (if found, else None).
-
-        :param position_id: The broker position_id.
-        :return PositionId or None.
-        """
-        Condition.not_none(position_id, "position_id")
-
-        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_broker_position, key=position_id.value)
-        if position_id_bytes is None:
-            self._log.warning(f"Cannot get ClientPositionId for {position_id.to_string(with_class=True)} "
-                              f"(no matching PositionId found in database).")
-            return position_id_bytes
-
-        return ClientPositionId(position_id_bytes.decode(_UTF8))
-
-    cpdef dict get_positions(self, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all positions.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
-        """
-        cdef set position_ids = self.get_position_ids(strategy_id)
-        cdef dict positions = {}
-
-        try:
-            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
-
-        return positions
-
-    cpdef dict get_positions_open(self, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all open positions.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
-        """
-        cdef set position_ids = self.get_position_open_ids(strategy_id)
-        cdef dict cached_positions = {}
-
-        try:
-            cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
-
-        cdef dict positions = {}
-        cdef Position position
-        for position in cached_positions.values():
-            if position.is_open():
-                positions[position.cl_pos_id] = position
-            else:
-                self._log.error(f"Position indexed as open found not open, "
-                                f"state={position.position_side_as_string()}.")
-
-        return positions
-
-    cpdef dict get_positions_closed(self, StrategyId strategy_id=None):
-        """
-        Return a dictionary of all closed cached_positions.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return Dict[PositionId, Position].
-        """
-        cdef set position_ids = self.get_position_closed_ids(strategy_id)
-        cdef dict cached_positions = {}
-
-        try:
-            cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
-
-        cdef dict positions = {}
-        cdef Position position
-        for position in cached_positions.values():
-            if position.is_closed():
-                positions[position.cl_pos_id] = position
-            else:
-                self._log.error(f"Position indexed as closed found not closed, "
-                                f"state={position.position_side_as_string()}.")
-
-        return positions
-
-    cpdef bint order_exists(self, ClientOrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier exists.
-
-        :param order_id: The order_id to check.
-        :return bool.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        return self._redis.sismember(name=self.key_index_orders, value=order_id.value)
-
-    cpdef bint is_order_working(self, ClientOrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is working.
-
-        :param order_id: The order_id to check.
-        :return bool.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        return self._redis.sismember(name=self.key_index_orders_working, value=order_id.value)
-
-    cpdef bint is_order_completed(self, ClientOrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is completed.
-
-        :param order_id: The order_id to check.
-        :return bool.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        return self._redis.sismember(name=self.key_index_orders_completed, value=order_id.value)
-
-    cpdef bint position_exists(self, ClientPositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists.
-
-        :param position_id: The position identifier.
-        :return bool.
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._redis.sismember(name=self.key_index_positions, value=position_id.value)
-
-    cpdef bint position_exists_for_order(self, ClientOrderId order_id):
-        """
-        Return a value indicating whether there is a position associated with the given
-        order_id.
-
-        :param order_id: The order identifier.
-        :return bool.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        cdef bytes position_id = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
-
-        if position_id is None:
-            return False
-        return self._redis.sismember(name=self.key_index_positions, value=position_id)
-
-    cpdef bint position_indexed_for_order(self, ClientOrderId order_id):
-        """
-        Return a value indicating whether there is a position_id indexed for the
-        given order_id.
-
-        :param order_id: The order_id to check.
-        :return bool.
-        """
-        Condition.not_none(order_id, "order_id")
-
-        return self._redis.hexists(name=self.key_index_order_position, key=order_id.value)
-
-    cpdef bint is_position_open(self, ClientPositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists
-        and is open.
-
-        :param position_id: The position identifier.
-        :return bool.
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._redis.sismember(name=self.key_index_positions_open, value=position_id.value)
-
-    cpdef bint is_position_closed(self, ClientPositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists
-        and is closed.
-
-        :param position_id: The position identifier.
-        :return bool.
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
-
-    cpdef int orders_total_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of order_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders)
-
-        cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int orders_working_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of working order_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders_working)
-
-        cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int orders_completed_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of completed order_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_orders_completed)
-
-        cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int positions_total_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of position_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_positions)
-
-        cdef tuple keys = (self.key_index_positions, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int positions_open_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of open position_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_positions_open)
-
-        cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
-
-    cpdef int positions_closed_count(self, StrategyId strategy_id=None):
-        """
-        Return the count of closed position_ids held by the execution database.
-
-        :param strategy_id: The optional strategy_id query filter.
-        :return int.
-        """
-        if strategy_id is None:
-            return self._redis.scard(self.key_index_positions_closed)
-
-        cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
-        return len(self._redis.sinter(keys=keys))
+# # -- QUERIES ---------------------------------------------------------------------------------------
+#
+#     cpdef Account get_account(self, AccountId account_id):
+#         """
+#         Return the account matching the given identifier (if found).
+#
+#         Parameters
+#         ----------
+#         account_id : AccountId
+#             The account identifier.
+#
+#         Returns
+#         -------
+#         Account or None
+#
+#         """
+#         Condition.not_none(account_id, "account_id")
+#
+#         return self._cached_accounts.get(account_id)
+#
+#     cpdef set get_strategy_ids(self):
+#         """
+#         Return a set of all strategy_ids.
+#
+#         Returns
+#         -------
+#         Set[StrategyId]
+#
+#         """
+#         return self._decode_set_to_strategy_ids(self._redis.keys(pattern=f"{self.key_strategies}*"))
+#
+#     cpdef set get_order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all client order identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[ClientOrderId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders))
+#         return self._decode_set_to_order_ids(self._redis.smembers(name=f"{self.key_index_strategy_orders}{strategy_id.value}"))
+#
+#     cpdef set get_order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all working client order identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[ClientOrderId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_working))
+#
+#         cdef tuple keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef set get_order_completed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all completed client order identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[ClientOrderId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_order_ids(self._redis.smembers(name=self.key_index_orders_completed))
+#
+#         cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return self._decode_set_to_order_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef set get_position_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all position identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[PositionId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions))
+#
+#         return self._decode_set_to_position_ids(self._redis.smembers(name=f"{self.key_index_strategy_positions}{strategy_id.value}"))
+#
+#     cpdef set get_position_open_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all open position identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[PositionId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_open))
+#
+#         cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef set get_position_closed_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return all closed position identifiers.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Set[PositionId]
+#
+#         """
+#         if strategy_id is None:
+#             return self._decode_set_to_position_ids(self._redis.smembers(name=self.key_index_positions_closed))
+#
+#         cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return self._decode_set_to_position_ids(self._redis.sinter(keys=keys))
+#
+#     cpdef StrategyId get_strategy_for_order(self, ClientOrderId cl_ord_id):
+#         """
+#         Return the strategy_id associated with the given identifier (if found).
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier associated with the strategy.
+#
+#         Returns
+#         -------
+#         StrategyId or None
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         cdef bytes strategy_id = self._redis.hget(name=self.key_index_order_strategy, key=cl_ord_id.value)
+#         return StrategyId.from_string(strategy_id.decode(_UTF8))
+#
+#     cpdef StrategyId get_strategy_for_position(self, PositionId position_id):
+#         """
+#         Return the strategy_id associated with the given identifier (if found).
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier associated with the strategy.
+#
+#         Returns
+#         -------
+#         StrategyId or None
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         cdef bytes strategy_id = self._redis.hget(name=self.key_index_position_strategy, key=position_id.value)
+#         return StrategyId.from_string(strategy_id.decode(_UTF8))
+#
+#     cpdef Order get_order(self, ClientOrderId order_id):
+#         """
+#         Return the order matching the given identifier (if found).
+#
+#         Returns
+#         -------
+#         Order or None
+#
+#         """
+#         Condition.not_none(order_id, "order_id")
+#
+#         return self._cached_orders.get(order_id)
+#
+#     cpdef list get_orders(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all orders.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         List[Order]
+#
+#         """
+#         cdef set order_ids = self.get_order_ids(strategy_id)
+#
+#         cdef ClientOrderId order_id
+#         cdef list orders
+#         try:
+#             orders = [self._cached_orders[order_id] for order_id in order_ids]
+#         except KeyError as ex:
+#             self._log.error("Cannot find Order object in cache " + str(ex))
+#
+#         return orders
+#
+#     cpdef list get_orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all working orders.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Dict[OrderId, Order]
+#
+#         """
+#         cdef set order_ids = self.get_order_working_ids(symbol, strategy_id)
+#
+#
+#         cdef list orders
+#         try:
+#             orders = [self._cached_orders[order_id] for order_id in order_ids]
+#         except KeyError as ex:
+#             self._log.error("Cannot find Order object in the cache " + str(ex))
+#
+#         return orders
+#
+#     cpdef dict get_orders_completed(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all completed orders.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Dict[OrderId, Order]
+#
+#         """
+#         cdef set order_ids = self.get_order_completed_ids(symbol, strategy_id)
+#         cdef dict cached_orders = {}
+#
+#         try:
+#             cached_orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Order object in cache " + str(ex))
+#
+#         cdef dict orders = {}
+#         cdef Order order
+#         for order in cached_orders.values():
+#             if order.is_completed():
+#                 orders[order.cl_ord_id] = order
+#             else:
+#                 self._log.error(f"Order indexed as completed found not completed, "
+#                                 f"state={order.state_as_string()}.")
+#
+#         return orders
+#
+#     cpdef Position get_position(self, PositionId position_id):
+#         """
+#         Return the position associated with the given identifier (if found, else None).
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         Position or None
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._cached_positions.get(position_id)
+#
+#     cpdef PositionId get_position_id(self, ClientOrderId cl_ord_id):
+#         """
+#         Return the position identifier associated with the given client order identifier
+#         (if found, else None).
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier associated with the position.
+#
+#         Returns
+#         -------
+#         PositionId or None
+#
+#         """
+#         Condition.not_none(cl_ord_id, "order_id")
+#
+#         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
+#         if position_id_bytes is None:
+#             self._log.warning(f"Cannot get PositionId for {cl_ord_id.to_string(with_class=True)} "
+#                               f"(no matching PositionId found in cache).")
+#             return position_id_bytes
+#
+#         return PositionId(position_id_bytes.decode(_UTF8))
+#
+#     cpdef dict get_positions(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all positions.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         Dict[PositionId, Position]
+#
+#         """
+#         cdef set position_ids = self.get_position_ids(symbol,strategy_id)
+#         cdef dict positions = {}
+#
+#         try:
+#             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Position object in cache " + str(ex))
+#
+#         return positions
+#
+#     cpdef dict get_positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all open positions.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         Dict[PositionId, Position]
+#
+#         """
+#         cdef set position_ids = self.get_position_open_ids(symbol, strategy_id)
+#         cdef dict cached_positions = {}
+#
+#         try:
+#             cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Position object in cache " + str(ex))
+#
+#         cdef dict positions = {}
+#         cdef Position position
+#         for position in cached_positions.values():
+#             if position.is_open():
+#                 positions[position.id] = position
+#             else:
+#                 self._log.error(f"Position indexed as open found not open, "
+#                                 f"state={position.position_side_as_string()}.")
+#
+#         return positions
+#
+#     cpdef dict get_positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return a dictionary of all closed positions.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         Dict[PositionId, Position]
+#
+#         """
+#         cdef set position_ids = self.get_position_closed_ids(symbol, strategy_id)
+#         cdef dict cached_positions = {}
+#
+#         try:
+#             cached_positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+#         except KeyError as ex:
+#             self._log.error("Cannot find Position object in cache " + str(ex))
+#
+#         cdef dict positions = {}
+#         cdef Position position
+#         for position in cached_positions.values():
+#             if position.is_closed():
+#                 positions[position.id] = position
+#             else:
+#                 self._log.error(f"Position indexed as closed found not closed, "
+#                                 f"state={position.position_side_as_string()}.")
+#
+#         return positions
+#
+#     cpdef bint order_exists(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether an order with the given identifier exists.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier to check.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.sismember(name=self.key_index_orders, value=cl_ord_id.value)
+#
+#     cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether an order with the given identifier is working.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier to check.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.sismember(name=self.key_index_orders_working, value=cl_ord_id.value)
+#
+#     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether an order with the given identifier is completed.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier to check.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.sismember(name=self.key_index_orders_completed, value=cl_ord_id.value)
+#
+#     cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of order held by the execution cache.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_orders)
+#
+#         cdef keys = (self.key_index_orders, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of working orders held by the execution cache.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_orders_working)
+#
+#         cdef keys = (self.key_index_orders_working, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of completed orders held by the execution cache.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy_id query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_orders_completed)
+#
+#         cdef tuple keys = (self.key_index_orders_completed, f"{self.key_index_strategy_orders}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef bint position_exists(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists.
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._redis.sismember(name=self.key_index_positions, value=position_id.value)
+#
+#     cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether there is a position associated with the given
+#         identifier.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         cdef bytes position_id = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
+#
+#         if position_id is None:
+#             return False
+#         return self._redis.sismember(name=self.key_index_positions, value=position_id)
+#
+#     cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id):
+#         """
+#         Return a value indicating whether there is a position_id indexed for the
+#         given identifier.
+#
+#         Parameters
+#         ----------
+#         cl_ord_id : ClientOrderId
+#             The client order identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(cl_ord_id, "cl_ord_id")
+#
+#         return self._redis.hexists(name=self.key_index_order_position, key=cl_ord_id.value)
+#
+#     cpdef bint is_position_open(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists
+#         and is open.
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._redis.sismember(name=self.key_index_positions_open, value=position_id.value)
+#
+#     cpdef bint is_position_closed(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists
+#         and is closed.
+#
+#         Parameters
+#         ----------
+#         position_id : PositionId
+#             The position identifier.
+#
+#         Returns
+#         -------
+#         bool
+#
+#         """
+#         Condition.not_none(position_id, "position_id")
+#
+#         return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
+#
+#     cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of positions held by the execution cache.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_positions)
+#
+#         cdef tuple keys = (self.key_index_positions, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of open positions held by the execution cache.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_positions_open)
+#
+#         cdef tuple keys = (self.key_index_positions_open, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))
+#
+#     cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+#         """
+#         Return the count of closed positions held by the execution cache.
+#
+#         Parameters
+#         ----------
+#         symbol : Symbol, optional
+#             The symbol identifier query filter.
+#         strategy_id : StrategyId, optional
+#             The strategy identifier query filter.
+#
+#         Returns
+#         -------
+#         int
+#
+#         """
+#         if strategy_id is None:
+#             return self._redis.scard(self.key_index_positions_closed)
+#
+#         cdef tuple keys = (self.key_index_positions_closed, f"{self.key_index_strategy_positions}{strategy_id.value}")
+#         return len(self._redis.sinter(keys=keys))

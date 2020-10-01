@@ -5,8 +5,8 @@
   },
 
   "account": {
-    "broker": "FXCM",
-    "account_number": "02402856",
+    "issuer": "FXCM",
+    "identifier": "02402856",
     "account_type": "DEMO"
   },
 
@@ -16,6 +16,16 @@
     "log_level_store": "WARNING",
     "log_to_file": true,
     "log_file_path": "logs/"
+  },
+
+  "exec_engine": {
+    "oms_type": "NETTING"
+  },
+
+  "exec_database": {
+    "type": "redis",
+    "host": "localhost",
+    "port": 6379
   },
 
   "strategy": {
@@ -47,11 +57,5 @@
     "command_req_port": 55555,
     "command_res_port": 55556,
     "event_pub_port": 55557
-  },
-
-  "exec_database": {
-    "type": "redis",
-    "host": "localhost",
-    "port": 6379
   }
 }

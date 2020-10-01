@@ -150,7 +150,7 @@ cdef class BarSpecification:
         """
         return price_type_to_string(self.price_type)
 
-    cpdef bint equals(self, BarSpecification other):
+    cpdef bint equals(self, BarSpecification other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -361,7 +361,7 @@ cdef class BarType:
         """
         return self.spec.price_type_string()
 
-    cpdef bint equals(self, BarType other):
+    cpdef bint equals(self, BarType other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -560,7 +560,7 @@ cdef class Bar:
         """
         return Bar.from_serializable_string(value)
 
-    cpdef bint equals(self, Bar other):
+    cpdef bint equals(self, Bar other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

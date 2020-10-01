@@ -19,9 +19,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.market cimport ExchangeRateCalculator
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.message cimport Response
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.client cimport DataClient
@@ -30,17 +27,10 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.network.messages cimport DataResponse
-from nautilus_trader.network.node_clients cimport MessageClient
-from nautilus_trader.network.node_clients cimport MessageSubscriber
-from nautilus_trader.serialization.base cimport DataSerializer
-from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -145,9 +135,9 @@ cdef class DataEngine:
     cpdef int quote_tick_count(self, Symbol symbol)
     cpdef int trade_tick_count(self, Symbol symbol)
     cpdef int bar_count(self, BarType bar_type)
-    cpdef bint has_quote_ticks(self, Symbol symbol)
-    cpdef bint has_trade_ticks(self, Symbol symbol)
-    cpdef bint has_bars(self, BarType bar_type)
+    cpdef bint has_quote_ticks(self, Symbol symbol) except *
+    cpdef bint has_trade_ticks(self, Symbol symbol) except *
+    cpdef bint has_bars(self, BarType bar_type) except *
 
     cpdef double get_exchange_rate(
         self,
@@ -193,26 +183,3 @@ cdef class BulkTimeBarUpdater:
     cdef datetime start_time
 
     cpdef void receive(self, list ticks) except *
-
-
-cdef class LiveDataEngine(DataEngine):
-    cdef MessageClient _data_client
-    cdef MessageSubscriber _data_subscriber
-    cdef MessageSubscriber _tick_subscriber
-    cdef DataSerializer _data_serializer
-    cdef InstrumentSerializer _instrument_serializer
-    cdef ObjectCache _cached_symbols
-    cdef ObjectCache _cached_bar_types
-    cdef dict _correlation_index
-
-    cdef readonly TraderId trader_id
-    cdef readonly ClientId client_id
-    cdef readonly UUID last_request_id
-
-    cpdef void _set_callback(self, UUID request_id, handler: callable) except *
-    cpdef object _pop_callback(self, UUID correlation_id)
-    cpdef void _handle_response(self, Response response) except *
-    cpdef void _handle_data_response(self, DataResponse response) except *
-    cpdef void _handle_instruments_py(self, list instruments) except *
-    cpdef void _handle_tick_msg(self, str topic, bytes payload) except *
-    cpdef void _handle_sub_msg(self, str topic, bytes payload) except *

@@ -23,6 +23,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelled
@@ -45,6 +46,10 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+
+cpdef OrderSide opposite_side(OrderSide side)
+cpdef OrderSide flatten_side(PositionSide side)
 
 
 cdef class Order:
@@ -70,16 +75,16 @@ cdef class Order:
     cdef readonly Decimal64 slippage
     cdef readonly UUID init_id
 
-    cpdef bint equals(self, Order other)
+    cpdef bint equals(self, Order other) except *
     cpdef OrderState state(self)
     cpdef Event last_event(self)
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
     cpdef int event_count(self)
-    cpdef bint is_buy(self)
-    cpdef bint is_sell(self)
-    cpdef bint is_working(self)
-    cpdef bint is_completed(self)
+    cpdef bint is_buy(self) except *
+    cpdef bint is_sell(self) except *
+    cpdef bint is_working(self) except *
+    cpdef bint is_completed(self) except *
     cpdef str status_string(self)
     cpdef str state_as_string(self)
     cpdef void apply(self, OrderEvent event) except *
@@ -129,4 +134,4 @@ cdef class BracketOrder:
     cdef readonly bint has_take_profit
     cdef readonly datetime timestamp
 
-    cpdef bint equals(self, BracketOrder other)
+    cpdef bint equals(self, BracketOrder other) except *

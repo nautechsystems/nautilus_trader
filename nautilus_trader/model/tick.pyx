@@ -54,7 +54,7 @@ cdef class Tick:
         self.symbol = symbol
         self.timestamp = timestamp
 
-    cpdef bint equals(self, Tick other):
+    cpdef bint equals(self, Tick other) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -347,7 +347,7 @@ cdef class QuoteTick(Tick):
         """
         return QuoteTick.from_serializable_string(symbol, values)
 
-    cpdef bint equals(self, Tick other):
+    cpdef bint equals(self, Tick other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -500,7 +500,7 @@ cdef class TradeTick(Tick):
         """
         return TradeTick.from_serializable_string(symbol, values)
 
-    cpdef bint equals(self, Tick other):
+    cpdef bint equals(self, Tick other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

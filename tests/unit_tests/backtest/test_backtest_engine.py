@@ -23,7 +23,9 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.strategies import TickTock
@@ -44,6 +46,9 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[EmptyStrategy("000")],
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             fill_model=FillModel(),
             config=BacktestConfig())
 
@@ -69,6 +74,9 @@ class BacktestEngineTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=[tick_tock],
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             fill_model=FillModel(),
             config=BacktestConfig())
 
@@ -98,6 +106,9 @@ class BacktestEngineTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=[tick_tock],
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             fill_model=FillModel(),
             config=BacktestConfig())
 

@@ -30,12 +30,13 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.commands cimport AccountInquiry
@@ -54,11 +55,11 @@ from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
@@ -75,11 +76,14 @@ _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 cdef class SimulatedMarket:
     """
-    Provides a simulated brokerage.
+    Provides a simulated financial market.
     """
 
     def __init__(
             self,
+            Venue venue not None,
+            OMSType oms_type,
+            bint generate_position_ids,
             ExecutionEngine exec_engine not None,
             dict instruments not None: {Symbol, Instrument},
             BacktestConfig config not None,
@@ -94,6 +98,10 @@ cdef class SimulatedMarket:
 
         Parameters
         ----------
+        venue : Venue
+            The venue to simulate for the backtest.
+        oms_type : OMSType
+            The order management employed by the broker/exchange for this market.
         exec_engine : ExecutionEngine
             The execution engine for the backtest.
         instruments : Dict[Symbol, Instrument]
@@ -123,6 +131,9 @@ cdef class SimulatedMarket:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
+        self.venue = venue
+        self.oms_type = oms_type
+        self.generate_position_ids = generate_position_ids
         self.exec_engine = exec_engine
         self.instruments = instruments
 
@@ -144,14 +155,13 @@ cdef class SimulatedMarket:
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
-        self.generate_position_ids = config.generate_position_ids
 
         self._market = {}               # type: {Symbol, QuoteTick}
         self._working_orders = {}       # type: {ClientOrderId, Order}
         self._position_index = {}       # type: {ClientOrderId, PositionId}
         self._child_orders = {}         # type: {ClientOrderId, [Order]}
         self._oco_orders = {}           # type: {ClientOrderId, ClientOrderId}
-        self._position_oco_orders = {}  # type: {ClientPositionId, [ClientOrderId]}
+        self._position_oco_orders = {}  # type: {PositionId, [ClientOrderId]}
         self._symbol_pos_count = {}     # type: {Symbol, int}
         self._symbol_ord_count = {}     # type: {Symbol, int}
         self._executions_count = 0
@@ -454,8 +464,9 @@ cdef class SimulatedMarket:
         Condition.not_none(timestamp, "timestamp")
         Condition.not_none(self.exec_engine, "_exec_engine")
 
-        cdef dict open_positions = self.exec_engine.database.get_positions_open()
+        cdef list open_positions = self.exec_engine.cache.positions_open()
 
+        cdef Position position
         cdef Instrument instrument
         cdef Currency base_currency
         cdef double interest_rate
@@ -465,7 +476,7 @@ cdef class SimulatedMarket:
         cdef double mid_price
         cdef dict mid_prices = {}
         cdef QuoteTick market
-        for position in open_positions.values():
+        for position in open_positions:
             instrument = self.instruments[position.symbol]
             if instrument.security_type == SecurityType.FOREX:
                 mid_price = mid_prices.get(instrument.symbol, 0.0)
@@ -541,6 +552,9 @@ cdef class SimulatedMarket:
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
+        if command.position_id.not_null():
+            self._position_index[command.order.cl_ord_id] = command.position_id
+
         self._submit_order(command.order)
         self._process_order(command.order)
 
@@ -602,11 +616,11 @@ cdef class SimulatedMarket:
         cdef Order order = self._working_orders[command.cl_ord_id]
         cdef Instrument instrument = self.instruments[order.symbol]
 
-        if command.modified_quantity.as_double() == 0.0:
+        if command.quantity.as_double() == 0.0:
             self._cancel_reject_order(
                 order,
                 "modify order",
-                f"modified quantity {command.modified_quantity} invalid")
+                f"modified quantity {command.quantity} invalid")
             return  # Cannot modify order
 
         cdef QuoteTick current_market = self._market.get(order.symbol)
@@ -651,8 +665,8 @@ cdef class SimulatedMarket:
             command.account_id,
             order.cl_ord_id,
             order.id,
-            command.modified_quantity,
-            command.modified_price,
+            command.quantity,
+            command.price,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
@@ -927,17 +941,15 @@ cdef class SimulatedMarket:
             Price fill_price,
             LiquiditySide liquidity_side) except *:
         # Query if there is an existing position for this order
-        cdef Position position = self.exec_engine.database.get_position_for_order(order.cl_ord_id)
-        # position could be None here
+        cdef PositionId position_id = self._position_index.get(order.cl_ord_id)
+        # position_id could be None here
 
-        cdef PositionId position_id
-        if position is None:
-            # Try position index
-            position_id = self._position_index.get(order.cl_ord_id)
-
-        if position is None and position_id is None:
+        cdef Position position = None
+        if position_id is None:
             position_id = self._generate_position_id(order.symbol)
+            self._position_index[order.cl_ord_id] = position_id
         else:
+            position = self.exec_engine.cache.position(position_id)
             position_id = position.id
 
         # Calculate commission
@@ -977,12 +989,12 @@ cdef class SimulatedMarket:
             del self._child_orders[order.cl_ord_id]
 
         if position is not None and position.is_closed():
-            oco_orders = self._position_oco_orders.get(position.cl_pos_id)
+            oco_orders = self._position_oco_orders.get(position.id)
             if oco_orders is not None:
-                for order in self._position_oco_orders[position.cl_pos_id]:
+                for order in self._position_oco_orders[position.id]:
                     if order.is_working():
                         self._cancel_order(order)
-                del self._position_oco_orders[position.cl_pos_id]
+                del self._position_oco_orders[position.id]
 
     cdef void _clean_up_child_orders(self, ClientOrderId order_id) except *:
         # Clean up any residual child orders from the completed order associated
@@ -997,7 +1009,7 @@ cdef class SimulatedMarket:
 
         if order_id in self._oco_orders:
             oco_order_id = self._oco_orders[order_id]
-            oco_order = self.exec_engine.database.get_order(oco_order_id)
+            oco_order = self.exec_engine.cache.order(oco_order_id)
             del self._oco_orders[order_id]
             del self._oco_orders[oco_order_id]
 

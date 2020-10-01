@@ -29,21 +29,21 @@ cdef class BacktestExecClient(ExecutionClient):
     Provides an execution client for the BacktestEngine.
     """
 
-    def __init__(self, SimulatedMarket broker not None, TestLogger logger not None):
+    def __init__(self, SimulatedMarket market not None, TestLogger logger not None):
         """
         Initialize a new instance of the BacktestExecClient class.
 
         Parameters
         ----------
-        broker : SimulatedMarket
-            The simulated brokerage for the backtest.
+        market : SimulatedMarket
+            The simulated market for the backtest.
         logger : TestLogger
             The logger for the component.
 
         """
-        super().__init__(broker.exec_engine, logger)
+        super().__init__(market.venue, market.exec_engine, logger)
 
-        self._broker = broker
+        self._market = market
 
     cpdef void connect(self) except *:
         """
@@ -80,24 +80,24 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void account_inquiry(self, AccountInquiry command) except *:
         Condition.not_none(command, "command")
 
-        self._broker.handle_account_inquiry(command)
+        self._market.handle_account_inquiry(command)
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
-        self._broker.handle_submit_order(command)
+        self._market.handle_submit_order(command)
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
         Condition.not_none(command, "command")
 
-        self._broker.handle_submit_bracket_order(command)
+        self._market.handle_submit_bracket_order(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         Condition.not_none(command, "command")
 
-        self._broker.handle_cancel_order(command)
+        self._market.handle_cancel_order(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
         Condition.not_none(command, "command")
 
-        self._broker.handle_modify_order(command)
+        self._market.handle_modify_order(command)

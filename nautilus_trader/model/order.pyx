@@ -40,10 +40,10 @@ from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderModified
-from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -92,6 +92,50 @@ cdef dict _ORDER_STATE_TABLE = {
 }
 
 
+cpdef inline OrderSide opposite_side(OrderSide side):
+    """
+    Return the opposite order side from the given side.
+
+    Parameters
+    ----------
+    side : OrderSide
+        The original order side.
+
+    Returns
+    -------
+    OrderSide
+
+    """
+    Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
+
+    return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
+
+
+cpdef inline OrderSide flatten_side(PositionSide side):
+    """
+    Return the order side needed to flatten a position from the given side.
+
+    Parameters
+    ----------
+    side : PositionSide
+        The position side to flatten.
+
+    Returns
+    -------
+    OrderSide
+
+    Raises
+    ------
+    ValueError
+        If side is UNDEFINED or FLAT.
+
+    """
+    Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
+    Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
+
+    return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
+
+
 cdef class Order:
     """
     The base class for all orders.
@@ -134,7 +178,7 @@ cdef class Order:
 
         self._events.append(event)
 
-    cpdef bint equals(self, Order other):
+    cpdef bint equals(self, Order other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -205,7 +249,7 @@ cdef class Order:
         """
         return len(self._events)
 
-    cpdef bint is_buy(self):
+    cpdef bint is_buy(self) except *:
         """
         Return a value indicating whether the order side is buy.
 
@@ -216,7 +260,7 @@ cdef class Order:
         """
         return self.side == OrderSide.BUY
 
-    cpdef bint is_sell(self):
+    cpdef bint is_sell(self) except *:
         """
         Return a value indicating whether the order side is sell.
 
@@ -227,7 +271,7 @@ cdef class Order:
         """
         return self.side == OrderSide.SELL
 
-    cpdef bint is_working(self):
+    cpdef bint is_working(self) except *:
         """
         Return a value indicating whether the order is working.
 
@@ -238,7 +282,7 @@ cdef class Order:
         """
         return self._fsm.state == OrderState.WORKING
 
-    cpdef bint is_completed(self):
+    cpdef bint is_completed(self) except *:
         """
         Return a value indicating whether the order is completed.
 
@@ -925,7 +969,7 @@ cdef class BracketOrder:
     low-side sell stop order. A SELL order is bracketed by a high-side buy stop
     order and a low side buy limit order.
     Once the 'parent' entry order is triggered the 'child' OCO orders being a
-    STOP and optional LIMIT automatically become working on the brokers side.
+    STOP and optional LIMIT automatically become working on the broker/exchange side.
     """
     def __init__(
             self,
@@ -953,7 +997,7 @@ cdef class BracketOrder:
         self.has_take_profit = take_profit is not None
         self.timestamp = entry.timestamp
 
-    cpdef bint equals(self, BracketOrder other):
+    cpdef bint equals(self, BracketOrder other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 

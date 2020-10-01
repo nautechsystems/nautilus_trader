@@ -14,11 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -30,18 +29,12 @@ cdef class Position:
     Represents a position in a financial market.
     """
 
-    def __init__(
-            self,
-            ClientPositionId cl_pos_id not None,
-            OrderFilled event not None,
-    ):
+    def __init__(self, OrderFilled event not None):
         """
         Initialize a new instance of the Position class.
 
         Parameters
         ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
         event : OrderFillEvent
             The order fill event which opened the position.
 
@@ -57,7 +50,6 @@ cdef class Position:
         self._relative_quantity = 0.0               # Initialized in _update()
         self._qty_precision = event.filled_qty.precision
 
-        self.cl_pos_id = cl_pos_id
         self.id = event.position_id
         self.account_id = event.account_id
         self.from_order = event.cl_ord_id
@@ -137,7 +129,7 @@ cdef class Position:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cpdef bint equals(self, Position other):
+    cpdef bint equals(self, Position other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -151,7 +143,7 @@ cdef class Position:
         bool
 
         """
-        return self.cl_pos_id.equals(other.cl_pos_id)
+        return self.id.equals(other.id)
 
     cpdef str to_string(self):
         """
@@ -162,7 +154,7 @@ cdef class Position:
         str
 
         """
-        return f"Position(cl_pos_id={self.cl_pos_id.value}, id={self.id}) {self.status_string()}"
+        return f"Position(id={self.id.value}, {self.status_string()})"
 
     cpdef str position_side_as_string(self):
         """
@@ -253,7 +245,7 @@ cdef class Position:
         """
         return len(self._events)
 
-    cpdef bint is_open(self):
+    cpdef bint is_open(self) except *:
         """
         Return a value indicating whether the position is open.
 
@@ -264,7 +256,7 @@ cdef class Position:
         """
         return self.side != PositionSide.FLAT
 
-    cpdef bint is_closed(self):
+    cpdef bint is_closed(self) except *:
         """
         Return a value indicating whether the position is closed.
 
@@ -275,7 +267,7 @@ cdef class Position:
         """
         return self.side == PositionSide.FLAT
 
-    cpdef bint is_long(self):
+    cpdef bint is_long(self) except *:
         """
         Return a value indicating whether the position is long.
 
@@ -286,7 +278,7 @@ cdef class Position:
         """
         return self.side == PositionSide.LONG
 
-    cpdef bint is_short(self):
+    cpdef bint is_short(self) except *:
         """
         Return a value indicating whether the position is short.
 

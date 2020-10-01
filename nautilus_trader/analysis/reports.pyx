@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 
@@ -39,7 +39,7 @@ cdef class ReportProvider:
         Initialize a new instance of the ReportProvider class.
         """
 
-    cpdef object generate_orders_report(self, dict orders: {ClientOrderId, Order}):
+    cpdef object generate_orders_report(self, list orders):
         """
         Return an orders report dataframe.
 
@@ -58,11 +58,11 @@ cdef class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        cdef list orders_all = [self._order_to_dict(o) for o in orders.values()]
+        cdef list orders_all = [self._order_to_dict(o) for o in orders]
 
         return pd.DataFrame(data=orders_all).set_index("cl_ord_id")
 
-    cpdef object generate_order_fills_report(self, dict orders: {ClientOrderId, Order}):
+    cpdef object generate_order_fills_report(self, list orders):
         """
         Return an order fills report dataframe.
 
@@ -82,12 +82,12 @@ cdef class ReportProvider:
             return pd.DataFrame()
 
         cdef list filled_orders = [
-            self._order_to_dict(o) for o in orders.values() if o.state() == OrderState.FILLED
+            self._order_to_dict(o) for o in orders if o.state() == OrderState.FILLED
         ]
 
         return pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
 
-    cpdef object generate_positions_report(self, dict positions: {ClientPositionId, Position}):
+    cpdef object generate_positions_report(self, list positions):
         """
         Return a positions report dataframe.
 
@@ -105,11 +105,9 @@ cdef class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        cdef list trades = [
-            self._position_to_dict(p) for p in positions.values() if p.is_closed()
-        ]
+        cdef list trades = [self._position_to_dict(p) for p in positions if p.is_closed()]
 
-        return pd.DataFrame(data=trades).set_index("cl_pos_id")
+        return pd.DataFrame(data=trades).set_index("position_id")
 
     cpdef object generate_account_report(self, list events, datetime start=None, datetime end=None):
         """
@@ -161,7 +159,6 @@ cdef class ReportProvider:
 
     cdef dict _position_to_dict(self, Position position):
         return {
-            "cl_pos_id": position.cl_pos_id.value,
             "position_id": position.id.value,
             "symbol": position.symbol.code,
             "entry": order_side_to_string(position.entry),

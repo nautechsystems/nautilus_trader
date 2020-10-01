@@ -16,9 +16,9 @@
 from cpython.datetime cimport datetime
 
 
-cpdef bint is_datetime_utc(datetime timestamp)
-cpdef bint is_tz_aware(time_object)
-cpdef bint is_tz_naive(time_object)
+cpdef bint is_datetime_utc(datetime timestamp) except *
+cpdef bint is_tz_aware(time_object) except *
+cpdef bint is_tz_naive(time_object) except *
 cpdef datetime as_utc_timestamp(datetime timestamp)
 cpdef object as_utc_index(time_object)
 cpdef str format_iso8601(datetime dt)

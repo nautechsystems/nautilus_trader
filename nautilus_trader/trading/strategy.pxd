@@ -22,28 +22,25 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -57,15 +54,12 @@ cdef class TradingStrategy:
     cdef readonly StrategyId id
     cdef readonly TraderId trader_id
 
-    cdef readonly bint flatten_on_stop
-    cdef readonly bint flatten_on_reject
-    cdef readonly bint cancel_all_orders_on_stop
-    cdef readonly bint reraise_exceptions
-
+    # cdef readonly DataCacheReadOnly data
+    cdef readonly ExecutionCacheReadOnly execution
     cdef readonly OrderFactory order_factory
-    cdef set _flattening_ids
-    cdef set _stop_loss_ids
-    cdef set _take_profit_ids
+
+    cdef bint _is_flatten_on_reject
+    cdef bint _is_reraise_exceptions
 
     cdef list _indicators
     cdef dict _indicators_for_quotes
@@ -74,10 +68,9 @@ cdef class TradingStrategy:
 
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
-
     cdef FiniteStateMachine _fsm
 
-    cpdef bint equals(self, TradingStrategy other)
+    cpdef bint equals(self, TradingStrategy other) except *
     cpdef ComponentState state(self)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
@@ -109,8 +102,6 @@ cdef class TradingStrategy:
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
-    cpdef void register_stop_loss(self, PassiveOrder order)
-    cpdef void register_take_profit(self, PassiveOrder order)
 
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
@@ -150,21 +141,19 @@ cdef class TradingStrategy:
     cpdef int quote_tick_count(self, Symbol symbol)
     cpdef int trade_tick_count(self, Symbol symbol)
     cpdef int bar_count(self, BarType bar_type)
-    cpdef bint has_quote_ticks(self, Symbol symbol)
-    cpdef bint has_trade_ticks(self, Symbol symbol)
-    cpdef bint has_bars(self, BarType bar_type)
+    cpdef bint has_quote_ticks(self, Symbol symbol) except *
+    cpdef bint has_trade_ticks(self, Symbol symbol) except *
+    cpdef bint has_bars(self, BarType bar_type) except *
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 
     cpdef readonly list registered_indicators(self)
-    cpdef readonly bint indicators_initialized(self)
+    cpdef readonly bint indicators_initialized(self) except *
 
 # -- MANAGEMENT METHODS ----------------------------------------------------------------------------
 
     cpdef Account account(self)
     cpdef Portfolio portfolio(self)
-    cpdef OrderSide get_opposite_side(self, OrderSide side)
-    cpdef OrderSide get_flatten_side(self, PositionSide side)
     cpdef double get_exchange_rate(
         self,
         Currency from_currency,
@@ -176,48 +165,27 @@ cdef class TradingStrategy:
         Currency quote_currency,
         PriceType price_type=*,
     )
-    cpdef Order order(self, ClientOrderId cl_ord_id)
-    cpdef dict orders(self)
-    cpdef dict orders_working(self)
-    cpdef dict orders_completed(self)
-    cpdef int orders_working_count(self)
-    cpdef int orders_completed_count(self)
-    cpdef int orders_total_count(self)
-    cpdef set stop_loss_ids(self)
-    cpdef set take_profit_ids(self)
-    cpdef Position position(self, ClientPositionId cl_pos_id)
-    cpdef Position position_for_order(self, ClientOrderId cl_ord_id)
-    cpdef dict positions(self)
-    cpdef dict positions_open(self)
-    cpdef dict positions_closed(self)
-    cpdef bint position_exists(self, ClientPositionId cl_pos_id)
-    cpdef int positions_open_count(self)
-    cpdef int positions_closed_count(self)
-    cpdef int positions_total_count(self)
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id)
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id)
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id)
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id)
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id)
-    cpdef bint is_position_open(self, ClientPositionId cl_pos_id)
-    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id)
-    cpdef bint is_flat(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void start(self) except *
     cpdef void stop(self) except *
     cpdef void resume(self) except *
+    cpdef void kill_switch(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
     cpdef void account_inquiry(self) except *
-    cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id=*) except *
+    cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
-    cpdef void cancel_all_orders(self) except *
-    cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *
-    cpdef void flatten_all_positions(self) except *
-    cdef void _flatten_on_reject(self, OrderRejected event) except *
+    cpdef void cancel_all_orders(self, Venue venue) except *
+    cpdef void cancel_all_orders_for_symbol(self, Symbol symbol) except *
+    cpdef void flatten_position(self, Position position) except *
+    cpdef void flatten_all_positions(self, Venue venue) except *
+    cpdef void flatten_all_positions_for_symbol(self, Symbol symbol) except *
+
+    cdef inline void _cancel_all_orders(self, Venue venue, Symbol symbol) except *
+    cdef inline void _flatten_all_positions(self, Venue venue, Symbol symbol) except *
