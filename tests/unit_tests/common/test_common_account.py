@@ -21,8 +21,6 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import AccountNumber
-from nautilus_trader.model.identifiers import Brokerage
 from nautilus_trader.model.objects import Money
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -79,8 +77,6 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Brokerage('FXCM'), account.broker)
-        self.assertEqual(AccountNumber("123456"), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(97000, Currency.AUD), account.free_equity)
         self.assertEqual(Money(100000, Currency.AUD), account.cash_start_day)
@@ -111,8 +107,6 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Brokerage('FXCM'), account.broker)
-        self.assertEqual(AccountNumber("123456"), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(0, Currency.AUD), account.free_equity)
         self.assertEqual(Money(100000, Currency.AUD), account.cash_start_day)
@@ -143,8 +137,6 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Brokerage('FXCM'), account.broker)
-        self.assertEqual(AccountNumber("123456"), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(0, Currency.AUD), account.free_equity)
         self.assertEqual(Money(100000, Currency.AUD), account.cash_start_day)

@@ -19,10 +19,8 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
-from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -34,25 +32,18 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport FlattenAllPositions
+from nautilus_trader.model.commands cimport FlattenPosition
+from nautilus_trader.model.commands cimport KillSwitch
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderCancelReject
-from nautilus_trader.model.events cimport OrderCancelled
-from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInvalid
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.events cimport PositionClosed
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
@@ -61,18 +52,9 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-
-
-cdef tuple _ORDER_COMPLETION_TRIGGERS = (
-    OrderInvalid,
-    OrderDenied,
-    OrderRejected,
-    OrderCancelled,
-    OrderExpired,
-    OrderFilled,
-)
 
 
 cdef class TradingStrategy:
@@ -83,9 +65,7 @@ cdef class TradingStrategy:
     def __init__(
             self,
             str order_id_tag not None,
-            bint flatten_on_stop=True,
             bint flatten_on_reject=True,
-            bint cancel_all_orders_on_stop=True,
             bint reraise_exceptions=True,
     ):
         """
@@ -95,43 +75,39 @@ cdef class TradingStrategy:
         ----------
         order_id_tag : str
             The order_id tag for the strategy (must be unique at trader level).
-        flatten_on_stop : bool
-            If all strategy positions should be flattened on stop.
         flatten_on_reject : bool
             If open positions should be flattened on a child orders rejection.
-        cancel_all_orders_on_stop : bool
-            If all residual orders should be cancelled on stop.
         reraise_exceptions : bool
             If exceptions raised in handling methods should be re-raised.
 
         Raises
         ------
         ValueError
-            If order_id_tag is not a valid string.
+            If tag is not a valid string.
 
         """
-        Condition.valid_string(order_id_tag, "order_id_tag")
+        Condition.valid_string(order_id_tag, "tag")
 
-        # Identification
+        # Identifiers
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
         self.trader_id = None     # Initialized when registered with a trader
 
-        # Components
-        self.clock = None         # Initialized when registered with a trader
-        self.uuid_factory = None  # Initialized when registered with a trader
-        self.log = None           # Initialized when registered with a trader
+        # Public components
+        self.clock = None          # Initialized when registered with a trader
+        self.uuid_factory = None   # Initialized when registered with a trader
+        self.log = None            # Initialized when registered with a trader
+        self.order_factory = None  # Initialized when registered with a trader
+        # self.data = None
+        self.execution = None      # Initialized when registered with the execution engine
+
+        # Private components
+        self._data_engine = None  # Initialized when registered with the data engine
+        self._exec_engine = None  # Initialized when registered with the execution engine
+        self._fsm = create_component_fsm()
 
         # Management flags
-        self.flatten_on_stop = flatten_on_stop
-        self.flatten_on_reject = flatten_on_reject
-        self.cancel_all_orders_on_stop = cancel_all_orders_on_stop
-        self.reraise_exceptions = reraise_exceptions
-
-        # Order / Position components
-        self.order_factory = None          # Initialized when registered with a trader
-        self._flattening_ids = set()       # type: {ClientPositionId}
-        self._stop_loss_ids = set()        # type: {ClientOrderId}
-        self._take_profit_ids = set()      # type: {ClientOrderId}
+        self._is_flatten_on_reject = flatten_on_reject
+        self._is_reraise_exceptions = reraise_exceptions
 
         # Indicators
         self._indicators = []              # type: [Indicator]
@@ -139,13 +115,7 @@ cdef class TradingStrategy:
         self._indicators_for_trades = {}   # type: {Symbol, [Indicator]}
         self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
-        # Registerable modules
-        self._data_engine = None  # Initialized when registered with the data engine
-        self._exec_engine = None  # Initialized when registered with the execution engine
-
-        self._fsm = create_component_fsm()
-
-    cpdef bint equals(self, TradingStrategy other):
+    cpdef bint equals(self, TradingStrategy other) except *:
         """
         Return a value indicating whether this object is equal to (==) the given object.
 
@@ -384,8 +354,8 @@ cdef class TradingStrategy:
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.order_factory = OrderFactory(
-            id_tag_trader=self.trader_id.order_id_tag,
-            id_tag_strategy=self.id.order_id_tag,
+            id_tag_trader=self.trader_id.tag,
+            id_tag_strategy=self.id.tag,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
         )
@@ -417,6 +387,7 @@ cdef class TradingStrategy:
         Condition.not_none(engine, "engine")
 
         self._exec_engine = engine
+        self.execution = engine.cache
 
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
         """
@@ -499,51 +470,6 @@ cdef class TradingStrategy:
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-    cpdef void register_stop_loss(self, PassiveOrder order):
-        """
-        Register the given order to be managed as a stop-loss.
-
-        If cancel_on_sl_reject management flag is set to True then associated
-        position will be flattened if this order is rejected.
-
-        Parameters
-        ----------
-        order : PassiveOrder
-            The stop-loss order to register.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered stop-loss orders.
-
-        """
-        Condition.not_none(order, "order")
-        Condition.not_in(order.cl_ord_id, self._stop_loss_ids, "order.id", "_stop_loss_ids")
-
-        self._stop_loss_ids.add(order.cl_ord_id)
-        self.log.debug(f"Registered SL order {order}")
-
-    cpdef void register_take_profit(self, PassiveOrder order):
-        """
-        Register the given order to be managed as a take-profit.
-
-        Parameters
-        ----------
-        order : PassiveOrder
-            The take-profit order to register.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered take_profit orders.
-
-        """
-        Condition.not_none(order, "order")
-        Condition.not_in(order.cl_ord_id, self._take_profit_ids, "order.cl_ord_id", "_take_profit_ids")
-
-        self._take_profit_ids.add(order.cl_ord_id)
-        self.log.debug(f"Registered TP order {order}")
-
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
@@ -575,7 +501,7 @@ cdef class TradingStrategy:
                 self.on_quote_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.reraise_exceptions:
+                if self._is_reraise_exceptions:
                     raise ex  # Re-raise
 
     @cython.boundscheck(False)
@@ -633,7 +559,7 @@ cdef class TradingStrategy:
                 self.on_trade_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.reraise_exceptions:
+                if self._is_reraise_exceptions:
                     raise ex  # Re-raise
 
     @cython.boundscheck(False)
@@ -694,7 +620,7 @@ cdef class TradingStrategy:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.reraise_exceptions:
+                if self._is_reraise_exceptions:
                     raise ex  # Re-raise
 
     @cython.boundscheck(False)
@@ -742,7 +668,7 @@ cdef class TradingStrategy:
                 self.on_data(data)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.reraise_exceptions:
+                if self._is_reraise_exceptions:
                     raise ex  # Re-raise
 
     cpdef void handle_event(self, Event event) except *:
@@ -757,28 +683,12 @@ cdef class TradingStrategy:
         """
         Condition.not_none(event, "event")
 
-        if isinstance(event, OrderRejected):
-            self.log.warning(f"{RECV}{EVT} {event}.")
-            if self.flatten_on_reject:
-                self._flatten_on_reject(event)
-        elif isinstance(event, OrderCancelReject):
-            self.log.warning(f"{RECV}{EVT} {event}.")
-        elif isinstance(event, PositionClosed):
-            self._flattening_ids.discard(event.position.cl_pos_id)
-        else:
-            self.log.info(f"{RECV}{EVT} {event}.")
-
-        # Remove order from registered orders
-        if isinstance(event, _ORDER_COMPLETION_TRIGGERS):
-            self._stop_loss_ids.discard(event.cl_ord_id)
-            self._take_profit_ids.discard(event.cl_ord_id)
-
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
-                if self.reraise_exceptions:
+                if self._is_reraise_exceptions:
                     raise ex  # Re-raise
 
 # -- DATA METHODS ----------------------------------------------------------------------------------
@@ -1207,7 +1117,7 @@ cdef class TradingStrategy:
 
         return self._data_engine.bar_count(bar_type)
 
-    cpdef bint has_quote_ticks(self, Symbol symbol):
+    cpdef bint has_quote_ticks(self, Symbol symbol) except *:
         """
         Return a value indicating whether the strategy has quote ticks for the given symbol.
 
@@ -1226,7 +1136,7 @@ cdef class TradingStrategy:
 
         return self._data_engine.has_quote_ticks(symbol)
 
-    cpdef bint has_trade_ticks(self, Symbol symbol):
+    cpdef bint has_trade_ticks(self, Symbol symbol) except *:
         """
         Return a value indicating whether the strategy has trade ticks for the given symbol.
 
@@ -1245,7 +1155,7 @@ cdef class TradingStrategy:
 
         return self._data_engine.has_trade_ticks(symbol)
 
-    cpdef bint has_bars(self, BarType bar_type):
+    cpdef bint has_bars(self, BarType bar_type) except *:
         """
         Return a value indicating whether the strategy has bars for the given bar type.
 
@@ -1277,7 +1187,7 @@ cdef class TradingStrategy:
         """
         return self._indicators.copy()
 
-    cpdef bint indicators_initialized(self):
+    cpdef bint indicators_initialized(self) except *:
         """
         Return a value indicating whether all indicators are initialized.
 
@@ -1303,7 +1213,7 @@ cdef class TradingStrategy:
         Account
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.account
 
@@ -1316,51 +1226,9 @@ cdef class TradingStrategy:
         Portfolio
 
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         return self._exec_engine.portfolio
-
-    cpdef OrderSide get_opposite_side(self, OrderSide side):
-        """
-        Return the opposite order side from the given side.
-
-        Parameters
-        ----------
-        side : OrderSide
-            The original order side.
-
-        Returns
-        -------
-        OrderSide
-
-        """
-        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
-
-        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
-
-    cpdef OrderSide get_flatten_side(self, PositionSide side):
-        """
-        Return the order side needed to flatten a position from the given side.
-
-        Parameters
-        ----------
-        side : PositionSide
-            The position side to flatten.
-
-        Returns
-        -------
-        OrderSide
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED or FLAT.
-
-        """
-        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
-        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
-
-        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
 
     cpdef double get_exchange_rate(
             self,
@@ -1435,407 +1303,6 @@ cdef class TradingStrategy:
             to_currency=self.account().currency,
             price_type=price_type)
 
-    cpdef Order order(self, ClientOrderId cl_ord_id):
-        """
-        Return the order with the given identifier (if found).
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        Order or None
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_order(cl_ord_id)
-
-    cpdef dict orders(self):
-        """
-        Return a all orders associated with this strategy.
-
-        Returns
-        -------
-        Dict[OrderId, Order]
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_orders(self.id)
-
-    cpdef dict orders_working(self):
-        """
-        Return all working orders associated with this strategy.
-
-        Returns
-        -----
-        Dict[OrderId, Order]
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_orders_working(self.id)
-
-    cpdef set stop_loss_ids(self):
-        """
-        Return all working stop-loss orders associated with this strategy.
-
-        Returns
-        -------
-        Set[OrderId]
-
-        """
-        return self._stop_loss_ids.copy()
-
-    cpdef set take_profit_ids(self):
-        """
-        Return all working take-profit orders associated with this strategy.
-
-        Returns
-        -------
-        Set[OrderId]
-
-        """
-        return self._take_profit_ids.copy()
-
-    cpdef dict orders_completed(self):
-        """
-        Return all completed orders associated with this strategy.
-
-        Returns
-        -------
-        Dict[OrderId, Order]
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_orders_completed(self.id)
-
-    cpdef int orders_working_count(self):
-        """
-        Return the count of working orders held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.orders_working_count(self.id)
-
-    cpdef int orders_completed_count(self):
-        """
-        Return the count of completed orders held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.orders_completed_count(self.id)
-
-    cpdef int orders_total_count(self):
-        """
-        Return the total count of orders held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.orders_total_count(self.id)
-
-    cpdef Position position(self, ClientPositionId cl_pos_id):
-        """
-        Return the position associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
-
-        Returns
-        -------
-        Position or None
-
-        """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_position(cl_pos_id)
-
-    cpdef Position position_for_order(self, ClientOrderId cl_ord_id):
-        """
-        Return the position associated with the given order_id (if found).
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        Position or None
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_position_for_order(cl_ord_id)
-
-    cpdef dict positions(self):
-        """
-        Return a dictionary of all positions associated with this strategy.
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_positions(self.id)
-
-    cpdef dict positions_open(self):
-        """
-        Return a dictionary of all active positions associated with this strategy.
-
-        Returns
-        ------
-        Dict[PositionId, Position]
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_positions_open(self.id)
-
-    cpdef dict positions_closed(self):
-        """
-        Return a dictionary of all closed positions associated with this strategy.
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.get_positions_closed(self.id)
-
-    cpdef bint position_exists(self, ClientPositionId cl_pos_id):
-        """
-        Return a value indicating whether a position with the given identifier exists.
-
-        Parameters
-        ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.position_exists(cl_pos_id)
-
-    cpdef int positions_open_count(self):
-        """
-        Return the count of open positions held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.positions_open_count(self.id)
-
-    cpdef int positions_closed_count(self):
-        """
-        Return the count of closed positions held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.positions_closed_count(self.id)
-
-    cpdef int positions_total_count(self):
-        """
-        Return the total count of positions held by the execution database.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.positions_total_count(self.id)
-
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether an order with the given identifier exists.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.order_exists(cl_ord_id)
-
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether the order with the given identifier is
-        a registered stop-loss.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return cl_ord_id in self._stop_loss_ids
-
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether the order with the given identifier is
-        a registered take-profit.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return cl_ord_id in self._take_profit_ids
-
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether an order with the given identifier is working.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.is_order_working(cl_ord_id)
-
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id):
-        """
-        Return a value indicating whether an order with the given identifier is complete.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.is_order_completed(cl_ord_id)
-
-    cpdef bint is_position_open(self, ClientPositionId cl_pos_id):
-        """
-        Return a value indicating whether a position with the given identifier is open.
-
-        Parameters
-        ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.is_position_open(cl_pos_id)
-
-    cpdef bint is_position_closed(self, ClientPositionId cl_pos_id):
-        """
-        Return a value indicating whether a position with the given identifier is closed.
-
-        Parameters
-        ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.database.is_position_closed(cl_pos_id)
-
-    cpdef bint is_flat(self):
-        """
-        Return a value indicating whether the strategy is completely flat
-        (i.e no positions which are not FLAT across all instruments).
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        return self._exec_engine.is_strategy_flat(self.id)
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void start(self) except *:
@@ -1893,14 +1360,6 @@ cdef class TradingStrategy:
         for name in timer_names:
             self.log.info(f"Cancelled Timer(name={name}).")
 
-        # Flatten open positions
-        if self.flatten_on_stop:
-            self.flatten_all_positions()
-
-        # Cancel working orders
-        if self.cancel_all_orders_on_stop:
-            self.cancel_all_orders()
-
         try:
             self.on_stop()
         except Exception as ex:
@@ -1934,6 +1393,25 @@ cdef class TradingStrategy:
         self._fsm.trigger('RUNNING')
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
+    cpdef void kill_switch(self) except *:
+        """
+        For emergency shutdown purposes only.
+
+        Simultaneously;
+        - Immediately cancel all working orders for every strategy.
+        - Aggressively flatten all open positions for every strategy.
+
+        Then;
+        - Proactively confirm flat.
+
+        """
+        cdef KillSwitch command = KillSwitch(
+            self.trader_id,
+            self.uuid_factory.generate(),
+            self.clock.utc_now())
+
+        self._exec_engine.execute(command)
+
     cpdef void reset(self) except *:
         """
         Reset the trading strategy.
@@ -1951,10 +1429,6 @@ cdef class TradingStrategy:
 
         if self.order_factory is not None:
             self.order_factory.reset()
-
-        self._flattening_ids = set()   # type: {ClientPositionId}
-        self._stop_loss_ids = set()    # type: {ClientOrderId}
-        self._take_profit_ids = set()  # type: {ClientOrderId}
 
         self._indicators.clear()
         self._indicators_for_quotes.clear()
@@ -2029,7 +1503,7 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution engine.
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self.execution, "execution")
 
         cdef AccountInquiry command = AccountInquiry(
             self.trader_id,
@@ -2040,7 +1514,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void submit_order(self, Order order, ClientPositionId cl_pos_id=None) except *:
+    cpdef void submit_order(self, Order order, PositionId position_id=None) except *:
         """
         Send a submit order command with the given order to the execution engine.
 
@@ -2048,22 +1522,25 @@ cdef class TradingStrategy:
         ----------
         order : Order
             The order to submit.
-        cl_pos_id : ClientPositionId, optional
-            The client position identifier to submit the order against.
+        position_id : PositionId, optional
+            The position identifier to submit the order against. Only required
+            if the execution engine is configured for OMS.HEDGING.
 
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "exec_engine")
 
-        if cl_pos_id is None:
-            cl_pos_id = ClientPositionId.none()
+        if position_id is None:
+            # Null object pattern
+            position_id = PositionId.null()
 
         cdef SubmitOrder command = SubmitOrder(
+            order.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
-            cl_pos_id,
+            position_id,
             order,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -2074,7 +1551,7 @@ cdef class TradingStrategy:
 
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=True) except *:
         """
-        Send a submit bracket order command with the given order to the
+        Send a SubmitBracketOrder command with the given bracket order to the
         execution engine.
 
         Parameters
@@ -2087,14 +1564,10 @@ cdef class TradingStrategy:
         """
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
-
-        if register:
-            self.register_stop_loss(bracket_order.stop_loss)
-            if bracket_order.has_take_profit:
-                self.register_take_profit(bracket_order.take_profit)
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
+            bracket_order.entry.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
@@ -2113,8 +1586,11 @@ cdef class TradingStrategy:
             Price new_price=None,
     ) except *:
         """
-        Send a modify order command for the given order with the given new price
-        to the execution engine.
+        Send a ModifyOrder command with the given new_quantity, and new_price to
+        the execution engine.
+
+        Either one or both values must differ from the original order to be
+        valid.
 
         Parameters
         ----------
@@ -2128,24 +1604,31 @@ cdef class TradingStrategy:
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        if new_quantity is None and new_price is None:
+        cdef bint modifying = False  # Set validation flag (must become true)
+        cdef Quantity quantity = order.quantity
+        cdef Price price = order.price
+
+        if new_quantity is not None:
+            modifying = True
+            quantity = new_quantity
+
+        if new_price is not None:
+            modifying = True
+            price = new_price
+
+        if not modifying:
             self.log.error("Cannot send command ModifyOrder (both new_quantity and new_price were None).")
             return
 
-        if new_quantity is None:
-            new_quantity = order.quantity
-
-        if new_price is None:
-            new_price = order.price
-
         cdef ModifyOrder command = ModifyOrder(
+            order.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             order.cl_ord_id,
-            new_quantity,
-            new_price,
+            quantity,
+            price,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
@@ -2155,8 +1638,7 @@ cdef class TradingStrategy:
 
     cpdef void cancel_order(self, Order order) except *:
         """
-        Send a cancel order command for the given order and cancel_reason to the
-        execution engine.
+        Send a CancelOrder command for the given order to the execution engine.
 
         Parameters
         ----------
@@ -2166,9 +1648,10 @@ cdef class TradingStrategy:
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
         cdef CancelOrder command = CancelOrder(
+            order.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             order.cl_ord_id,
@@ -2179,126 +1662,107 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void cancel_all_orders(self) except *:
+    cpdef void cancel_all_orders(self, Venue venue) except *:
         """
-        Send a cancel order command for orders associated with this strategy
-        which are not completed.
+        Send a CancelAllOrders command for this strategy to the execution engine.
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
-        cdef int working_orders_count = len(working_orders)
-        if working_orders_count == 0:
-            self.log.info("No working orders to cancel.")
-            return
+        self._cancel_all_orders(venue, symbol=None)
 
-        self.log.info(f"Cancelling {working_orders_count} working order(s)...")
-        cdef ClientOrderId order_id
-        cdef Order order
-        cdef CancelOrder command
-        for order_id, order in working_orders.items():
-            command = CancelOrder(
-                self.trader_id,
-                self._exec_engine.account_id,
-                order_id,
-                self.uuid_factory.generate(),
-                self.clock.utc_now(),
-            )
-
-            self.log.info(f"{CMD}{SENT} {command}.")
-            self._exec_engine.execute(command)
-
-    cpdef void flatten_position(self, ClientPositionId cl_pos_id) except *:
+    cpdef void cancel_all_orders_for_symbol(self, Symbol symbol) except *:
         """
-        Flatten the position.
-
-        Generate and submit the required market order to the execution engine
-        to flatten the position corresponding to the given client position
-        identifier. If the position is None or already FLAT will log a warning.
+        Send a CancelAllOrders command for this strategy and given symbol to the
+        execution engine.
 
         Parameters
         ----------
-        cl_pos_id : ClientPositionId
-            The client position identifier to flatten.
-
-        Raises
-        ------
-        ValueError
-            If position_id is not found.
+        symbol : Symbol
+            The specific symbol for the orders to cancel.
 
         """
-        Condition.not_none(cl_pos_id, "cl_pos_id")
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        if cl_pos_id in self._flattening_ids:
-            self.log.warning(f"Already flattening {cl_pos_id}.")
-            return
+        self._cancel_all_orders(venue=symbol.venue, symbol=symbol)
 
-        cdef Position position = self._exec_engine.database.get_position(cl_pos_id)
-        if position is None:
-            self.log.error(f"Cannot flatten position (cannot find {cl_pos_id} in cached positions.")
-            return
+    cpdef void flatten_position(self, Position position) except *:
+        """
+        Send a FlattenPosition command for the given position identifier to the
+        execution engine.
 
-        if position.is_closed():
-            self.log.warning(f"Cannot flatten position (the position {cl_pos_id} was already closed).")
-            return
+        Parameters
+        ----------
+        position : Position
+            The position to flatten.
 
-        cdef Order order = self.order_factory.market(
-            position.symbol,
-            self.get_flatten_side(position.side),
-            position.quantity,
+        """
+        Condition.not_none(position, "position")
+        Condition.not_none(self._exec_engine, "_exec_engine")
+
+        cdef FlattenPosition command = FlattenPosition(
+            position.symbol.venue,
+            self.trader_id,
+            self._exec_engine.account_id,
+            position.id,
+            self.id,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
         )
 
-        self._flattening_ids.add(cl_pos_id)
+        self.log.info(f"{CMD}{SENT} {command}.")
+        self._exec_engine.execute(command)
 
-        self.log.info(f"Flattening {position}...")
-        self.submit_order(order, cl_pos_id)  # Assumption that market order won't be rejected
-
-    cpdef void flatten_all_positions(self) except *:
+    cpdef void flatten_all_positions(self, Venue venue) except *:
         """
-        Flatten all positions.
+        Send a FlattenAllPositions command for this strategy to the execution
+        engine.
 
-        Generate and submit the required market to the execution engine to
-        flatten open positions. If no positions found or a position is None
-        then will log a warning.
         """
-        Condition.not_none(self._exec_engine, "execution_engine")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef dict positions = self._exec_engine.database.get_positions_open(self.id)
-        cdef int open_positions_count = len(positions)
-        if open_positions_count == 0:
-            self.log.info("No open positions to flatten.")
-            return
+        self._flatten_all_positions(venue=venue, symbol=None)
 
-        self.log.info(f"Flattening {open_positions_count} open position(s)...")
+    cpdef void flatten_all_positions_for_symbol(self, Symbol symbol) except *:
+        """
+        Send a FlattenAllPositions command for this strategy and given symbol to
+        the execution engine.
 
-        cdef ClientPositionId position_id
-        cdef Position position
-        cdef Order order
-        for position_id, position in positions.items():
-            if position.is_closed():
-                self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT.")
-                continue
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The specific symbol for the positions to flatten.
 
-            order = self.order_factory.market(
-                position.symbol,
-                self.get_flatten_side(position.side),
-                position.quantity)
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._exec_engine, "_exec_engine")
 
-            self.log.info(f"Flattening {position}...")
-            self.submit_order(order, position_id)
+        self._flatten_all_positions(venue=symbol.venue, symbol=symbol)
 
-    cdef void _flatten_on_reject(self, OrderRejected event) except *:
-        if event.cl_ord_id not in self._stop_loss_ids and event.cl_ord_id not in self._take_profit_ids:
-            return  # Not a registered stop-loss
+    cdef inline void _cancel_all_orders(self, Venue venue, Symbol symbol) except *:
+        cdef CancelAllOrders command = CancelAllOrders(
+            venue,
+            self.trader_id,
+            self._exec_engine.account_id,
+            self.id,
+            symbol,  # Can be None (cancel for all symbols)
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
 
-        # Find position_id for order
-        cdef ClientPositionId position_id = self._exec_engine.database.get_cl_pos_id(event.cl_ord_id)
-        if position_id is None:
-            self.log.error(f"Cannot find PositionId for {event.cl_ord_id}.")
-            return
+        self.log.info(f"{CMD}{SENT} {command}.")
+        self._exec_engine.execute(command)
 
-        # Flatten if open position
-        if self._exec_engine.database.is_position_open(position_id):
-            self.log.warning(f"Rejected {event.cl_ord_id} was a registered child order, now flattening {position_id}.")
-            self.flatten_position(position_id)
+    cdef inline void _flatten_all_positions(self, Venue venue, Symbol symbol) except *:
+        cdef FlattenAllPositions command = FlattenAllPositions(
+            venue,
+            self.trader_id,
+            self._exec_engine.account_id,
+            self.id,
+            symbol,  # Can be None (flatten for all symbols)
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.log.info(f"{CMD}{SENT} {command}.")
+        self._exec_engine.execute(command)

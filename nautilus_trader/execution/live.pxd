@@ -13,35 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from zmq.backend.cython.socket cimport Socket as ZMQSocket
-
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.core.types cimport Identifier
+from nautilus_trader.execution.engine cimport ExecutionEngine
 
 
-cdef class Socket:
-    cdef LoggerAdapter _log
-    cdef ZMQSocket _socket
+cdef class LiveExecutionEngine(ExecutionEngine):
+    cdef object _queue
+    cdef object _thread
 
-    cdef readonly Identifier socket_id
-    cdef readonly str network_address
-
-    cpdef void connect(self) except *
-    cpdef void disconnect(self) except *
-    cpdef void dispose(self) except *
-    cpdef bint is_disposed(self)
-    cpdef void send(self, list frames) except *
-    cpdef list recv(self)
-
-
-cdef class ClientSocket(Socket):
-    pass
-
-
-cdef class SubscriberSocket(ClientSocket):
-    cpdef void subscribe(self, str topic) except *
-    cpdef void unsubscribe(self, str topic) except *
-
-
-cdef class ServerSocket(Socket):
-    pass
+    cpdef void _loop(self) except *

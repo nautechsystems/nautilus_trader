@@ -13,19 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 
-from nautilus_trader.core.types cimport Identifier
-
-
-cdef class ClientId(Identifier):
-    pass
+cpdef enum OMSType:
+    UNDEFINED = 0,  # Invalid value
+    NETTING = 1,
+    HEDGING = 2
 
 
-cdef class ServerId(Identifier):
-    pass
+cdef inline str oms_type_to_string(int value):
+    if value == 1:
+        return 'NETTING'
+    elif value == 2:
+        return 'HEDGING'
+    else:
+        return 'UNDEFINED'
 
 
-cdef class SessionId(Identifier):
-    @staticmethod
-    cdef SessionId create(ClientId client_id, datetime now, str secret)
+cdef inline OMSType oms_type_from_string(str value):
+    if value == 'NETTING':
+        return OMSType.NETTING
+    elif value == 'HEDGING':
+        return OMSType.HEDGING
+    else:
+        return OMSType.UNDEFINED

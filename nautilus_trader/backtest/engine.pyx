@@ -42,11 +42,13 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
-from nautilus_trader.execution.database cimport InMemoryExecutionDatabase
+from nautilus_trader.execution.cache cimport InMemoryExecutionCache
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
@@ -64,6 +66,9 @@ cdef class BacktestEngine:
             self,
             BacktestDataContainer data not None,
             list strategies not None: [TradingStrategy],
+            Venue venue not None,
+            OMSType oms_type,
+            generate_position_ids,
             BacktestConfig config=None,
             FillModel fill_model=None,
             CommissionModel commission_model=None,
@@ -98,7 +103,7 @@ cdef class BacktestEngine:
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self.trader_id = TraderId("BACKTESTER", "000")
-        self.account_id = AccountId.from_string("0-1-SIMULATED")
+        self.account_id = AccountId.from_string(f"0-1-{venue}")
         self.config = config
         self.clock = LiveClock()
         self.created_time = self.clock.utc_now()
@@ -140,7 +145,7 @@ cdef class BacktestEngine:
         self.log.info("Building engine...")
 
         if config.exec_db_type == "in-memory":
-            self.exec_db = InMemoryExecutionDatabase(
+            self.exec_db = InMemoryExecutionCache(
                 trader_id=self.trader_id,
                 logger=self.test_logger,
             )
@@ -186,7 +191,10 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.broker = SimulatedMarket(
+        self.market = SimulatedMarket(
+            venue=venue,
+            oms_type=oms_type,
+            generate_position_ids=True,
             exec_engine=self.exec_engine,
             instruments=data.instruments,
             config=config,
@@ -198,7 +206,7 @@ cdef class BacktestEngine:
         )
 
         self.exec_client = BacktestExecClient(
-            broker=self.broker,
+            market=self.market,
             logger=self.test_logger,
         )
 
@@ -290,7 +298,7 @@ cdef class BacktestEngine:
 
         # Setup new fill model
         if fill_model is not None:
-            self.broker.change_fill_model(fill_model)
+            self.market.change_fill_model(fill_model)
 
         # Setup new strategies
         if strategies is not None:
@@ -310,7 +318,7 @@ cdef class BacktestEngine:
         while self.data_engine.has_data:
             tick = self.data_engine.generate_tick()
             self.advance_time(tick.timestamp)
-            self.broker.process_tick(tick)
+            self.market.process_tick(tick)
             self.data_engine.process_tick(tick)
             self.iteration += 1
         # ---------------------------------------------------------------------#
@@ -417,7 +425,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
         for resolution in self.data_engine.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")
-        if self.broker.frozen_account:
+        if self.market.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
             currency = currency_to_string(self.config.account_currency)
@@ -443,15 +451,15 @@ cdef class BacktestEngine:
             self.log.info(f"Execution resolution: {resolution}")
         self.log.info(f"Iterations: {self.iteration:,}")
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")
-        self.log.info(f"Total orders: {self.exec_engine.database.orders_total_count():,}")
-        self.log.info(f"Total positions: {self.exec_engine.database.positions_total_count():,}")
-        if self.broker.frozen_account:
+        self.log.info(f"Total orders: {self.exec_engine.cache.orders_total_count():,}")
+        self.log.info(f"Total positions: {self.exec_engine.cache.positions_total_count():,}")
+        if self.market.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()
         account_starting_length = len(account_balance_starting)
-        account_balance_ending = pad_string(self.broker.account_capital.to_string_formatted(), account_starting_length)
-        commissions_total = pad_string(self.broker.total_commissions.to_string_formatted(), account_starting_length)
-        rollover_interest = pad_string(self.broker.total_rollover.to_string_formatted(), account_starting_length)
+        account_balance_ending = pad_string(self.market.account_capital.to_string_formatted(), account_starting_length)
+        commissions_total = pad_string(self.market.total_commissions.to_string_formatted(), account_starting_length)
+        rollover_interest = pad_string(self.market.total_rollover.to_string_formatted(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")
         self.log.info(f"Account balance (ending):   {account_balance_ending}")
         self.log.info(f"Commissions (total):        {commissions_total}")
@@ -463,7 +471,7 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Calculating statistics...")
         self.log.info("")
-        self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.database.get_positions())
+        self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.cache.positions())
 
         for statistic in self.analyzer.get_performance_stats_formatted(self.exec_engine.account.currency):
             self.log.info(statistic)

@@ -20,7 +20,7 @@
 
 ## Introduction
 
-NautilusTrader is an algorithmic trading platform allowing quantitative traders
+NautilusTrader is a high-performance algorithmic trading platform allowing quantitative traders
 the ability to backtest portfolios of automated trading strategies on historical
 data with an event-driven engine, and also trade those strategies live in a
 production grade environment. The project heavily utilizes Cython to provide
@@ -42,7 +42,7 @@ Note that initial compilation may take several minutes due to the quantity of ex
 
 - **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport with MsgPack serialization.
 - **Reliable:** Redis provides performant state persistence for the live `ExecutionEngine`.
-- **Flexible:** Any FIX or REST broker API can be integrated into the platform, with no changes to your strategy scripts.
+- **Flexible:** Any FIX or REST API can be integrated into the platform, with no changes to your strategy scripts.
 - **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
@@ -60,9 +60,6 @@ Note that initial compilation may take several minutes due to the quantity of ex
 - Scalability
 
 ## Installation
-
-Please ensure pyzmq >=19.0.1 is installed as some C definitions are required in
-order to compile nautilus_trader. This is due to accessing zmq sockets at the raw C level.
 
 Latest version;
 

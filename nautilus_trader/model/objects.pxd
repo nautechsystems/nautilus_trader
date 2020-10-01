@@ -18,7 +18,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 
 
 cdef class Quantity(Decimal64):
-    cpdef bint equals(self, Quantity other)
+    cpdef bint equals(self, Quantity other) except *
 
     @staticmethod
     cdef Quantity zero()
@@ -34,7 +34,7 @@ cdef class Quantity(Decimal64):
 
 
 cdef class Price(Decimal64):
-    cpdef bint equals(self, Price other)
+    cpdef bint equals(self, Price other) except *
 
     @staticmethod
     cdef Price from_string(str value)
@@ -45,7 +45,7 @@ cdef class Price(Decimal64):
 cdef class Money(Decimal64):
     cdef readonly Currency currency
 
-    cpdef bint equals(self, Money other)
+    cpdef bint equals(self, Money other) except *
 
     @staticmethod
     cdef Money from_string(str value, Currency currency)

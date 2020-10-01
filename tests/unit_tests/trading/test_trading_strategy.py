@@ -31,24 +31,21 @@ from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
-from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ClientPositionId
 from nautilus_trader.model.identifiers import MatchId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -85,7 +82,7 @@ class TradingStrategyTests(unittest.TestCase):
         trader_id = TraderId('TESTER', '000')
         account_id = TestStubs.account_id()
 
-        self.exec_db = InMemoryExecutionDatabase(
+        self.exec_db = InMemoryExecutionCache(
             trader_id=trader_id,
             logger=self.logger)
         self.exec_engine = ExecutionEngine(
@@ -99,7 +96,10 @@ class TradingStrategyTests(unittest.TestCase):
 
         usdjpy = TestStubs.instrument_usdjpy()
 
-        self.broker = SimulatedMarket(
+        self.market = SimulatedMarket(
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             exec_engine=self.exec_engine,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
@@ -110,13 +110,13 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger)
 
         self.exec_client = BacktestExecClient(
-            broker=self.broker,
+            market=self.market,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.account_event())
 
-        self.broker.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
+        self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(
@@ -330,79 +330,6 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(tick, result)
 
-    def test_getting_order_which_does_not_exist_returns_none(self):
-        # Arrange
-        # Act
-        result = self.strategy.order(ClientOrderId("O-123456"))
-
-        # Assert
-        self.assertIsNone(result)
-
-    def test_get_order(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        strategy.submit_order(order)
-
-        # Act
-        result = strategy.order(order.cl_ord_id)
-
-        # Assert
-        self.assertTrue(strategy.order_exists(order.cl_ord_id))
-        self.assertEqual(order, result)
-
-    def test_getting_position_which_does_not_exist_returns_none(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        # Act
-        result = strategy.position(ClientPositionId("P-123456"))
-        # Assert
-        self.assertIsNone(result)
-
-    def test_get_position(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        position_id = ClientPositionId('P-1')
-
-        strategy.submit_order(order, position_id)
-
-        # Act
-        result = strategy.position(position_id)
-
-        # Assert
-        self.assertTrue(strategy.position_exists(position_id))
-        self.assertTrue(type(result) == Position)
-
     def test_start_strategy(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -553,165 +480,133 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, strategy.object_storer.count)
 
-    def test_get_opposite_side_returns_expected_sides(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
+    # TODO: Potentially consolidating this API to ExecutionEngine
+    # def test_strategy_can_submit_order(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag="001")
+    #     strategy.register_trader(
+    #         TraderId("TESTER", "000"),
+    #         clock=self.clock,
+    #         uuid_factory=self.uuid_factory,
+    #         logger=self.logger)
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     order = strategy.order_factory.market(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000))
+    #
+    #     # Act
+    #     strategy.submit_order(order)
+    #
+    #     # Assert
+    #     self.assertEqual(order, strategy.orders()[order.cl_ord_id])
+    #     self.assertEqual(OrderState.FILLED, strategy.orders()[order.cl_ord_id].state())
+    #     self.assertTrue(order.cl_ord_id not in strategy.orders_working())
+    #     self.assertTrue(order.cl_ord_id in strategy.orders_completed())
+    #     self.assertTrue(strategy.order_exists(order.cl_ord_id))
+    #     self.assertFalse(strategy.is_order_working(order.cl_ord_id))
+    #     self.assertTrue(strategy.is_order_completed(order.cl_ord_id))
 
-        # Act
-        result1 = strategy.get_opposite_side(OrderSide.BUY)
-        result2 = strategy.get_opposite_side(OrderSide.SELL)
+    # TODO: Potentially consolidating this API to ExecutionEngine
+    # def test_cancel_order(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag="001")
+    #     strategy.register_trader(
+    #         TraderId("TESTER", "000"),
+    #         clock=self.clock,
+    #         uuid_factory=self.uuid_factory,
+    #         logger=self.logger)
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     order = strategy.order_factory.stop(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000),
+    #         Price(90.005, 3))
+    #
+    #     strategy.submit_order(order)
+    #
+    #     # Act
+    #     strategy.cancel_order(order)
+    #
+    #     # Assert
+    #     self.assertEqual(order, strategy.orders()[order.cl_ord_id])
+    #     self.assertEqual(OrderState.CANCELLED, strategy.orders()[order.cl_ord_id].state())
+    #     self.assertTrue(order.cl_ord_id in strategy.orders_completed())
+    #     self.assertTrue(order.cl_ord_id not in strategy.orders_working())
+    #     self.assertTrue(strategy.order_exists(order.cl_ord_id))
+    #     self.assertFalse(strategy.is_order_working(order.cl_ord_id))
+    #     self.assertTrue(strategy.is_order_completed(order.cl_ord_id))
 
-        # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
+    # TODO: Potentially consolidating this API to ExecutionEngine
+    # def test_modify_order(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag="001")
+    #     strategy.register_trader(
+    #         TraderId("TESTER", "000"),
+    #         clock=self.clock,
+    #         uuid_factory=self.uuid_factory,
+    #         logger=self.logger)
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     order = strategy.order_factory.limit(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000),
+    #         Price(90.001, 3))
+    #
+    #     strategy.submit_order(order)
+    #
+    #     # Act
+    #     strategy.modify_order(order, Quantity(110000), Price(90.002, 3))
+    #
+    #     # Assert
+    #     self.assertEqual(order, strategy.orders()[order.cl_ord_id])
+    #     self.assertEqual(OrderState.WORKING, strategy.orders()[order.cl_ord_id].state())
+    #     self.assertEqual(Quantity(110000), strategy.orders()[order.cl_ord_id].quantity)
+    #     self.assertEqual(Price(90.002, 3), strategy.orders()[order.cl_ord_id].price)
+    #     self.assertTrue(strategy.is_completely_flat())
+    #     self.assertTrue(strategy.order_exists(order.cl_ord_id))
+    #     self.assertTrue(strategy.is_order_working(order.cl_ord_id))
+    #     self.assertFalse(strategy.is_order_completed(order.cl_ord_id))
 
-    def test_get_flatten_side_with_long_or_short_position_side_returns_expected_sides(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-
-        # Act
-        result1 = strategy.get_flatten_side(PositionSide.LONG)
-        result2 = strategy.get_flatten_side(PositionSide.SHORT)
-
-        # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
-
-    def test_strategy_can_submit_order(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        # Act
-        strategy.submit_order(order)
-
-        # Assert
-        self.assertEqual(order, strategy.orders()[order.cl_ord_id])
-        self.assertEqual(OrderState.FILLED, strategy.orders()[order.cl_ord_id].state())
-        self.assertTrue(order.cl_ord_id not in strategy.orders_working())
-        self.assertTrue(order.cl_ord_id in strategy.orders_completed())
-        self.assertTrue(strategy.order_exists(order.cl_ord_id))
-        self.assertFalse(strategy.is_order_working(order.cl_ord_id))
-        self.assertTrue(strategy.is_order_completed(order.cl_ord_id))
-
-    def test_cancel_order(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.stop(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(90.005, 3))
-
-        strategy.submit_order(order)
-
-        # Act
-        strategy.cancel_order(order)
-
-        # Assert
-        self.assertEqual(order, strategy.orders()[order.cl_ord_id])
-        self.assertEqual(OrderState.CANCELLED, strategy.orders()[order.cl_ord_id].state())
-        self.assertTrue(order.cl_ord_id in strategy.orders_completed())
-        self.assertTrue(order.cl_ord_id not in strategy.orders_working())
-        self.assertTrue(strategy.order_exists(order.cl_ord_id))
-        self.assertFalse(strategy.is_order_working(order.cl_ord_id))
-        self.assertTrue(strategy.is_order_completed(order.cl_ord_id))
-
-    def test_modify_order(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.limit(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(90.001, 3))
-
-        strategy.submit_order(order)
-
-        # Act
-        strategy.modify_order(order, Quantity(110000), Price(90.002, 3))
-
-        # Assert
-        self.assertEqual(order, strategy.orders()[order.cl_ord_id])
-        self.assertEqual(OrderState.WORKING, strategy.orders()[order.cl_ord_id].state())
-        self.assertEqual(Quantity(110000), strategy.orders()[order.cl_ord_id].quantity)
-        self.assertEqual(Price(90.002, 3), strategy.orders()[order.cl_ord_id].price)
-        self.assertTrue(strategy.is_flat())
-        self.assertTrue(strategy.order_exists(order.cl_ord_id))
-        self.assertTrue(strategy.is_order_working(order.cl_ord_id))
-        self.assertFalse(strategy.is_order_completed(order.cl_ord_id))
-
-    def test_cancel_all_orders(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order1 = strategy.order_factory.stop(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(90.003, 3))
-
-        order2 = strategy.order_factory.stop(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price(90.005, 3))
-
-        position_id = ClientPositionId('P-1')
-
-        strategy.submit_order(order1, position_id)
-        strategy.submit_order(order2, position_id)
-
-        # Act
-        strategy.cancel_all_orders()
-
-        # Assert
-        self.assertEqual(order1, strategy.orders()[order1.cl_ord_id])
-        self.assertEqual(order2, strategy.orders()[order2.cl_ord_id])
-        self.assertEqual(OrderState.CANCELLED, strategy.orders()[order1.cl_ord_id].state())
-        self.assertEqual(OrderState.CANCELLED, strategy.orders()[order2.cl_ord_id].state())
-        self.assertTrue(order1.cl_ord_id in strategy.orders_completed())
-        self.assertTrue(order2.cl_ord_id in strategy.orders_completed())
+    # TODO: Potentially consolidating this API to ExecutionEngine
+    # def test_cancel_all_orders(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag="001")
+    #     strategy.register_trader(
+    #         TraderId("TESTER", "000"),
+    #         clock=self.clock,
+    #         uuid_factory=self.uuid_factory,
+    #         logger=self.logger)
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     order1 = strategy.order_factory.stop(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000),
+    #         Price(90.003, 3))
+    #
+    #     order2 = strategy.order_factory.stop(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000),
+    #         Price(90.005, 3))
+    #
+    #     strategy.submit_order(order1)
+    #     strategy.submit_order(order2)
+    #
+    #     # Act
+    #     strategy.cancel_all_orders()
+    #
+    #     # Assert
+    #     self.assertEqual(order1, strategy.orders()[order1.cl_ord_id])
+    #     self.assertEqual(order2, strategy.orders()[order2.cl_ord_id])
+    #     self.assertEqual(OrderState.CANCELLED, strategy.orders()[order1.cl_ord_id].state())
+    #     self.assertEqual(OrderState.CANCELLED, strategy.orders()[order2.cl_ord_id].state())
+    #     self.assertTrue(order1.cl_ord_id in strategy.orders_completed())
+    #     self.assertTrue(order2.cl_ord_id in strategy.orders_completed())
 
     def test_register_stop_loss_and_take_profit_orders(self):
         # Arrange
@@ -737,10 +632,10 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        self.assertTrue(strategy.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
-        self.assertTrue(strategy.is_take_profit(bracket_order.take_profit.cl_ord_id))
-        self.assertTrue(bracket_order.stop_loss.cl_ord_id in strategy.stop_loss_ids())
-        self.assertTrue(bracket_order.take_profit.cl_ord_id in strategy.take_profit_ids())
+        self.assertTrue(self.exec_db.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
+        self.assertTrue(self.exec_db.is_take_profit(bracket_order.take_profit.cl_ord_id))
+        self.assertTrue(bracket_order.stop_loss.cl_ord_id in self.exec_db.stop_loss_ids())
+        self.assertTrue(bracket_order.take_profit.cl_ord_id in self.exec_db.take_profit_ids())
 
     def test_completed_sl_tp_are_removed(self):
         # Arrange
@@ -762,12 +657,12 @@ class TradingStrategyTests(unittest.TestCase):
             stop_loss=Price(90.000, 3),
             take_profit=Price(91.000, 3))
 
-        position_id = ClientPositionId('P-1')
+        position_id = PositionId('P-1')
 
         strategy.submit_bracket_order(bracket_order, position_id)
 
         # Act
-        strategy.flatten_all_positions()
+        strategy.flatten_all_positions(self.market.venue)
 
         # Assert
         # TODO: Investigate
@@ -776,77 +671,78 @@ class TradingStrategyTests(unittest.TestCase):
         # self.assertFalse(bracket_order.stop_loss.cl_ord_id in strategy.stop_loss_ids())
         # self.assertFalse(bracket_order.take_profit.cl_ord_id in strategy.take_profit_ids())
 
-    def test_flatten_position(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
+    # TODO: Potentially consolidating this API to ExecutionEngine
+    # def test_flatten_position(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag="001")
+    #     strategy.register_trader(
+    #         TraderId("TESTER", "000"),
+    #         clock=self.clock,
+    #         uuid_factory=self.uuid_factory,
+    #         logger=self.logger)
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     order = strategy.order_factory.market(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000))
+    #
+    #     strategy.submit_order(order)
+    #
+    #     # Act
+    #     expected_generated_id = PositionId("B-USD/JPY-1")
+    #     strategy.flatten_position(expected_generated_id)
+    #
+    #     # Assert
+    #     self.assertEqual(order, strategy.orders()[order.cl_ord_id])
+    #     self.assertEqual(OrderState.FILLED, strategy.orders()[order.cl_ord_id].state())
+    #     self.assertEqual(PositionSide.FLAT, strategy.positions()[expected_generated_id].side)
+    #     self.assertTrue(strategy.positions()[expected_generated_id].is_closed())
+    #     self.assertTrue(expected_generated_id in strategy.positions_closed())
+    #     self.assertTrue(strategy.is_completely_flat())
 
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        position_id = ClientPositionId('P-1')
-
-        strategy.submit_order(order, position_id)
-
-        # Act
-        strategy.flatten_position(position_id)
-
-        # Assert
-        self.assertEqual(order, strategy.orders()[order.cl_ord_id])
-        self.assertEqual(OrderState.FILLED, strategy.orders()[order.cl_ord_id].state())
-        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id].side)
-        self.assertTrue(strategy.positions()[position_id].is_closed())
-        self.assertTrue(position_id in strategy.positions_closed())
-        self.assertTrue(strategy.is_flat())
-
-    def test_flatten_all_positions(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order1 = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        order2 = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        position_id1 = ClientPositionId('P-1')
-        position_id2 = ClientPositionId('P-2')
-
-        strategy.submit_order(order1, position_id1)
-        strategy.submit_order(order2, position_id2)
-
-        # Act
-        strategy.flatten_all_positions()
-
-        # Assert
-        self.assertEqual(order1, strategy.orders()[order1.cl_ord_id])
-        self.assertEqual(order2, strategy.orders()[order2.cl_ord_id])
-        self.assertEqual(OrderState.FILLED, strategy.orders()[order1.cl_ord_id].state())
-        self.assertEqual(OrderState.FILLED, strategy.orders()[order2.cl_ord_id].state())
-        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id1].side)
-        self.assertEqual(PositionSide.FLAT, strategy.positions()[position_id2].side)
-        self.assertTrue(strategy.positions()[position_id1].is_closed())
-        self.assertTrue(strategy.positions()[position_id2].is_closed())
-        self.assertTrue(position_id1 in strategy.positions_closed())
-        self.assertTrue(position_id2 in strategy.positions_closed())
-        self.assertTrue(strategy.is_flat())
+    # TODO: Potentially consolidating this API to ExecutionEngine
+    # def test_flatten_all_positions(self):
+    #     # Arrange
+    #     strategy = TradingStrategy(order_id_tag="001")
+    #     strategy.register_trader(
+    #         TraderId("TESTER", "000"),
+    #         clock=self.clock,
+    #         uuid_factory=self.uuid_factory,
+    #         logger=self.logger)
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     order1 = strategy.order_factory.market(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000))
+    #
+    #     order2 = strategy.order_factory.market(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000))
+    #
+    #     strategy.submit_order(order1)
+    #     strategy.submit_order(order2)
+    #
+    #     expected_position_id1 = PositionId("B-USD/JPY-1")
+    #     expected_position_id2 = PositionId("B-USD/JPY-1")
+    #
+    #     # Act
+    #     strategy.flatten_all_positions()
+    #
+    #     # Assert
+    #     self.assertEqual(order1, strategy.orders()[order1.cl_ord_id])
+    #     self.assertEqual(order2, strategy.orders()[order2.cl_ord_id])
+    #     self.assertEqual(OrderState.FILLED, strategy.orders()[order1.cl_ord_id].state())
+    #     self.assertEqual(OrderState.FILLED, strategy.orders()[order2.cl_ord_id].state())
+    #     self.assertEqual(PositionSide.FLAT, strategy.positions()[expected_position_id1].side)
+    #     self.assertEqual(PositionSide.FLAT, strategy.positions()[expected_position_id2].side)
+    #     self.assertTrue(strategy.positions()[expected_position_id1].is_closed())
+    #     self.assertTrue(strategy.positions()[expected_position_id2].is_closed())
+    #     self.assertTrue(expected_position_id1 in strategy.positions_closed())
+    #     self.assertTrue(expected_position_id2 in strategy.positions_closed())
+    #     self.assertTrue(strategy.is_completely_flat())
 
     def test_update_indicators(self):
         # Arrange
@@ -872,34 +768,35 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(1, strategy.ema1.count)
         self.assertEqual(1, strategy.ema2.count)
 
-    def test_can_track_orders_for_an_opened_position(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        strategy.submit_order(order, ClientPositionId('P-1'))
-
-        # Act
-        # Assert
-        self.assertTrue(ClientOrderId("O-19700101-000000-000-001-1") in strategy.orders())
-        self.assertTrue(ClientPositionId('P-1') in strategy.positions())
-        self.assertEqual(0, len(strategy.orders_working()))
-        self.assertEqual(order, strategy.orders_completed()[order.cl_ord_id])
-        self.assertEqual(0, len(strategy.positions_closed()))
-        self.assertTrue(ClientOrderId("O-19700101-000000-000-001-1") in strategy.orders_completed())
-        self.assertTrue(ClientPositionId('P-1') in strategy.positions_open())
-        self.assertFalse(strategy.is_flat())
+    # TODO: Potentially consolidating this API to ExecutionEngine
+    # def test_can_track_orders_for_an_opened_position(self):
+    #     # Arrange
+    #     bar_type = TestStubs.bartype_audusd_1min_bid()
+    #     strategy = TestStrategy1(bar_type)
+    #     strategy.register_trader(
+    #         TraderId("TESTER", "000"),
+    #         clock=self.clock,
+    #         uuid_factory=self.uuid_factory,
+    #         logger=self.logger)
+    #     self.exec_engine.register_strategy(strategy)
+    #
+    #     order = strategy.order_factory.market(
+    #         USDJPY_FXCM,
+    #         OrderSide.BUY,
+    #         Quantity(100000))
+    #
+    #     strategy.submit_order(order)
+    #
+    #     # Act
+    #     # Assert
+    #     self.assertTrue(ClientOrderId("O-19700101-000000-000-001-1") in strategy.orders())
+    #     self.assertTrue(PositionId("B-USD/JPY-1") in strategy.positions())
+    #     self.assertEqual(0, len(strategy.orders_working()))
+    #     self.assertEqual(order, strategy.orders_completed()[order.cl_ord_id])
+    #     self.assertEqual(0, len(strategy.positions_closed()))
+    #     self.assertTrue(ClientOrderId("O-19700101-000000-000-001-1") in strategy.orders_completed())
+    #     self.assertTrue(PositionId("B-USD/JPY-1") in strategy.positions_open())
+    #     self.assertFalse(strategy.is_completely_flat())
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
@@ -912,7 +809,6 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger)
         self.exec_engine.register_strategy(strategy)
 
-        position1 = ClientPositionId("P-123456")
         order1 = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -923,15 +819,15 @@ class TradingStrategyTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        strategy.submit_order(order1, position1)
-        strategy.submit_order(order2, position1)
+        strategy.submit_order(order1)
+        strategy.submit_order(order2, PositionId("B-USD/JPY-1"))  # Position identifier generated by exchange
 
         # Act
+        print(self.exec_engine.cache.orders())
         # Assert
-        self.assertEqual(0, len(strategy.orders_working()))
-        self.assertEqual(order1, strategy.orders_completed()[order1.cl_ord_id])
-        self.assertEqual(order2, strategy.orders_completed()[order2.cl_ord_id])
-        self.assertEqual(1, len(strategy.positions_closed()))
-        self.assertFalse(ClientPositionId("P-123456") in strategy.positions_open())
-        self.assertTrue(ClientPositionId("P-123456") in strategy.positions_closed())
-        self.assertTrue(strategy.is_flat())
+        self.assertEqual(0, len(self.exec_engine.cache.orders_working()))
+        self.assertTrue(order1 in self.exec_engine.cache.orders_completed())
+        self.assertTrue(order2 in self.exec_engine.cache.orders_completed())
+        self.assertEqual(1, len(self.exec_engine.cache.positions_closed()))
+        self.assertEqual(0, len(self.exec_engine.cache.positions_open()))
+        self.assertTrue(self.exec_engine.cache.is_completely_flat())

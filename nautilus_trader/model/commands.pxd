@@ -16,9 +16,11 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -31,14 +33,16 @@ cdef class AccountInquiry(Command):
 
 
 cdef class SubmitOrder(Command):
+    cdef readonly Venue venue
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly StrategyId strategy_id
-    cdef readonly ClientPositionId cl_pos_id
+    cdef readonly PositionId position_id
     cdef readonly Order order
 
 
 cdef class SubmitBracketOrder(Command):
+    cdef readonly Venue venue
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly StrategyId strategy_id
@@ -46,14 +50,44 @@ cdef class SubmitBracketOrder(Command):
 
 
 cdef class ModifyOrder(Command):
+    cdef readonly Venue venue
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly ClientOrderId cl_ord_id
-    cdef readonly Quantity modified_quantity
-    cdef readonly Price modified_price
+    cdef readonly Quantity quantity
+    cdef readonly Price price
 
 
 cdef class CancelOrder(Command):
+    cdef readonly Venue venue
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly ClientOrderId cl_ord_id
+
+
+cdef class FlattenPosition(Command):
+    cdef readonly Venue venue
+    cdef readonly TraderId trader_id
+    cdef readonly AccountId account_id
+    cdef readonly PositionId position_id
+    cdef readonly StrategyId strategy_id
+
+
+cdef class CancelAllOrders(Command):
+    cdef readonly Venue venue
+    cdef readonly TraderId trader_id
+    cdef readonly AccountId account_id
+    cdef readonly StrategyId strategy_id
+    cdef readonly Symbol symbol
+
+
+cdef class FlattenAllPositions(Command):
+    cdef readonly Venue venue
+    cdef readonly TraderId trader_id
+    cdef readonly AccountId account_id
+    cdef readonly StrategyId strategy_id
+    cdef readonly Symbol symbol
+
+
+cdef class KillSwitch(Command):
+    cdef readonly TraderId trader_id

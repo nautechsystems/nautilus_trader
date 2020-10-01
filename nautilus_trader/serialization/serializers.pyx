@@ -18,14 +18,10 @@ import msgpack
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.common.logging cimport LogMessage
-from nautilus_trader.common.logging cimport log_level_from_string
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.message cimport Request
-from nautilus_trader.core.message cimport Response
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
@@ -60,11 +56,11 @@ from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -74,24 +70,9 @@ from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.order cimport StopOrder
-from nautilus_trader.network.identifiers cimport ClientId
-from nautilus_trader.network.identifiers cimport ServerId
-from nautilus_trader.network.identifiers cimport SessionId
-from nautilus_trader.network.messages cimport Connect
-from nautilus_trader.network.messages cimport Connected
-from nautilus_trader.network.messages cimport DataRequest
-from nautilus_trader.network.messages cimport DataResponse
-from nautilus_trader.network.messages cimport Disconnect
-from nautilus_trader.network.messages cimport Disconnected
-from nautilus_trader.network.messages cimport MessageReceived
-from nautilus_trader.network.messages cimport MessageRejected
-from nautilus_trader.network.messages cimport QueryFailure
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
-from nautilus_trader.serialization.base cimport LogSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
-from nautilus_trader.serialization.base cimport RequestSerializer
-from nautilus_trader.serialization.base cimport ResponseSerializer
 from nautilus_trader.serialization.common cimport convert_datetime_to_string
 from nautilus_trader.serialization.common cimport convert_price_to_string
 from nautilus_trader.serialization.common cimport convert_string_to_datetime
@@ -313,12 +294,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
         elif isinstance(command, SubmitOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[CLIENT_POSITION_ID] = command.cl_pos_id.value
+            package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitBracketOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
@@ -326,12 +309,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
         elif isinstance(command, ModifyOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
-            package[MODIFIED_QUANTITY] = command.modified_quantity.to_string()
-            package[MODIFIED_PRICE] = command.modified_price.to_string()
+            package[QUANTITY] = command.quantity.to_string()
+            package[PRICE] = command.price.to_string()
         elif isinstance(command, CancelOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
@@ -366,16 +351,18 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == SubmitOrder.__name__:
             return SubmitOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
-                ClientPositionId(unpacked[CLIENT_POSITION_ID].decode(UTF8)),
+                PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp,
             )
         elif command_type == SubmitBracketOrder.__name__:
             return SubmitBracketOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
@@ -387,16 +374,18 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == ModifyOrder.__name__:
             return ModifyOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                Quantity.from_string(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
-                convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
+                Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                convert_string_to_price(unpacked[PRICE].decode(UTF8)),
                 command_id,
                 command_timestamp,
             )
         elif command_type == CancelOrder.__name__:
             return CancelOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
@@ -694,251 +683,3 @@ cdef class MsgPackEventSerializer(EventSerializer):
             )
         else:
             raise RuntimeError(f"Cannot deserialize event (unrecognized event {event_type}).")
-
-
-cdef class MsgPackRequestSerializer(RequestSerializer):
-    """
-    Provides a request serializer for the MessagePack specification.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the MsgPackRequestSerializer class.
-        """
-        super().__init__()
-
-        self.dict_serializer = MsgPackDictionarySerializer()
-
-    cpdef bytes serialize(self, Request request):
-        """
-        Serialize the given request to bytes.
-
-        :param request: The request to serialize.
-        :return bytes.
-        :raises RuntimeError: If the request cannot be serialized.
-        """
-        Condition.not_none(request, "request")
-
-        cdef dict package = {
-            TYPE: request.__class__.__name__,
-            ID: request.id.value,
-            TIMESTAMP: convert_datetime_to_string(request.timestamp),
-        }
-
-        if isinstance(request, Connect):
-            package[CLIENT_ID] = request.client_id.value
-            package[AUTHENTICATION] = request.authentication
-        elif isinstance(request, Disconnect):
-            package[CLIENT_ID] = request.client_id.value
-            package[SESSION_ID] = request.session_id.value
-        elif isinstance(request, DataRequest):
-            package[QUERY] = self.dict_serializer.serialize(request.query)
-        else:
-            raise RuntimeError("Cannot serialize request (unrecognized request.")
-
-        return MsgPackSerializer.serialize(package)
-
-    cpdef Request deserialize(self, bytes request_bytes):
-        """
-        Deserialize the given bytes to a request.
-
-        :param request_bytes: The bytes to deserialize.
-        :return Request.
-        :raises RuntimeError: If the request cannot be deserialized.
-        """
-        Condition.not_empty(request_bytes, "request_bytes")
-
-        cdef dict unpacked = MsgPackSerializer.deserialize(request_bytes)  # type: {str, bytes}
-
-        cdef str request_type = unpacked[TYPE].decode(UTF8)
-        cdef UUID request_id = UUID(unpacked[ID].decode(UTF8))
-        cdef datetime request_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
-
-        if request_type == Connect.__name__:
-            return Connect(
-                ClientId(unpacked[CLIENT_ID].decode(UTF8)),
-                unpacked[AUTHENTICATION].decode(UTF8),
-                request_id,
-                request_timestamp,
-            )
-        elif request_type == Disconnect.__name__:
-            return Disconnect(
-                ClientId(unpacked[CLIENT_ID].decode(UTF8)),
-                SessionId(unpacked[SESSION_ID].decode(UTF8)),
-                request_id,
-                request_timestamp,
-            )
-        elif request_type == DataRequest.__name__:
-            return DataRequest(
-                self.dict_serializer.deserialize(unpacked[QUERY]),
-                request_id,
-                request_timestamp,
-            )
-        else:
-            raise RuntimeError("Cannot deserialize request (unrecognized request).")
-
-
-cdef class MsgPackResponseSerializer(ResponseSerializer):
-    """
-    Provides a response serializer for the MessagePack specification.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the MsgPackResponseSerializer class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Response response):
-        """
-        Serialize the given response to bytes.
-
-        :param response: The response to serialize.
-        :return bytes.
-        :raises RuntimeError: If the response cannot be serialized.
-        """
-        Condition.not_none(response, "response")
-
-        cdef dict package = {
-            TYPE: response.__class__.__name__,
-            ID: response.id.value,
-            CORRELATION_ID: response.correlation_id.value,
-            TIMESTAMP: convert_datetime_to_string(response.timestamp),
-        }
-
-        if isinstance(response, Connected):
-            package[MESSAGE] = response.message
-            package[SERVER_ID] = response.server_id.value
-            package[SESSION_ID] = response.session_id.value
-        elif isinstance(response, Disconnected):
-            package[MESSAGE] = response.message
-            package[SERVER_ID] = response.server_id.value
-            package[SESSION_ID] = response.session_id.value
-        elif isinstance(response, MessageReceived):
-            package[RECEIVED_TYPE] = response.received_type
-        elif isinstance(response, MessageRejected):
-            package[MESSAGE] = response.message
-        elif isinstance(response, DataResponse):
-            package[DATA] = response.data
-            package[DATA_TYPE] = response.data_type
-            package[DATA_ENCODING] = response.data_encoding
-        else:
-            raise RuntimeError("Cannot serialize response (unrecognized response.")
-
-        return MsgPackSerializer.serialize(package)
-
-    cpdef Response deserialize(self, bytes response_bytes):
-        """
-        Deserialize the given bytes to a response.
-
-        :param response_bytes: The bytes to deserialize.
-        :return Response.
-        :raises RuntimeError: If the response cannot be deserialized.
-        """
-        Condition.not_empty(response_bytes, "response_bytes")
-
-        cdef dict unpacked = MsgPackSerializer.deserialize(response_bytes)  # type: {str, bytes}
-
-        cdef str response_type = unpacked[TYPE].decode(UTF8)
-        cdef UUID correlation_id = UUID(unpacked[CORRELATION_ID].decode(UTF8))
-        cdef UUID response_id = UUID(unpacked[ID].decode(UTF8))
-        cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
-
-        if response_type == Connected.__name__:
-            return Connected(
-                unpacked[MESSAGE].decode(UTF8),
-                ServerId(unpacked[SERVER_ID].decode(UTF8)),
-                SessionId(unpacked[SESSION_ID].decode(UTF8)),
-                correlation_id,
-                response_id,
-                response_timestamp,
-            )
-        elif response_type == Disconnected.__name__:
-            return Disconnected(
-                unpacked[MESSAGE].decode(UTF8),
-                ServerId(unpacked[SERVER_ID].decode(UTF8)),
-                SessionId(unpacked[SESSION_ID].decode(UTF8)),
-                correlation_id,
-                response_id,
-                response_timestamp,
-            )
-        elif response_type == MessageReceived.__name__:
-            return MessageReceived(
-                unpacked[RECEIVED_TYPE].decode(UTF8),
-                correlation_id,
-                response_id,
-                response_timestamp,
-            )
-        elif response_type == MessageRejected.__name__:
-            return MessageRejected(
-                unpacked[MESSAGE].decode(UTF8),
-                correlation_id,
-                response_id,
-                response_timestamp,
-            )
-        elif response_type == QueryFailure.__name__:
-            return QueryFailure(
-                unpacked[MESSAGE].decode(UTF8),
-                correlation_id,
-                response_id,
-                response_timestamp,
-            )
-        elif response_type == DataResponse.__name__:
-            return DataResponse(
-                unpacked[DATA],
-                unpacked[DATA_TYPE].decode(UTF8),
-                unpacked[DATA_ENCODING].decode(UTF8),
-                correlation_id,
-                response_id,
-                response_timestamp,
-            )
-        else:
-            raise RuntimeError("Cannot deserialize response (unrecognized response).")
-
-
-cdef class MsgPackLogSerializer(LogSerializer):
-    """
-    Provides a log message serializer for the MessagePack specification.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the MsgPackLogSerializer class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, LogMessage message):
-        """
-        Serialize the given log message to bytes.
-
-        :param message: The message to serialize.
-        :return bytes.
-        """
-        Condition.not_none(message, "message")
-
-        cdef dict package = {
-            TIMESTAMP: convert_datetime_to_string(message.timestamp),
-            LOG_LEVEL: message.level_string(),
-            LOG_TEXT: message.text,
-            THREAD_ID: str(message.thread_id),
-        }
-
-        return MsgPackSerializer.serialize(package)
-
-    cpdef LogMessage deserialize(self, bytes message_bytes):
-        """
-        Deserialize the given bytes to a response.
-
-        :param message_bytes: The bytes to deserialize.
-        :return LogMessage.
-        """
-        Condition.not_empty(message_bytes, "message_bytes")
-
-        cdef dict unpacked = MsgPackSerializer.deserialize(message_bytes)
-
-        return LogMessage(
-            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8)),
-            level=log_level_from_string(unpacked[LOG_LEVEL].decode(UTF8)),
-            text=unpacked[LOG_TEXT].decode(UTF8),
-            thread_id=int(unpacked[THREAD_ID].decode(UTF8)),
-        )

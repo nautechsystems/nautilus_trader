@@ -25,6 +25,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
@@ -40,6 +41,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
 from nautilus_trader.model.order import StopOrder
+from nautilus_trader.model.order import flatten_side
+from nautilus_trader.model.order import opposite_side
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -57,6 +60,26 @@ class OrderTests(unittest.TestCase):
             id_tag_strategy=IdTag("001"),
             clock=TestClock(),
             uuid_factory=TestUUIDFactory())
+
+    def test_get_opposite_side_returns_expected_sides(self):
+        # Arrange
+        # Act
+        result1 = opposite_side(OrderSide.BUY)
+        result2 = opposite_side(OrderSide.SELL)
+
+        # Assert
+        self.assertEqual(OrderSide.SELL, result1)
+        self.assertEqual(OrderSide.BUY, result2)
+
+    def test_get_flatten_side_with_long_or_short_position_side_returns_expected_sides(self):
+        # Arrange
+        # Act
+        result1 = flatten_side(PositionSide.LONG)
+        result2 = flatten_side(PositionSide.SHORT)
+
+        # Assert
+        self.assertEqual(OrderSide.SELL, result1)
+        self.assertEqual(OrderSide.BUY, result2)
 
     def test_market_order_with_quantity_zero_raises_exception(self):
         # Arrange
@@ -537,7 +560,10 @@ class OrderTests(unittest.TestCase):
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
 
-        filled = TestStubs.event_order_filled(order, Price(1.00001, 5))
+        filled = TestStubs.event_order_filled(
+            order,
+            PositionId("P-123456"),
+            Price(1.00001, 5))
 
         order.apply(submitted)
         order.apply(accepted)

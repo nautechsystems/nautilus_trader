@@ -211,7 +211,7 @@ cdef class Identifier(ValidString):
 
         self.id_type = self.__class__.__name__
 
-    cpdef bint equals(self, Identifier other):
+    cpdef bint equals(self, Identifier other) except *:
         """
         Return a value indicating whether the given object is equal to this object.
 

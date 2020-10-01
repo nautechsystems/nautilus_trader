@@ -28,7 +28,6 @@ cdef str TRADER_ID
 cdef str STRATEGY_ID
 cdef str ACCOUNT_ID
 cdef str CLIENT_ORDER_ID
-cdef str CLIENT_POSITION_ID
 cdef str INIT_ID
 cdef str LABEL
 cdef str SUBMITTED_TIME

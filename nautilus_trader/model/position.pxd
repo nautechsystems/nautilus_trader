@@ -22,7 +22,6 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ClientPositionId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -43,11 +42,10 @@ cdef class Position:
     cdef double _relative_quantity
     cdef int _qty_precision
 
-    cdef readonly ClientPositionId cl_pos_id
     cdef readonly PositionId id
     cdef readonly AccountId account_id
-
     cdef readonly ClientOrderId from_order
+
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol
     cdef readonly OrderSide entry
@@ -67,7 +65,7 @@ cdef class Position:
     cdef readonly Money realized_pnl_last
     cdef readonly Money commission
 
-    cpdef bint equals(self, Position other)
+    cpdef bint equals(self, Position other) except *
     cpdef str to_string(self)
     cpdef str position_side_as_string(self)
     cpdef str status_string(self)
@@ -77,10 +75,10 @@ cdef class Position:
     cpdef list get_execution_ids(self)
     cpdef list get_events(self)
     cpdef int event_count(self)
-    cpdef bint is_open(self)
-    cpdef bint is_closed(self)
-    cpdef bint is_long(self)
-    cpdef bint is_short(self)
+    cpdef bint is_open(self) except *
+    cpdef bint is_closed(self) except *
+    cpdef bint is_long(self) except *
+    cpdef bint is_short(self) except *
     cpdef void apply(self, OrderFilled event) except *
     cpdef double relative_quantity(self)
     cpdef double unrealized_points(self, QuoteTick last)

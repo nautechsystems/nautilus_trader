@@ -23,7 +23,6 @@ cdef class BacktestConfig:
     cdef readonly str exec_db_type
     cdef readonly bint exec_db_flush
     cdef readonly bint frozen_account
-    cdef readonly bint generate_position_ids
     cdef readonly Money starting_capital
     cdef readonly Currency account_currency
     cdef readonly str short_term_interest_csv_path

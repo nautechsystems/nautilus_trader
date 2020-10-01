@@ -67,7 +67,7 @@ cdef class Message:
     cdef readonly UUID id
     cdef readonly datetime timestamp
 
-    cpdef bint equals(self, Message other)
+    cpdef bint equals(self, Message other) except *
 
 
 cdef class Command(Message):

@@ -13,15 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport AccountNumber
-from nautilus_trader.model.identifiers cimport Brokerage
 from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
 
@@ -30,8 +25,6 @@ cdef class Account:
     cdef list _events
 
     cdef readonly AccountId id
-    cdef readonly Brokerage broker
-    cdef readonly AccountNumber account_number
     cdef readonly AccountType account_type
     cdef readonly Currency currency
     cdef readonly Money cash_balance

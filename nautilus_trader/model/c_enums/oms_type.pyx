@@ -13,28 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-
-
-cdef class EncryptionSettings:
-    """
-    Provides encryption settings.
-    """
-
-    def __init__(self, str algorithm not None="none", str keys_dir not None=""):
-        """
-        Initialize a new instance of the EncryptionSettings class.
-
-        :param algorithm: The cryptographic algorithm type to be used.
-        :param keys_dir: The path to the key certificates directory.
-        """
-        if algorithm == "":
-            algorithm = "none"
-        use_encryption = algorithm != "none"
-        if use_encryption:
-            Condition.valid_string(algorithm, "algorithm")
-            Condition.valid_string(keys_dir, "key_dir")
-
-        self.use_encryption = use_encryption
-        self.algorithm = algorithm
-        self.keys_dir = keys_dir
+from nautilus_trader.model.c_enums.oms_type cimport OMSType

@@ -21,6 +21,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -65,12 +66,16 @@ class ReportProviderTests(unittest.TestCase):
         order2.apply(TestStubs.event_order_accepted(order2))
         order2.apply(TestStubs.event_order_working(order2))
 
-        event = TestStubs.event_order_filled(order1, Price(0.80011, 5))
+        event = TestStubs.event_order_filled(
+            order1,
+            position_id=PositionId("P-1"),
+            fill_price=Price(0.80011, 5),
+        )
 
         order1.apply(event)
 
-        orders = {order1.cl_ord_id: order1,
-                  order2.cl_ord_id: order2}
+        orders = [order1, order2]
+
         # Act
         report = report_provider.generate_orders_report(orders)
 
@@ -114,12 +119,12 @@ class ReportProviderTests(unittest.TestCase):
         order2.apply(accepted2)
         order2.apply(working2)
 
-        filled = TestStubs.event_order_filled(order1, Price(0.80011, 5))
+        filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price(0.80011, 5))
 
         order1.apply(filled)
 
-        orders = {order1.cl_ord_id: order1,
-                  order2.cl_ord_id: order2}
+        orders = [order1, order2]
+
         # Act
         report = report_provider.generate_order_fills_report(orders)
 
@@ -138,26 +143,24 @@ class ReportProviderTests(unittest.TestCase):
         # Arrange
         report_provider = ReportProvider()
 
-        position1 = TestStubs.position_which_is_closed(number=1)
-        position2 = TestStubs.position_which_is_closed(number=2)
+        position1 = TestStubs.position_which_is_closed(PositionId("P-1"))
+        position2 = TestStubs.position_which_is_closed(PositionId("P-2"))
 
-        positions = {position1.cl_pos_id: position1,
-                     position2.cl_pos_id: position2}
+        positions = [position1, position2]
 
         # Act
         report = report_provider.generate_positions_report(positions)
 
         # Assert
         self.assertEqual(2, len(report))
-        self.assertEqual("cl_pos_id", report.index.name)
-        self.assertEqual(position1.cl_pos_id.value, report.index[0])
-        self.assertEqual(str, type(report.iloc[0]["position_id"]))
+        self.assertEqual("position_id", report.index.name)
+        self.assertEqual(position1.id.value, report.index[0])
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
-        self.assertEqual("BUY", report.iloc[0]["entry"])
+        self.assertEqual("SELL", report.iloc[0]["entry"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])
-        self.assertEqual(1.00000, report.iloc[0]["avg_open_price"])
+        self.assertEqual(1.0001, report.iloc[0]["avg_open_price"])
         self.assertEqual(1.0001, report.iloc[0]["avg_close_price"])
-        self.assertEqual(UNIX_EPOCH, report.iloc[0]["opened_time"])
+        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]["opened_time"])
         self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]["closed_time"])
-        self.assertEqual(9.999999999998899e-05, report.iloc[0]["realized_points"])
-        self.assertEqual(9.999999999998899e-05, report.iloc[0]["realized_return"])
+        self.assertEqual(0.0, report.iloc[0]["realized_points"])
+        self.assertEqual(0.0, report.iloc[0]["realized_return"])

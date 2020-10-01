@@ -22,7 +22,7 @@ from cpython.unicode cimport PyUnicode_Contains
 from nautilus_trader.core.correctness cimport Condition
 
 
-cpdef bint is_datetime_utc(datetime timestamp):
+cpdef bint is_datetime_utc(datetime timestamp) except *:
     """
     Checks if the given timestamp is timezone aware UTC.
     Will also return False if timezone is timezone.utc to standardize on pytz.
@@ -42,7 +42,7 @@ cpdef bint is_datetime_utc(datetime timestamp):
     return timestamp.tzinfo == pytz.utc
 
 
-cpdef bint is_tz_aware(time_object):
+cpdef bint is_tz_aware(time_object) except *:
     """
     Checks if the given object is timezone aware.
 
@@ -67,7 +67,7 @@ cpdef bint is_tz_aware(time_object):
         raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object")
 
 
-cpdef bint is_tz_naive(time_object):
+cpdef bint is_tz_naive(time_object) except *:
     """
     Checks if the given object is timezone naive.
 

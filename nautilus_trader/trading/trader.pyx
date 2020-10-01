@@ -222,17 +222,17 @@ cdef class Trader:
 
     cpdef void save(self) except *:
         """
-        Save all strategy states to the execution database.
+        Save all strategy states to the execution cache.
         """
         for strategy in self.strategies:
-            self._exec_engine.database.update_strategy(strategy)
+            self._exec_engine.cache.add_strategy(strategy)
 
     cpdef void load(self) except *:
         """
-        Load all strategy states from the execution database.
+        Load all strategy states from the execution cache.
         """
         for strategy in self.strategies:
-            self._exec_engine.database.load_strategy(strategy)
+            self._exec_engine.cache.load_strategy(strategy)
 
     cpdef void reset(self) except *:
         """
@@ -333,7 +333,7 @@ cdef class Trader:
         pd.DataFrame
 
         """
-        return self._report_provider.generate_orders_report(self._exec_engine.database.get_orders())
+        return self._report_provider.generate_orders_report(self._exec_engine.cache.orders())
 
     cpdef object generate_order_fills_report(self):
         """
@@ -344,7 +344,7 @@ cdef class Trader:
         pd.DataFrame
 
         """
-        return self._report_provider.generate_order_fills_report(self._exec_engine.database.get_orders())
+        return self._report_provider.generate_order_fills_report(self._exec_engine.cache.orders())
 
     cpdef object generate_positions_report(self):
         """
@@ -355,7 +355,7 @@ cdef class Trader:
         pd.DataFrame
 
         """
-        return self._report_provider.generate_positions_report(self._exec_engine.database.get_positions())
+        return self._report_provider.generate_positions_report(self._exec_engine.cache.positions())
 
     cpdef object generate_account_report(self):
         """

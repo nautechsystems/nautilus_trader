@@ -39,9 +39,6 @@ from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.serialization.base cimport LogSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackLogSerializer
 
 
 # Private constants
@@ -485,58 +482,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"pandas {pd.__version__}")
 
 
-cdef class LogStore:
-    """
-    Provides a process and thread safe log store.
-    """
-
-    def __init__(
-            self,
-            TraderId trader_id not None,
-            LogSerializer serializer not None=MsgPackLogSerializer(),
-    ):
-        """
-        Initialize a new instance of the LogStore class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader identifier.
-        serializer : LogSerializer
-            The log serializer.
-
-        Raises
-        ------
-        ValueError
-            If the redis_host is not a valid string.
-        ValueError
-            If the redis_port is not in range [0, 65535].
-
-        """
-        self._key = f"Trader-{trader_id.value}:LogStore"
-        self._serializer = serializer
-
-    cpdef void store(self, LogMessage message):
-        """
-        Store the given log message.
-
-        Parameters
-        ----------
-        message : LogMessage
-            The log message to store.
-
-        """
-        Condition.not_none(message, "message")
-
-        # self._queue.put(message)
-
-    cpdef void _consume_messages(self) except *:
-        cdef LogMessage message
-        while True:
-            pass
-            # Scaffolding for a future LogStash implementation
-
-
 cdef class LiveLogger(Logger):
     """
     Provides a thread safe logger for live concurrent operations.
@@ -554,7 +499,6 @@ cdef class LiveLogger(Logger):
             bint log_thread=False,
             bint log_to_file=False,
             str log_file_path not None="logs/",
-            LogStore store=None,
     ):
         """
         Initialize a new instance of the LiveLogger class.
@@ -579,8 +523,6 @@ cdef class LiveLogger(Logger):
             If log messages should write to the log file.
         log_file_path : str
             The name of the log file (cannot be None if log_to_file is True).
-        store : LogStore
-            The log store.
 
         Raises
         ------
@@ -603,7 +545,6 @@ cdef class LiveLogger(Logger):
             log_file_path,
         )
 
-        self._store = store
         self._queue = queue.Queue()
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()

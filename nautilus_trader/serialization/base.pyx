@@ -15,8 +15,6 @@
 
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.message cimport Request
-from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order
 
@@ -56,26 +54,6 @@ cdef class DictionarySerializer(Serializer):
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict deserialize(self, bytes dictionary_bytes):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class DataSerializer(Serializer):
-    """
-    The base class for all data serializers.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the DataSerializer class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, dict data):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef dict deserialize(self, bytes data_bytes):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -156,65 +134,5 @@ cdef class EventSerializer(Serializer):
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Event deserialize(self, bytes event_bytes):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class RequestSerializer(Serializer):
-    """
-    The base class for all request serializers.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the RequestSerializer class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Request request):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Request deserialize(self, bytes request_bytes):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class ResponseSerializer(Serializer):
-    """
-    The base class for all response serializers.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the ResponseSerializer class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Response response):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Response deserialize(self, bytes response_bytes):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class LogSerializer(Serializer):
-    """
-    The base class for all log message serializers.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the LogSerializer class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, LogMessage message):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef LogMessage deserialize(self, bytes message_bytes):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")

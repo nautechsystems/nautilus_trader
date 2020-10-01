@@ -13,11 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.message cimport Request
-from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order cimport Order
 
@@ -35,11 +32,6 @@ cdef class Serializer:
 cdef class DictionarySerializer(Serializer):
     cpdef bytes serialize(self, dict dictionary)
     cpdef dict deserialize(self, bytes dictionary_bytes)
-
-
-cdef class DataSerializer(Serializer):
-    cpdef bytes serialize(self, dict data)
-    cpdef dict deserialize(self, bytes data_bytes)
 
 
 cdef class InstrumentSerializer(Serializer):
@@ -60,18 +52,3 @@ cdef class CommandSerializer(Serializer):
 cdef class EventSerializer(Serializer):
     cpdef bytes serialize(self, Event event)
     cpdef Event deserialize(self, bytes event_bytes)
-
-
-cdef class RequestSerializer(Serializer):
-    cpdef bytes serialize(self, Request request)
-    cpdef Request deserialize(self, bytes request_bytes)
-
-
-cdef class ResponseSerializer(Serializer):
-    cpdef bytes serialize(self, Response request)
-    cpdef Response deserialize(self, bytes response_bytes)
-
-
-cdef class LogSerializer(Serializer):
-    cpdef bytes serialize(self, LogMessage message)
-    cpdef LogMessage deserialize(self, bytes message_bytes)
