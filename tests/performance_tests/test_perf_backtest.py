@@ -258,6 +258,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 17/09/20 1277734 function calls (1273643 primitive calls) in 4.873 seconds (refactor indicator updating)
         # 22/09/20 2102925 function calls (2095592 primitive calls) in 5.555 seconds (more checks in execution engine, method extractions)
         # 27/09/20 1801292 function calls (1795667 primitive calls) in 6.894 seconds (refactor value type API)
+        # 02/10/20 1701586 function calls (1693643 primitive calls) in 7.385 seconds (refactor ExecutionEngine API, more validations)
 
         # 10/02/20 Profiling Mission: (Profile_Hooks = True)
         # -----------------------------------------------------------------------------------------------------------------------------------------
