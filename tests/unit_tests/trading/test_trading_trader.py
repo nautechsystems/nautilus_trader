@@ -66,18 +66,22 @@ class TraderTests(unittest.TestCase):
             tick_capacity=1000,
             bar_capacity=1000,
             clock=clock,
-            logger=logger)
+            logger=logger,
+        )
 
         self.portfolio = Portfolio(
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_db = InMemoryExecutionCache(
             trader_id=trader_id,
-            logger=logger)
+            logger=logger,
+        )
+
         self.exec_engine = ExecutionEngine(
             trader_id=trader_id,
             account_id=account_id,
@@ -85,29 +89,36 @@ class TraderTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
         self.market = SimulatedMarket(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            exec_engine=self.exec_engine,
+            exec_cache=self.exec_engine.cache,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             commission_model=GenericCommissionModel(),
             clock=clock,
             uuid_factory=TestUUIDFactory(),
-            logger=logger)
+            logger=logger,
+        )
 
         self.exec_client = BacktestExecClient(
             market=self.market,
-            logger=logger)
+            account_id=account_id,
+            engine=self.exec_engine,
+            logger=logger,
+        )
 
         self.exec_engine.register_client(self.exec_client)
 
-        strategies = [EmptyStrategy("001"),
-                      EmptyStrategy("002")]
+        strategies = [
+            EmptyStrategy("001"),
+            EmptyStrategy("002"),
+        ]
 
         self.trader = Trader(
             trader_id=trader_id,
@@ -117,7 +128,8 @@ class TraderTests(unittest.TestCase):
             exec_engine=self.exec_engine,
             clock=clock,
             uuid_factory=uuid_factory,
-            logger=logger)
+            logger=logger,
+        )
 
     def test_initialize_trader(self):
         # Arrange

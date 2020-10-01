@@ -69,13 +69,16 @@ class TradingStrategyTests(unittest.TestCase):
             bar_capacity=1000,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
+
         self.data_engine.set_use_previous_close(False)
 
         self.portfolio = Portfolio(
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -84,7 +87,9 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.exec_db = InMemoryExecutionCache(
             trader_id=trader_id,
-            logger=self.logger)
+            logger=self.logger,
+        )
+
         self.exec_engine = ExecutionEngine(
             trader_id=trader_id,
             account_id=account_id,
@@ -92,7 +97,8 @@ class TradingStrategyTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         usdjpy = TestStubs.instrument_usdjpy()
 
@@ -100,20 +106,24 @@ class TradingStrategyTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            exec_engine=self.exec_engine,
+            exec_cache=self.exec_engine.cache,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             commission_model=GenericCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.exec_client = BacktestExecClient(
             market=self.market,
+            account_id=account_id,
+            engine=self.exec_engine,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
+        self.market.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.account_event())
 
         self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market

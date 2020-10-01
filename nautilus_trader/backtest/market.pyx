@@ -27,7 +27,7 @@ from nautilus_trader.common.market cimport ExchangeRateCalculator
 from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -84,7 +84,7 @@ cdef class SimulatedMarket:
             Venue venue not None,
             OMSType oms_type,
             bint generate_position_ids,
-            ExecutionEngine exec_engine not None,
+            ExecutionCache exec_cache not None,
             dict instruments not None: {Symbol, Instrument},
             BacktestConfig config not None,
             CommissionModel commission_model not None,
@@ -102,8 +102,8 @@ cdef class SimulatedMarket:
             The venue to simulate for the backtest.
         oms_type : OMSType
             The order management employed by the broker/exchange for this market.
-        exec_engine : ExecutionEngine
-            The execution engine for the backtest.
+        exec_cache : ExecutionCache
+            The execution cache for the backtest.
         instruments : Dict[Symbol, Instrument]
             The instruments needed for the backtest.
         config : BacktestConfig
@@ -134,11 +134,12 @@ cdef class SimulatedMarket:
         self.venue = venue
         self.oms_type = oms_type
         self.generate_position_ids = generate_position_ids
-        self.exec_engine = exec_engine
-        self.instruments = instruments
+        self.exec_cache = exec_cache
+        self.exec_client = None  # Initialized when execution client registered
+        self._account = None     # Initialized when execution client registered
 
         self.day_number = 0
-        self.rollover_time = None
+        self.rollover_time = None  # Initialized at first rollover
         self.rollover_applied = False
         self.frozen_account = config.frozen_account
         self.starting_capital = config.starting_capital
@@ -147,7 +148,6 @@ cdef class SimulatedMarket:
         self.account_cash_start_day = config.starting_capital
         self.account_cash_activity_day = Money(0, self.account_currency)
 
-        self._account = Account(self.reset_account_event())
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_model = commission_model
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
@@ -156,6 +156,7 @@ cdef class SimulatedMarket:
         self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
 
+        self.instruments = instruments
         self._market = {}               # type: {Symbol, QuoteTick}
         self._working_orders = {}       # type: {ClientOrderId, Order}
         self._position_index = {}       # type: {ClientOrderId, PositionId}
@@ -203,6 +204,15 @@ cdef class SimulatedMarket:
         cdef QuoteTick tick
         return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
 
+    cpdef void register_client(self, ExecutionClient client) except *:
+        """
+        Register the given execution client with this market.
+        """
+        Condition.not_none(client, "client")
+
+        self.exec_client = client
+        self._account = Account(self.reset_account_event())
+
     cpdef void check_residuals(self) except *:
         """
         Check for any residual objects and log warnings if any are found.
@@ -244,7 +254,7 @@ cdef class SimulatedMarket:
         Resets the account.
         """
         return AccountState(
-            self.exec_engine.account_id,
+            self.exec_client.account_id,
             self.account_currency,
             self.starting_capital,
             self.starting_capital,
@@ -438,7 +448,7 @@ cdef class SimulatedMarket:
                 event_timestamp=self._clock.utc_now(),
             )
 
-            self.exec_engine.process(account_event)
+            self.exec_client.handle_event(account_event)
 
     cpdef Money calculate_pnl(
             self,
@@ -462,9 +472,9 @@ cdef class SimulatedMarket:
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, "timestamp")
-        Condition.not_none(self.exec_engine, "_exec_engine")
+        Condition.not_none(self.exec_client, "exec_client")
 
-        cdef list open_positions = self.exec_engine.cache.positions_open()
+        cdef list open_positions = self.exec_cache.positions_open()
 
         cdef Position position
         cdef Instrument instrument
@@ -525,7 +535,7 @@ cdef class SimulatedMarket:
                 event_timestamp=self._clock.utc_now(),
             )
 
-            self.exec_engine.process(account_event)
+            self.exec_client.handle_event(account_event)
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
@@ -547,7 +557,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(event)
+        self.exec_client.handle_event(event)
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
@@ -603,7 +613,7 @@ cdef class SimulatedMarket:
         # Remove from working orders (checked it was in dictionary above)
         del self._working_orders[command.cl_ord_id]
 
-        self.exec_engine.process(cancelled)
+        self.exec_client.handle_event(cancelled)
         self._check_oco_order(command.cl_ord_id)
 
     cpdef void handle_modify_order(self, ModifyOrder command) except *:
@@ -672,7 +682,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(modified)
+        self.exec_client.handle_event(modified)
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
@@ -714,7 +724,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(submitted)
+        self.exec_client.handle_event(submitted)
 
     cdef void _accept_order(self, Order order) except *:
         # Generate event
@@ -728,7 +738,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(accepted)
+        self.exec_client.handle_event(accepted)
 
     cdef void _reject_order(self, Order order, str reason) except *:
         if order.state() != OrderState.SUBMITTED:
@@ -745,7 +755,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(rejected)
+        self.exec_client.handle_event(rejected)
         self._check_oco_order(order.cl_ord_id)
         self._clean_up_child_orders(order.cl_ord_id)
 
@@ -765,7 +775,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(cancel_reject)
+        self.exec_client.handle_event(cancel_reject)
 
     cdef void _expire_order(self, PassiveOrder order) except *:
         # Generate event
@@ -778,7 +788,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(expired)
+        self.exec_client.handle_event(expired)
 
         cdef ClientOrderId first_child_order_id
         cdef ClientOrderId other_oco_order_id
@@ -912,7 +922,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(working)
+        self.exec_client.handle_event(working)
 
     cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side):
         cdef Instrument instrument = self.instruments[order.symbol]
@@ -949,7 +959,7 @@ cdef class SimulatedMarket:
             position_id = self._generate_position_id(order.symbol)
             self._position_index[order.cl_ord_id] = position_id
         else:
-            position = self.exec_engine.cache.position(position_id)
+            position = self.exec_cache.position(position_id)
             position_id = position.id
 
         # Calculate commission
@@ -978,7 +988,7 @@ cdef class SimulatedMarket:
 
         self.adjust_account(filled, position)
 
-        self.exec_engine.process(filled)
+        self.exec_client.handle_event(filled)
         self._check_oco_order(order.cl_ord_id)
 
         # Work any bracket child orders
@@ -1009,7 +1019,7 @@ cdef class SimulatedMarket:
 
         if order_id in self._oco_orders:
             oco_order_id = self._oco_orders[order_id]
-            oco_order = self.exec_engine.cache.order(oco_order_id)
+            oco_order = self.exec_cache.order(oco_order_id)
             del self._oco_orders[order_id]
             del self._oco_orders[oco_order_id]
 
@@ -1042,7 +1052,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.exec_engine.process(event)
+        self.exec_client.handle_event(event)
 
     cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
@@ -1062,7 +1072,7 @@ cdef class SimulatedMarket:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} OCO order from {oco_order_id}.")
-        self.exec_engine.process(event)
+        self.exec_client.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         if order.state() != OrderState.WORKING:
@@ -1080,4 +1090,4 @@ cdef class SimulatedMarket:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} as linked position closed.")
-        self.exec_engine.process(event)
+        self.exec_client.handle_event(event)
