@@ -717,13 +717,6 @@ cdef class RedisExecutionDatabase(ExecutionCache):
         self._take_profit_ids.add(order.cl_ord_id)
         self._log.debug(f"Registered TP order {order}")
 
-    cpdef void register_flattening_id(self, PositionId position_id) except *:
-        """
-        TBD.
-
-        """
-        self._flattening_ids.add(position_id)
-
     cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
         """
         TBD.
@@ -747,18 +740,6 @@ cdef class RedisExecutionDatabase(ExecutionCache):
 
         """
         self._take_profit_ids.discard(cl_ord_id)
-
-    cpdef void discard_flattening_id(self, PositionId position_id) except *:
-        """
-        TBD.
-
-        Parameters
-        ----------
-        position_id
-
-
-        """
-        self._flattening_ids.discard(position_id)
 
     cpdef void reset(self) except *:
         """

@@ -51,7 +51,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cdef set _index_positions_closed
     cdef set _index_strategies
 
-    cdef set _flattening_ids
     cdef set _stop_loss_ids
     cdef set _take_profit_ids
 
@@ -81,10 +80,8 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
     cpdef void register_stop_loss(self, PassiveOrder order) except *
     cpdef void register_take_profit(self, PassiveOrder order) except *
-    cpdef void register_flattening_id(self, PositionId position_id) except *
     cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *
     cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *
-    cpdef void discard_flattening_id(self, PositionId position_id) except *
     cpdef void add_strategy(self, TradingStrategy strategy) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *

@@ -18,7 +18,6 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
@@ -149,14 +148,14 @@ class EMACross(TradingStrategy):
 
         :param event: The event received.
         """
-        if isinstance(event, PositionEvent):
-            self.net_position = event.position.side
+        pass
 
     def on_stop(self):
         """
         Actions to be performed when the strategy is stopped.
         """
-        pass
+        self.cancel_all_orders(self.symbol)
+        self.flatten_all_positions(self.symbol)
 
     def on_reset(self):
         """

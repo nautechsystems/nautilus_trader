@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -28,12 +27,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
-from nautilus_trader.model.commands cimport FlattenAllPositions
-from nautilus_trader.model.commands cimport FlattenPosition
-from nautilus_trader.model.commands cimport KillSwitch
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -50,15 +45,11 @@ from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport flatten_side
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -108,17 +99,9 @@ cdef class ExecutionEngine:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
-        self._order_factory = OrderFactory(
-            id_tag_trader=trader_id.tag,
-            id_tag_strategy=IdTag('X'),  # Placeholder to identify engine generated orders
-            clock=clock,
-            initial_count=0,
-        )
-
         self._pos_id_generator = PositionIdGenerator(trader_id.tag)
         self._exec_clients = {}           # type: {Venue, ExecutionClient}
         self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
-        self._is_kill_switch_active = False
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -293,16 +276,8 @@ cdef class ExecutionEngine:
             self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
-        elif isinstance(command, CancelAllOrders):
-            self._handle_cancel_all_orders(command)
-        elif isinstance(command, FlattenPosition):
-            self._handle_flatten_position(command)
-        elif isinstance(command, FlattenAllPositions):
-            self._handle_flatten_all_positions(command)
         elif isinstance(command, AccountInquiry):
             self._handle_account_inquiry(command)
-        elif isinstance(command, KillSwitch):
-            self._handle_kill_switch(command)
         else:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
 
@@ -402,105 +377,6 @@ cdef class ExecutionEngine:
 
         client.cancel_order(command)
 
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
-        # Get all working orders for the command strategy from the cache,
-        # the symbol may be None in which case the query is not filtered on symbol.
-        cdef set order_working_ids = self.cache.order_working_ids(
-            symbol=None,
-            strategy_id=command.strategy_id,
-        )
-
-        # Generate cancel commands for all working orders
-        cdef CancelOrder cancel_cmd
-        cdef ClientOrderId order_id
-        for order_id in order_working_ids:
-            cancel_cmd = CancelOrder(
-                command.venue,
-                command.trader_id,
-                command.account_id,
-                order_id,
-                self._uuid_factory.generate(),
-                self._clock.utc_now(),
-            )
-
-            self._exec_clients[command.venue].cancel_order(cancel_cmd)
-
-    cdef void _handle_flatten_position(self, FlattenPosition command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
-        if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
-            return
-
-        # Validate command
-        self.cache.register_flattening_id(command.position_id)
-
-        cdef Position position = self.cache.position(command.position_id)
-
-        if position is None:
-            self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
-                              f"(the position was not found in the cache).")
-            return  # Invalid command
-
-        if position.is_closed():
-            self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
-                              f"(the position is already closed).")
-            return  # Invalid command
-
-        if position.id in self.cache.flattening_ids():
-            self._log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
-                              f"(already flattening).")
-            return  # Invalid command
-
-        # Create flattening order
-        cdef MarketOrder order = self._order_factory.market(
-            position.symbol,
-            flatten_side(position.side),
-            position.quantity,
-        )
-
-        # Create command
-        cdef SubmitOrder submit_order = SubmitOrder(
-            command.venue,
-            command.trader_id,
-            command.account_id,
-            command.strategy_id,
-            command.position_id,
-            order,
-            self._uuid_factory.generate(),
-            self._clock.utc_now(),
-        )
-
-        self.cache.register_flattening_id(position.id)
-
-        self._handle_submit_order(submit_order)
-
-    cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *:
-        # Get all open positions for the command symbol and strategy from the cache,
-        # the symbol may be None in which case the query is not filtered on symbol.
-        cdef set position_open_ids = self.cache.position_open_ids(
-            symbol=command.symbol,
-            strategy_id=command.strategy_id,
-        )
-
-        print(position_open_ids)
-        # Generate commands for all open positions
-        cdef FlattenPosition flatten_cmd
-        cdef PositionId position_id
-        for position_id in position_open_ids:
-            flatten_cmd = FlattenPosition(
-                command.venue,
-                command.trader_id,
-                command.account_id,
-                position_id,
-                command.strategy_id,
-                self._uuid_factory.generate(),
-                self._clock.utc_now(),
-            )
-
-            self._handle_flatten_position(flatten_cmd)
-
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
         # For now we pull out the account issuer string (which should match the venue ID
         # TODO: Venue instantiation is a temporary hack
@@ -534,14 +410,6 @@ cdef class ExecutionEngine:
         )
 
         self._handle_event(denied)
-
-    cdef void _handle_kill_switch(self, KillSwitch command) except *:
-        if self._is_kill_switch_active:
-            self._log.error("Received KillSwitch command when kill-switch already active.")
-            return
-
-        self._is_kill_switch_active = True
-        # TODO: Implement
 
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
@@ -598,28 +466,11 @@ cdef class ExecutionEngine:
             self.cache.discard_stop_loss_id(event.cl_ord_id)
             self.cache.discard_take_profit_id(event.cl_ord_id)
 
-        if isinstance(event, OrderRejected):
-            self._handle_order_reject(event)
-        elif isinstance(event, OrderFilled):
+        if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
             return  # _handle_order_fill(event) will send to strategy (refactor)
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
-
-    cdef void _handle_order_reject(self, OrderRejected event) except *:
-        if event.cl_ord_id not in self.cache.stop_loss_ids() and event.cl_ord_id not in self.cache.take_profit_ids():
-            return  # Not a registered order
-
-        # Find position_id for order
-        cdef PositionId position_id = self.cache.position_id(event.cl_ord_id)
-        if position_id is None:
-            self._log.error(f"Cannot find PositionId for {event.cl_ord_id}.")  # Cannot flatten
-            return
-
-        # Flatten if open position
-        if self.cache.is_position_open(position_id):
-            self._log.warning(f"Rejected {event.cl_ord_id} was a registered child order, now flattening {position_id}.")
-            self._handle_flatten_position(position_id)
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill
@@ -681,7 +532,6 @@ cdef class ExecutionEngine:
 
         cdef PositionEvent position_event
         if position.is_closed():
-            self.cache.discard_flattening_id(position.id)
             position_event = self._pos_closed_event(position, fill, strategy_id)
         else:
             position_event = self._pos_modified_event(position, fill, strategy_id)

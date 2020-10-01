@@ -254,8 +254,8 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders_for_symbol(self.symbol)
-        self.flatten_all_positions_for_symbol(self.symbol)
+        self.cancel_all_orders(self.symbol)
+        self.flatten_all_positions(self.symbol)
 
     def on_reset(self):
         """
@@ -302,7 +302,7 @@ class EMACross(TradingStrategy):
         self.unsubscribe_quote_ticks(self.symbol)
 
     def _check_signal(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        if self.orders_working_count() == 0 and self.is_flat():  # No active or pending positions
+        if self.execution.orders_working_count() == 0 and self.execution.is_flat():  # No active or pending positions
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self._enter_long(bar, sl_buffer, spread_buffer)
@@ -315,7 +315,7 @@ class EMACross(TradingStrategy):
         price_stop_loss = Price(bar.low - sl_buffer, self.precision)
 
         risk = price_entry - price_stop_loss
-        price_take_profit = Price(price_entry + risk, self.precision)
+        price_take_profit = Price((price_entry + risk).as_double(), self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -364,7 +364,7 @@ class EMACross(TradingStrategy):
         price_stop_loss = Price(bar.high + sl_buffer + spread_buffer, self.precision)
 
         risk = price_stop_loss - price_entry
-        price_take_profit = Price(price_entry - risk, self.precision)
+        price_take_profit = Price((price_entry - risk).as_double(), self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -409,8 +409,8 @@ class EMACross(TradingStrategy):
         self.submit_bracket_order(bracket_order)
 
     def _check_trailing_stops(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        for order in self.orders_working().values():
-            if not self.is_stop_loss(order.cl_ord_id):
+        for order in self.execution.orders_working():
+            if not self.execution.is_stop_loss(order.cl_ord_id):
                 return
 
             # SELL SIDE ORDERS
@@ -456,8 +456,8 @@ class EMACross(TradingStrategy):
 
     def _done_for_day(self):
         self.log.info("Done for day - commencing trading end flatten...")
-        self.flatten_all_positions()
-        self.cancel_all_orders()
+        self.flatten_all_positions(self.symbol)
+        self.cancel_all_orders(self.symbol)
         self.log.info("Done for day...")
 
     def _update_news_event(self):
@@ -491,6 +491,6 @@ class EMACross(TradingStrategy):
 
     def _news_flatten(self):
         self.log.info("Within trading pause window - commencing news flatten...")
-        self.flatten_all_positions()
-        self.cancel_all_orders()
+        self.flatten_all_positions(self.symbol)
+        self.cancel_all_orders(self.symbol)
         self.log.info("Trading paused...")

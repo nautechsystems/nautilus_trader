@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -23,12 +22,8 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
-from nautilus_trader.model.commands cimport FlattenAllPositions
-from nautilus_trader.model.commands cimport FlattenPosition
-from nautilus_trader.model.commands cimport KillSwitch
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -55,11 +50,9 @@ cdef class ExecutionEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef OrderFactory _order_factory
     cdef PositionIdGenerator _pos_id_generator
     cdef dict _exec_clients
     cdef dict _registered_strategies
-    cdef int _is_kill_switch_active
 
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
@@ -92,18 +85,13 @@ cdef class ExecutionEngine:
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
-    cdef void _handle_flatten_position(self, FlattenPosition command) except *
-    cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *
     cdef void _invalidate_order(self, Order order, str reason) except *
     cdef void _deny_order(self, Order order, str reason) except *
-    cdef void _handle_kill_switch(self, KillSwitch command) except *
 
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *
-    cdef void _handle_order_reject(self, OrderRejected event) except *
     cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFilled event) except *

@@ -28,7 +28,9 @@ from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -89,6 +91,9 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=strategies,
+        venue=Venue("FXCM"),
+        oms_type=OMSType.HEDGING,
+        generate_position_ids=False,
         config=config,
         fill_model=fill_model,
         commission_model=commission_model,
