@@ -70,10 +70,6 @@ cdef class ExecutionCacheReadOnly:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set flattening_ids(self):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")

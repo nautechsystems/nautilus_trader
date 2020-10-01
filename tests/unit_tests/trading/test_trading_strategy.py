@@ -662,7 +662,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_bracket_order(bracket_order, position_id)
 
         # Act
-        strategy.flatten_all_positions(self.market.venue)
+        strategy.flatten_all_positions(TestStubs.instrument_usdjpy().symbol)
 
         # Assert
         # TODO: Investigate

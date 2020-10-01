@@ -31,11 +31,11 @@ from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -171,7 +171,6 @@ cdef class TradingStrategy:
     cpdef void start(self) except *
     cpdef void stop(self) except *
     cpdef void resume(self) except *
-    cpdef void kill_switch(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
     cpdef dict save(self)
@@ -181,11 +180,7 @@ cdef class TradingStrategy:
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
-    cpdef void cancel_all_orders(self, Venue venue) except *
-    cpdef void cancel_all_orders_for_symbol(self, Symbol symbol) except *
+    cpdef void cancel_all_orders(self, Symbol symbol) except *
     cpdef void flatten_position(self, Position position) except *
-    cpdef void flatten_all_positions(self, Venue venue) except *
-    cpdef void flatten_all_positions_for_symbol(self, Symbol symbol) except *
-
-    cdef inline void _cancel_all_orders(self, Venue venue, Symbol symbol) except *
-    cdef inline void _flatten_all_positions(self, Venue venue, Symbol symbol) except *
+    cpdef void flatten_all_positions(self, Symbol symbol) except *
+    cdef void _flatten_on_reject(self, OrderRejected event) except *
