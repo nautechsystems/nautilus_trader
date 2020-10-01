@@ -22,7 +22,6 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
@@ -56,7 +55,6 @@ cdef class ExecutionEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef OMSType _oms_type
     cdef OrderFactory _order_factory
     cdef PositionIdGenerator _pos_id_generator
     cdef ExecutionClient _exec_client
@@ -119,10 +117,3 @@ cdef class ExecutionEngine:
     cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
     cdef void _reset(self) except *
-
-
-cdef class LiveExecutionEngine(ExecutionEngine):
-    cdef object _queue
-    cdef object _thread
-
-    cpdef void _loop(self) except *

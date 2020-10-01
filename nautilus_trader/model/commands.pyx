@@ -155,7 +155,7 @@ cdef class SubmitBracketOrder(Command):
         trader_id : TraderId
             The trader identifier.
         account_id : AccountId
-            The account identifier for the inquiry.
+            The account identifier.
         strategy_id : StrategyId
             The strategy identifier to associate with the order.
         bracket_order : BracketOrder
@@ -212,7 +212,7 @@ cdef class ModifyOrder(Command):
         trader_id : TraderId
             The trader identifier.
         account_id : AccountId
-            The account identifier for the inquiry.
+            The account identifier.
         cl_ord_id : OrderId
             The client order identifier.
         quantity : Quantity
@@ -271,7 +271,7 @@ cdef class CancelOrder(Command):
         trader_id : TraderId
             The trader identifier.
         account_id : AccountId
-            The account identifier for the inquiry.
+            The account identifier.
         cl_ord_id : OrderId
             The client order identifier.
         command_id : UUID
@@ -323,7 +323,7 @@ cdef class FlattenPosition(Command):
         trader_id : TraderId
             The trader identifier.
         account_id : AccountId
-            The account identifier for the inquiry.
+            The account identifier.
         position_id : PositionId
             The position identifier.
         strategy_id : StrategyId
@@ -366,6 +366,8 @@ cdef class CancelAllOrders(Command):
             self,
             TraderId trader_id not None,
             AccountId account_id not None,
+            StrategyId strategy_id not None,
+            Symbol symbol,  # Can be None
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -375,9 +377,13 @@ cdef class CancelAllOrders(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         account_id : AccountId
-            The account identifier for the inquiry.
+            The account identifier for the command.
+        strategy_id : StrategyId
+            The strategy identifier for the command.
+        symbol : Symbol, optional
+            The symbol for the command.
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -388,6 +394,8 @@ cdef class CancelAllOrders(Command):
 
         self.trader_id = trader_id
         self.account_id = account_id
+        self.strategy_id = strategy_id
+        self.symbol = symbol
 
     def __str__(self) -> str:
         """
@@ -400,7 +408,9 @@ cdef class CancelAllOrders(Command):
         """
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
-                f"account_id={self.account_id.value})")
+                f"account_id={self.account_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"symbol={self.symbol.value})")
 
 
 cdef class FlattenAllPositions(Command):
@@ -412,6 +422,8 @@ cdef class FlattenAllPositions(Command):
             self,
             TraderId trader_id not None,
             AccountId account_id not None,
+            StrategyId strategy_id not None,
+            Symbol symbol,  # Can be None
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -421,9 +433,13 @@ cdef class FlattenAllPositions(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         account_id : AccountId
-            The account identifier for the inquiry.
+            The account identifier for the command.
+        strategy_id : StrategyId
+            The strategy identifier for the command.
+        symbol : Symbol, optional
+            The symbol for the command.
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -434,6 +450,8 @@ cdef class FlattenAllPositions(Command):
 
         self.trader_id = trader_id
         self.account_id = account_id
+        self.strategy_id = strategy_id
+        self.symbol = symbol
 
     def __str__(self) -> str:
         """
@@ -446,7 +464,9 @@ cdef class FlattenAllPositions(Command):
         """
         return (f"{self.__class__.__name__}("
                 f"trader_id={self.trader_id.value}, "
-                f"account_id={self.account_id.value})")
+                f"account_id={self.account_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"symbol={self.symbol.value})")
 
 
 cdef class KillSwitch(Command):
@@ -466,7 +486,7 @@ cdef class KillSwitch(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         command_id : UUID
             The command identifier.
         command_timestamp : datetime

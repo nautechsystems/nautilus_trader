@@ -180,7 +180,6 @@ cdef class BacktestEngine:
             trader_id=self.trader_id,
             account_id=self.account_id,
             database=self.exec_db,
-            oms_type=config.oms_type,
             portfolio=self.portfolio,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
