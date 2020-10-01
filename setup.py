@@ -27,7 +27,7 @@ from tools.packaging import parse_requirements
 
 PACKAGE_NAME = "nautilus_trader"
 AUTHOR_EMAIL = "info@nautechsystems.io"
-DESCRIPTION = "An algorithmic trading platform and event-driven backtester"
+DESCRIPTION = "A high-performance algorithmic trading platform and event-driven backtester"
 URL = "https://github.com/nautechsystems/nautilus_trader"
 PYTHON_REQUIRES = ">=3.6.8"
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]

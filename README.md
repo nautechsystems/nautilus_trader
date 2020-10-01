@@ -34,14 +34,14 @@ is written mostly in Python with optional additional C-inspired syntax.
 > https://cython.org
 
 To run code or tests from the source code, first compile the C extensions for the package.
-Note that initial compilation may take several minutes due to the quantity of extensions.
+Note that initial compilation may take several minutes due to the quantity of extensions (over 100).
 
     $ python setup.py build_ext --inplace
 
 ## Features
 
-- **Fast:** C level speed and type safety provided through Cython. ZeroMQ message transport with MsgPack serialization.
-- **Reliable:** Redis provides performant state persistence for the live `ExecutionEngine`.
+- **Fast:** C level speed and type safety provided through Cython.
+- **Reliable:** Redis backed performant state persistence for the live `ExecutionEngine`.
 - **Flexible:** Any FIX or REST API can be integrated into the platform, with no changes to your strategy scripts.
 - **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.

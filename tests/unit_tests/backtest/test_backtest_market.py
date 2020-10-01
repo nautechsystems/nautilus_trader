@@ -108,7 +108,7 @@ class SimulatedMarketTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            exec_engine=self.exec_engine,
+            exec_cache=self.exec_engine.cache,
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,
             fill_model=FillModel(),
@@ -119,9 +119,12 @@ class SimulatedMarketTests(unittest.TestCase):
 
         self.exec_client = BacktestExecClient(
             market=self.market,
+            account_id=account_id,
+            engine=self.exec_engine,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
+        self.market.register_client(self.exec_client)
 
     def test_account_collateral_inquiry(self):
         # Arrange
