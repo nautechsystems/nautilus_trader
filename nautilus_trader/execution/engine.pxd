@@ -20,8 +20,8 @@ from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
@@ -63,7 +63,7 @@ cdef class ExecutionEngine:
 
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
-    cdef readonly ExecutionDatabase database
+    cdef readonly ExecutionCache cache
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly int command_count

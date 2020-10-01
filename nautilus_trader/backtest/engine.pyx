@@ -42,7 +42,7 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
-from nautilus_trader.execution.database cimport InMemoryExecutionDatabase
+from nautilus_trader.execution.cache cimport InMemoryExecutionCache
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.identifiers cimport AccountId
@@ -140,7 +140,7 @@ cdef class BacktestEngine:
         self.log.info("Building engine...")
 
         if config.exec_db_type == "in-memory":
-            self.exec_db = InMemoryExecutionDatabase(
+            self.exec_db = InMemoryExecutionCache(
                 trader_id=self.trader_id,
                 logger=self.test_logger,
             )
@@ -443,8 +443,8 @@ cdef class BacktestEngine:
             self.log.info(f"Execution resolution: {resolution}")
         self.log.info(f"Iterations: {self.iteration:,}")
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")
-        self.log.info(f"Total orders: {self.exec_engine.database.orders_total_count():,}")
-        self.log.info(f"Total positions: {self.exec_engine.database.positions_total_count():,}")
+        self.log.info(f"Total orders: {self.exec_engine.cache.orders_total_count():,}")
+        self.log.info(f"Total positions: {self.exec_engine.cache.positions_total_count():,}")
         if self.market.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()
@@ -463,7 +463,7 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Calculating statistics...")
         self.log.info("")
-        self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.database.positions())
+        self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.cache.positions())
 
         for statistic in self.analyzer.get_performance_stats_formatted(self.exec_engine.account.currency):
             self.log.info(statistic)

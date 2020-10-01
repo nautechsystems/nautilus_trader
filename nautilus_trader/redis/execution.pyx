@@ -18,7 +18,7 @@ import redis
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFilled
@@ -59,9 +59,9 @@ cdef str _OPEN = 'Open'
 cdef str _CLOSED = 'Closed'
 
 
-cdef class RedisExecutionDatabase(ExecutionDatabase):
+cdef class RedisExecutionDatabase(ExecutionCache):
     """
-    Provides an execution database utilizing Redis.
+    Provides an execution cache utilizing Redis.
     """
 
     def __init__(
@@ -82,13 +82,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         trader_id : TraderId
             The trader_id.
         host : str
-            The redis host for the database connection.
+            The redis host for the cache connection.
         port : int
-            The redis port for the database connection.
+            The redis port for the cache connection.
         command_serializer : CommandSerializer
-            The command serializer for database transactions.
+            The command serializer for cache transactions.
         event_serializer : EventSerializer
-            The event serializer for database transactions.
+            The event serializer for cache transactions.
         load_caches : bool
             If the caches should be loaded from Redis on instantiation.
 
@@ -135,26 +135,26 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if load_caches:
             self._log.info(f"The load_caches flag was {load_caches}")
             # Load cache
-            self.load_accounts_cache()
-            self.load_orders_cache()
-            self.load_positions_cache()
-            self.load_index_cache()
+            self.load_accounts()
+            self.load_orders()
+            self.load_positions()
+            self.load_index()
         else:
             self._log.warning(f"The load_caches flag was {load_caches} "
                               f"(this should only be done in a testing environment).")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void load_accounts_cache(self) except *:
+    cpdef void load_accounts(self) except *:
         """
-        Clear the current accounts cache and load accounts from the database.
+        Clear the current accounts cache and load accounts from the cache.
         """
-        self._log.info("Re-caching accounts from the database...")
+        self._log.info("Re-caching accounts from the cache...")
         self._cached_accounts.clear()
 
         cdef list account_keys = self._redis.keys(f"{self.key_accounts}*")
         if not account_keys:
-            self._log.info("No accounts found in database.")
+            self._log.info("No accounts found in cache.")
             return
 
         cdef bytes key_bytes
@@ -169,16 +169,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(self._cached_accounts)} account(s).")
 
-    cpdef void load_orders_cache(self) except *:
+    cpdef void load_orders(self) except *:
         """
-        Clear the current order cache and load orders from the database.
+        Clear the current order cache and load orders from the cache.
         """
-        self._log.info("Re-caching orders from the database...")
+        self._log.info("Re-caching orders from the cache...")
         self._cached_orders.clear()
 
         cdef list order_keys = self._redis.keys(f"{self.key_orders}*")
         if not order_keys:
-            self._log.info("No orders found in database.")
+            self._log.info("No orders found in cache.")
             return
 
         cdef bytes key_bytes
@@ -193,16 +193,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(self._cached_orders)} order(s).")
 
-    cpdef void load_positions_cache(self) except *:
+    cpdef void load_positions(self) except *:
         """
-        Clear the current order cache and load orders from the database.
+        Clear the current order cache and load orders from the cache.
         """
-        self._log.info("Re-caching positions from the database...")
+        self._log.info("Re-caching positions from the cache...")
         self._cached_positions.clear()
 
         cdef list position_keys = self._redis.keys(f"{self.key_positions}*")
         if not position_keys:
-            self._log.info("No positions found in database.")
+            self._log.info("No positions found in cache.")
             return
 
         cdef bytes key_bytes
@@ -225,9 +225,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
 
-    cpdef void load_index_cache(self) except *:
+    cpdef void load_index(self) except *:
         """
-        Clear the current index cache and load indexes from the database.
+        Clear the current index cache and load indexes from the cache.
         """
         # load _index_order_position
         # load _index_order_strategy
@@ -351,7 +351,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
-        Load the state for the given strategy from the execution database.
+        Load the state for the given strategy from the execution cache.
 
         Parameters
         ----------
@@ -375,8 +375,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
-        Delete the given strategy from the execution database.
-        Logs error if strategy not found in the database.
+        Delete the given strategy from the execution cache.
+        Logs error if strategy not found in the cache.
 
         Parameters
         ----------
@@ -399,7 +399,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_account(self, Account account) except *:
         """
-        Add the given account to the execution database.
+        Add the given account to the execution cache.
 
         Parameters
         ----------
@@ -430,7 +430,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
         """
-        Add the given order to the execution database indexed with the given
+        Add the given order to the execution cache indexed with the given
         identifiers.
 
         Parameters
@@ -575,7 +575,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution database.
+        Update the given strategy state in the execution cache.
 
         Parameters
         ----------
@@ -599,7 +599,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution database.
+        Update the given account in the execution cache.
 
         Parameters
         ----------
@@ -613,7 +613,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_order(self, Order order) except *:
         """
-        Update the given order in the execution database.
+        Update the given order in the execution cache.
 
         Parameters
         ----------
@@ -643,7 +643,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution database.
+        Update the given position in the execution cache.
 
         Parameters
         ----------
@@ -762,17 +762,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void reset(self) except *:
         """
-        Reset the execution database by clearing the cache.
+        Reset the execution cache by clearing the cache.
         """
         self._reset()
 
     cpdef void flush(self) except *:
         """
-        Flush the database which clears all data.
+        Flush the cache which clears all data.
         """
-        self._log.debug("Flushing database....")
+        self._log.debug("Flushing cache....")
         self._redis.flushdb()
-        self._log.info("Flushed database.")
+        self._log.info("Flushed cache.")
 
     cdef set _decode_set_to_order_ids(self, set original):
         cdef bytes element
@@ -1124,7 +1124,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=cl_ord_id.value)
 #         if position_id_bytes is None:
 #             self._log.warning(f"Cannot get PositionId for {cl_ord_id.to_string(with_class=True)} "
-#                               f"(no matching PositionId found in database).")
+#                               f"(no matching PositionId found in cache).")
 #             return position_id_bytes
 #
 #         return PositionId(position_id_bytes.decode(_UTF8))
@@ -1281,7 +1281,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #     cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
 #         """
-#         Return the count of order held by the execution database.
+#         Return the count of order held by the execution cache.
 #
 #         Parameters
 #         ----------
@@ -1303,7 +1303,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #     cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
 #         """
-#         Return the count of working orders held by the execution database.
+#         Return the count of working orders held by the execution cache.
 #
 #         Parameters
 #         ----------
@@ -1325,7 +1325,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #     cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
 #         """
-#         Return the count of completed orders held by the execution database.
+#         Return the count of completed orders held by the execution cache.
 #
 #         Parameters
 #         ----------
@@ -1445,7 +1445,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #     cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
 #         """
-#         Return the count of positions held by the execution database.
+#         Return the count of positions held by the execution cache.
 #
 #         Parameters
 #         ----------
@@ -1467,7 +1467,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #     cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
 #         """
-#         Return the count of open positions held by the execution database.
+#         Return the count of open positions held by the execution cache.
 #
 #         Parameters
 #         ----------
@@ -1489,7 +1489,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #     cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
 #         """
-#         Return the count of closed positions held by the execution database.
+#         Return the count of closed positions held by the execution cache.
 #
 #         Parameters
 #         ----------

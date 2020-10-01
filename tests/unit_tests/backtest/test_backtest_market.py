@@ -29,7 +29,7 @@ from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -87,7 +87,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
-        self.exec_db = InMemoryExecutionDatabase(
+        self.exec_db = InMemoryExecutionCache(
             trader_id=self.trader_id,
             logger=self.logger)
         self.exec_engine = ExecutionEngine(
@@ -156,7 +156,7 @@ class SimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price(90.003, 3), self.exec_engine.database.order(order.cl_ord_id).avg_price)
+        self.assertEqual(Price(90.003, 3), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
 
     def test_submit_limit_order(self):
         # Arrange
@@ -455,7 +455,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(strategy.object_storer.get_store()[11].commission.as_double(),
                          reduce_order.filled_qty.as_double() * commission_percent)
 
-        position = self.exec_engine.database.positions_open()[0]
+        position = self.exec_engine.cache.positions_open()[0]
         expected_commission = position.quantity.as_double() * commission_percent
         self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
                          strategy.account().cash_balance.as_double())
@@ -484,7 +484,7 @@ class SimulatedMarketTests(unittest.TestCase):
         filled_price = strategy.object_storer.get_store()[3].avg_price.as_double()
         commission = strategy.object_storer.get_store()[3].commission.as_double()
         commission = Money(-commission * filled_price, 392)
-        position = self.exec_engine.database.positions_open()[0]
+        position = self.exec_engine.cache.positions_open()[0]
         self.assertEqual(position.realized_pnl, commission)
 
     def test_commission_maker_taker_order(self):
@@ -574,7 +574,7 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.submit_order(order_reduce, position_id)
 
         # Assert
-        position = self.exec_engine.database.positions_open()[0]
+        position = self.exec_engine.cache.positions_open()[0]
         unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
         expected_unrealized_pnl = \
             order_reduce.quantity.as_double() * (reduce_quote.bid.sub(open_quote.ask).as_double())

@@ -23,7 +23,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 
 
-cdef class ExecutionDatabaseReadOnly:
+cdef class ExecutionCacheReadOnly:
 
     # -- General queries -------------------------------------------------------
     cpdef dict get_symbol_position_counts(self)

@@ -18,7 +18,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal64
-from nautilus_trader.execution.base cimport ExecutionDatabaseReadOnly
+from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -30,21 +30,21 @@ from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
+cdef class ExecutionCache(ExecutionCacheReadOnly):
     """
-    The base class for all execution databases.
+    Provides a cache for the execution engine.
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the ExecutionDatabase class.
+        Initialize a new instance of the ExecutionCache class.
 
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the database.
+            The trader identifier for the cache.
         logger : Logger
-            The logger for the database.
+            The logger for the cache.
 
         """
         super().__init__()
@@ -74,26 +74,26 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
         self._index_positions_closed = set()  # type: {PositionId}
         self._index_strategies = set()        # type: {StrategyId}
 
-        # Registered order identifiers
+        # Registered identifiers
         self._flattening_ids = set()       # type: {PositionId}
         self._stop_loss_ids = set()        # type: {ClientOrderId}
         self._take_profit_ids = set()      # type: {ClientOrderId}
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void load_accounts_cache(self) except *:
+    cpdef void load_accounts(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void load_orders_cache(self) except *:
+    cpdef void load_orders(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void load_positions_cache(self) except *:
+    cpdef void load_positions(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void load_index_cache(self) except *:
+    cpdef void load_index(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -1197,53 +1197,53 @@ cdef class ExecutionDatabase(ExecutionDatabaseReadOnly):
         return self._index_position_strategy.get(position_id)
 
 
-cdef class InMemoryExecutionDatabase(ExecutionDatabase):
+cdef class InMemoryExecutionCache(ExecutionCache):
     """
-    Provides an in-memory execution database.
+    Provides an in-memory execution cache.
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the InMemoryExecutionDatabase class.
+        Initialize a new instance of the InMemoryExecutionCache class.
 
         Parameters
         ----------
         trader_id : TraderId
-            The trader_id for the database.
+            The trader_id for the cache.
         logger : Logger
-            The logger for the database.
+            The logger for the cache.
 
         """
         super().__init__(trader_id, logger)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void load_accounts_cache(self) except *:
+    cpdef void load_accounts(self) except *:
         """
-        Clear the current accounts cache and load accounts from the database.
+        Clear the current accounts cache and load accounts from the cache.
         """
-        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
         # Do nothing in memory
 
-    cpdef void load_orders_cache(self) except *:
+    cpdef void load_orders(self) except *:
         """
-        Clear the current order cache and load orders from the database.
+        Clear the current order cache and load orders from the cache.
         """
-        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
         # Do nothing in memory
 
-    cpdef void load_positions_cache(self) except *:
+    cpdef void load_positions(self) except *:
         """
-        Clear the current order cache and load orders from the database.
+        Clear the current order cache and load orders from the cache.
         """
-        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
         # Do nothing in memory
 
-    cpdef void load_index_cache(self) except *:
+    cpdef void load_index(self) except *:
         """
-        Clear the current index cache and load indexes from the database.
+        Clear the current index cache and load indexes from the cache.
         """
-        self._log.info(f"Loading accounts cache (in-memory database does nothing).")
+        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
         # Do nothing in memory
 
     cpdef void integrity_check(self) except *:
@@ -1252,7 +1252,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
-        Load the state for the given strategy from the execution database.
+        Load the state for the given strategy from the execution cache.
 
         Parameters
         ----------
@@ -1262,7 +1262,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(strategy, "strategy")
 
-        self._log.info(f"Loading {strategy.id} (in-memory database does nothing).")
+        self._log.info(f"Loading {strategy.id} (in-memory cache does nothing).")
         # Do nothing in memory
 
     cpdef Account load_account(self, AccountId account_id):
@@ -1320,7 +1320,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_account(self, Account account) except *:
         """
-        Add the given account to the execution database.
+        Add the given account to the execution cache.
 
         Parameters
         ----------
@@ -1342,7 +1342,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
         """
-        Add the given order to the execution database indexed with the given
+        Add the given order to the execution cache indexed with the given
         identifiers.
 
         Parameters
@@ -1517,7 +1517,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution database.
+        Update the given account in the execution cache.
 
         Parameters
         ----------
@@ -1529,7 +1529,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_order(self, Order order) except *:
         """
-        Update the given order in the execution database.
+        Update the given order in the execution cache.
 
         Parameters
         ----------
@@ -1543,7 +1543,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution database.
+        Update the given position in the execution cache.
 
         Parameters
         ----------
@@ -1557,7 +1557,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution database.
+        Update the given strategy state in the execution cache.
 
         Parameters
         ----------
@@ -1567,12 +1567,12 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Condition.not_none(strategy, "strategy")
 
         self._index_strategies.add(strategy.id)
-        self._log.info(f"Saving {strategy.id} (in-memory database does nothing).")
+        self._log.info(f"Saving {strategy.id} (in-memory cache does nothing).")
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
-        Delete the given strategy from the execution database.
-        Logs error if strategy not found in the database.
+        Delete the given strategy from the execution cache.
+        Logs error if strategy not found in the cache.
 
         Parameters
         ----------
@@ -1599,13 +1599,13 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
     cpdef void reset(self) except *:
-        # Reset the execution database by clearing all stateful values
+        # Reset the execution cache by clearing all stateful values
         self._log.debug(f"Resetting...")
 
         self._reset()
 
     cpdef void flush(self) except *:
         """
-        Flush the database which clears all data.
+        Flush the cache which clears all data.
         """
-        self._log.info("Flushing database (in-memory database does nothing).")
+        self._log.info("Flushing cache (in-memory cache does nothing).")

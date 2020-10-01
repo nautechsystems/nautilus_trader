@@ -22,9 +22,9 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order cimport Order
 
 
-cdef class ExecutionDatabaseReadOnly:
+cdef class ExecutionCacheReadOnly:
     """
-    An abstract read-only facade for the execution database.
+    An abstract read-only facade for the execution cache.
     """
     # -- QUERIES ---------------------------------------------------------------------------------------
 

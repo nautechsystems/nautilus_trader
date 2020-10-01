@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 
 
-cdef class RedisExecutionDatabase(ExecutionDatabase):
+cdef class RedisExecutionDatabase(ExecutionCache):
     cdef readonly str key_trader
     cdef readonly str key_accounts
     cdef readonly str key_orders

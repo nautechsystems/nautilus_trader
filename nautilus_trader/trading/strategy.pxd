@@ -22,7 +22,7 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.execution.base cimport ExecutionDatabaseReadOnly
+from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
@@ -53,7 +53,7 @@ cdef class TradingStrategy:
     cdef readonly TraderId trader_id
 
     cdef readonly OrderFactory order_factory
-    cdef readonly ExecutionDatabaseReadOnly execution
+    cdef readonly ExecutionCacheReadOnly execution
 
     cdef bint _is_flatten_on_stop
     cdef bint _is_flatten_on_reject
