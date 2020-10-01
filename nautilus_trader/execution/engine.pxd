@@ -88,17 +88,17 @@ cdef class ExecutionEngine:
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *
-    cdef void _handle_kill_switch(self, KillSwitch command) except *
-    cdef void _handle_flatten_position(self, FlattenPosition command) except *
-    cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *
-    cdef void _handle_account_inquiry(self, AccountInquiry command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cdef void _handle_flatten_position(self, FlattenPosition command) except *
+    cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *
+    cdef void _handle_account_inquiry(self, AccountInquiry command) except *
     cdef void _invalidate_order(self, Order order, str reason) except *
     cdef void _deny_order(self, Order order, str reason) except *
+    cdef void _handle_kill_switch(self, KillSwitch command) except *
 
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
