@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
@@ -39,6 +40,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -56,6 +58,8 @@ cdef class SimulatedMarket:
     cdef LoggerAdapter _log
     cdef Account _account
 
+    cdef readonly Venue venue
+    cdef readonly OMSType oms_type
     cdef readonly ExecutionEngine exec_engine
     cdef readonly dict instruments
     cdef readonly dict data_ticks

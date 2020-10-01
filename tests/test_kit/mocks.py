@@ -60,14 +60,15 @@ class MockExecutionClient(ExecutionClient):
     The client will store all received commands in a list.
     """
 
-    def __init__(self, exec_engine, logger):
+    def __init__(self, venue, exec_engine, logger):
         """
         Initialize a new instance of the MockExecutionClient class.
 
+        :param venue: The venue for the client.
         :param exec_engine: The execution engine for the component.
         :param logger: The logger for the component.
         """
-        super().__init__(exec_engine, logger)
+        super().__init__(venue, exec_engine, logger)
 
         self.received_commands = []
 

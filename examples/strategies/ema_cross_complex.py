@@ -254,7 +254,8 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        pass
+        self.cancel_all_orders_for_symbol(self.symbol)
+        self.flatten_all_positions_for_symbol(self.symbol)
 
     def on_reset(self):
         """

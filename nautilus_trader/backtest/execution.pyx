@@ -41,7 +41,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The logger for the component.
 
         """
-        super().__init__(market.exec_engine, logger)
+        super().__init__(market.venue, market.exec_engine, logger)
 
         self._market = market
 

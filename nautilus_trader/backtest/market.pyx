@@ -30,6 +30,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -58,6 +59,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
@@ -79,6 +81,9 @@ cdef class SimulatedMarket:
 
     def __init__(
             self,
+            Venue venue not None,
+            OMSType oms_type,
+            bint generate_position_ids,
             ExecutionEngine exec_engine not None,
             dict instruments not None: {Symbol, Instrument},
             BacktestConfig config not None,
@@ -93,6 +98,10 @@ cdef class SimulatedMarket:
 
         Parameters
         ----------
+        venue : Venue
+            The venue to simulate for the backtest.
+        oms_type : OMSType
+            The order management employed by the broker/exchange for this market.
         exec_engine : ExecutionEngine
             The execution engine for the backtest.
         instruments : Dict[Symbol, Instrument]
@@ -122,6 +131,9 @@ cdef class SimulatedMarket:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
+        self.venue = venue
+        self.oms_type = oms_type
+        self.generate_position_ids = generate_position_ids
         self.exec_engine = exec_engine
         self.instruments = instruments
 
@@ -143,7 +155,6 @@ cdef class SimulatedMarket:
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
-        self.generate_position_ids = config.generate_position_ids
 
         self._market = {}               # type: {Symbol, QuoteTick}
         self._working_orders = {}       # type: {ClientOrderId, Order}

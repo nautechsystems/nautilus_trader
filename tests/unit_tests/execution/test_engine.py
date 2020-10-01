@@ -28,6 +28,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
@@ -77,7 +78,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.process(TestStubs.account_event())
 
-        self.exec_client = MockExecutionClient(self.exec_engine, self.logger)
+        self.venue = Venue("FXCM")
+        self.exec_client = MockExecutionClient(self.venue, self.exec_engine, self.logger)
         self.exec_engine.register_client(self.exec_client)
 
     def test_register_strategy(self):
@@ -173,6 +175,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -208,6 +211,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -262,6 +266,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -321,6 +326,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -338,6 +344,7 @@ class ExecutionEngineTests(unittest.TestCase):
         expected_position_id = PositionId("O-19700101-000000-000-001-1")  # Stubbed from order id?
 
         submit_order2 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -395,6 +402,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -412,6 +420,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order1, position_id))
 
         submit_order2 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -482,6 +491,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy1.id,
@@ -492,6 +502,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order2 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy2.id,
@@ -592,6 +603,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy1.id,
@@ -604,6 +616,7 @@ class ExecutionEngineTests(unittest.TestCase):
         position_id1 = PositionId('P-1')
 
         submit_order2 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy1.id,
@@ -614,6 +627,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order3 = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             strategy2.id,

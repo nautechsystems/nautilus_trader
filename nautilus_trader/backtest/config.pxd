@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.objects cimport Money
 
 
@@ -24,8 +23,6 @@ cdef class BacktestConfig:
     cdef readonly str exec_db_type
     cdef readonly bint exec_db_flush
     cdef readonly bint frozen_account
-    cdef readonly OMSType oms_type
-    cdef readonly bint generate_position_ids
     cdef readonly Money starting_capital
     cdef readonly Currency account_currency
     cdef readonly str short_term_interest_csv_path

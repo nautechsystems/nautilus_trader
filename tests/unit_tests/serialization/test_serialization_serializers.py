@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from base64 import b64decode
 from base64 import b64encode
 import unittest
 
@@ -48,6 +47,7 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -212,6 +212,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.venue = Venue("FXCM")
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
@@ -227,7 +228,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -238,20 +240,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
-    def test_deserialize_account_inquiry_command_from_csharp(self):
-        # Arrange
-        base64 = "haRUeXBlxA5BY2NvdW50SW5xdWlyeaJJZMQkNjcxODYxMzQtZTI0Yy00NWZ" \
-                 "iLTk0NGUtNzNmMDUxZDMxMmIzqVRpbWVzdGFtcMQYMTk3MC0wMS0wMVQwMD" \
-                 "owMDowMC4wMDBaqFRyYWRlcklkxApURVNURVItMDAwqUFjY291bnRJZMQYR" \
-                 "lhDTS0wMjg5OTk5OTktU0lNVUxBVEVE"
-        body = b64decode(base64)
-
-        # Act
-        result = self.serializer.deserialize(body)
-
-        # Assert
-        self.assertTrue(isinstance(result, AccountInquiry))
-
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         order = self.order_factory.market(
@@ -260,6 +248,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Quantity(100000))
 
         command = SubmitOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -292,6 +281,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             stop_loss=Price(0.99900, 5))
 
         command = SubmitBracketOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -323,6 +313,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             take_profit=Price(1.00010, 5))
 
         command = SubmitBracketOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -343,6 +334,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
         command = ModifyOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),
@@ -363,6 +355,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
         command = CancelOrder(
+            self.venue,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),

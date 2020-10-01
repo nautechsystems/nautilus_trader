@@ -20,14 +20,14 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef ExecutionEngine _engine
 
-    cdef readonly TraderId trader_id
+    cdef readonly Venue venue
     cdef readonly int command_count
     cdef readonly int event_count
 
