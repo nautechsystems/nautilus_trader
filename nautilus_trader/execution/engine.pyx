@@ -64,14 +64,14 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class ExecutionEngine:
     """
-    Provides a high performance execution engine.
+    Provides a high-performance execution engine.
     """
 
     def __init__(
             self,
             TraderId trader_id not None,
             AccountId account_id not None,
-            ExecutionCache database not None,
+            ExecutionCache database not None,  # refactor
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -101,8 +101,6 @@ cdef class ExecutionEngine:
         ------
         ValueError
             If trader_id is not equal to the cache.trader_id.
-        ValueError
-            If oms_type is UNDEFINED.
 
         """
         Condition.equal(trader_id, database.trader_id, "trader_id", "cache.trader_id")
@@ -287,34 +285,145 @@ cdef class ExecutionEngine:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        if isinstance(command, KillSwitch):
-            self._handle_kill_switch(command)
-        elif isinstance(command, FlattenAllPositions):
-            self._handle_flatten_all_positions(command)
-        elif isinstance(command, FlattenPosition):
-            self._handle_flatten_position(command)
-        elif isinstance(command, CancelAllOrders):
-            self._handle_cancel_all_orders(command)
-        elif isinstance(command, CancelOrder):
-            self._handle_cancel_order(command)
-        elif isinstance(command, SubmitOrder):
+        if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(command)
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(command)
+        elif isinstance(command, CancelOrder):
+            self._handle_cancel_order(command)
+        elif isinstance(command, CancelAllOrders):
+            self._handle_cancel_all_orders(command)
+        elif isinstance(command, FlattenPosition):
+            self._handle_flatten_position(command)
+        elif isinstance(command, FlattenAllPositions):
+            self._handle_flatten_all_positions(command)
         elif isinstance(command, AccountInquiry):
             self._handle_account_inquiry(command)
+        elif isinstance(command, KillSwitch):
+            self._handle_kill_switch(command)
         else:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
 
-    cdef void _handle_kill_switch(self, KillSwitch command) except *:
-        if self._is_kill_switch_active:
-            self._log.error("Received KillSwitch command when kill-switch already active.")
+    cdef void _handle_submit_order(self, SubmitOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
             return
 
-        self._is_kill_switch_active = True
-        # TODO: Implement
+        # Validate command
+        if self.cache.order_exists(command.order.cl_ord_id):
+            self._invalidate_order(command.order, f"cl_ord_id already exists")
+            return  # Invalid command
+
+        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
+            self._invalidate_order(command.order, f"position_id does not exist")
+            return  # Invalid command
+
+        # Cache order
+        self.cache.add_order(command.order, command.position_id, command.strategy_id)
+
+        # Submit order
+        client.submit_order(command)
+
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
+        # Validate command
+        if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
+            if command.bracket_order.has_take_profit:
+                self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
+            return  # Invalid command
+        if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
+            if command.bracket_order.has_take_profit:
+                self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
+            return  # Invalid command
+        if command.bracket_order.has_take_profit and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
+            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
+            self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
+            return  # Invalid command
+
+        # Cache all orders
+        self.cache.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
+        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
+        if command.bracket_order.has_take_profit:
+            self.cache.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
+
+        # Register stop-loss and take-profits
+        self.cache.register_stop_loss(command.bracket_order.stop_loss)
+        if command.bracket_order.has_take_profit:
+            self.cache.register_take_profit(command.bracket_order.take_profit)
+
+        # Submit bracket order
+        client.submit_bracket_order(command)
+
+    cdef void _handle_modify_order(self, ModifyOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
+        # Validate command
+        if not self.cache.is_order_working(command.cl_ord_id):
+            self._log.warning(f"Cannot modify {command.cl_ord_id.to_string(with_class=True)} "
+                              f"(already completed).")
+            return  # Invalid command
+
+        client.modify_order(command)
+
+    cdef void _handle_cancel_order(self, CancelOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
+        # Validate command
+        if not self.cache.is_order_working(command.cl_ord_id):
+            self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
+                              f"(already completed).")
+            return  # Invalid command
+
+        client.cancel_order(command)
+
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
+        # Get all working orders for the command strategy from the cache,
+        # the symbol may be None in which case the query is not filtered on symbol.
+        cdef set order_working_ids = self.cache.order_working_ids(
+            symbol=None,
+            strategy_id=command.strategy_id,
+        )
+
+        # Generate cancel commands for all working orders
+        cdef CancelOrder cancel_cmd
+        cdef ClientOrderId order_id
+        for order_id in order_working_ids:
+            cancel_cmd = CancelOrder(
+                command.venue,
+                command.trader_id,
+                command.account_id,
+                order_id,
+                self._uuid_factory.generate(),
+                self._clock.utc_now(),
+            )
+
+            self._exec_clients[command.venue].cancel_order(cancel_cmd)
 
     cdef void _handle_flatten_position(self, FlattenPosition command) except *:
         cdef ExecutionClient client = self._exec_clients.get(command.venue)
@@ -360,7 +469,10 @@ cdef class ExecutionEngine:
             command.position_id,
             order,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
+
+        self.cache.register_flattening_id(position.id)
 
         self._handle_submit_order(submit_order)
 
@@ -372,6 +484,7 @@ cdef class ExecutionEngine:
             strategy_id=command.strategy_id,
         )
 
+        print(position_open_ids)
         # Generate commands for all open positions
         cdef FlattenPosition flatten_cmd
         cdef PositionId position_id
@@ -388,129 +501,9 @@ cdef class ExecutionEngine:
 
             self._handle_flatten_position(flatten_cmd)
 
-    cdef void _handle_cancel_order(self, CancelOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
-        if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
-            return
-
-        # Validate command
-        if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
-                              f"(already completed).")
-            return  # Invalid command
-
-        client.cancel_order(command)
-
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
-        # Get all working orders for the command strategy from the cache,
-        # the symbol may be None in which case the query is not filtered on symbol.
-        cdef set order_working_ids = self.cache.order_working_ids(
-            symbol=None,
-            strategy_id=command.strategy_id,
-        )
-
-        # Generate commands for all working orders
-        cdef CancelOrder cancel_cmd
-        cdef ClientOrderId order_id
-        for order_id in order_working_ids:
-            cancel_cmd = CancelOrder(
-                command.venue,
-                command.trader_id,
-                command.account_id,
-                order_id,
-                self._uuid_factory.generate(),
-                self._clock.utc_now(),
-            )
-
-            self._exec_clients[command.venue].cancel_order(cancel_cmd)
-
-    cdef void _handle_submit_order(self, SubmitOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
-        if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
-            return
-
-        # Validate command
-        if self.cache.order_exists(command.order.cl_ord_id):
-            self._invalidate_order(command.order, f"cl_ord_id already exists")
-            return  # Invalid command
-
-        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
-            self._invalidate_order(command.order, f"position_id does not exist")
-            return  # Invalid command
-
-        # Cache order
-        self.cache.add_order(command.order, command.position_id, command.strategy_id)
-
-        # Submit order
-        client.submit_order(command)
-
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
-        if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
-            return
-
-        # Validate command -------------------------------------------------------------------------
-        if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
-            if command.bracket_order.has_take_profit:
-                self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
-            return  # Invalid command
-        if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
-            if command.bracket_order.has_take_profit:
-                self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
-            return  # Invalid command
-        if command.bracket_order.has_take_profit and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
-            return  # Invalid command
-        # ------------------------------------------------------------------------------------------
-
-        # Cache all orders
-        self.cache.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
-        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
-        if command.bracket_order.has_take_profit:
-            self.cache.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
-
-        # Register stop-loss and take-profits
-        self.cache.register_stop_loss(command.bracket_order.stop_loss)
-        if command.bracket_order.has_take_profit:
-            self.cache.register_take_profit(command.bracket_order.take_profit)
-
-        # Submit bracket order
-        client.submit_bracket_order(command)
-
-    cdef void _handle_modify_order(self, ModifyOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
-        if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
-            return
-
-        # Validate command
-        if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot modify {command.cl_ord_id.to_string(with_class=True)} "
-                              f"(already completed).")
-            return  # Invalid command
-
-        client.modify_order(command)
-
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
         # For now we pull out the account issuer string (which should match the venue ID
-        # TODO: Venue call is a temporary hack
+        # TODO: Venue instantiation is a temporary hack
         cdef ExecutionClient client = self._exec_clients.get(Venue(command.account_id.issuer))
 
         if client is None:
@@ -526,7 +519,8 @@ cdef class ExecutionEngine:
             order.cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self._handle_event(invalid)
 
@@ -536,9 +530,18 @@ cdef class ExecutionEngine:
             order.cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now())
+            self._clock.utc_now(),
+        )
 
         self._handle_event(denied)
+
+    cdef void _handle_kill_switch(self, KillSwitch command) except *:
+        if self._is_kill_switch_active:
+            self._log.error("Received KillSwitch command when kill-switch already active.")
+            return
+
+        self._is_kill_switch_active = True
+        # TODO: Implement
 
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
@@ -590,8 +593,8 @@ cdef class ExecutionEngine:
 
         self.cache.update_order(order)
 
-        # Remove order from registered orders
-        if isinstance(event, OrderEvent) and event.is_completion_trigger:
+        # Remove order from registered orders if completed
+        if event.is_completion_trigger:
             self.cache.discard_stop_loss_id(event.cl_ord_id)
             self.cache.discard_take_profit_id(event.cl_ord_id)
 
@@ -678,6 +681,7 @@ cdef class ExecutionEngine:
 
         cdef PositionEvent position_event
         if position.is_closed():
+            self.cache.discard_flattening_id(position.id)
             position_event = self._pos_closed_event(position, fill, strategy_id)
         else:
             position_event = self._pos_modified_event(position, fill, strategy_id)
