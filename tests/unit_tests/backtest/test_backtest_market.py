@@ -31,14 +31,18 @@ from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -85,7 +89,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.analyzer = PerformanceAnalyzer()
 
         self.trader_id = TraderId("TESTER", "000")
-        account_id = TestStubs.account_id()
+        account_id = AccountId("FXCM", "001", AccountType.SIMULATED)
 
         self.exec_db = InMemoryExecutionCache(
             trader_id=self.trader_id,
@@ -101,6 +105,9 @@ class SimulatedMarketTests(unittest.TestCase):
 
         self.config = BacktestConfig()
         self.market = SimulatedMarket(
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             exec_engine=self.exec_engine,
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,

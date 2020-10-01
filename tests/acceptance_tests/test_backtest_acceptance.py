@@ -22,7 +22,9 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
@@ -59,6 +61,9 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[EmptyStrategy('000')],
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             config=config)
 
     def tearDown(self):

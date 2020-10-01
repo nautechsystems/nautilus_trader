@@ -57,7 +57,7 @@ cdef class ExecutionEngine:
     cdef LoggerAdapter _log
     cdef OrderFactory _order_factory
     cdef PositionIdGenerator _pos_id_generator
-    cdef ExecutionClient _exec_client
+    cdef dict _exec_clients
     cdef dict _registered_strategies
     cdef int _is_kill_switch_active
 
@@ -72,9 +72,11 @@ cdef class ExecutionEngine:
 # -- REGISTRATIONS ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *
+    cpdef void deregister_client(self, ExecutionClient exec_client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
-    cpdef list registered_strategies(self)
+    cpdef set registered_venues(self)
+    cpdef set registered_strategies(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

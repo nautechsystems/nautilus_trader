@@ -52,6 +52,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -64,9 +65,7 @@ cdef class TradingStrategy:
     def __init__(
             self,
             str order_id_tag not None,
-            bint flatten_on_stop=True,
             bint flatten_on_reject=True,
-            bint cancel_all_orders_on_stop=True,
             bint reraise_exceptions=True,
     ):
         """
@@ -76,12 +75,8 @@ cdef class TradingStrategy:
         ----------
         order_id_tag : str
             The order_id tag for the strategy (must be unique at trader level).
-        flatten_on_stop : bool
-            If all strategy positions should be flattened on stop.
         flatten_on_reject : bool
             If open positions should be flattened on a child orders rejection.
-        cancel_all_orders_on_stop : bool
-            If all residual orders should be cancelled on stop.
         reraise_exceptions : bool
             If exceptions raised in handling methods should be re-raised.
 
@@ -97,24 +92,21 @@ cdef class TradingStrategy:
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
         self.trader_id = None     # Initialized when registered with a trader
 
-        # Usable components
+        # Public components
         self.clock = None          # Initialized when registered with a trader
         self.uuid_factory = None   # Initialized when registered with a trader
         self.log = None            # Initialized when registered with a trader
         self.order_factory = None  # Initialized when registered with a trader
+        # self.data = None
         self.execution = None      # Initialized when registered with the execution engine
 
-        # Registerable modules
+        # Private components
         self._data_engine = None  # Initialized when registered with the data engine
         self._exec_engine = None  # Initialized when registered with the execution engine
-
-        # Strategy finite state machine
         self._fsm = create_component_fsm()
 
         # Management flags
-        self._is_flatten_on_stop = flatten_on_stop
         self._is_flatten_on_reject = flatten_on_reject
-        self._is_cancel_all_orders_on_stop = cancel_all_orders_on_stop
         self._is_reraise_exceptions = reraise_exceptions
 
         # Indicators
@@ -1368,14 +1360,6 @@ cdef class TradingStrategy:
         for name in timer_names:
             self.log.info(f"Cancelled Timer(name={name}).")
 
-        # Flatten open positions
-        if self._is_flatten_on_stop:
-            self.flatten_all_positions()
-
-        # Cancel working orders
-        if self._is_cancel_all_orders_on_stop:
-            self.cancel_all_orders()
-
         try:
             self.on_stop()
         except Exception as ex:
@@ -1552,6 +1536,7 @@ cdef class TradingStrategy:
             position_id = PositionId.null()
 
         cdef SubmitOrder command = SubmitOrder(
+            order.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
@@ -1582,6 +1567,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
+            bracket_order.entry.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
@@ -1637,6 +1623,7 @@ cdef class TradingStrategy:
             return
 
         cdef ModifyOrder command = ModifyOrder(
+            order.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             order.cl_ord_id,
@@ -1664,6 +1651,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         cdef CancelOrder command = CancelOrder(
+            order.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
             order.cl_ord_id,
@@ -1674,13 +1662,13 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void cancel_all_orders(self) except *:
+    cpdef void cancel_all_orders(self, Venue venue) except *:
         """
         Send a CancelAllOrders command for this strategy to the execution engine.
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        self._cancel_all_orders(symbol=None)
+        self._cancel_all_orders(venue, symbol=None)
 
     cpdef void cancel_all_orders_for_symbol(self, Symbol symbol) except *:
         """
@@ -1696,26 +1684,27 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        self._cancel_all_orders(symbol)
+        self._cancel_all_orders(venue=symbol.venue, symbol=symbol)
 
-    cpdef void flatten_position(self, PositionId position_id) except *:
+    cpdef void flatten_position(self, Position position) except *:
         """
         Send a FlattenPosition command for the given position identifier to the
         execution engine.
 
         Parameters
         ----------
-        position_id : PositionId
-            The identifier of the position to flatten.
+        position : Position
+            The position to flatten.
 
         """
-        Condition.not_none(position_id, "position_id")
+        Condition.not_none(position, "position")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         cdef FlattenPosition command = FlattenPosition(
+            position.symbol.venue,
             self.trader_id,
             self._exec_engine.account_id,
-            position_id,
+            position.id,
             self.id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -1724,7 +1713,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void flatten_all_positions(self) except *:
+    cpdef void flatten_all_positions(self, Venue venue) except *:
         """
         Send a FlattenAllPositions command for this strategy to the execution
         engine.
@@ -1732,7 +1721,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        self._flatten_all_positions(symbol=None)
+        self._flatten_all_positions(venue=venue, symbol=None)
 
     cpdef void flatten_all_positions_for_symbol(self, Symbol symbol) except *:
         """
@@ -1748,15 +1737,15 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        self._flatten_all_positions(symbol)
+        self._flatten_all_positions(venue=symbol.venue, symbol=symbol)
 
-    cdef inline void _cancel_all_orders(self, Symbol symbol) except *:
-        # symbol can be None (cancel for all symbols)
+    cdef inline void _cancel_all_orders(self, Venue venue, Symbol symbol) except *:
         cdef CancelAllOrders command = CancelAllOrders(
+            venue,
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
-            symbol,
+            symbol,  # Can be None (cancel for all symbols)
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
@@ -1764,13 +1753,13 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cdef inline void _flatten_all_positions(self, Symbol symbol) except *:
-        # symbol can be None (flatten for all symbols)
+    cdef inline void _flatten_all_positions(self, Venue venue, Symbol symbol) except *:
         cdef FlattenAllPositions command = FlattenAllPositions(
+            venue,
             self.trader_id,
             self._exec_engine.account_id,
             self.id,
-            symbol,
+            symbol,  # Can be None (flatten for all symbols)
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )

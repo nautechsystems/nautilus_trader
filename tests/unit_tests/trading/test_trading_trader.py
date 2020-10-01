@@ -31,10 +31,12 @@ from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import ComponentState
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.trader import Trader
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EmptyStrategy
@@ -86,6 +88,9 @@ class TraderTests(unittest.TestCase):
             logger=logger)
 
         self.market = SimulatedMarket(
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
             exec_engine=self.exec_engine,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),

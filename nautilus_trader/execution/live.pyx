@@ -83,7 +83,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cpdef void execute(self, Command command) except *:
         """
-        Execute the given command by inserting it into the message bus for processing.
+        Handle the given command by inserting it into the message bus for
+        execution.
 
         Parameters
         ----------
@@ -97,7 +98,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cpdef void process(self, Event event) except *:
         """
-        Handle the given event by inserting it into the message bus for processing.
+        Handle the given event by inserting it into the message bus for
+        processing.
 
         Parameters
         ----------

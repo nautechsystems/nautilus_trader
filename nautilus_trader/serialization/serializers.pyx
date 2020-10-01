@@ -60,6 +60,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Decimal64
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -293,12 +294,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
         elif isinstance(command, SubmitOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitBracketOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[STRATEGY_ID] = command.strategy_id.value
@@ -306,12 +309,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
         elif isinstance(command, ModifyOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
             package[QUANTITY] = command.quantity.to_string()
             package[PRICE] = command.price.to_string()
         elif isinstance(command, CancelOrder):
+            package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
@@ -346,6 +351,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == SubmitOrder.__name__:
             return SubmitOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
@@ -356,6 +362,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == SubmitBracketOrder.__name__:
             return SubmitBracketOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
@@ -367,6 +374,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == ModifyOrder.__name__:
             return ModifyOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
@@ -377,6 +385,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == CancelOrder.__name__:
             return CancelOrder(
+                Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),

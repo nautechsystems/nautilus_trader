@@ -35,11 +35,13 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -52,12 +54,11 @@ cdef class TradingStrategy:
     cdef readonly StrategyId id
     cdef readonly TraderId trader_id
 
-    cdef readonly OrderFactory order_factory
+    # cdef readonly DataCacheReadOnly data
     cdef readonly ExecutionCacheReadOnly execution
+    cdef readonly OrderFactory order_factory
 
-    cdef bint _is_flatten_on_stop
     cdef bint _is_flatten_on_reject
-    cdef bint _is_cancel_all_orders_on_stop
     cdef bint _is_reraise_exceptions
 
     cdef list _indicators
@@ -180,11 +181,11 @@ cdef class TradingStrategy:
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
-    cpdef void cancel_all_orders(self) except *
+    cpdef void cancel_all_orders(self, Venue venue) except *
     cpdef void cancel_all_orders_for_symbol(self, Symbol symbol) except *
-    cpdef void flatten_position(self, PositionId position_id) except *
-    cpdef void flatten_all_positions(self) except *
+    cpdef void flatten_position(self, Position position) except *
+    cpdef void flatten_all_positions(self, Venue venue) except *
     cpdef void flatten_all_positions_for_symbol(self, Symbol symbol) except *
 
-    cdef inline void _cancel_all_orders(self, Symbol symbol) except *
-    cdef inline void _flatten_all_positions(self, Symbol symbol) except *
+    cdef inline void _cancel_all_orders(self, Venue venue, Symbol symbol) except *
+    cdef inline void _flatten_all_positions(self, Venue venue, Symbol symbol) except *

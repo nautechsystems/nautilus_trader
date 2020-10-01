@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -78,6 +79,7 @@ cdef class SubmitOrder(Command):
 
     def __init__(
             self,
+            Venue venue not None,
             TraderId trader_id not None,
             AccountId account_id not None,
             StrategyId strategy_id not None,
@@ -91,8 +93,10 @@ cdef class SubmitOrder(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         account_id : AccountId
             The account identifier for the order.
         strategy_id : StrategyId
@@ -106,9 +110,16 @@ cdef class SubmitOrder(Command):
         command_timestamp : datetime
             The commands timestamp.
 
+        Raises
+        ------
+        ValueError
+            If venue is not equal to order.symbol.venue.
+
         """
+        Condition.equal(venue, order.symbol.venue, "venue", "order.symbol.venue")
         super().__init__(command_id, command_timestamp)
 
+        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -124,12 +135,13 @@ cdef class SubmitOrder(Command):
         str
 
         """
-        cdef str position_id_str = "" if self.position_id.is_null() else f"position_id={self.position_id.value}, "
+        cdef str position_id_str = "NULL" if self.position_id.is_null() else self.position_id.value
         return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.order.cl_ord_id.value}, "
-                f"{position_id_str}"
+                f"position_id={position_id_str}, "
                 f"strategy_id={self.strategy_id.value}")
 
 
@@ -140,6 +152,7 @@ cdef class SubmitBracketOrder(Command):
 
     def __init__(
             self,
+            Venue venue not None,
             TraderId trader_id not None,
             AccountId account_id not None,
             StrategyId strategy_id not None,
@@ -152,10 +165,12 @@ cdef class SubmitBracketOrder(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         account_id : AccountId
-            The account identifier.
+            The account identifier for the command.
         strategy_id : StrategyId
             The strategy identifier to associate with the order.
         bracket_order : BracketOrder
@@ -165,9 +180,16 @@ cdef class SubmitBracketOrder(Command):
         command_timestamp : datetime
             The command timestamp.
 
+        Raises
+        ------
+        ValueError
+            If venue is not equal to order.symbol.venue.
+
         """
+        Condition.equal(venue, bracket_order.entry.symbol.venue, "venue", "bracket_order.entry.symbol.venue")
         super().__init__(command_id, command_timestamp)
 
+        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -183,6 +205,7 @@ cdef class SubmitBracketOrder(Command):
 
         """
         return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
@@ -196,6 +219,7 @@ cdef class ModifyOrder(Command):
 
     def __init__(
             self,
+            Venue venue not None,
             TraderId trader_id not None,
             AccountId account_id not None,
             ClientOrderId cl_ord_id not None,
@@ -209,10 +233,12 @@ cdef class ModifyOrder(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         account_id : AccountId
-            The account identifier.
+            The account identifier for the command.
         cl_ord_id : OrderId
             The client order identifier.
         quantity : Quantity
@@ -227,6 +253,7 @@ cdef class ModifyOrder(Command):
         """
         super().__init__(command_id, command_timestamp)
 
+        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.cl_ord_id = cl_ord_id
@@ -243,6 +270,7 @@ cdef class ModifyOrder(Command):
 
         """
         return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
@@ -257,6 +285,7 @@ cdef class CancelOrder(Command):
 
     def __init__(
             self,
+            Venue venue not None,
             TraderId trader_id not None,
             AccountId account_id not None,
             ClientOrderId cl_ord_id not None,
@@ -268,10 +297,12 @@ cdef class CancelOrder(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         account_id : AccountId
-            The account identifier.
+            The account identifier for the command.
         cl_ord_id : OrderId
             The client order identifier.
         command_id : UUID
@@ -282,6 +313,7 @@ cdef class CancelOrder(Command):
         """
         super().__init__(command_id, command_timestamp)
 
+        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.cl_ord_id = cl_ord_id
@@ -296,6 +328,7 @@ cdef class CancelOrder(Command):
 
         """
         return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value})")
@@ -308,6 +341,7 @@ cdef class FlattenPosition(Command):
 
     def __init__(
             self,
+            Venue venue not None,
             TraderId trader_id not None,
             AccountId account_id not None,
             PositionId position_id not None,
@@ -320,14 +354,16 @@ cdef class FlattenPosition(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         trader_id : TraderId
-            The trader identifier.
+            The trader identifier for the command.
         account_id : AccountId
-            The account identifier.
+            The account identifier for the command.
         position_id : PositionId
-            The position identifier.
+            The position identifier for the command.
         strategy_id : StrategyId
-            The strategy identifier.
+            The strategy identifier for the command.
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -336,6 +372,7 @@ cdef class FlattenPosition(Command):
         """
         super().__init__(command_id, command_timestamp)
 
+        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.position_id = position_id
@@ -351,6 +388,7 @@ cdef class FlattenPosition(Command):
 
         """
         return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"position_id={self.position_id.value}, "
@@ -364,6 +402,7 @@ cdef class CancelAllOrders(Command):
 
     def __init__(
             self,
+            Venue venue not None,
             TraderId trader_id not None,
             AccountId account_id not None,
             StrategyId strategy_id not None,
@@ -376,6 +415,8 @@ cdef class CancelAllOrders(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -389,9 +430,17 @@ cdef class CancelAllOrders(Command):
         command_timestamp : datetime
             The command timestamp.
 
+        Raises
+        ------
+        ValueError
+            If venue is not equal to symbol.venue.
+
         """
+        if symbol is not None:
+            Condition.equal(venue, symbol.venue, "venue", "symbol.venue")
         super().__init__(command_id, command_timestamp)
 
+        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -407,6 +456,7 @@ cdef class CancelAllOrders(Command):
 
         """
         return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
@@ -420,6 +470,7 @@ cdef class FlattenAllPositions(Command):
 
     def __init__(
             self,
+            Venue venue not None,
             TraderId trader_id not None,
             AccountId account_id not None,
             StrategyId strategy_id not None,
@@ -432,6 +483,8 @@ cdef class FlattenAllPositions(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -445,9 +498,17 @@ cdef class FlattenAllPositions(Command):
         command_timestamp : datetime
             The command timestamp.
 
+        Raises
+        ------
+        ValueError
+            If venue is not equal to symbol.venue.
+
         """
+        if symbol is not None:
+            Condition.equal(venue, symbol.venue, "venue", "symbol.venue")
         super().__init__(command_id, command_timestamp)
 
+        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -463,6 +524,7 @@ cdef class FlattenAllPositions(Command):
 
         """
         return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "

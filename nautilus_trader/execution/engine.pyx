@@ -55,6 +55,7 @@ from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport flatten_side
@@ -115,9 +116,10 @@ cdef class ExecutionEngine:
             clock=clock,
             initial_count=0,
         )
+
         self._pos_id_generator = PositionIdGenerator(trader_id.tag)
-        self._exec_client = None
-        self._registered_strategies = {}    # type: {StrategyId, TradingStrategy}
+        self._exec_clients = {}           # type: {Venue, ExecutionClient}
+        self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
         self._is_kill_switch_active = False
 
         self.trader_id = trader_id
@@ -147,9 +149,26 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(exec_client, "exec_client")
+        Condition.not_in(exec_client.venue, self._exec_clients, "exec_client.venue", "_exec_clients")
 
-        self._exec_client = exec_client
-        self._log.info("Registered execution client.")
+        self._exec_clients[exec_client.venue] = exec_client
+        self._log.info(f"Registered execution client for the {exec_client.venue} venue.")
+
+    cpdef void deregister_client(self, ExecutionClient exec_client) except *:
+        """
+        Deregister the given execution client from the execution engine.
+
+        Parameters
+        ----------
+        exec_client : ExecutionClient
+            The execution client to deregister.
+
+        """
+        Condition.not_none(exec_client, "exec_client")
+        Condition.not_in(exec_client.venue, self._exec_clients, "exec_client.venue", "_exec_clients")
+
+        self._exec_clients[exec_client.venue] = exec_client
+        self._log.info(f"Registered execution client for the {exec_client.venue} venue.")
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
@@ -194,16 +213,27 @@ cdef class ExecutionEngine:
         del self._registered_strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")
 
-    cpdef list registered_strategies(self):
+    cpdef set registered_venues(self):
         """
-        Return a list of strategy_ids registered with the execution engine.
+        Return the trading venues registered with the execution engine.
 
         Returns
         -------
         List[StrategyId]
 
         """
-        return list(self._registered_strategies.keys())
+        return set(self._exec_clients.keys())
+
+    cpdef set registered_strategies(self):
+        """
+        Return the strategy_ids registered with the execution engine.
+
+        Returns
+        -------
+        Set[StrategyId]
+
+        """
+        return set(self._registered_strategies.keys())
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -287,6 +317,13 @@ cdef class ExecutionEngine:
         # TODO: Implement
 
     cdef void _handle_flatten_position(self, FlattenPosition command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
         # Validate command
         self.cache.register_flattening_id(command.position_id)
 
@@ -316,6 +353,7 @@ cdef class ExecutionEngine:
 
         # Create command
         cdef SubmitOrder submit_order = SubmitOrder(
+            command.venue,
             command.trader_id,
             command.account_id,
             command.strategy_id,
@@ -339,6 +377,7 @@ cdef class ExecutionEngine:
         cdef PositionId position_id
         for position_id in position_open_ids:
             flatten_cmd = FlattenPosition(
+                command.venue,
                 command.trader_id,
                 command.account_id,
                 position_id,
@@ -350,13 +389,20 @@ cdef class ExecutionEngine:
             self._handle_flatten_position(flatten_cmd)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
             self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
                               f"(already completed).")
             return  # Invalid command
 
-        self._exec_client.cancel_order(command)
+        client.cancel_order(command)
 
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
         # Get all working orders for the command strategy from the cache,
@@ -371,6 +417,7 @@ cdef class ExecutionEngine:
         cdef ClientOrderId order_id
         for order_id in order_working_ids:
             cancel_cmd = CancelOrder(
+                command.venue,
                 command.trader_id,
                 command.account_id,
                 order_id,
@@ -378,16 +425,20 @@ cdef class ExecutionEngine:
                 self._clock.utc_now(),
             )
 
-            self._exec_client.cancel_order(cancel_cmd)
+            self._exec_clients[command.venue].cancel_order(cancel_cmd)
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
         # Validate command
         if self.cache.order_exists(command.order.cl_ord_id):
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Invalid command
-
-        # TODO
-        # if self._oms_type == OMSType.NETTING:
 
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._invalidate_order(command.order, f"position_id does not exist")
@@ -397,9 +448,16 @@ cdef class ExecutionEngine:
         self.cache.add_order(command.order, command.position_id, command.strategy_id)
 
         # Submit order
-        self._exec_client.submit_order(command)
+        client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
         # Validate command -------------------------------------------------------------------------
         if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
@@ -432,19 +490,35 @@ cdef class ExecutionEngine:
             self.cache.register_take_profit(command.bracket_order.take_profit)
 
         # Submit bracket order
-        self._exec_client.submit_bracket_order(command)
+        client.submit_bracket_order(command)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
+        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.venue} not registered).")
+            return
+
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
             self._log.warning(f"Cannot modify {command.cl_ord_id.to_string(with_class=True)} "
                               f"(already completed).")
             return  # Invalid command
 
-        self._exec_client.modify_order(command)
+        client.modify_order(command)
 
     cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
-        self._exec_client.account_inquiry(command)
+        # For now we pull out the account issuer string (which should match the venue ID
+        # TODO: Venue call is a temporary hack
+        cdef ExecutionClient client = self._exec_clients.get(Venue(command.account_id.issuer))
+
+        if client is None:
+            self._log.warning(f"Cannot execute {command} "
+                              f"(venue {command.account_id.issuer} not registered).")
+            return
+
+        client.account_inquiry(command)
 
     cdef void _invalidate_order(self, Order order, str reason) except *:
         # Generate event

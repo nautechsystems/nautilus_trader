@@ -45,8 +45,10 @@ from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.cache cimport InMemoryExecutionCache
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
@@ -64,6 +66,9 @@ cdef class BacktestEngine:
             self,
             BacktestDataContainer data not None,
             list strategies not None: [TradingStrategy],
+            Venue venue not None,
+            OMSType oms_type,
+            generate_position_ids,
             BacktestConfig config=None,
             FillModel fill_model=None,
             CommissionModel commission_model=None,
@@ -98,7 +103,7 @@ cdef class BacktestEngine:
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self.trader_id = TraderId("BACKTESTER", "000")
-        self.account_id = AccountId.from_string("0-1-SIMULATED")
+        self.account_id = AccountId.from_string(f"0-1-{venue}")
         self.config = config
         self.clock = LiveClock()
         self.created_time = self.clock.utc_now()
@@ -187,6 +192,9 @@ cdef class BacktestEngine:
         )
 
         self.market = SimulatedMarket(
+            venue=venue,
+            oms_type=oms_type,
+            generate_position_ids=True,
             exec_engine=self.exec_engine,
             instruments=data.instruments,
             config=config,
