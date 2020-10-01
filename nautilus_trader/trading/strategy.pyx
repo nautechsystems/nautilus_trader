@@ -34,7 +34,9 @@ from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.commands cimport CancelAllOrders
 from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport FlattenAllPositions
 from nautilus_trader.model.commands cimport FlattenPosition
 from nautilus_trader.model.commands cimport KillSwitch
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -50,8 +52,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport flatten_side
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -1566,7 +1566,7 @@ cdef class TradingStrategy:
 
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=True) except *:
         """
-        Send a submit bracket order command with the given order to the
+        Send a SubmitBracketOrder command with the given bracket order to the
         execution engine.
 
         Parameters
@@ -1600,8 +1600,11 @@ cdef class TradingStrategy:
             Price new_price=None,
     ) except *:
         """
-        Send a modify order command for the given order with the given new price
-        to the execution engine.
+        Send a ModifyOrder command with the given new_quantity, and new_price to
+        the execution engine.
+
+        Either one or both values must differ from the original order to be
+        valid.
 
         Parameters
         ----------
@@ -1648,8 +1651,7 @@ cdef class TradingStrategy:
 
     cpdef void cancel_order(self, Order order) except *:
         """
-        Send a cancel order command for the given order and cancel_reason to the
-        execution engine.
+        Send a CancelOrder command for the given order to the execution engine.
 
         Parameters
         ----------
@@ -1674,40 +1676,32 @@ cdef class TradingStrategy:
 
     cpdef void cancel_all_orders(self) except *:
         """
-        Send a cancel order command for orders associated with this strategy
-        which are not completed.
+        Send a CancelAllOrders command for this strategy to the execution engine.
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef list working_orders = self.execution.orders_working(symbol=None, strategy_id=self.id)
+        self._cancel_all_orders(symbol=None)
 
-        if not working_orders:
-            self.log.info("No working orders to cancel.")
-            return
+    cpdef void cancel_all_orders_for_symbol(self, Symbol symbol) except *:
+        """
+        Send a CancelAllOrders command for this strategy and given symbol to the
+        execution engine.
 
-        self.log.info(f"Cancelling {len(working_orders)} working order(s)...")
-        cdef Order order
-        cdef CancelOrder command
-        for order in working_orders:
-            command = CancelOrder(
-                self.trader_id,
-                self._exec_engine.account_id,
-                order.cl_ord_id,
-                self.uuid_factory.generate(),
-                self.clock.utc_now(),
-            )
+        Parameters
+        ----------
+        symbol : Symbol
+            The specific symbol for the orders to cancel.
 
-            self.log.info(f"{CMD}{SENT} {command}.")
-            self._exec_engine.execute(command)
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._exec_engine, "_exec_engine")
+
+        self._cancel_all_orders(symbol)
 
     cpdef void flatten_position(self, PositionId position_id) except *:
         """
-        Flatten the position with the given identifier.
-
-        TODO:
-        Generate and submit the required market order to the execution engine
-        to flatten the position corresponding to the given client position
-        identifier. If the position is None or already FLAT will log a warning.
+        Send a FlattenPosition command for the given position identifier to the
+        execution engine.
 
         Parameters
         ----------
@@ -1727,27 +1721,59 @@ cdef class TradingStrategy:
             self.clock.utc_now(),
         )
 
-        self.log.info(f"Flattening {position_id}...")  # TODO: Log here?
+        self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
     cpdef void flatten_all_positions(self) except *:
         """
-        Flatten all positions.
+        Send a FlattenAllPositions command for this strategy to the execution
+        engine.
 
-        Generate and submit the required market to the execution engine to
-        flatten open positions. If no positions found or a position is None
-        then will log a warning.
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef list open_positions = self.execution.positions_open(symbol=None, strategy_id=self.id)
+        self._flatten_all_positions(symbol=None)
 
-        if not open_positions:
-            self.log.info("No open positions to flatten.")
-            return
+    cpdef void flatten_all_positions_for_symbol(self, Symbol symbol) except *:
+        """
+        Send a FlattenAllPositions command for this strategy and given symbol to
+        the execution engine.
 
-        self.log.info(f"Flattening {len(open_positions)} open position(s)...")
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The specific symbol for the positions to flatten.
 
-        cdef Position position
-        for position in open_positions:
-            self.flatten_position(position.id)
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._exec_engine, "_exec_engine")
+
+        self._flatten_all_positions(symbol)
+
+    cdef inline void _cancel_all_orders(self, Symbol symbol) except *:
+        # symbol can be None (cancel for all symbols)
+        cdef CancelAllOrders command = CancelAllOrders(
+            self.trader_id,
+            self._exec_engine.account_id,
+            self.id,
+            symbol,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.log.info(f"{CMD}{SENT} {command}.")
+        self._exec_engine.execute(command)
+
+    cdef inline void _flatten_all_positions(self, Symbol symbol) except *:
+        # symbol can be None (flatten for all symbols)
+        cdef FlattenAllPositions command = FlattenAllPositions(
+            self.trader_id,
+            self._exec_engine.account_id,
+            self.id,
+            symbol,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.log.info(f"{CMD}{SENT} {command}.")
+        self._exec_engine.execute(command)

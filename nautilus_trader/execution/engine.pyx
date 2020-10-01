@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import queue
-import threading
-
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
@@ -29,8 +26,6 @@ from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.message cimport Message
-from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelAllOrders
@@ -76,7 +71,6 @@ cdef class ExecutionEngine:
             TraderId trader_id not None,
             AccountId account_id not None,
             ExecutionDatabase database not None,
-            OMSType oms_type,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -93,8 +87,6 @@ cdef class ExecutionEngine:
             The account identifier for the engine.
         database : ExecutionDatabase
             The execution database for the engine.
-        oms_type : OMSType
-            The order management type for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -113,12 +105,10 @@ cdef class ExecutionEngine:
 
         """
         Condition.equal(trader_id, database.trader_id, "trader_id", "database.trader_id")
-        Condition.not_equal(oms_type, OMSType.UNDEFINED, "oms_type", "UNDEFINED")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
-        self._oms_type = oms_type
         self._order_factory = OrderFactory(
             id_tag_trader=trader_id.tag,
             id_tag_strategy=IdTag('X'),  # Placeholder to identify engine generated orders
@@ -294,6 +284,7 @@ cdef class ExecutionEngine:
             return
 
         self._is_kill_switch_active = True
+        # TODO: Implement
 
     cdef void _handle_flatten_position(self, FlattenPosition command) except *:
         # Validate command
@@ -336,15 +327,22 @@ cdef class ExecutionEngine:
         self._handle_submit_order(submit_order)
 
     cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *:
-        cdef list positions_open = self.database.position_open_ids()
+        # Get all open positions for the command symbol and strategy from the cache,
+        # the symbol may be None in which case the query is not filtered on symbol.
+        cdef set position_open_ids = self.database.position_open_ids(
+            symbol=command.symbol,
+            strategy_id=command.strategy_id,
+        )
 
+        # Generate commands for all open positions
         cdef FlattenPosition flatten_cmd
         cdef PositionId position_id
-        for position_id in positions_open:
+        for position_id in position_open_ids:
             flatten_cmd = FlattenPosition(
                 command.trader_id,
                 command.account_id,
                 position_id,
+                command.strategy_id,
                 self._uuid_factory.generate(),
                 self._clock.utc_now(),
             )
@@ -361,11 +359,17 @@ cdef class ExecutionEngine:
         self._exec_client.cancel_order(command)
 
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
-        cdef list orders_working = self.database.order_working_ids()
+        # Get all working orders for the command strategy from the cache,
+        # the symbol may be None in which case the query is not filtered on symbol.
+        cdef set order_working_ids = self.database.order_working_ids(
+            symbol=None,
+            strategy_id=command.strategy_id,
+        )
 
+        # Generate commands for all working orders
         cdef CancelOrder cancel_cmd
         cdef ClientOrderId order_id
-        for order_id in orders_working:
+        for order_id in order_working_ids:
             cancel_cmd = CancelOrder(
                 command.trader_id,
                 command.account_id,
@@ -389,7 +393,7 @@ cdef class ExecutionEngine:
             self._invalidate_order(command.order, f"position_id does not exist")
             return  # Invalid command
 
-        # Persist order
+        # Cache order
         self.database.add_order(command.order, command.position_id, command.strategy_id)
 
         # Submit order
@@ -416,7 +420,7 @@ cdef class ExecutionEngine:
             return  # Invalid command
         # ------------------------------------------------------------------------------------------
 
-        # Persist all orders
+        # Cache all orders
         self.database.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
         self.database.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
         if command.bracket_order.has_take_profit:
@@ -693,100 +697,3 @@ cdef class ExecutionEngine:
         self._pos_id_generator.reset()
         self.command_count = 0
         self.event_count = 0
-
-
-cdef class LiveExecutionEngine(ExecutionEngine):
-    """
-    Provides a process and thread safe high performance execution engine.
-    """
-
-    def __init__(
-            self,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            ExecutionDatabase database not None,
-            OMSType oms_type,
-            Portfolio portfolio not None,
-            Clock clock not None,
-            UUIDFactory uuid_factory not None,
-            Logger logger not None,
-    ):
-        """
-        Initialize a new instance of the LiveExecutionEngine class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader identifier for the engine.
-        account_id : AccountId
-            The account_id for the engine.
-        database : ExecutionDatabase
-            The execution database for the engine.
-        oms_type : OMSType
-            The order management type for the engine.
-        portfolio : Portfolio
-            The portfolio for the engine.
-        clock : Clock
-            The clock for the engine.
-        uuid_factory : UUIDFactory
-            The uuid factory for the engine.
-        logger : Logger
-            The logger for the engine.
-
-        """
-        super().__init__(
-            trader_id=trader_id,
-            account_id=account_id,
-            database=database,
-            oms_type=oms_type,
-            portfolio=portfolio,
-            clock=clock,
-            uuid_factory=uuid_factory,
-            logger=logger,
-        )
-
-        self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
-
-    cpdef void execute(self, Command command) except *:
-        """
-        Execute the given command by inserting it into the message bus for processing.
-
-        Parameters
-        ----------
-        command : Command
-            The command to execute.
-
-        """
-        Condition.not_none(command, "command")
-
-        self._queue.put(command)
-
-    cpdef void process(self, Event event) except *:
-        """
-        Handle the given event by inserting it into the message bus for processing.
-
-        Parameters
-        ----------
-        event : Event
-            The event to process.
-
-        """
-        Condition.not_none(event, "event")
-
-        self._queue.put(event)
-
-    cpdef void _loop(self) except *:
-        self._log.info("Running...")
-
-        cdef Message message
-        while True:
-            message = self._queue.get()
-
-            if message.message_type == MessageType.EVENT:
-                self._handle_event(message)
-            elif message.message_type == MessageType.COMMAND:
-                self._execute_command(message)
-            else:
-                self._log.error(f"Invalid message type on queue ({repr(message)}).")

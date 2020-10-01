@@ -181,5 +181,10 @@ cdef class TradingStrategy:
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self) except *
+    cpdef void cancel_all_orders_for_symbol(self, Symbol symbol) except *
     cpdef void flatten_position(self, PositionId position_id) except *
     cpdef void flatten_all_positions(self) except *
+    cpdef void flatten_all_positions_for_symbol(self, Symbol symbol) except *
+
+    cdef inline void _cancel_all_orders(self, Symbol symbol) except *
+    cdef inline void _flatten_all_positions(self, Symbol symbol) except *

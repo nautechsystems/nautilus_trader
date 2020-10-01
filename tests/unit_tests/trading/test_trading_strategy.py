@@ -36,7 +36,6 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import Maker
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import MatchId
 from nautilus_trader.model.identifiers import PositionId
@@ -89,7 +88,6 @@ class TradingStrategyTests(unittest.TestCase):
             trader_id=trader_id,
             account_id=account_id,
             database=self.exec_db,
-            oms_type=OMSType.HEDGING,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
