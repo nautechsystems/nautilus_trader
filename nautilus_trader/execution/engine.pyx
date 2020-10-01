@@ -472,6 +472,8 @@ cdef class ExecutionEngine:
             self._clock.utc_now(),
         )
 
+        self.cache.register_flattening_id(position.id)
+
         self._handle_submit_order(submit_order)
 
     cdef void _handle_flatten_all_positions(self, FlattenAllPositions command) except *:
@@ -482,6 +484,7 @@ cdef class ExecutionEngine:
             strategy_id=command.strategy_id,
         )
 
+        print(position_open_ids)
         # Generate commands for all open positions
         cdef FlattenPosition flatten_cmd
         cdef PositionId position_id
@@ -678,6 +681,7 @@ cdef class ExecutionEngine:
 
         cdef PositionEvent position_event
         if position.is_closed():
+            self.cache.discard_flattening_id(position.id)
             position_event = self._pos_closed_event(position, fill, strategy_id)
         else:
             position_event = self._pos_modified_event(position, fill, strategy_id)
