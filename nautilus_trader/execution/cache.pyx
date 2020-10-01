@@ -75,7 +75,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._index_strategies = set()        # type: {StrategyId}
 
         # Registered identifiers
-        self._flattening_ids = set()       # type: {PositionId}
         self._stop_loss_ids = set()        # type: {ClientOrderId}
         self._take_profit_ids = set()      # type: {ClientOrderId}
 
@@ -161,19 +160,11 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void register_flattening_id(self, PositionId position_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void discard_flattening_id(self, PositionId position_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -300,7 +291,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._index_positions_closed.clear()
         self._index_strategies.clear()
 
-        self._flattening_ids.clear()
         self._stop_loss_ids.clear()
         self._take_profit_ids.clear()
 
@@ -485,17 +475,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         """
         return self._take_profit_ids.copy()
-
-    cpdef set flattening_ids(self):
-        """
-        TBD.
-
-        Returns
-        -------
-        Set[PositionId].
-
-        """
-        return self._flattening_ids.copy()
 
     cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *:
         """
@@ -1472,13 +1451,6 @@ cdef class InMemoryExecutionCache(ExecutionCache):
         self._take_profit_ids.add(order.cl_ord_id)
         self._log.debug(f"Registered TP order {order}")
 
-    cpdef void register_flattening_id(self, PositionId position_id) except *:
-        """
-        TBD.
-
-        """
-        self._flattening_ids.add(position_id)
-
     cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
         """
         TBD.
@@ -1502,18 +1474,6 @@ cdef class InMemoryExecutionCache(ExecutionCache):
 
         """
         self._take_profit_ids.discard(cl_ord_id)
-
-    cpdef void discard_flattening_id(self, PositionId position_id) except *:
-        """
-        TBD.
-
-        Parameters
-        ----------
-        position_id
-
-
-        """
-        self._flattening_ids.discard(position_id)
 
     cpdef void update_account(self, Account account) except *:
         """

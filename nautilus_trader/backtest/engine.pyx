@@ -44,6 +44,7 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.cache cimport InMemoryExecutionCache
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
@@ -103,7 +104,7 @@ cdef class BacktestEngine:
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self.trader_id = TraderId("BACKTESTER", "000")
-        self.account_id = AccountId.from_string(f"0-1-{venue}")
+        self.account_id = AccountId(venue.value, "000", AccountType.SIMULATED)
         self.config = config
         self.clock = LiveClock()
         self.created_time = self.clock.utc_now()
@@ -145,12 +146,12 @@ cdef class BacktestEngine:
         self.log.info("Building engine...")
 
         if config.exec_db_type == "in-memory":
-            self.exec_db = InMemoryExecutionCache(
+            self.exec_cache = InMemoryExecutionCache(
                 trader_id=self.trader_id,
                 logger=self.test_logger,
             )
         elif config.exec_db_type == "redis":
-            self.exec_db = RedisExecutionDatabase(
+            self.exec_cache = RedisExecutionDatabase(
                 trader_id=self.trader_id,
                 host="localhost",
                 port=6379,
@@ -162,7 +163,7 @@ cdef class BacktestEngine:
             raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
                              f"(can be either \"in-memory\" or \"redis\")")
         if self.config.exec_db_flush:
-            self.exec_db.flush()
+            self.exec_cache.flush()
 
         self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
         self.data_engine = BacktestDataEngine(
@@ -184,7 +185,7 @@ cdef class BacktestEngine:
         self.exec_engine = ExecutionEngine(
             trader_id=self.trader_id,
             account_id=self.account_id,
-            database=self.exec_db,
+            database=self.exec_cache,
             portfolio=self.portfolio,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
@@ -381,9 +382,9 @@ cdef class BacktestEngine:
 
         self.iteration = 0
         self.data_engine.reset()
-        self.exec_db.reset()
+        self.exec_cache.reset()
         if self.config.exec_db_flush:
-            self.exec_db.flush()
+            self.exec_cache.flush()
         self.exec_engine.reset()
         self.exec_client.reset()
         self.trader.reset()

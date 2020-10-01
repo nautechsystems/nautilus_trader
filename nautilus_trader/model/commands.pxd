@@ -18,7 +18,6 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
@@ -63,30 +62,6 @@ cdef class CancelOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly ClientOrderId cl_ord_id
-
-
-cdef class FlattenPosition(Command):
-    cdef readonly Venue venue
-    cdef readonly TraderId trader_id
-    cdef readonly AccountId account_id
-    cdef readonly PositionId position_id
-    cdef readonly StrategyId strategy_id
-
-
-cdef class CancelAllOrders(Command):
-    cdef readonly Venue venue
-    cdef readonly TraderId trader_id
-    cdef readonly AccountId account_id
-    cdef readonly StrategyId strategy_id
-    cdef readonly Symbol symbol
-
-
-cdef class FlattenAllPositions(Command):
-    cdef readonly Venue venue
-    cdef readonly TraderId trader_id
-    cdef readonly AccountId account_id
-    cdef readonly StrategyId strategy_id
-    cdef readonly Symbol symbol
 
 
 cdef class KillSwitch(Command):
