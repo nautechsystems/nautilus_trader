@@ -85,6 +85,9 @@ cdef class ReportProvider:
             self._order_to_dict(o) for o in orders if o.state() == OrderState.FILLED
         ]
 
+        if not filled_orders:
+            return pd.DataFrame.empty
+
         return pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
 
     cpdef object generate_positions_report(self, list positions):
@@ -106,6 +109,9 @@ cdef class ReportProvider:
             return pd.DataFrame()
 
         cdef list trades = [self._position_to_dict(p) for p in positions if p.is_closed()]
+
+        if not trades:
+            return pd.DataFrame.empty
 
         return pd.DataFrame(data=trades).set_index("position_id")
 
@@ -139,7 +145,7 @@ cdef class ReportProvider:
         ]
 
         if not account_events:
-            return pd.DataFrame()
+            return pd.DataFrame.empty
 
         return pd.DataFrame(data=account_events).set_index("timestamp")
 
