@@ -67,7 +67,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), Price(1.00000, 5))
+        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), Price("1.00000"))
         position = Position(order_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -90,7 +90,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), Price(1.00000, 5))
+        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), Price("1.00000"))
         position = Position(order_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -120,8 +120,8 @@ class PortfolioTests(unittest.TestCase):
             GBPUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price(1.00000, 5))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), Price(1.00000, 5))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price("1.00000"))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), Price("1.00000"))
 
         position1 = Position(order1_filled)
         position2 = Position(order2_filled)
@@ -152,7 +152,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), Price(1.00000, 5))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), Price("1.00000"))
         position = Position(order1_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -160,7 +160,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(50000))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), Price(1.00000, 5))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), Price("1.00000"))
         position.apply(order2_filled)
         position_modified = TestStubs.event_position_modified(position)
 
@@ -184,7 +184,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), Price(1.00000, 5))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), Price("1.00000"))
         position = Position(order1_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -192,7 +192,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), Price(1.00010, 5))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), Price("1.00010"))
         position.apply(order2_filled)
         position_closed = TestStubs.event_position_closed(position)
 
@@ -229,10 +229,10 @@ class PortfolioTests(unittest.TestCase):
             GBPUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price(1.00000, 5))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), Price(1.00000, 5))
-        order3_filled = TestStubs.event_order_filled(order3, PositionId("P-3"), Price(1.00000, 5))
-        order4_filled = TestStubs.event_order_filled(order4, PositionId("P-3"), Price(1.00100, 5))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price("1.00000"))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), Price("1.00000"))
+        order3_filled = TestStubs.event_order_filled(order3, PositionId("P-3"), Price("1.00000"))
+        order4_filled = TestStubs.event_order_filled(order4, PositionId("P-3"), Price("1.00100"))
 
         position1 = Position(order1_filled)
         position2 = Position(order2_filled)

@@ -17,7 +17,10 @@
 # - flake8: noqa at top of file
 # - Move cdef _numerator to quicktions.pxd
 # - Move cdef _denominator to quicktions.pxd
-# - Move cdef cdef Py_hash_t _hash to quicktions.pxd
+# - Move cdef Py_hash_t _hash to quicktions.pxd
+# - rename @classmethod def from_float to _from_float
+# - rename @classmethod def from_decimal to _from_decimal
+# - change __str__ and __repr__ to return a decimalized string only
 
 """
 Fast fractions data type for rational numbers.
@@ -25,17 +28,24 @@ This is an almost-drop-in replacement for the standard library's
 "fractions.Fraction".
 """
 
-from __future__ import division, absolute_import, print_function
-
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 __all__ = ['Fraction']
 
 __version__ = '1.11'
 
 cimport cython
+from cpython.object cimport Py_EQ
+from cpython.object cimport Py_GE
+from cpython.object cimport Py_GT
+from cpython.object cimport Py_LE
+from cpython.object cimport Py_LT
+from cpython.object cimport Py_NE
 from cpython.unicode cimport Py_UNICODE_TODECIMAL
-from cpython.object cimport Py_LT, Py_LE, Py_EQ, Py_NE, Py_GT, Py_GE
 from cpython.version cimport PY_MAJOR_VERSION
+
 
 cdef extern from *:
     cdef long LONG_MAX, INT_MAX
@@ -45,11 +55,15 @@ cdef extern from *:
 cdef object Rational, Integral, Real, Complex, Decimal, math, operator, sys
 cdef object PY_MAX_LONG_LONG = PY_LLONG_MAX
 
-from numbers import Rational, Integral, Real, Complex
 from decimal import Decimal
 import math
+from numbers import Complex
+from numbers import Integral
+from numbers import Rational
+from numbers import Real
 import operator
 import sys
+
 
 cdef bint _decimal_supports_integer_ratio = hasattr(Decimal, "as_integer_ratio")  # Py3.6+
 
@@ -249,9 +263,10 @@ cdef class Fraction:
     Fraction(147, 100)
     """
 
-    def __cinit__(self, numerator=0, denominator=None, *, bint _normalize=True):
+    def __init__(self, numerator=0, denominator=None, *, bint _normalize=False):
         cdef Fraction value
         self._hash = -1
+
         if denominator is None:
             if type(numerator) is int or type(numerator) is long:
                 self._numerator = numerator
@@ -295,7 +310,7 @@ cdef class Fraction:
                     # Exact conversion
                     self._numerator, self._denominator = numerator.as_integer_ratio()
                 else:
-                    value = Fraction.from_decimal(numerator)
+                    value = Fraction._from_decimal(numerator)
                     self._numerator = (<Fraction>value)._numerator
                     self._denominator = (<Fraction>value)._denominator
                 return
@@ -346,7 +361,7 @@ cdef class Fraction:
         self._denominator = denominator
 
     @classmethod
-    def from_float(cls, f):
+    def _from_float(cls, f):
         """Converts a finite float to a rational number, exactly.
         Beware that Fraction.from_float(0.3) != Fraction(3, 10).
         """
@@ -366,7 +381,7 @@ cdef class Fraction:
         raise ValueError(f"Cannot convert {f!r} to {cls.__name__}.")
 
     @classmethod
-    def from_decimal(cls, dec):
+    def _from_decimal(cls, dec):
         """Converts a finite Decimal instance to a rational number, exactly."""
         cdef Py_ssize_t exp
         if isinstance(dec, Integral):
@@ -457,15 +472,17 @@ cdef class Fraction:
 
     def __repr__(self):
         """repr(self)"""
-        return '%s(%s, %s)' % (self.__class__.__name__,
-                               self._numerator, self._denominator)
+        # return '%s(%s, %s)' % (self.__class__.__name__,
+        #                        self._numerator, self._denominator)
+        return str(self._numerator / self._denominator)
 
     def __str__(self):
         """str(self)"""
-        if self._denominator == 1:
-            return str(self._numerator)
-        else:
-            return '%s/%s' % (self._numerator, self._denominator)
+        # if self._denominator == 1:
+        #     return str(self._numerator)
+        # else:
+        #     return '%s/%s' % (self._numerator, self._denominator)
+        return str(self._numerator / self._denominator)
 
     def __add__(a, b):
         """a + b"""
@@ -726,7 +743,7 @@ cdef class Fraction:
                 # the same way for any finite a, so treat a as zero.
                 return 0.0 == b
             else:
-                return a == a.from_float(b)
+                return a == a._from_float(b)
         return NotImplemented
 
     @cython.final
@@ -749,7 +766,7 @@ cdef class Fraction:
             if math.isnan(other) or math.isinf(other):
                 a, b = 0.0, other  # Comparison to 0.0 is just as good as any.
             else:
-                return self._richcmp(self.from_float(other), op)
+                return self._richcmp(self._from_float(other), op)
         elif isinstance(other, (Fraction, Rational)):
             a = self._numerator * other.denominator
             b = self._denominator * other.numerator

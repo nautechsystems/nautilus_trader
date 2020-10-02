@@ -23,7 +23,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -50,6 +49,7 @@ from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -170,10 +170,10 @@ cdef class Order:
         self.quantity = event.quantity
         self.timestamp = event.timestamp
         self.time_in_force = event.time_in_force
-        self.filled_qty = Quantity.zero()
+        self.filled_qty = Quantity()
         self.filled_timestamp = None      # Can be None
         self.avg_price = None         # Can be None
-        self.slippage = Decimal64()
+        self.slippage = Decimal()
         self.init_id = event.id
 
         self._events.append(event)
@@ -535,7 +535,7 @@ cdef class PassiveOrder(Order):
             If time_in_force is GTD and the expire_time is None.
 
         """
-        Condition.positive(quantity.as_double(), "quantity")
+        Condition.positive(quantity, "quantity")
         Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
@@ -544,7 +544,7 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        options['Price'] = price.to_string()
+        options['Price'] = str(price)
         options['ExpireTime'] = format_iso8601(expire_time) if not None else str(None)
 
         cdef OrderInitialized init_event = OrderInitialized(
@@ -563,7 +563,7 @@ cdef class PassiveOrder(Order):
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
-        self.slippage = Decimal64()
+        self.slippage = Decimal()
 
     cpdef str status_string(self):
         """
@@ -598,9 +598,9 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal64(self.avg_price.as_double() - self.price.as_double(), self.avg_price.precision)
+            self.slippage = Decimal.from_float(self.avg_price - self.price, self.avg_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal64(self.price.as_double() - self.avg_price.as_double(), self.avg_price.precision)
+            self.slippage = Decimal.from_float(self.price - self.avg_price, self.avg_price.precision)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -658,7 +658,7 @@ cdef class MarketOrder(Order):
             If time_in_force is other than DAY, IOC or FOC.
 
         """
-        Condition.positive(quantity.as_double(), "quantity")
+        Condition.positive(quantity, "quantity")
         Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force is DAY, IOC or FOC")
 
         cdef OrderInitialized init_event = OrderInitialized(
@@ -836,7 +836,7 @@ cdef class LimitOrder(PassiveOrder):
         cdef str expire_time_string = event.options['ExpireTime']
 
         cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
-        cdef Price price = Price.from_string(price_string)
+        cdef Price price = Price(price_string)
         cdef post_only = event.options[_POST_ONLY] == str(True)
         cdef hidden = event.options[_HIDDEN] == str(True)
 
@@ -946,7 +946,7 @@ cdef class StopOrder(PassiveOrder):
         cdef str expire_time_string = event.options['ExpireTime']
 
         cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
-        cdef Price price = Price.from_string(price_string)
+        cdef Price price = Price(price_string)
 
         return StopOrder(
             cl_ord_id=event.cl_ord_id,
@@ -1065,7 +1065,7 @@ cdef class BracketOrder:
         str
 
         """
-        cdef str take_profit_price = "NONE" if self.take_profit is None or self.take_profit.price is None else self.take_profit.price.to_string()
+        cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)
         return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
 
     def __repr__(self) -> str:

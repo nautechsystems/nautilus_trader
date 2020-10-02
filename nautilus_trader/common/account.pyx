@@ -179,4 +179,4 @@ cdef class Account:
     cdef Money _calculate_free_equity(self):
         cdef double margin = self.margin_used_maintenance.as_double() + self.margin_used_liquidation.as_double()
         cdef double value = max((self.cash_balance.as_double() - margin), 0)
-        return Money(value, self.currency)
+        return Money.from_float_c(value, 2, self.currency)

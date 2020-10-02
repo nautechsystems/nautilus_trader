@@ -61,7 +61,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -171,7 +171,7 @@ cdef class SimulatedMarket:
         self._set_min_distances()
 
     cdef void _set_slippages(self) except *:
-        cdef dict slippage_index = {}  # type: {Symbol, Decimal64}
+        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
 
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = instrument.tick_size
@@ -179,15 +179,15 @@ cdef class SimulatedMarket:
         self._slippages = slippage_index
 
     cdef void _set_min_distances(self) except *:
-        cdef dict min_stops = {}   # type: {Symbol, Decimal64}
-        cdef dict min_limits = {}  # type: {Symbol, Decimal64}
+        cdef dict min_stops = {}   # type: {Symbol, Decimal}
+        cdef dict min_limits = {}  # type: {Symbol, Decimal}
 
         for symbol, instrument in self.instruments.items():
-            min_stops[symbol] = Decimal64(
+            min_stops[symbol] = Decimal.from_float_c(
                 instrument.tick_size * instrument.min_stop_distance,
                 instrument.price_precision)
 
-            min_limits[symbol] = Decimal64(
+            min_limits[symbol] = Decimal.from_float_c(
                 instrument.tick_size * instrument.min_limit_distance,
                 instrument.price_precision)
 
@@ -258,11 +258,11 @@ cdef class SimulatedMarket:
             self.account_currency,
             self.starting_capital,
             self.starting_capital,
-            Money(0, self.account_currency),
-            Money(0, self.account_currency),
-            Money(0, self.account_currency),
-            Decimal64(),
-            'N',
+            Money.zero(currency=self.account_currency),
+            Money.zero(currency=self.account_currency),
+            Money.zero(currency=self.account_currency),
+            Decimal(),
+            "N",
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
@@ -339,12 +339,12 @@ cdef class SimulatedMarket:
             # Check for order fill
             if order.side == OrderSide.BUY:
                 if order.type == OrderType.STOP:
-                    if tick.ask.ge(order.price) or self._is_marginal_buy_stop_fill(order.price, tick):
+                    if tick.ask >= order.price or self._is_marginal_buy_stop_fill(order.price, tick):
                         del self._working_orders[order.cl_ord_id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(
                                 order,
-                                order.price.add(self._slippages[order.symbol]),
+                                Price(order.price + self._slippages[order.symbol]),
                                 LiquiditySide.TAKER,
                             )
                         else:
@@ -355,7 +355,7 @@ cdef class SimulatedMarket:
                             )
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if tick.ask.le(order.price) or self._is_marginal_buy_limit_fill(order.price, tick):
+                    if tick.ask <= order.price or self._is_marginal_buy_limit_fill(order.price, tick):
                         del self._working_orders[order.cl_ord_id]  # Remove order from working orders
                         self._fill_order(
                             order,
@@ -365,12 +365,12 @@ cdef class SimulatedMarket:
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
                 if order.type == OrderType.STOP:
-                    if tick.bid.le(order.price) or self._is_marginal_sell_stop_fill(order.price, tick):
+                    if tick.bid <= order.price or self._is_marginal_sell_stop_fill(order.price, tick):
                         del self._working_orders[order.cl_ord_id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
                             self._fill_order(
                                 order,
-                                order.price.sub(self._slippages[order.symbol]),
+                                Price(order.price - self._slippages[order.symbol]),
                                 LiquiditySide.TAKER,
                             )
                         else:
@@ -381,7 +381,7 @@ cdef class SimulatedMarket:
                             )
                         continue  # Continue loop to next order
                 elif order.type == OrderType.LIMIT:
-                    if tick.bid.ge(order.price) or self._is_marginal_sell_limit_fill(order.price, tick):
+                    if tick.bid >= order.price or self._is_marginal_sell_limit_fill(order.price, tick):
                         del self._working_orders[order.cl_ord_id]  # Remove order from working orders
                         self._fill_order(
                             order,
@@ -442,8 +442,8 @@ cdef class SimulatedMarket:
                 self.account_cash_activity_day,
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal64(),
-                margin_call_status='N',
+                margin_ratio=Decimal(),
+                margin_call_status="N",
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.utc_now(),
             )
@@ -468,7 +468,7 @@ cdef class SimulatedMarket:
             raise ValueError(f"Cannot calculate the pnl of a "
                              f"{position_side_to_string(side)} side")
 
-        return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
+        return Money.from_float_c(difference * quantity.as_double() * exchange_rate, 2, self.account_currency)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, "timestamp")
@@ -492,7 +492,7 @@ cdef class SimulatedMarket:
                 mid_price = mid_prices.get(instrument.symbol, 0.0)
                 if mid_price == 0.0:
                     market = self._market[instrument.symbol]
-                    mid_price = (market.ask.as_double() + market.bid.as_double()) / 2.0
+                    mid_price = <double>((market.ask + market.bid) / 2.0)
                     mid_prices[instrument.symbol] = mid_price
                 interest_rate = self.rollover_calculator.calc_overnight_rate(
                     position.symbol,
@@ -513,7 +513,7 @@ cdef class SimulatedMarket:
         elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
             rollover_cumulative = rollover_cumulative * 3.0
 
-        cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
+        cdef Money rollover_final = Money.from_float_c(rollover_cumulative, 2, self.account_currency)
         self.total_rollover = self.total_rollover.add(rollover_final)
 
         cdef AccountState account_event
@@ -529,8 +529,8 @@ cdef class SimulatedMarket:
                 self.account_cash_activity_day,
                 margin_used_liquidation=Money(0, self.account_currency),
                 margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal64(),
-                margin_call_status='N',
+                margin_ratio=Decimal(),
+                margin_call_status="N",
                 event_id=self._uuid_factory.generate(),
                 event_timestamp=self._clock.utc_now(),
             )
@@ -638,12 +638,12 @@ cdef class SimulatedMarket:
         # Check order price is valid and reject or fill
         if order.side == OrderSide.BUY:
             if order.type == OrderType.STOP:
-                if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
+                if order.price < current_market.ask + self._min_stops[order.symbol]:
                     self._reject_order(order, f"BUY STOP order price of {order.price} is too "
                                               f"far from the market, ask={current_market.ask}")
                     return  # Invalid price
             elif order.type == OrderType.LIMIT:
-                if order.price.ge(current_market.ask.sub(self._min_limits[order.symbol])):
+                if order.price >= current_market.ask - self._min_limits[order.symbol]:
                     if order.is_post_only:
                         self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
                                                   f"far from the market, ask={current_market.ask}")
@@ -654,13 +654,13 @@ cdef class SimulatedMarket:
                     return  # Filled
         elif order.side == OrderSide.SELL:
             if order.type == OrderType.STOP:
-                if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
+                if order.price > current_market.bid - self._min_stops[order.symbol]:
 
                     self._reject_order(order, f"SELL STOP order price of {order.price} is too "
                                               f"far from the market, bid={current_market.bid}")
                     return  # Invalid price
             elif order.type == OrderType.LIMIT:
-                if order.price.le(current_market.bid.add(self._min_limits[order.symbol])):
+                if order.price <= current_market.bid + self._min_limits[order.symbol]:
                     if order.is_post_only:
                         self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
                                                   f"far from the market, bid={current_market.bid}")
@@ -703,16 +703,16 @@ cdef class SimulatedMarket:
         return ExecutionId(f"E-{self._executions_count}")
 
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
-        return current_market.ask.eq(order_price) and self.fill_model.is_stop_filled()
+        return current_market.ask == order_price and self.fill_model.is_stop_filled()
 
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market):
-        return current_market.ask.eq(order_price) and self.fill_model.is_limit_filled()
+        return current_market.ask == order_price and self.fill_model.is_limit_filled()
 
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market):
-        return current_market.bid.eq(order_price) and self.fill_model.is_stop_filled()
+        return current_market.bid == order_price and self.fill_model.is_stop_filled()
 
     cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market):
-        return current_market.bid.eq(order_price) and self.fill_model.is_limit_filled()
+        return current_market.bid == order_price and self.fill_model.is_limit_filled()
 
     cdef void _submit_order(self, Order order) except *:
         # Generate event
@@ -844,7 +844,7 @@ cdef class SimulatedMarket:
             if self.fill_model.is_slipped():
                 self._fill_order(
                     order,
-                    current_market.ask.add(self._slippages[order.symbol]),
+                    Price(current_market.ask + self._slippages[order.symbol]),
                     LiquiditySide.TAKER)
             else:
                 self._fill_order(order, current_market.ask, LiquiditySide.TAKER)
@@ -852,7 +852,7 @@ cdef class SimulatedMarket:
             if self.fill_model.is_slipped():
                 self._fill_order(
                     order,
-                    current_market.bid.sub(self._slippages[order.symbol]),
+                    Price(current_market.bid - self._slippages[order.symbol]),
                     LiquiditySide.TAKER)
             else:
                 self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
@@ -861,22 +861,22 @@ cdef class SimulatedMarket:
 
     cdef void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *:
         if order.side == OrderSide.BUY:
-            if order.price.ge(current_market.ask.sub(self._min_limits[order.symbol])):
+            if order.price >= current_market.ask - self._min_limits[order.symbol]:
                 if order.is_post_only:
                     self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
                                               f"far from the market, ask={current_market.ask}")
                     return  # Invalid price
-            elif order.price.ge(current_market.ask):
+            elif order.price >= current_market.ask:
                 self._accept_order(order)
                 self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
                 return  # Filled
         elif order.side == OrderSide.SELL:
-            if order.price.le(current_market.bid.add(self._min_limits[order.symbol])):
+            if order.price <= current_market.bid + self._min_limits[order.symbol]:
                 if order.is_post_only:
                     self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
                                               f"far from the market, bid={current_market.bid}")
                     return  # Invalid price
-            elif order.price.le(current_market.bid):
+            elif order.price <= current_market.bid:
                 self._accept_order(order)
                 self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
                 return  # Filled
@@ -887,12 +887,12 @@ cdef class SimulatedMarket:
 
     cdef void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *:
         if order.side == OrderSide.BUY:
-            if order.price.lt(current_market.ask.add(self._min_stops[order.symbol])):
+            if order.price < current_market.ask + self._min_stops[order.symbol]:
                 self._reject_order(order, f"BUY STOP order price of {order.price} is too "
                                           f"far from the market, ask={current_market.ask}")
                 return  # Invalid price
         elif order.side == OrderSide.SELL:
-            if order.price.gt(current_market.bid.sub(self._min_stops[order.symbol])):
+            if order.price > current_market.bid - self._min_stops[order.symbol]:
                 self._reject_order(order, f"SELL STOP order price of {order.price} is too "
                                           f"far from the market, bid={current_market.bid}")
                 return  # Invalid price
@@ -975,7 +975,7 @@ cdef class SimulatedMarket:
             order.symbol,
             order.side,
             order.quantity,
-            Quantity(0),  # Not modeling partial fills just yet
+            Quantity(),  # Not modeling partial fills just yet
             fill_price,
             commission,
             liquidity_side,

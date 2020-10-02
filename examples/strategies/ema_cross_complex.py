@@ -311,11 +311,11 @@ class EMACross(TradingStrategy):
                 self._enter_short(bar, sl_buffer, spread_buffer)
 
     def _enter_long(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        price_entry = Price(bar.high + self.entry_buffer + spread_buffer, self.precision)
-        price_stop_loss = Price(bar.low - sl_buffer, self.precision)
+        price_entry = Price.from_float(bar.high + self.entry_buffer + spread_buffer, self.precision)
+        price_stop_loss = Price.from_float(bar.low - sl_buffer, self.precision)
 
         risk = price_entry - price_stop_loss
-        price_take_profit = Price((price_entry + risk).as_double(), self.precision)
+        price_take_profit = Price.from_float(price_entry + risk, self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -360,11 +360,11 @@ class EMACross(TradingStrategy):
         self.submit_bracket_order(bracket_order)
 
     def _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        price_entry = Price(bar.low - self.entry_buffer, self.precision)
-        price_stop_loss = Price(bar.high + sl_buffer + spread_buffer, self.precision)
+        price_entry = Price.from_float(bar.low - self.entry_buffer, self.precision)
+        price_stop_loss = Price.from_float(bar.high + sl_buffer + spread_buffer, self.precision)
 
         risk = price_stop_loss - price_entry
-        price_take_profit = Price((price_entry - risk).as_double(), self.precision)
+        price_take_profit = Price.from_float(price_entry - risk, self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -399,12 +399,14 @@ class EMACross(TradingStrategy):
             quantity=position_size,
             price=price_entry,
             time_in_force=TimeInForce.GTD,
-            expire_time=bar.timestamp + timedelta(minutes=1))
+            expire_time=bar.timestamp + timedelta(minutes=1),
+        )
 
         bracket_order = self.order_factory.bracket(
             entry_order=entry_order,
             stop_loss=price_stop_loss,
-            take_profit=price_take_profit)
+            take_profit=price_take_profit,
+        )
 
         self.submit_bracket_order(bracket_order)
 
@@ -415,13 +417,13 @@ class EMACross(TradingStrategy):
 
             # SELL SIDE ORDERS
             if order.is_sell():
-                temp_price = Price(bar.low - sl_buffer, self.precision)
-                if temp_price.gt(order.price):
+                temp_price = Price.from_float(bar.low - sl_buffer, self.precision)
+                if temp_price > order.price:
                     self.modify_order(order, order.quantity, temp_price)
             # BUY SIDE ORDERS
             elif order.is_buy():
-                temp_price = Price(bar.high + sl_buffer + spread_buffer, self.precision)
-                if temp_price.lt(order.price):
+                temp_price = Price.from_float(bar.high + sl_buffer + spread_buffer, self.precision)
+                if temp_price < order.price:
                     self.modify_order(order, order.quantity, temp_price)
 
     def _update_session_times(self):

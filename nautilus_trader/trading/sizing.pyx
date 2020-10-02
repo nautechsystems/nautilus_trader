@@ -73,16 +73,16 @@ cdef class PositionSizer:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef double _calculate_risk_ticks(self, double entry, double stop_loss):
-        return abs(entry - stop_loss) / self.instrument.tick_size.as_double()
+    cdef double _calculate_risk_ticks(self, Price entry, Price stop_loss):
+        return abs(entry - stop_loss) / self.instrument.tick_size
 
     cdef double _calculate_riskable_money(
             self,
-            double equity,
+            Money equity,
             double risk_bp,
             double commission_rate_bp,
     ):
-        if equity <= 0.0:
+        if equity <= 0:
             return 0.0
         cdef double risk_money = equity * basis_points_as_percentage(risk_bp)
         cdef double commission = risk_money * basis_points_as_percentage(commission_rate_bp)
@@ -177,21 +177,15 @@ cdef class FixedRiskSizer(PositionSizer):
         if exchange_rate <= 0.0:
             return Quantity(precision=self.instrument.size_precision)
 
-        cdef double risk_points = self._calculate_risk_ticks(
-            entry.as_double(),
-            stop_loss.as_double())
-
-        cdef double risk_money = self._calculate_riskable_money(
-            equity.as_double(),
-            risk_bp,
-            commission_rate_bp)
+        cdef double risk_points = self._calculate_risk_ticks(entry, stop_loss)
+        cdef double risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate_bp)
 
         if risk_points <= 0.0:
             # Divide by zero protection
             return Quantity(precision=self.instrument.size_precision)
 
         # Calculate position size
-        cdef double tick_size = self.instrument.tick_size.as_double()
+        cdef double tick_size = self.instrument.tick_size
         cdef double position_size = ((risk_money / exchange_rate) / risk_points) / tick_size
 
         # Limit size on hard limit
@@ -206,6 +200,6 @@ cdef class FixedRiskSizer(PositionSizer):
             position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
 
         # Limit size on max trade size
-        cdef double final_size = min(position_size_batched, self.instrument.max_trade_size)
+        cdef double final_size = min(position_size_batched, self.instrument.max_trade_size.as_double())
 
-        return Quantity(final_size, precision=self.instrument.size_precision)
+        return Quantity.from_float_c(final_size, precision=self.instrument.size_precision)

@@ -63,7 +63,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self._volume = Quantity.zero()
+        self._volume = Quantity()
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -150,9 +150,9 @@ cdef class BarBuilder:
             self._high = price
             self._low = price
             self.initialized = True
-        elif price.gt(self._high):
+        elif price > self._high:
             self._high = price
-        elif price.lt(self._low):
+        elif price < self._low:
             self._low = price
 
         self._close = price
@@ -171,7 +171,7 @@ cdef class BarBuilder:
             self._low = None
             self._close = None
 
-        self._volume = Quantity.zero()
+        self._volume = Quantity()
         self.count = 0
 
     def __str__(self) -> str:

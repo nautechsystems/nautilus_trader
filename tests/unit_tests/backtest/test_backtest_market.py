@@ -166,7 +166,7 @@ class SimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price(90.003, 3), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
+        self.assertEqual(Price("90.003"), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
 
     def test_submit_limit_order(self):
         # Arrange
@@ -185,7 +185,7 @@ class SimulatedMarketTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(80.000, 3))
+            Price("80.000"))
 
         # Act
         strategy.submit_order(order)
@@ -193,7 +193,7 @@ class SimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
-        self.assertEqual(Price(80.000, 3), order.price)
+        self.assertEqual(Price("80.000"), order.price)
 
     def test_submit_bracket_market_order(self):
         # Arrange
@@ -216,7 +216,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
         bracket_order = strategy.order_factory.bracket(
             entry_order,
-            Price(80.000, 3))
+            Price("80.000"))
 
         # Act
         strategy.submit_bracket_order(bracket_order)
@@ -224,7 +224,7 @@ class SimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(8, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderFilled))
-        self.assertEqual(Price(80.000, 3), bracket_order.stop_loss.price)
+        self.assertEqual(Price("80.000"), bracket_order.stop_loss.price)
 
     def test_submit_bracket_stop_order(self):
         # Arrange
@@ -244,12 +244,12 @@ class SimulatedMarketTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(96.710, 3))
+            Price("96.710"))
 
         bracket_order = strategy.order_factory.bracket(
             entry_order,
-            stop_loss=Price(86.000, 3),
-            take_profit=Price(97.000, 3))
+            stop_loss=Price("86.000"),
+            take_profit=Price("97.000"))
 
         # Act
         strategy.submit_bracket_order(bracket_order)
@@ -276,15 +276,15 @@ class SimulatedMarketTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(96.711, 3))
+            Price("96.711"))
 
         strategy.submit_order(order)
 
         # Act
-        strategy.modify_order(order, order.quantity, Price(96.714, 3))
+        strategy.modify_order(order, order.quantity, Price("96.714"))
 
         # Assert
-        self.assertEqual(Price(96.714, 3), strategy.execution.order(order.cl_ord_id).price)
+        self.assertEqual(Price("96.714"), strategy.execution.order(order.cl_ord_id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
@@ -309,15 +309,15 @@ class SimulatedMarketTests(unittest.TestCase):
 
         bracket_order = strategy.order_factory.bracket(
             entry_order,
-            stop_loss=Price(85.000, 3))
+            stop_loss=Price("85.000"))
 
         strategy.submit_bracket_order(bracket_order)
 
         # Act
-        strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price(85.100, 3))
+        strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price("85.100"))
 
         # Assert
-        self.assertEqual(Price(85.100, 3), strategy.execution.order(bracket_order.stop_loss.cl_ord_id).price)
+        self.assertEqual(Price("85.100"), strategy.execution.order(bracket_order.stop_loss.cl_ord_id).price)
         self.assertEqual(9, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 
@@ -386,7 +386,7 @@ class SimulatedMarketTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(80.000, 3))
+            Price("80.000"))
 
         # Act
         strategy.submit_order(order)
@@ -412,7 +412,7 @@ class SimulatedMarketTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(80.000, 3))
+            Price("80.000"))
 
         # Act
         strategy.submit_order(order)
@@ -493,7 +493,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
         filled_price = strategy.object_storer.get_store()[3].avg_price.as_double()
         commission = strategy.object_storer.get_store()[3].commission.as_double()
-        commission = Money(-commission * filled_price, 392)
+        commission = Money.from_float(-commission * filled_price, 2, 392)
         position = self.exec_engine.cache.positions_open()[0]
         self.assertEqual(position.realized_pnl, commission)
 
@@ -520,7 +520,7 @@ class SimulatedMarketTests(unittest.TestCase):
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(80.001, 3))
+            Price("80.001"))
 
         # Act
 
@@ -529,8 +529,8 @@ class SimulatedMarketTests(unittest.TestCase):
 
         self.market.process_tick(QuoteTick(
             self.usdjpy.symbol,
-            Price(80.000, 3),
-            Price(80.000, 3),
+            Price("80.000"),
+            Price("80.000"),
             Quantity(100000),
             Quantity(100000),
             UNIX_EPOCH)
@@ -566,8 +566,8 @@ class SimulatedMarketTests(unittest.TestCase):
 
         reduce_quote = QuoteTick(
             self.usdjpy.symbol,
-            Price(100.003, 3),
-            Price(100.003, 3),
+            Price("100.003"),
+            Price("100.003"),
             Quantity(1),
             Quantity(1),
             UNIX_EPOCH)
@@ -587,7 +587,7 @@ class SimulatedMarketTests(unittest.TestCase):
         position = self.exec_engine.cache.positions_open()[0]
         unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
         expected_unrealized_pnl = \
-            order_reduce.quantity.as_double() * (reduce_quote.bid.sub(open_quote.ask).as_double())
+            order_reduce.quantity.as_double() * (reduce_quote.bid - open_quote.ask)
         self.assertEqual(unrealized_pnl, expected_unrealized_pnl)
 
     # TODO: Position flip behaviour needs to be implemented

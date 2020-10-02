@@ -54,7 +54,7 @@ cdef class AccountState(Event):
             Money cash_activity_day not None,
             Money margin_used_liquidation not None,
             Money margin_used_maintenance not None,
-            Decimal64 margin_ratio not None,
+            Decimal margin_ratio not None,
             str margin_call_status not None,
             UUID event_id not None,
             datetime event_timestamp not None,
@@ -78,7 +78,7 @@ cdef class AccountState(Event):
             The account margin used before liquidation.
         margin_used_maintenance : Money
             The account margin used for maintenance.
-        margin_ratio : Decimal64
+        margin_ratio : Decimal
             The account margin ratio.
         margin_call_status : str
             The account margin call status (can be empty string).
@@ -98,7 +98,7 @@ cdef class AccountState(Event):
 
         """
         Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
-        Condition.not_negative(margin_ratio.as_double(), "margin_ratio")
+        Condition.not_negative(margin_ratio, "margin_ratio")
         Condition.valid_string(margin_call_status, "margin_call_status")
         super().__init__(event_id, event_timestamp)
 
@@ -123,8 +123,8 @@ cdef class AccountState(Event):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
-                f"cash={self.cash_balance.to_string(format_commas=True)}, "
-                f"margin_used={self.margin_used_maintenance.to_string(format_commas=True)})")
+                f"cash={self.cash_balance.to_string_formatted()}, "
+                f"margin_used={self.margin_used_maintenance.to_string_formatted()})")
 
     def __repr__(self) -> str:
         """
@@ -1006,8 +1006,8 @@ cdef class OrderFilled(OrderEvent):
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.execution_time = execution_time
-        self.is_partial_fill = not self.leaves_qty.is_zero()
-        self.is_completion_trigger = self.leaves_qty.is_zero()
+        self.is_partial_fill = self.leaves_qty > 0
+        self.is_completion_trigger = not self.is_partial_fill
 
     cdef OrderFilled clone(self, PositionId new_position_id):
         """
@@ -1235,7 +1235,7 @@ cdef class PositionModified(PositionEvent):
                 f"avg_open={self.position.avg_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string(True)} {currency}, "
+                f"realized_pnl={self.position.realized_pnl} {currency}, "
                 f"{self.position.status_string()})")
 
 
@@ -1303,4 +1303,4 @@ cdef class PositionClosed(PositionEvent):
                 f"avg_close={self.position.avg_close_price}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string(True)} {currency})")
+                f"realized_pnl={self.position.realized_pnl} {currency})")

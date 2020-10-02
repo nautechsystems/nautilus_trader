@@ -24,6 +24,7 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
@@ -50,7 +51,7 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(1500000),
-            Price(0.80010, 5))
+            Price("0.80010"))
 
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
@@ -60,7 +61,7 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(1500000),
-            Price(0.80000, 5))
+            Price("0.80000"))
 
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))
@@ -69,7 +70,7 @@ class ReportProviderTests(unittest.TestCase):
         event = TestStubs.event_order_filled(
             order1,
             position_id=PositionId("P-1"),
-            fill_price=Price(0.80011, 5),
+            fill_price=Price("0.80011"),
         )
 
         order1.apply(event)
@@ -87,7 +88,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
-        self.assertEqual(0.80011, report.iloc[0]["avg_price"])
+        self.assertEqual(Decimal("0.80011"), report.iloc[0]["avg_price"])
         self.assertEqual(0.00001, report.iloc[0]["slippage"])
         self.assertEqual("None", report.iloc[1]["avg_price"])
 
@@ -99,7 +100,7 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(1500000),
-            Price(0.80010, 5))
+            Price("0.80010"))
 
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
@@ -109,7 +110,7 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(1500000),
-            Price(0.80000, 5))
+            Price("0.80000"))
 
         submitted2 = TestStubs.event_order_submitted(order2)
         accepted2 = TestStubs.event_order_accepted(order2)
@@ -119,7 +120,7 @@ class ReportProviderTests(unittest.TestCase):
         order2.apply(accepted2)
         order2.apply(working2)
 
-        filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price(0.80011, 5))
+        filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price("0.80011"))
 
         order1.apply(filled)
 
@@ -136,7 +137,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
-        self.assertAlmostEqual(0.80011, report.iloc[0]["avg_price"])
+        self.assertEqual(Decimal("0.80011"), report.iloc[0]["avg_price"])
         self.assertEqual(0.00001, report.iloc[0]["slippage"])
 
     def test_generate_trades_report(self):

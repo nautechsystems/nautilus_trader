@@ -51,7 +51,7 @@ cpdef Price convert_string_to_price(str price_string):
     """
     Condition.valid_string(price_string, "price_string")  # string often 'None'
 
-    return None if price_string == NONE else Price.from_string(price_string)
+    return None if price_string == NONE else Price(price_string)
 
 
 cpdef datetime convert_string_to_datetime(str time_string):
