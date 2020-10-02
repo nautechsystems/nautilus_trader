@@ -256,7 +256,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Price((self.bid.as_double() + self.ask.as_double()) / 2, self.bid.precision + 1)
+            return Price.from_float_c(<double>((self.bid + self.ask) / 2), self.bid.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid
         elif price_type == PriceType.ASK:
@@ -279,7 +279,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Quantity(self.bid_size.as_double() + self.ask_size.as_double())
+            return Quantity(self.bid_size + self.ask_size)
         elif price_type == PriceType.BID:
             return self.bid_size
         elif price_type == PriceType.ASK:
@@ -316,10 +316,10 @@ cdef class QuoteTick(Tick):
 
         return QuoteTick(
             symbol,
-            Price.from_string(pieces[0]),
-            Price.from_string(pieces[1]),
-            Quantity.from_string(pieces[2]),
-            Quantity.from_string(pieces[3]),
+            Price(pieces[0]),
+            Price(pieces[1]),
+            Quantity(pieces[2]),
+            Quantity(pieces[3]),
             datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
         )
 
@@ -362,10 +362,10 @@ cdef class QuoteTick(Tick):
 
         """
         return self.symbol.equals(other.symbol) \
-            and self.bid.equals(other.bid) \
-            and self.ask.equals(other.ask) \
-            and self.bid_size.equals(other.bid_size) \
-            and self.ask_size.equals(other.ask_size) \
+            and self.bid == other.bid \
+            and self.ask == other.ask \
+            and self.bid_size == other.bid_size \
+            and self.ask_size == other.ask_size \
             and self.timestamp == other.timestamp
 
     cpdef str to_string(self):
@@ -469,8 +469,8 @@ cdef class TradeTick(Tick):
 
         return TradeTick(
             symbol,
-            Price.from_string(pieces[0]),
-            Quantity.from_string(pieces[1]),
+            Price(pieces[0]),
+            Quantity(pieces[1]),
             maker_from_string(pieces[2]),
             MatchId(pieces[3]),
             datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
@@ -514,11 +514,11 @@ cdef class TradeTick(Tick):
         bool
 
         """
-        return self.symbol.equals(other.symbol) \
-            and self.price.equals(other.price) \
-            and self.size.equals(other.size) \
+        return self.symbol == other.symbol \
+            and self.price == other.price \
+            and self.size == other.size \
             and self.maker == other.maker \
-            and self.match_id.equals(other.match_id) \
+            and self.match_id == other.match_id \
             and self.timestamp == other.timestamp
 
     cpdef str to_string(self):

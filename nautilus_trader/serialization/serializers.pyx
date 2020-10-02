@@ -61,7 +61,7 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -178,7 +178,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             SYMBOL: order.symbol.value,
             ORDER_SIDE: self.convert_snake_to_camel(order_side_to_string(order.side)),
             ORDER_TYPE: self.convert_snake_to_camel(order_type_to_string(order.type)),
-            QUANTITY: order.quantity.to_string(),
+            QUANTITY: str(order.quantity),
             TIME_IN_FORCE: time_in_force_to_string(order.time_in_force),
             INIT_ID: order.init_id.value,
             TIMESTAMP: convert_datetime_to_string(order.timestamp),
@@ -213,7 +213,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8))
         cdef OrderSide order_side = order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
         cdef OrderType order_type = order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
-        cdef Quantity quantity = Quantity.from_string(unpacked[QUANTITY].decode(UTF8))
+        cdef Quantity quantity = Quantity(unpacked[QUANTITY].decode(UTF8))
         cdef TimeInForce time_in_force = time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8))
         cdef UUID init_id = UUID(unpacked[INIT_ID].decode(UTF8))
         cdef datetime timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
@@ -378,7 +378,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                Quantity(unpacked[QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[PRICE].decode(UTF8)),
                 command_id,
                 command_timestamp,
@@ -543,12 +543,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 currency,
-                Money.from_string(unpacked[CASH_BALANCE].decode(UTF8), currency),
-                Money.from_string(unpacked[CASH_START_DAY].decode(UTF8), currency),
-                Money.from_string(unpacked[CASH_ACTIVITY_DAY].decode(UTF8), currency),
-                Money.from_string(unpacked[MARGIN_USED_LIQUIDATION].decode(UTF8), currency),
-                Money.from_string(unpacked[MARGIN_USED_MAINTENANCE].decode(UTF8), currency),
-                Decimal64.from_string_to_decimal(unpacked[MARGIN_RATIO].decode(UTF8)),
+                Money(unpacked[CASH_BALANCE].decode(UTF8), currency),
+                Money(unpacked[CASH_START_DAY].decode(UTF8), currency),
+                Money(unpacked[CASH_ACTIVITY_DAY].decode(UTF8), currency),
+                Money(unpacked[MARGIN_USED_LIQUIDATION].decode(UTF8), currency),
+                Money(unpacked[MARGIN_USED_MAINTENANCE].decode(UTF8), currency),
+                Decimal(unpacked[MARGIN_RATIO].decode(UTF8)),
                 unpacked[MARGIN_CALL_STATUS].decode(UTF8),
                 event_id,
                 event_timestamp,
@@ -559,7 +559,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
-                Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                Quantity(unpacked[QUANTITY].decode(UTF8)),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
                 event_id,
                 event_timestamp,
@@ -613,7 +613,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Symbol.from_string(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
-                Quantity.from_string(unpacked[QUANTITY].decode(UTF8)),
+                Quantity(unpacked[QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[PRICE].decode(UTF8)),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
@@ -645,7 +645,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                Quantity.from_string(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
+                Quantity(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[MODIFIED_PRICE].decode(UTF8)),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME].decode(UTF8)),
                 event_id,
@@ -670,10 +670,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                Quantity.from_string(unpacked[FILLED_QUANTITY].decode(UTF8)),
-                Quantity.from_string(unpacked[LEAVES_QUANTITY].decode(UTF8)),
+                Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
+                Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
-                Money.from_string(unpacked[COMMISSION].decode(UTF8), commission_currency),
+                Money(unpacked[COMMISSION].decode(UTF8), commission_currency),
                 liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
                 currency_from_string(unpacked[BASE_CURRENCY].decode(UTF8)),
                 currency_from_string(unpacked[QUOTE_CURRENCY].decode(UTF8)),

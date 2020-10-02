@@ -17,7 +17,7 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.objects cimport Decimal64
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 
 
@@ -32,7 +32,7 @@ cdef class Account:
     cdef readonly Money cash_activity_day
     cdef readonly Money margin_used_liquidation
     cdef readonly Money margin_used_maintenance
-    cdef readonly Decimal64 margin_ratio
+    cdef readonly Decimal margin_ratio
     cdef readonly str margin_call_status
     cdef readonly free_equity
 

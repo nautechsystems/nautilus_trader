@@ -30,7 +30,10 @@ class ObjectStorer:
         """
         Return the list or stored objects.
 
-        return: List[Object].
+        Returns
+        -------
+        List[Object]
+
         """
         return self._store
 
@@ -38,7 +41,11 @@ class ObjectStorer:
         """
         Store the given object.
 
-        param obj: The object to store.
+        Parameters
+        ----------
+        obj : object
+            The object to store.
+
         """
         self.count += 1
         self._store.append(obj)
@@ -47,8 +54,13 @@ class ObjectStorer:
         """
         Store the given objects as a tuple.
 
-        param obj1: The first object to store.
-        param obj2: The second object to store.
+        Parameters
+        ----------
+        obj1 : object
+            The first object to store.
+        obj2 : object
+            The second object to store.
+
         """
         self.store((obj1, obj2))
 
@@ -64,11 +76,20 @@ class MockExecutionClient(ExecutionClient):
         """
         Initialize a new instance of the MockExecutionClient class.
 
-        :param venue: The venue for the client.
-        :param exec_engine: The execution engine for the component.
-        :param logger: The logger for the component.
+        venue : Venue
+            The venue for the client.
+        exec_engine : ExecutionEngine
+            The execution engine for the component.
+        logger : Logger
+            The logger for the component.
+
         """
-        super().__init__(venue, exec_engine, logger)
+        super().__init__(
+            venue,
+            exec_engine.account.id,
+            exec_engine,
+            logger,
+        )
 
         self.received_commands = []
 

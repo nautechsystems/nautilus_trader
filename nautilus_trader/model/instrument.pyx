@@ -16,13 +16,12 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -38,12 +37,12 @@ cdef class Instrument:
             SecurityType security_type,
             int price_precision,
             int size_precision,
-            Decimal64 tick_size not None,
+            Decimal tick_size not None,
             Quantity lot_size not None,
             Quantity min_trade_size not None,
             Quantity max_trade_size not None,
-            Decimal64 rollover_interest_buy not None,
-            Decimal64 rollover_interest_sell not None,
+            Decimal rollover_interest_buy not None,
+            Decimal rollover_interest_sell not None,
             datetime timestamp not None,
     ):
         """
@@ -61,7 +60,7 @@ cdef class Instrument:
             The price decimal precision.
         size_precision : int
             The trading size decimal precision.
-        tick_size : Decimal64
+        tick_size : Decimal
             The tick size.
         lot_size : Quantity
             The rounded lot size.
@@ -69,9 +68,9 @@ cdef class Instrument:
             The minimum possible trade size.
         max_trade_size : Quantity
             The maximum possible trade size.
-        rollover_interest_buy : Decimal64
+        rollover_interest_buy : Decimal
             The rollover interest for long positions.
-        rollover_interest_sell : Decimal64
+        rollover_interest_sell : Decimal
             The rollover interest for short positions.
         timestamp : datetime
             The timestamp the instrument was created/updated at.
@@ -180,12 +179,12 @@ cdef class ForexInstrument(Instrument):
             int min_stop_distance,
             int min_limit_distance_entry,
             int min_limit_distance,
-            Price tick_size not None,
+            Decimal tick_size not None,
             Quantity lot_size not None,
             Quantity min_trade_size not None,
             Quantity max_trade_size not None,
-            Decimal64 rollover_interest_buy not None,
-            Decimal64 rollover_interest_sell not None,
+            Decimal rollover_interest_buy not None,
+            Decimal rollover_interest_sell not None,
             datetime timestamp not None,
     ):
         """
@@ -207,7 +206,7 @@ cdef class ForexInstrument(Instrument):
             The minimum distance for limit entry orders.
         min_limit_distance : int
             The minimum tick distance for limit orders.
-        tick_size : Decimal64
+        tick_size : Decimal
             The tick size.
         lot_size : Quantity
             The rounded lot size.
@@ -215,9 +214,9 @@ cdef class ForexInstrument(Instrument):
             The minimum possible trade size.
         max_trade_size : Quantity
             The maximum possible trade size.
-        rollover_interest_buy : Decimal64
+        rollover_interest_buy : Decimal
             The rollover interest for long positions.
-        rollover_interest_sell : Decimal64
+        rollover_interest_sell : Decimal
             The rollover interest for short positions.
         timestamp : datetime
             The timestamp the instrument was created/updated at.

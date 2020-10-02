@@ -48,8 +48,8 @@ class BidAskMinMaxTests(unittest.TestCase):
         indicator.handle_quote_tick(
             QuoteTick(
                 self.symbol,
-                Price(1.0, 0),
-                Price(2.0, 0),
+                Price("1.0"),
+                Price("2.0"),
                 Quantity(1),
                 Quantity(1),
                 datetime(2020, 1, 1, 0, 0, 0, tzinfo=pytz.utc),
@@ -59,8 +59,8 @@ class BidAskMinMaxTests(unittest.TestCase):
         indicator.handle_quote_tick(
             QuoteTick(
                 self.symbol,
-                Price(0.9, 0),
-                Price(2.1, 0),
+                Price("0.9"),
+                Price("2.1"),
                 Quantity(1),
                 Quantity(1),
                 datetime(2020, 1, 1, 0, 5, 0, tzinfo=pytz.utc),
@@ -68,10 +68,10 @@ class BidAskMinMaxTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Price(0.9, 0), indicator.bids.min_price)
-        self.assertEqual(Price(1.0, 0), indicator.bids.max_price)
-        self.assertEqual(Price(2.0, 0), indicator.asks.min_price)
-        self.assertEqual(Price(2.1, 0), indicator.asks.max_price)
+        self.assertEqual(Price("0.9"), indicator.bids.min_price)
+        self.assertEqual(Price("1.0"), indicator.bids.max_price)
+        self.assertEqual(Price("2.1"), indicator.asks.min_price)
+        self.assertEqual(Price("2.1"), indicator.asks.max_price)
 
 
 class WindowedMinMaxPricesTests(unittest.TestCase):
@@ -91,11 +91,11 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         # Act
         instance.add_price(
             datetime(2020, 1, 1, 0, 0, 0, tzinfo=pytz.utc),
-            Price(1.0, 0),
+            Price("1.0"),
         )
         # Assert
-        self.assertEqual(Price(1.0, 0), instance.min_price)
-        self.assertEqual(Price(1.0, 0), instance.max_price)
+        self.assertEqual(Price("1.0"), instance.min_price)
+        self.assertEqual(Price("1.0"), instance.max_price)
 
     def test_add_multiple_prices(self):
         # Arrange
@@ -104,17 +104,17 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         # Act
         instance.add_price(
             datetime(2020, 1, 1, 0, 0, 0, tzinfo=pytz.utc),
-            Price(1.0, 0),
+            Price("1.0"),
         )
         # 5 min later (still in the window)
         instance.add_price(
             datetime(2020, 1, 1, 0, 5, 0, tzinfo=pytz.utc),
-            Price(0.9, 0),
+            Price("0.9"),
         )
 
         # Assert
-        self.assertEqual(Price(0.9, 0), instance.min_price)
-        self.assertEqual(Price(1.0, 0), instance.max_price)
+        self.assertEqual(Price("0.9"), instance.min_price)
+        self.assertEqual(Price("1.0"), instance.max_price)
 
     def test_expire_items(self):
         # Arrange
@@ -123,23 +123,23 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         # Act
         instance.add_price(
             datetime(2020, 1, 1, 0, 0, 0, tzinfo=pytz.utc),
-            Price(1.0, 0),
+            Price("1.0"),
         )
         # 5 min later (still in the window)
         instance.add_price(
             datetime(2020, 1, 1, 0, 5, 0, tzinfo=pytz.utc),
-            Price(0.9, 0),
+            Price("0.9"),
         )
         # Allow the first item to expire out
         # This also tests that the new tick is the new min/max
         instance.add_price(
             datetime(2020, 1, 1, 0, 5, 1, tzinfo=pytz.utc),
-            Price(0.95, 0),
+            Price("0.95"),
         )
 
         # Assert
-        self.assertEqual(Price(0.90, 0), instance.min_price)
-        self.assertEqual(Price(0.95, 0), instance.max_price)
+        self.assertEqual(Price("0.95"), instance.min_price)
+        self.assertEqual(Price("0.95"), instance.max_price)
 
     def test_reset(self):
         # Arrange
@@ -148,7 +148,7 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         # Act
         instance.add_price(
             datetime(2020, 1, 1, 0, 0, 0, tzinfo=pytz.utc),
-            Price(1.0, 0),
+            Price("1"),
         )
         instance.reset()
 

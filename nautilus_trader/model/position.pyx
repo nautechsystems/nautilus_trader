@@ -45,8 +45,8 @@ cdef class Position:
         self._fill_prices = {}                      # type: {ClientOrderId, Price}
         self._buy_quantities = {}                   # type: {ClientOrderId, Quantity}
         self._sell_quantities = {}                  # type: {ClientOrderId, Quantity}
-        self._buy_quantity = Quantity.zero()        # Initialized in _update()
-        self._sell_quantity = Quantity.zero()       # Initialized in _update()
+        self._buy_quantity = Quantity()        # Initialized in _update()
+        self._sell_quantity = Quantity()       # Initialized in _update()
         self._relative_quantity = 0.0               # Initialized in _update()
         self._qty_precision = event.filled_qty.precision
 
@@ -56,8 +56,8 @@ cdef class Position:
         self.symbol = event.symbol
         self.entry = event.order_side
         self.side = PositionSide.UNDEFINED    # Initialized in _update()
-        self.quantity = Quantity.zero()       # Initialized in _update()
-        self.peak_quantity = Quantity.zero()  # Initialized in _update()
+        self.quantity = Quantity()       # Initialized in _update()
+        self.peak_quantity = Quantity()  # Initialized in _update()
         self.base_currency = event.base_currency
         self.quote_currency = event.quote_currency
         self.timestamp = event.execution_time
@@ -459,8 +459,8 @@ cdef class Position:
 
         cdef double new_commission
         if self.quote_currency != event.commission.currency:
-            new_commission = event.commission.as_double() * event.avg_price.as_double()
-            self.commission = self.commission.add(Money(new_commission, self.quote_currency))
+            new_commission = event.commission * event.avg_price
+            self.commission = Money.from_float_c(self.commission + new_commission, 2, self.commission.currency)
         else:
             self.commission = self.commission.add(event.commission)
 
@@ -471,8 +471,8 @@ cdef class Position:
 
         # Set quantities
         self._relative_quantity = self._buy_quantity.as_double() - self._sell_quantity.as_double()
-        self.quantity = Quantity(abs(self._relative_quantity), precision=self._qty_precision)
-        if self.quantity.gt(self.peak_quantity):
+        self.quantity = Quantity.from_float_c(abs(self._relative_quantity), precision=self._qty_precision)
+        if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
         # Set state
@@ -491,7 +491,7 @@ cdef class Position:
         cdef Quantity quantity
         for quantity in self._buy_quantities.values():
             total_buy_qty += quantity.as_double()
-        self._buy_quantity = Quantity(total_buy_qty, precision=self._qty_precision)
+        self._buy_quantity = Quantity.from_float_c(total_buy_qty, precision=self._qty_precision)
 
         # LONG POSITION
         if self._relative_quantity > 0.0:
@@ -512,7 +512,7 @@ cdef class Position:
         cdef Quantity quantity
         for quantity in self._sell_quantities.values():
             total_sell_qty += quantity.as_double()
-        self._sell_quantity = Quantity(total_sell_qty, precision=self._qty_precision)
+        self._sell_quantity = Quantity.from_float_c(total_sell_qty, precision=self._qty_precision)
 
         # SHORT POSITION
         if self._relative_quantity < 0.0:
@@ -553,4 +553,4 @@ cdef class Position:
 
     cdef Money _calculate_pnl(self, double opened_price, double closed_price, Quantity filled_qty):
         cdef double value = self._calculate_points(opened_price, closed_price) * filled_qty.as_double()
-        return Money(value, self.quote_currency)
+        return Money.from_float_c(value, 2, self.quote_currency)

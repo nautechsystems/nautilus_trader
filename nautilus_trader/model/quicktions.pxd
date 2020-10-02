@@ -13,25 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
+cpdef _gcd(a, b)
 
+cdef class Fraction:
+    cdef _numerator
+    cdef _denominator
+    cdef Py_hash_t _hash
 
-cdef class HilbertPeriod(Indicator):
-    cdef double _i_mult
-    cdef double _q_mult
-    cdef double _amplitude_floor
-    cdef object _inputs
-    cdef object _detrended_prices
-    cdef object _in_phase
-    cdef object _quadrature
-    cdef object _phase
-    cdef object _delta_phase
-
-    cdef readonly int period
-    cdef readonly double value
-
-    cpdef void handle_bar(self, Bar bar) except *
-    cpdef void update_raw(self, double high, double low) except *
-    cpdef void _calc_hilbert_transform(self) except *
-    cpdef void reset(self) except *
+    cdef limit_denominator(self, max_denominator=*)
+    cdef _eq(a, b)
+    cdef _richcmp(self, other, int op)
+    cdef as_integer_ratio(self)

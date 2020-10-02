@@ -196,7 +196,7 @@ cdef class BacktestEngine:
             venue=venue,
             oms_type=oms_type,
             generate_position_ids=True,
-            exec_engine=self.exec_engine,
+            exec_cache=self.exec_engine.cache,
             instruments=data.instruments,
             config=config,
             fill_model=fill_model,
@@ -208,10 +208,13 @@ cdef class BacktestEngine:
 
         self.exec_client = BacktestExecClient(
             market=self.market,
+            account_id=self.account_id,
+            engine=self.exec_engine,
             logger=self.test_logger,
         )
 
         self.exec_engine.register_client(self.exec_client)
+        self.market.register_client(self.exec_client)
 
         self.trader = Trader(
             trader_id=self.trader_id,

@@ -56,8 +56,8 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             USDJPY_FXCM,
-            Price(110.80000, 5),
-            Price(110.80010, 5),
+            Price("110.80000"),
+            Price("110.80010"),
             Quantity(1),
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
@@ -75,8 +75,8 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,
-            Price(0.80000, 5),
-            Price(0.80010, 5),
+            Price("0.80000"),
+            Price("0.80010"),
             Quantity(1),
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),

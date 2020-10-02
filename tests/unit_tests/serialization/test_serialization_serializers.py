@@ -150,9 +150,10 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
             TimeInForce.DAY,
-            expire_time=None)
+            expire_time=None,
+        )
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -170,11 +171,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            price=Price(1.00000, 5),
+            price=Price("1.00000"),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -192,11 +194,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            price=Price(1.00000, 5),
+            price=Price("1.00000"),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -278,7 +281,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         bracket_order = self.order_factory.bracket(
             entry_order,
-            stop_loss=Price(0.99900, 5))
+            stop_loss=Price("0.99900"),
+        )
 
         command = SubmitBracketOrder(
             self.venue,
@@ -305,12 +309,14 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5))
+            Price("1.00000"),
+        )
 
         bracket_order = self.order_factory.bracket(
             entry_order,
-            stop_loss=Price(0.99900, 5),
-            take_profit=Price(1.00010, 5))
+            stop_loss=Price("0.99900"),
+            take_profit=Price("1.00010"),
+        )
 
         command = SubmitBracketOrder(
             self.venue,
@@ -319,7 +325,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             StrategyId("SCALPER", "01"),
             bracket_order,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -339,9 +346,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             Quantity(100000),
-            Price(1.00001, 5),
+            Price("1.00001"),
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -360,7 +368,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -392,7 +401,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             TimeInForce.DAY,
             uuid4(),
             UNIX_EPOCH,
-            options=options)
+            options=options,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -409,7 +419,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -424,7 +435,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             "OrderId already exists",
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -439,7 +451,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             "Exceeds risk for FX",
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -456,7 +469,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("B-123456"),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -473,7 +487,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH,
             "ORDER_ID_INVALID",
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -492,12 +507,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             OrderType.STOP,
             Quantity(100000),
-            Price(1.50000, 5),
+            Price("1.50000"),
             TimeInForce.DAY,
             None,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -516,12 +532,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             OrderType.STOP,
             Quantity(100000),
-            Price(1.50000, 5),
+            Price("1.50000"),
             TimeInForce.DAY,
             UNIX_EPOCH,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -538,7 +555,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("1"),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -556,7 +574,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -572,10 +591,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             OrderId("1"),
             Quantity(100000),
-            Price(0.80010, 5),
+            Price("0.80010"),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -592,7 +612,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("1"),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -613,14 +634,15 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(50000),
             Quantity(50000),
-            Price(1.00000, 5),
-            Money(0., Currency.USD),
+            Price("1.00000"),
+            Money("0", Currency.USD),
             LiquiditySide.MAKER,
             Currency.AUD,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)
@@ -640,15 +662,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
-            Quantity(0),
-            Price(1.00000, 5),
-            Money(0., Currency.USD),
+            Quantity(),
+            Price("1.00000"),
+            Money("0", Currency.USD),
             LiquiditySide.TAKER,
             Currency.AUD,
             Currency.USD,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(event)

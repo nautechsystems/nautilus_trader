@@ -17,11 +17,13 @@ from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.market cimport SimulatedMarket
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.identifiers cimport AccountId
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -29,7 +31,12 @@ cdef class BacktestExecClient(ExecutionClient):
     Provides an execution client for the BacktestEngine.
     """
 
-    def __init__(self, SimulatedMarket market not None, TestLogger logger not None):
+    def __init__(
+            self,
+            SimulatedMarket market not None,
+            AccountId account_id not None,
+            ExecutionEngine engine not None,
+            TestLogger logger not None):
         """
         Initialize a new instance of the BacktestExecClient class.
 
@@ -37,11 +44,20 @@ cdef class BacktestExecClient(ExecutionClient):
         ----------
         market : SimulatedMarket
             The simulated market for the backtest.
+        account_id : AccountId
+            The account identifier for the client.
+        engine : ExecutionEngine
+            The execution engine for the client.
         logger : TestLogger
             The logger for the component.
 
         """
-        super().__init__(market.venue, market.exec_engine, logger)
+        super().__init__(
+            market.venue,
+            account_id,
+            engine,
+            logger,
+        )
 
         self._market = market
 

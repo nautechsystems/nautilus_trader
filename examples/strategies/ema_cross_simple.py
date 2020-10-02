@@ -95,20 +95,26 @@ class EMACross(TradingStrategy):
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.execution.is_flat(self.symbol, self.id):
-                self.buy(Quantity(1000000))
+                self.buy(1000000)
             elif self.execution.is_net_long(self.symbol, self.id):
                 pass
             else:
-                self.buy(Quantity(2000000))
+                positions = self.execution.positions_open()
+                if len(positions) > 0:
+                    self.flatten_position(positions[0])
+                    self.buy(1000000)
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.execution.is_flat(self.symbol, self.id):
-                self.sell(Quantity(1000000))
+                self.sell(1000000)
             elif self.execution.is_net_short(self.symbol, self.id):
                 pass
             else:
-                self.sell(Quantity(2000000))
+                positions = self.execution.positions_open()
+                if len(positions) > 0:
+                    self.flatten_position(positions[0])
+                    self.sell(1000000)
 
     def buy(self, quantity):
         """
@@ -117,7 +123,7 @@ class EMACross(TradingStrategy):
         order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.BUY,
-            quantity=quantity,
+            quantity=Quantity(quantity),
         )
 
         self.submit_order(order)
@@ -129,7 +135,7 @@ class EMACross(TradingStrategy):
         order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
-            quantity=quantity,
+            quantity=Quantity(quantity),
         )
 
         self.submit_order(order)

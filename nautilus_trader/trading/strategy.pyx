@@ -1687,7 +1687,7 @@ cdef class TradingStrategy:
 
         if position.is_closed():
             self.log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
-                              f"(the position is already closed).")
+                             f"(the position is already closed).")
             return  # Invalid command
 
         # Create flattening order

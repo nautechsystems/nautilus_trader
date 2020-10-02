@@ -37,13 +37,13 @@ class FixedRiskSizerTests(unittest.TestCase):
         result = self.sizer.calculate(
             equity,
             10,  # 0.1%
-            Price(1.00100, 5),
-            Price(1.00000, 5),
+            Price("1.00100"),
+            Price("1.00000"),
             exchange_rate=1.0,
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(1000000), result)
+        self.assertEqual(Quantity(999000), result)
 
     def test_calculate_single_unit_with_exchange_rate(self):
         # Arrange
@@ -53,8 +53,8 @@ class FixedRiskSizerTests(unittest.TestCase):
         result = self.sizer.calculate(
             equity,
             10,   # 0.1%
-            Price(110.010, 3),
-            Price(110.000, 3),
+            Price("110.010"),
+            Price("110.000"),
             exchange_rate=0.01)
 
         # Assert
@@ -68,8 +68,8 @@ class FixedRiskSizerTests(unittest.TestCase):
         result = self.sizer.calculate(
             equity,
             100,   # 1%
-            Price(3.00000, 5),
-            Price(1.00000, 5),
+            Price("3.00000"),
+            Price("1.00000"),
             unit_batch_size=1000)
 
         # Assert
@@ -83,8 +83,8 @@ class FixedRiskSizerTests(unittest.TestCase):
         result = self.sizer.calculate(
             equity,
             100,   # 1%
-            Price(1.00010, 5),
-            Price(1.00000, 5),
+            Price("1.00010"),
+            Price("1.00000"),
             hard_limit=500000,
             units=1,
             unit_batch_size=1000)
@@ -100,8 +100,8 @@ class FixedRiskSizerTests(unittest.TestCase):
         result = self.sizer.calculate(
             equity,
             10,   # 0.1%
-            Price(1.00010, 5),
-            Price(1.00000, 5),
+            Price("1.00010"),
+            Price("1.00000"),
             units=3,
             unit_batch_size=1000)
 
@@ -116,8 +116,8 @@ class FixedRiskSizerTests(unittest.TestCase):
         result = self.sizer.calculate(
             equity,
             10,   # 0.1%
-            Price(1.00087, 5),
-            Price(1.00000, 5),
+            Price("1.00087"),
+            Price("1.00000"),
             units=4,
             unit_batch_size=25000)
 
@@ -133,8 +133,8 @@ class FixedRiskSizerTests(unittest.TestCase):
         result = sizer.calculate(
             equity,
             10,   # 0.1%
-            Price(107.703, 3),
-            Price(107.403, 3),
+            Price("107.703"),
+            Price("107.403"),
             exchange_rate=0.0093,
             units=1,
             unit_batch_size=1000)

@@ -36,10 +36,10 @@ cdef class PositionSizer:
         int unit_batch_size=*,
     )
 
-    cdef double _calculate_risk_ticks(self, double entry, double stop_loss)
+    cdef double _calculate_risk_ticks(self, Price entry, Price stop_loss)
     cdef double _calculate_riskable_money(
         self,
-        double equity,
+        Money equity,
         double risk_bp,
         double commission_rate_bp,
     )
