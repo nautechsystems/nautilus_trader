@@ -243,10 +243,10 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -270,10 +270,10 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -286,10 +286,10 @@ class TradingStrategyTests(unittest.TestCase):
     def test_get_bar(self):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -309,8 +309,8 @@ class TradingStrategyTests(unittest.TestCase):
     def test_get_quote_tick(self):
         tick = QuoteTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
-            Price(1.00001, 5),
+            Price("1.00000"),
+            Price("1.00001"),
             Quantity(1),
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
@@ -326,7 +326,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_get_trade_tick(self):
         tick = TradeTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
+            Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
             MatchId("123456789"),
@@ -395,10 +395,10 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -635,8 +635,8 @@ class TradingStrategyTests(unittest.TestCase):
 
         bracket_order = strategy.order_factory.bracket(
             entry_order,
-            stop_loss=Price(90.000, 3),
-            take_profit=Price(91.000, 3))
+            stop_loss=Price("90.000"),
+            take_profit=Price("91.000"))
 
         # Act
         strategy.submit_bracket_order(bracket_order)
@@ -664,8 +664,8 @@ class TradingStrategyTests(unittest.TestCase):
 
         bracket_order = strategy.order_factory.bracket(
             entry_order,
-            stop_loss=Price(90.000, 3),
-            take_profit=Price(91.000, 3))
+            stop_loss=Price("90.000"),
+            take_profit=Price("91.000"))
 
         position_id = PositionId('P-1')
 
@@ -764,12 +764,13 @@ class TradingStrategyTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger)
 
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Quantity(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+        bar = Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         # Act
         strategy.handle_bar(bar_type, bar)

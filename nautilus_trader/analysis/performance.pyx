@@ -102,19 +102,19 @@ cdef class PerformanceAnalyzer:
             self._account_currency = event.currency
             return  # No transaction to handle
 
-        if self._account_capital.equals(event.cash_balance):
+        if self._account_capital == event.cash_balance:
             return  # No transaction to handle
 
         # Calculate transaction data
-        cdef Money pnl = event.cash_balance.sub(self._account_capital)
+        cdef Money pnl = Money(event.cash_balance - self._account_capital, self._account_currency)
         self._account_capital = event.cash_balance
 
         # Set index if it does not exist
         if event.timestamp not in self._transactions:
             self._transactions.loc[event.timestamp] = 0
 
-        self._transactions.loc[event.timestamp]["capital"] = self._account_capital.as_double()
-        self._transactions.loc[event.timestamp]["pnl"] = pnl.as_double()
+        self._transactions.loc[event.timestamp]["capital"] = float(self._account_capital)
+        self._transactions.loc[event.timestamp]["pnl"] = float(pnl)
 
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """
@@ -238,7 +238,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return self._account_capital.sub(self._account_starting_capital).as_double()
+        return float(self._account_capital - self._account_starting_capital)
 
     cpdef double total_pnl_percentage(self):
         """
@@ -249,13 +249,13 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if self._account_starting_capital.as_double() == 0:  # Protect divide by zero
+        if self._account_starting_capital == 0:  # Protect divide by zero
             return 0.0
-        cdef double current = self._account_capital.as_double()
+        cdef double current = self._account_capital
         cdef double starting = self._account_starting_capital.as_double()
-        cdef double difference = current - starting
+        cdef double difference = float(self._account_capital - self._account_starting_capital)
 
-        return (difference / starting) * 100
+        return (self._account_capital - self._account_starting_capital / self._account_starting_capital) * 100
 
     cpdef double max_winner(self):
         """

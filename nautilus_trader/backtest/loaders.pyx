@@ -19,12 +19,11 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport ForexInstrument
-from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -128,11 +127,11 @@ cdef class InstrumentLoader:
             min_limit_distance_entry=0,
             min_stop_distance=0,
             min_limit_distance=0,
-            tick_size=Price(1 / (10 ** price_precision), price_precision),
-            lot_size=Quantity(1000),
-            min_trade_size=Quantity(1),
-            max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal64(),
-            rollover_interest_sell=Decimal64(),
+            tick_size=Decimal.from_float_c(1 / (10 ** price_precision), price_precision),
+            lot_size=Quantity("1000"),
+            min_trade_size=Quantity("1"),
+            max_trade_size=Quantity("50000000"),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
             timestamp=datetime.now(pytz.utc),
         )

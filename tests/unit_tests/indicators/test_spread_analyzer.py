@@ -45,11 +45,12 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1000)
         tick = QuoteTick(
             USDJPY_FXCM,
-            Price(117.80000, 5),
-            Price(117.80010, 5),
+            Price("117.80000"),
+            Price("117.80010"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
         # Act
         # Assert
         self.assertRaises(ValueError, analyzer.handle_quote_tick, tick)
@@ -59,19 +60,21 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1000)
         tick1 = QuoteTick(
             AUDUSD_FXCM,
-            Price(0.80000, 5),
-            Price(0.80010, 5),
+            Price("0.80000"),
+            Price("0.80010"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         tick2 = QuoteTick(
             AUDUSD_FXCM,
-            Price(0.80002, 5),
-            Price(0.80008, 5),
+            Price("0.80002"),
+            Price("0.80008"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         analyzer.handle_quote_tick(tick1)

@@ -501,9 +501,9 @@ cdef class Bar:
 
         """
         if check:
-            Condition.true(high_price.ge(low_price), 'high_price >= low_price')
-            Condition.true(high_price.ge(close_price), 'high_price >= close_price')
-            Condition.true(low_price.le(close_price), 'low_price <= close_price')
+            Condition.true(high_price >= low_price, 'high_price >= low_price')
+            Condition.true(high_price >= close_price, 'high_price >= close_price')
+            Condition.true(low_price <= close_price, 'low_price <= close_price')
 
         self.open = open_price
         self.high = high_price
@@ -533,11 +533,11 @@ cdef class Bar:
         cdef list pieces = value.split(',', maxsplit=5)
 
         return Bar(
-            Price.from_string(pieces[0]),
-            Price.from_string(pieces[1]),
-            Price.from_string(pieces[2]),
-            Price.from_string(pieces[3]),
-            Quantity.from_string(pieces[4]),
+            Price(pieces[0]),
+            Price(pieces[1]),
+            Price(pieces[2]),
+            Price(pieces[3]),
+            Quantity(pieces[4]),
             datetime.fromtimestamp(long(pieces[5]) / 1000, pytz.utc),
         )
 
@@ -574,11 +574,11 @@ cdef class Bar:
         bool
 
         """
-        return self.open.equals(other.open) \
-            and self.high.equals(other.high) \
-            and self.low.equals(other.low) \
-            and self.close.equals(other.close) \
-            and self.volume.equals(other.volume) \
+        return self.open == other.open \
+            and self.high == other.high \
+            and self.low == other.low \
+            and self.close == other.close \
+            and self.volume == other.volume \
             and self.timestamp == other.timestamp
 
     cpdef str to_string(self):

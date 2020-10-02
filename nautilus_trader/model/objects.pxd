@@ -13,42 +13,53 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.quicktions cimport Fraction
 
 
-cdef class Quantity(Decimal64):
-    cpdef bint equals(self, Quantity other) except *
-
-    @staticmethod
-    cdef Quantity zero()
+cdef class Decimal(Fraction):
+    cdef readonly int precision
 
     @staticmethod
-    cdef Quantity one()
+    cdef inline Decimal from_float_c(double value, int precision)
+    cpdef double as_double(self)
+    cpdef str to_string(self)
+
+
+cdef class Quantity(Fraction):
+    cdef readonly int precision
+
+    cdef inline Quantity add(self, Quantity other)
+    cdef inline Quantity sub(self, Quantity other)
 
     @staticmethod
-    cdef Quantity from_string(str value)
-    cpdef Quantity add(self, Quantity other)
-    cpdef Quantity sub(self, Quantity other)
+    cdef inline Quantity from_float_c(double value, int precision)
+    cpdef double as_double(self)
+    cpdef str to_string(self)
     cpdef str to_string_formatted(self)
 
 
-cdef class Price(Decimal64):
-    cpdef bint equals(self, Price other) except *
+cdef class Price(Fraction):
+    cdef readonly int precision
 
     @staticmethod
-    cdef Price from_string(str value)
-    cpdef Price add(self, Decimal64 other)
-    cpdef Price sub(self, Decimal64 other)
+    cdef inline Price from_float_c(double value, int precision)
+    cpdef double as_double(self)
+    cpdef str to_string(self)
 
 
-cdef class Money(Decimal64):
+cdef class Money(Fraction):
+    cdef readonly int precision
     cdef readonly Currency currency
 
-    cpdef bint equals(self, Money other) except *
+    cdef inline Money add(self, Money other)
+    cdef inline Money sub(self, Money other)
 
     @staticmethod
-    cdef Money from_string(str value, Currency currency)
-    cpdef Money add(self, Money other)
-    cpdef Money sub(self, Money other)
+    cdef Money zero(Currency currency)
+
+    @staticmethod
+    cdef inline Money from_float_c(double value, int precision, Currency currency)
+    cpdef double as_double(self)
+    cpdef str to_string(self)
     cpdef str to_string_formatted(self)

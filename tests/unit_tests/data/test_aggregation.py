@@ -56,24 +56,24 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
@@ -95,24 +95,24 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
@@ -125,11 +125,11 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build()  # Also resets builder
 
         # Assert
-        self.assertEqual(Price(1.00001, 5), bar.open)
-        self.assertEqual(Price(1.00002, 5), bar.high)
-        self.assertEqual(Price(1.00000, 5), bar.low)
-        self.assertEqual(Price(1.00000, 5), bar.close)
-        self.assertEqual(Quantity(3, precision=0), bar.volume)
+        self.assertEqual(Price("1.00001"), bar.open)
+        self.assertEqual(Price("1.00002"), bar.high)
+        self.assertEqual(Price("1.00000"), bar.low)
+        self.assertEqual(Price("1.00000"), bar.close)
+        self.assertEqual(Quantity(3), bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
@@ -141,24 +141,24 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
@@ -171,10 +171,10 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build()  # Also resets builder
 
         # Assert
-        self.assertEqual(Price(1.000025, 6), bar.open)
-        self.assertEqual(Price(1.000035, 6), bar.high)
-        self.assertEqual(Price(1.000015, 6), bar.low)
-        self.assertEqual(Price(1.000015, 6), bar.close)
+        self.assertEqual(Price("1.000025"), bar.open)
+        self.assertEqual(Price("1.000035"), bar.high)
+        self.assertEqual(Price("1.000015"), bar.low)
+        self.assertEqual(Price("1.000015"), bar.close)
         self.assertEqual(Quantity(6), bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
@@ -187,24 +187,24 @@ class BarBuilderTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
@@ -218,11 +218,11 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build()  # Also resets builder
 
         # Assert
-        self.assertEqual(Price(1.000015, 6), bar.open)
-        self.assertEqual(Price(1.000015, 6), bar.high)
-        self.assertEqual(Price(1.000015, 6), bar.low)
-        self.assertEqual(Price(1.000015, 6), bar.close)
-        self.assertEqual(Quantity(0), bar.volume)
+        self.assertEqual(Price("1.000015"), bar.open)
+        self.assertEqual(Price("1.000015"), bar.high)
+        self.assertEqual(Price("1.000015"), bar.low)
+        self.assertEqual(Price("1.000015"), bar.close)
+        self.assertEqual(Quantity(), bar.volume)
         self.assertEqual(UNIX_EPOCH, bar.timestamp)
         self.assertEqual(UNIX_EPOCH, builder.last_update)
         self.assertEqual(0, builder.count)
@@ -241,24 +241,24 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
@@ -270,10 +270,10 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].open)
-        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].low)
-        self.assertEqual(Price(1.000015, 6), bar_store.get_store()[0][1].close)
+        self.assertEqual(Price("1.000025"), bar_store.get_store()[0][1].open)
+        self.assertEqual(Price("1.000035"), bar_store.get_store()[0][1].high)
+        self.assertEqual(Price("1.000015"), bar_store.get_store()[0][1].low)
+        self.assertEqual(Price('1.000015'), bar_store.get_store()[0][1].close)
         self.assertEqual(Quantity(6), bar_store.get_store()[0][1].volume)
 
 
@@ -293,24 +293,24 @@ class TimeBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00001, 5),
-            ask=Price(1.00004, 5),
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00002, 5),
-            ask=Price(1.00005, 5),
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=UNIX_EPOCH)
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
-            bid=Price(1.00000, 5),
-            ask=Price(1.00003, 5),
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
             timestamp=stop_time)
@@ -322,9 +322,9 @@ class TimeBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].open)
-        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].high)
-        self.assertEqual(Price(1.000025, 6), bar_store.get_store()[0][1].low)
-        self.assertEqual(Price(1.000035, 6), bar_store.get_store()[0][1].close)
+        self.assertEqual(Price("1.000025"), bar_store.get_store()[0][1].open)
+        self.assertEqual(Price("1.000035"), bar_store.get_store()[0][1].high)
+        self.assertEqual(Price("1.000025"), bar_store.get_store()[0][1].low)
+        self.assertEqual(Price("1.000035"), bar_store.get_store()[0][1].close)
         self.assertEqual(Quantity(4), bar_store.get_store()[0][1].volume)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), bar_store.get_store()[0][1].timestamp)
